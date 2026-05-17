@@ -1,9 +1,9 @@
-# HAP + OIDC / OAuth 2.0
+# CHAP + OIDC / OAuth 2.0
 
-This document specifies how HAP integrates with OpenID Connect (OIDC) and
+This document specifies how CHAP integrates with OpenID Connect (OIDC) and
 OAuth 2.0 for identity, authentication, and authorisation.
 
-HAP itself is **identity-provider-agnostic** — it requires only that each
+CHAP itself is **identity-provider-agnostic** — it requires only that each
 Participant have a signing key whose public half is discoverable inside
 the workspace. OIDC and OAuth 2.0 are the recommended way to bind those
 keys to real-world identities, particularly for humans.
@@ -14,15 +14,15 @@ The integration pattern is:
 |--------------------------------------|-------------------------------------------------------------|
 | Who is this human?                   | OIDC ID token from the org's IdP.                           |
 | How is the signing key bound to that human? | `cnf.jwk` claim (RFC 7800), DPoP-style binding.       |
-| How is the binding fresh enough to authorise a privileged action? | OIDC `auth_time` + HAP step-up window. |
+| How is the binding fresh enough to authorise a privileged action? | OIDC `auth_time` + CHAP step-up window. |
 | How is the agent or service authenticated? | OAuth 2.0 client credentials, mTLS, or SPIFFE SVID.    |
-| How does HAP enforce scope?          | Workspace policy maps roles to permitted methods.           |
+| How does CHAP enforce scope?          | Workspace policy maps roles to permitted methods.           |
 
 ---
 
 ## 1. Human identity flow
 
-The full sequence from "user opens the app" to "user signs a HAP
+The full sequence from "user opens the app" to "user signs a CHAP
 message" runs:
 
 ```mermaid
@@ -43,9 +43,9 @@ message" runs:
 sequenceDiagram
     autonumber
     participant U as User (browser/app)
-    participant App as HAP client
+    participant App as CHAP client
     participant IdP as OIDC IdP
-    participant C as HAP Coordinator
+    participant C as CHAP Coordinator
 
     U->>App: open app
     App->>App: generate Ed25519 keypair K (private stays local)
@@ -53,9 +53,9 @@ sequenceDiagram
     IdP->>U: authenticate (password, MFA, …)
     U->>IdP: credentials
     IdP-->>App: ID token with<br/>cnf.jwk = pub(K), auth_time = T0
-    App->>C: HAP handshake (presents ID token)
+    App->>C: CHAP handshake (presents ID token)
     C->>C: verify token, extract cnf.jwk,<br/>pin pub(K) for this human's URI
-    App->>C: HAP message signed with K<br/>(throughout the session)
+    App->>C: CHAP message signed with K<br/>(throughout the session)
     Note over App,C: When privileged op needed,<br/>App may re-trigger authn so<br/>auth_time becomes fresh.
 ```
 
@@ -71,13 +71,13 @@ the session.
 
 ## 2. Token shape
 
-A typical ID token payload from a HAP-aware IdP:
+A typical ID token payload from a CHAP-aware IdP:
 
 ```json
 {
   "iss": "https://idp.example.org",
   "sub": "user-7f3c2a8e",
-  "aud": "hap-coordinator-prod",
+  "aud": "chap-coordinator-prod",
   "iat": 1747476000,
   "exp": 1747479600,
   "auth_time": 1747476000,
@@ -86,7 +86,7 @@ A typical ID token payload from a HAP-aware IdP:
 
   "email": "[email protected]",
   "preferred_username": "alice",
-  "hap_participant_uri": "human:alice@example.org",
+  "chap_participant_uri": "human:alice@example.org",
 
   "cnf": {
     "jwk": {
@@ -99,7 +99,7 @@ A typical ID token payload from a HAP-aware IdP:
 }
 ```
 
-Required claims for HAP binding:
+Required claims for CHAP binding:
 
 | Claim                  | Purpose                                                    |
 |------------------------|------------------------------------------------------------|
@@ -107,15 +107,15 @@ Required claims for HAP binding:
 | `sub`                  | The user's stable identifier at the IdP.                   |
 | `auth_time`            | When the user last authenticated; used for step-up.        |
 | `acr` (RECOMMENDED)    | Authentication context class (e.g. MFA tier).              |
-| `hap_participant_uri`  | The HAP Participant URI this token authorises.             |
-| `cnf.jwk`              | The HAP signing key bound to this session.                 |
+| `chap_participant_uri`  | The CHAP Participant URI this token authorises.             |
+| `cnf.jwk`              | The CHAP signing key bound to this session.                 |
 
-If `hap_participant_uri` is absent, the Coordinator maps `sub` to a
-HAP URI via deployment configuration.
+If `chap_participant_uri` is absent, the Coordinator maps `sub` to a
+CHAP URI via deployment configuration.
 
 ---
 
-## 3. Signing a HAP message
+## 3. Signing a CHAP message
 
 After binding, the client's send-message path is:
 
@@ -200,7 +200,7 @@ A typical privileged-op flow:
 sequenceDiagram
     autonumber
     participant U as User
-    participant App as HAP client
+    participant App as CHAP client
     participant IdP as IdP
     participant C as Coordinator
 
@@ -217,7 +217,7 @@ sequenceDiagram
     C-->>App: success
 ```
 
-The step-up flow is entirely standard OIDC; HAP's contribution is the
+The step-up flow is entirely standard OIDC; CHAP's contribution is the
 error code and the policy hook that triggers it.
 
 ---
@@ -232,46 +232,46 @@ preference:
 
 In a service-mesh deployment with SPIFFE, each workload has an SVID
 (SPIFFE Verifiable Identity Document) — typically an X.509 cert with
-the workload's SPIFFE ID as a SAN. The HAP signing key is bound to
+the workload's SPIFFE ID as a SAN. The CHAP signing key is bound to
 the SPIFFE ID via the workload identity infrastructure; the agent's
 descriptor lists its current key and rotates as SPIFFE rotates.
 
 ### 5.2 mTLS with private CA
 
 For deployments without SPIFFE, an internal CA issues client
-certificates. The HAP signing key is bound to the certificate's
+certificates. The CHAP signing key is bound to the certificate's
 subject. Rotation is typically driven by cert expiry.
 
 ### 5.3 OAuth 2.0 client credentials
 
 A fallback: the agent obtains a token from the IdP via the
 `client_credentials` grant. The token's `cnf.jwk` (if supported by
-the IdP) binds the HAP signing key, exactly as for humans. The
-client id maps to the agent's HAP URI.
+the IdP) binds the CHAP signing key, exactly as for humans. The
+client id maps to the agent's CHAP URI.
 
 ---
 
 ## 6. Scope and authorisation
 
 OIDC/OAuth 2.0 scopes are about *what the bearer can ask the IdP for*;
-HAP method-role authorisation is about *what the workspace lets a
+CHAP method-role authorisation is about *what the workspace lets a
 member do*. These are different layers, and they must compose.
 
 Typical mapping:
 
 ```
-OIDC scope            ──maps to──>   HAP role(s) in this workspace
+OIDC scope            ──maps to──>   CHAP role(s) in this workspace
 ─────────────────────────────────────────────────────────────────────
-hap.user                              reviewer
-hap.user                              drafter (for the user's own tasks)
-hap.admin                             admin
-hap.audit                             auditor (read-only, audit.read)
-hap.coordinator                       coordinator (service role)
+chap.user                              reviewer
+chap.user                              drafter (for the user's own tasks)
+chap.admin                             admin
+chap.audit                             auditor (read-only, audit.read)
+chap.coordinator                       coordinator (service role)
 ```
 
 The mapping is deployment-specific and lives in the workspace's
 policy. The OIDC token grants the human the ability to *act as*
-`human:alice@example.org` in HAP; the workspace policy decides what
+`human:alice@example.org` in CHAP; the workspace policy decides what
 that participant is allowed to do.
 
 Two-level enforcement:
@@ -279,7 +279,7 @@ Two-level enforcement:
 1. **Transport-time:** the Coordinator verifies the OIDC token's
    signature, expiry, audience, and scope against its minimum
    accept-policy.
-2. **Method-time:** for every incoming HAP message, the Coordinator
+2. **Method-time:** for every incoming CHAP message, the Coordinator
    verifies the participant's role and consults the method-role
    matrix in the workspace policy.
 
@@ -327,7 +327,7 @@ recorded offline notice, depending on implementation).
 
 ## 9. PII and audit
 
-OIDC tokens may contain PII (email, name). HAP's evidence chain
+OIDC tokens may contain PII (email, name). CHAP's evidence chain
 **does not** store the ID token itself — it stores the participant
 URI (the abstract identifier), the public key, and the signature.
 A separate access-controlled log can correlate URI to identity for
@@ -343,7 +343,7 @@ data-minimisation requirements.
 
 | Question                                                        | Answer                                       |
 |-----------------------------------------------------------------|----------------------------------------------|
-| How does HAP know who a human is?                               | OIDC ID token + `cnf.jwk` binding.           |
+| How does CHAP know who a human is?                               | OIDC ID token + `cnf.jwk` binding.           |
 | Where does the signing key live?                                | On the client (ephemeral, per session).      |
 | How do privileged ops require fresh auth?                       | OIDC `auth_time` + step-up window.           |
 | How are agents and services authenticated?                      | SPIFFE, mTLS, or OAuth 2.0 client credentials. |

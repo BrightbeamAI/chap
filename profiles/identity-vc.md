@@ -7,8 +7,8 @@ Use this profile when richer or cross-organisational identity claims
 are required than OIDC tokens conveniently express — regulated
 professions, cross-org credentials, supply-chain attestations.
 
-HAP introduces no identity protocol. This profile is the recommended
-way to use W3C VC with HAP.
+CHAP introduces no identity protocol. This profile is the recommended
+way to use W3C VC with CHAP.
 
 ---
 
@@ -54,10 +54,10 @@ Client → Coordinator: handshake — presents VP
 Coordinator: verifies VP — issuer signatures, VC schema, holder binding
    │
    ▼
-Coordinator pins pub(K) as the participant's HAP signing key
+Coordinator pins pub(K) as the participant's CHAP signing key
    │
    ▼
-Client → Coordinator: HAP messages signed with K (security-signed profile)
+Client → Coordinator: CHAP messages signed with K (security-signed profile)
 ```
 
 The VP is the analogue of the OIDC ID token. The Coordinator does
@@ -92,14 +92,14 @@ exactly the same job: verify identity, extract the bound key, pin.
     "cryptosuite":       "eddsa-rdfc-2022",
     "verificationMethod": "did:example:alice#key-1",
     "proofPurpose":      "authentication",
-    "challenge":         "<HAP nonce>",
-    "domain":            "hap-coordinator.example.org",
+    "challenge":         "<CHAP nonce>",
+    "domain":            "chap-coordinator.example.org",
     "proofValue":        "..."
   }
 }
 ```
 
-The presentation's `proof` binds the holder to the HAP signing key
+The presentation's `proof` binds the holder to the CHAP signing key
 (`verificationMethod` identifies it). The challenge and domain
 prevent replay.
 
@@ -121,7 +121,7 @@ The Coordinator resolves the DID to look up verification methods.
 
 ## 6. Selective disclosure
 
-W3C VC supports selective disclosure (SD-JWT, BBS+). HAP can carry
+W3C VC supports selective disclosure (SD-JWT, BBS+). CHAP can carry
 either:
 
 - A **full** credential (all claims visible).
@@ -172,7 +172,7 @@ from the workspace.
 ## 10. Composition notes
 
 - **With `security-signed`:** the VP's `verificationMethod` binds
-  the HAP signing key.
+  the CHAP signing key.
 - **With `audit-scitt`:** SCITT statements can carry the holder's
   DID as the issuer identifier — the audit chain remains valid
   across organisational boundaries.

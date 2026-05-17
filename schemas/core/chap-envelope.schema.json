@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hap.dev/schemas/0.1/hap-envelope.schema.json",
-  "title": "HAP Envelope",
-  "description": "The envelope wrapping every Human-Agent Protocol message.",
+  "$id": "https://chap.dev/schemas/0.1/chap-envelope.schema.json",
+  "title": "CHAP Envelope",
+  "description": "The envelope wrapping every Collaborative Human-Agent Protocol message.",
   "type": "object",
-  "required": ["hap", "id", "ts", "workspace", "from", "to", "type", "evidence"],
+  "required": ["chap", "id", "ts", "workspace", "from", "to", "type", "evidence"],
   "properties": {
-    "hap": {
+    "chap": {
       "type": "string",
       "description": "Wire version of the protocol (SemVer).",
       "pattern": "^\\d+\\.\\d+(\\.\\d+)?(-[A-Za-z0-9.-]+)?$",

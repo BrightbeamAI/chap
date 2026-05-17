@@ -1,12 +1,12 @@
 /**
- * HAP Conformance Test Harness
+ * CHAP Conformance Test Harness
  *
- * Runs a battery of test vectors against any HAP endpoint and reports
+ * Runs a battery of test vectors against any CHAP endpoint and reports
  * pass/fail. Produces an in-toto-compatible attestation on success.
  *
  * Usage:
  *   tsx harness.ts                                            # tests localhost:8080
- *   tsx harness.ts --url=http://my-hap.example.org/hap        # tests a remote endpoint
+ *   tsx harness.ts --url=http://my-chap.example.org/chap        # tests a remote endpoint
  *   tsx harness.ts --url=...  --workspace=wsp_conformance     # custom workspace id
  *   tsx harness.ts --core-only                                # skip profile tests
  *   tsx harness.ts --attest > attestation.json                # write in-toto attestation
@@ -27,7 +27,7 @@ interface Args {
 
 function parseArgs(): Args {
   const args: Args = {
-    url:       process.env.HAP_URL ?? "http://localhost:8080/hap",
+    url:       process.env.CHAP_URL ?? "http://localhost:8080/chap",
     workspace: `wsp_conformance_${Math.random().toString(36).slice(2, 8)}`,
     coreOnly:  false,
     attest:    false,
@@ -51,7 +51,7 @@ function parseArgs(): Args {
 }
 
 // ============================================================
-//   HAP client
+//   CHAP client
 // ============================================================
 
 class HapClient {
@@ -454,7 +454,7 @@ function report(args: Args): boolean {
   }
 
   console.log("\n" + "═".repeat(60));
-  console.log("  HAP Conformance Test Results");
+  console.log("  CHAP Conformance Test Results");
   console.log("═".repeat(60));
   console.log(`  Endpoint:  ${args.url}`);
   console.log(`  Workspace: ${args.workspace}`);
@@ -501,7 +501,7 @@ function attestation(args: Args, passed: boolean): unknown {
         digest: { sha256: "0".repeat(64) },
       },
     ],
-    predicateType: "https://hap.dev/conformance/v1",
+    predicateType: "https://chap.dev/conformance/v1",
     predicate: {
       timestamp: new Date().toISOString(),
       passed,
@@ -524,7 +524,7 @@ async function main(): Promise<void> {
   const args = parseArgs();
 
   if (!args.attest) {
-    console.log(`HAP Conformance Harness`);
+    console.log(`CHAP Conformance Harness`);
     console.log(`Endpoint:  ${args.url}`);
     console.log(`Workspace: ${args.workspace}`);
     if (args.coreOnly) console.log(`Mode:      Core-only`);

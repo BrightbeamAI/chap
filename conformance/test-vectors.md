@@ -1,4 +1,4 @@
-# HAP Conformance Test Vectors
+# CHAP Conformance Test Vectors
 
 This document provides canonical input/output pairs that an
 implementation can use to self-check its signing, canonicalisation,
@@ -8,7 +8,7 @@ working Ed25519 and SHA-256 library can regenerate them.
 The vectors cover three operations:
 
 1. **Ed25519 signing** (against RFC 8032 test vector 1).
-2. **JCS canonicalisation** of a sample HAP envelope.
+2. **JCS canonicalisation** of a sample CHAP envelope.
 3. **Evidence-chain linkage** of a genesis entry plus three entries.
 
 If an implementation matches all three, its cryptographic core is
@@ -35,7 +35,7 @@ EXPECTED SIGNATURE (64 bytes, hex):
   e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bdfa987599ce19a1c6d27
 ```
 
-In HAP, the signature is base64-encoded and prefixed with the
+In CHAP, the signature is base64-encoded and prefixed with the
 algorithm and key id, e.g.
 
 ```
@@ -51,7 +51,7 @@ above, you're conformant on this vector.
 
 JCS (RFC 8785) is required because Ed25519 signing is over bytes,
 and signing arbitrary JSON requires a deterministic byte
-representation. The HAP rules:
+representation. The CHAP rules:
 
 - Keys sorted lexicographically at every nesting level.
 - No insignificant whitespace.
@@ -66,7 +66,7 @@ representation. The HAP rules:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2A",
   "ts": "2026-05-17T09:00:00.000Z",
   "workspace": "wsp_test",
@@ -82,7 +82,7 @@ representation. The HAP rules:
 ### Expected canonical form (exact bytes)
 
 ```
-{"evidence":{"prev_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000"},"from":"human:[email protected]","hap":"0.1","id":"01HZ9YWQ7K3X8M2V4N6P8R0T2A","method":"participant.heartbeat","params":{"load":0.42,"status":"ready"},"to":"service:[email protected]","ts":"2026-05-17T09:00:00.000Z","type":"notification","workspace":"wsp_test"}
+{"evidence":{"prev_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000"},"from":"human:[email protected]","chap":"0.1","id":"01HZ9YWQ7K3X8M2V4N6P8R0T2A","method":"participant.heartbeat","params":{"load":0.42,"status":"ready"},"to":"service:[email protected]","ts":"2026-05-17T09:00:00.000Z","type":"notification","workspace":"wsp_test"}
 ```
 
 ### Expected SHA-256 of the canonical bytes
@@ -179,7 +179,7 @@ assert entry[i].prev_hash == expected_prev_hash_at_i
 
 If your chain walker reports those exact expected `prev_hash` values,
 you've verified linkage. A real chain replaces the placeholder
-envelopes with full HAP envelopes; the linkage logic is the same.
+envelopes with full CHAP envelopes; the linkage logic is the same.
 
 ---
 

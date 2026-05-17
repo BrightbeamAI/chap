@@ -8,10 +8,10 @@
  * Usage:
  *   tsx analyze-overrides.ts                          # default workspace
  *   tsx analyze-overrides.ts wsp_my_workspace         # named workspace
- *   HAP_URL=http://prod.example.org/hap tsx analyze-overrides.ts wsp_prod
+ *   CHAP_URL=http://prod.example.org/chap tsx analyze-overrides.ts wsp_prod
  */
 
-const HAP = process.env.HAP_URL ?? "http://localhost:8080/hap";
+const CHAP = process.env.CHAP_URL ?? "http://localhost:8080/chap";
 const WS  = process.argv[2] ?? "wsp_support_triage";
 
 interface OverrideParams {
@@ -26,7 +26,7 @@ interface OverrideParams {
 }
 
 async function call(method: string, params: Record<string, unknown>): Promise<any> {
-  const res = await fetch(HAP, {
+  const res = await fetch(CHAP, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ jsonrpc: "2.0", id: "a1", method, params }),
@@ -156,7 +156,7 @@ async function main(): Promise<void> {
   console.log(`│`);
   console.log("└" + "─".repeat(58) + "┘");
 
-  console.log("\nThis report was produced from the HAP audit log alone.");
+  console.log("\nThis report was produced from the CHAP audit log alone.");
   console.log("No additional instrumentation. No retroactive tagging.");
   console.log("Every override fed into this report was captured as a side effect");
   console.log("of normal work. That's the dividend.\n");

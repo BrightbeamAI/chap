@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HAP — The Human-Agent Protocol · Brightbeam</title>
+<title>CHAP — The Collaborative Human-Agent Protocol · Brightbeam</title>
 <style>
 /* ============================================================
    BRIGHTBEAM BRAND TOKENS
@@ -494,14 +494,14 @@ pre.code, .code {
   box-shadow: var(--shadow-sm);
 }
 .stack-layer:hover { transform: translateX(6px); box-shadow: var(--shadow-md); }
-.stack-layer--hap {
+.stack-layer--chap {
   background: linear-gradient(135deg, var(--ember) 0%, #FF7F00 60%, var(--amber) 100%);
   border-top-color: var(--amber);
   border: none;
   color: #fff;
   box-shadow: var(--shadow-md);
 }
-.stack-layer--hap:hover { transform: translateX(8px); box-shadow: var(--shadow-lg); }
+.stack-layer--chap:hover { transform: translateX(8px); box-shadow: var(--shadow-lg); }
 .stack-name {
   font-size: 36px;
   font-weight: 900;
@@ -509,7 +509,7 @@ pre.code, .code {
   letter-spacing: -0.02em;
   line-height: 1;
 }
-.stack-layer--hap .stack-name { color: #fff; }
+.stack-layer--chap .stack-name { color: #fff; }
 .stack-name small {
   display: block;
   font-size: 13px;
@@ -519,7 +519,7 @@ pre.code, .code {
   color: var(--ember);
   margin-top: 8px;
 }
-.stack-layer--hap .stack-name small { color: #fff; opacity: 0.95; }
+.stack-layer--chap .stack-name small { color: #fff; opacity: 0.95; }
 .stack-role {
   color: var(--gray-70);
   font-size: 17px;
@@ -528,7 +528,7 @@ pre.code, .code {
   max-width: 16em;
   line-height: 1.4;
 }
-.stack-layer--hap .stack-role { color: #fff; opacity: 0.95; }
+.stack-layer--chap .stack-role { color: #fff; opacity: 0.95; }
 
 .stack-explain h3 { margin-bottom: 16px; }
 .stack-explain p { font-size: 17px; line-height: 1.65; }
@@ -1279,7 +1279,7 @@ section.s { scroll-margin-top: 80px; }
         </g>
       </svg>
     </div>
-    <div class="nav-tag">HAP · Demonstrator</div>
+    <div class="nav-tag">CHAP · Demonstrator</div>
   </div>
   <div class="nav-links">
     <a href="#problem">Problem</a>
@@ -1297,12 +1297,12 @@ section.s { scroll-margin-top: 80px; }
 <header class="hero">
   <div class="hero-grid">
     <div class="hero-text">
-      <div class="section-tag reveal">The Human-Agent Protocol</div>
+      <div class="section-tag reveal">The Collaborative Human-Agent Protocol</div>
       <h1 class="reveal reveal--d1">
         The room where humans and agents do <em>real work.</em>
       </h1>
       <p class="lede reveal reveal--d2">
-        HAP is the open standard for multi-human, multi-agent
+        CHAP is the open standard for multi-human, multi-agent
         collaboration. Third pillar of the agent protocol stack —
         alongside MCP and A2A — for what happens when humans, agents,
         and tools work together in one shared workspace.
@@ -1401,7 +1401,7 @@ section.s { scroll-margin-top: 80px; }
       </div>
     </div>
 
-    <p class="reveal">Here's the question that pays for HAP:</p>
+    <p class="reveal">Here's the question that pays for CHAP:</p>
 
     <p class="pullquote reveal">
       what if every one of those edits became <em>data?</em>
@@ -1421,7 +1421,7 @@ section.s { scroll-margin-top: 80px; }
     </p>
 
     <p class="reveal">
-      HAP exists to capture that signal. <em>Not as a side feature.</em>
+      CHAP exists to capture that signal. <em>Not as a side feature.</em>
       As the core wire format. Every override is structured (diff,
       rationale, tags, policy references) and lives in the audit log
       forever. Queryable. Aggregatable. Trainable on.
@@ -1451,7 +1451,7 @@ section.s { scroll-margin-top: 80px; }
       </div>
 
       <div class="compare-panel compare-panel--code">
-        <div class="compare-label">What HAP records</div>
+        <div class="compare-label">What CHAP records</div>
 <pre class="code"><span class="k">"method"</span>: <span class="s">"decide.override"</span>,
 <span class="k">"params"</span>: {
   <span class="k">"task_id"</span>: <span class="s">"tsk_…"</span>,
@@ -1493,14 +1493,14 @@ section.s { scroll-margin-top: 80px; }
       <h2 class="reveal">Three pillars. <em>One stack.</em></h2>
       <p class="lede reveal">
         The open agent protocol stack has been forming over the last two
-        years. HAP is the layer where humans live.
+        years. CHAP is the layer where humans live.
       </p>
     </div>
 
     <div class="stack-section reveal">
       <div class="stack">
-        <div class="stack-layer stack-layer--hap">
-          <div class="stack-name">HAP <small>THIS LAYER</small></div>
+        <div class="stack-layer stack-layer--chap">
+          <div class="stack-name">CHAP <small>THIS LAYER</small></div>
           <div class="stack-role">Humans + agents collaborating in workspaces</div>
         </div>
         <div class="stack-layer">
@@ -1516,8 +1516,8 @@ section.s { scroll-margin-top: 80px; }
       <div class="stack-explain">
         <h3>Each protocol owns one concern.</h3>
         <p>
-          They compose without conflict. An agent inside a HAP workspace
-          can call MCP tools and delegate to A2A peers. The HAP audit
+          They compose without conflict. An agent inside a CHAP workspace
+          can call MCP tools and delegate to A2A peers. The CHAP audit
           log cites those interactions <em>without re-implementing either protocol.</em>
         </p>
       </div>
@@ -1527,7 +1527,7 @@ section.s { scroll-margin-top: 80px; }
   <div class="container container--narrow" style="margin-top: 72px;">
     <div class="section-subhead reveal">Core in seven methods</div>
     <p class="reveal" style="margin-bottom: 20px;">
-      HAP Core is the minimum — implementable in a weekend in any
+      CHAP Core is the minimum — implementable in a weekend in any
       language. Seven methods over JSON-RPC 2.0. That's enough to run
       a compliant workspace.
     </p>
@@ -1638,7 +1638,7 @@ section.s { scroll-margin-top: 80px; }
           <div class="step-counter" id="step-counter">0 / 6</div>
         </div>
         <div class="step-explainer" id="step-explainer">
-          Click <strong>Start</strong> to walk through a real HAP flow, envelope by envelope.
+          Click <strong>Start</strong> to walk through a real CHAP flow, envelope by envelope.
         </div>
       </div>
     </div>
@@ -1832,7 +1832,7 @@ section.s { scroll-margin-top: 80px; }
       <div class="section-tag reveal">Adoption</div>
       <h2 class="reveal">Pick what you need. <em>Skip what you don't.</em></h2>
       <p class="lede reveal">
-        HAP is Core plus ten optional profiles. A working deployment
+        CHAP is Core plus ten optional profiles. A working deployment
         starts with Core alone. Each profile adds a focused capability
         and stays independent of the rest.
       </p>
@@ -2007,7 +2007,7 @@ section.s { scroll-margin-top: 80px; }
     auditLog.innerHTML = "";
     if (current === 0) {
       auditLog.innerHTML = `<div class="audit-empty">Audit log empty. Click "Start" to begin.</div>`;
-      explainer.innerHTML = `Click <strong>Start</strong> to walk through a real HAP flow, envelope by envelope.`;
+      explainer.innerHTML = `Click <strong>Start</strong> to walk through a real CHAP flow, envelope by envelope.`;
     } else {
       for (let i = 0; i < current; i++) {
         auditLog.insertAdjacentHTML("beforeend", entryHtml(steps[i]));

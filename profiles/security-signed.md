@@ -2,7 +2,7 @@
 
 **Profile id:** `security-signed/1.0` · **Depends on:** Core
 
-Add Ed25519 message signatures and JCS canonicalisation to HAP
+Add Ed25519 message signatures and JCS canonicalisation to CHAP
 Core. This is the right profile for cross-trust-boundary deployments
 (humans across organisations, agents from multiple vendors,
 deployments subject to non-repudiation requirements).

@@ -1,6 +1,6 @@
 # Release Notes
 
-All notable changes to the Human-Agent Protocol are recorded here.
+All notable changes to the Collaborative Human-Agent Protocol are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the protocol adheres to [Semantic Versioning 2.0](https://semver.org).
 
@@ -11,13 +11,13 @@ Profiles version independently from Core. A profile version
 
 ## 1.0 — current
 
-The Human-Agent Protocol at full surface: Core, ten profiles,
+The Collaborative Human-Agent Protocol at full surface: Core, ten profiles,
 schemas, reference implementations, examples, conformance suite,
 and standards bindings.
 
 ### Core (`core/1.0`)
 
-- JSON-RPC 2.0 envelope with HAP-specific fields (`workspace`,
+- JSON-RPC 2.0 envelope with CHAP-specific fields (`workspace`,
   `from`, `to`, `ts`) inside `params`.
 - Seven methods: `workspace.describe`, `participant.join`,
   `participant.leave`, `task.create`, `task.update`,
@@ -48,13 +48,13 @@ and standards bindings.
 
 ### Integration patterns
 
-- [HAP with MCP](./integrations/HAP-with-MCP.md): cite MCP tool
-  calls inside HAP artefacts with input/output hashes.
-- [HAP with A2A](./integrations/HAP-with-A2A.md): bridge external
+- [CHAP with MCP](./integrations/CHAP-with-MCP.md): cite MCP tool
+  calls inside CHAP artefacts with input/output hashes.
+- [CHAP with A2A](./integrations/CHAP-with-A2A.md): bridge external
   A2A peers as `service:bridge…` participants.
-- [HAP with OIDC / OAuth 2.0](./integrations/HAP-with-OIDC-OAuth2.md):
+- [CHAP with OIDC / OAuth 2.0](./integrations/CHAP-with-OIDC-OAuth2.md):
   deployment patterns for the identity binding.
-- [Deployment patterns](./integrations/HAP-deployment-patterns.md):
+- [Deployment patterns](./integrations/CHAP-deployment-patterns.md):
   Coordinator topology, transport selection, audit-store sizing.
 
 ### Schemas
@@ -77,7 +77,7 @@ and standards bindings.
 ### Demo
 
 - [`demo/index.html`](./demo/index.html): a single-file interactive
-  HTML walkthrough. Tells HAP's story in five minutes — problem
+  HTML walkthrough. Tells CHAP's story in five minutes — problem
   framing, the track-changes analogy, the protocol stack, an
   interactive workspace simulation, the override-as-data dividend,
   and the profile picker. Self-contained, works offline.
@@ -90,14 +90,14 @@ and standards bindings.
   and outputs for wire-format, JCS, Ed25519, and method-level
   conformance.
 - [`conformance/harness/`](./conformance/harness/): runnable test
-  harness that validates any HAP endpoint against the canonical
+  harness that validates any CHAP endpoint against the canonical
   vectors and produces an [in-toto attestation](https://github.com/in-toto/attestation)
   on success. 21 tests covering wire format, all 7 Core methods,
   and the 6 Review methods.
 
 ### Governance
 
-- HEP (HAP Enhancement Proposal) process documented in
+- HEP (CHAP Enhancement Proposal) process documented in
   [`GOVERNANCE.md`](./GOVERNANCE.md).
 - License: Apache 2.0 (code) + CC-BY 4.0 (specification).
 - Independent profile versioning; backward-compatible additions are
@@ -120,7 +120,7 @@ and standards bindings.
 
 ### Standards reused
 
-HAP reuses, rather than reinvents, the following standards:
+CHAP reuses, rather than reinvents, the following standards:
 
 | Layer       | Standard                                                            |
 |-------------|---------------------------------------------------------------------|

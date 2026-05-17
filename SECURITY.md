@@ -1,6 +1,6 @@
 # Security Policy
 
-This document describes HAP's security model, its assumptions, the threats it
+This document describes CHAP's security model, its assumptions, the threats it
 defends against, the threats it explicitly does **not** defend against, and
 how to report vulnerabilities responsibly.
 
@@ -8,7 +8,7 @@ how to report vulnerabilities responsibly.
 
 ## 1. Threat model
 
-HAP is designed for environments where humans, agents, and services share a
+CHAP is designed for environments where humans, agents, and services share a
 collaboration workspace and produce decisions whose provenance must be
 verifiable after the fact. The model assumes:
 
@@ -41,19 +41,19 @@ verifiable after the fact. The model assumes:
 
 ### Threats out of scope
 
-HAP does **not** by itself defend against:
+CHAP does **not** by itself defend against:
 
-- **Content confidentiality.** HAP does not encrypt artefact payloads in the
+- **Content confidentiality.** CHAP does not encrypt artefact payloads in the
   evidence chain. Sensitive content must be referenced by URI and stored in
   a system with its own access controls, or wrapped with a future
   confidentiality extension (see CHANGELOG).
 - **Side-channel attacks on the participant's environment.** Key extraction
   via local malware, screen-scraping a human reviewer, or prompt-injecting
   an agent are out of scope.
-- **Social engineering of human participants.** HAP records what was
+- **Social engineering of human participants.** CHAP records what was
   decided, not whether the decider was tricked.
 - **Compromise of the identity provider.** If the OIDC IdP issues a token
-  to the wrong principal, HAP will faithfully record decisions made under
+  to the wrong principal, CHAP will faithfully record decisions made under
   that token.
 - **Quantum adversaries.** Ed25519 is not post-quantum. A future revision
   will offer hybrid signatures.
@@ -108,7 +108,7 @@ long-term audit. The key SHOULD be backed by an HSM in production.
 
 ## 4. Privileged operations
 
-Methods marked `privileged: true` in [`schemas/hap-methods.schema.json`](./schemas/hap-methods.schema.json)
+Methods marked `privileged: true` in [`schemas/chap-methods.schema.json`](./schemas/chap-methods.schema.json)
 require step-up authentication. The Coordinator MUST enforce that the
 caller's most recent OIDC `auth_time` is within the configured step-up
 window (default: 5 minutes) and that the caller's token carries an
@@ -160,7 +160,7 @@ A conformant Coordinator MUST:
 ## 7. Reporting a vulnerability
 
 If you believe you have found a security issue in this specification, in the
-reference implementation, or in a deployed HAP system you operate, please
+reference implementation, or in a deployed CHAP system you operate, please
 follow **coordinated disclosure**:
 
 1. **Do not** open a public issue.

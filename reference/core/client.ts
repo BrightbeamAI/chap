@@ -1,5 +1,5 @@
 /**
- * HAP Core reference client — demo walkthrough.
+ * CHAP Core reference client — demo walkthrough.
  *
  * Walks every Core method against a running server:
  *   1. workspace.describe (empty)
@@ -13,7 +13,7 @@
  * Run:  npm run demo:client   (with the server running)
  */
 
-const HAP = process.env.HAP_URL ?? "http://localhost:8080/hap";
+const CHAP = process.env.CHAP_URL ?? "http://localhost:8080/chap";
 
 interface Envelope {
   jsonrpc: "2.0";
@@ -31,7 +31,7 @@ function id(): string {
 
 async function call(method: string, params: Record<string, unknown>): Promise<unknown> {
   const env: Envelope = { jsonrpc: "2.0", id: id(), method, params };
-  const res = await fetch(HAP, {
+  const res = await fetch(CHAP, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify(env),
@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   const BOT = "agent:triage-bot";
   const COORD = "service:coordinator@example.org";
 
-  console.log(`HAP Core demo against ${HAP}`);
+  console.log(`CHAP Core demo against ${CHAP}`);
   console.log("=".repeat(60));
 
   // 1. participant.join — alice

@@ -1,6 +1,6 @@
-# HAP Profiles
+# CHAP Profiles
 
-A **profile** is an optional, named, versioned extension to HAP
+A **profile** is an optional, named, versioned extension to CHAP
 Core. Each profile adds a focused capability — message signing,
 SCITT-backed audit, structured review, multi-party deliberation,
 etc. — without changing Core.
@@ -30,8 +30,8 @@ Each row is a self-contained document.
 
 Two integration documents complement the profiles:
 
-- [`../integrations/HAP-with-MCP.md`](../integrations/HAP-with-MCP.md) — how to cite MCP tool calls inside HAP artefacts.
-- [`../integrations/HAP-with-A2A.md`](../integrations/HAP-with-A2A.md) — how to bridge cross-organisation peers as `service:` participants.
+- [`../integrations/CHAP-with-MCP.md`](../integrations/CHAP-with-MCP.md) — how to cite MCP tool calls inside CHAP artefacts.
+- [`../integrations/CHAP-with-A2A.md`](../integrations/CHAP-with-A2A.md) — how to bridge cross-organisation peers as `service:` participants.
 
 ---
 
@@ -64,7 +64,7 @@ Common combinations:
 ### Internal-team chatbot
 
 `core` only. The conversation lives in your existing chat platform;
-HAP just structures the task delegation and audit. No crypto, no
+CHAP just structures the task delegation and audit. No crypto, no
 external dependencies.
 
 ### Production support-triage workspace
@@ -129,7 +129,7 @@ at the 1.0 release.
 If you have a workflow pattern not covered by an existing profile,
 the path to standardising it is:
 
-1. Write a HEP (HAP Enhancement Proposal) — see [`../GOVERNANCE.md`](../GOVERNANCE.md) §3.2.
+1. Write a HEP (CHAP Enhancement Proposal) — see [`../GOVERNANCE.md`](../GOVERNANCE.md) §3.2.
 2. Build a reference implementation alongside the proposal.
 3. Demonstrate at least one production use.
 4. Submit the profile spec as a PR to `profiles/<name>.md`.
@@ -144,7 +144,7 @@ Profiles MAY:
 
 - Add new methods.
 - Add new envelope fields under `params`.
-- Add new error codes in the `-32000` to `-32099` HAP-private range.
+- Add new error codes in the `-32000` to `-32099` CHAP-private range.
 - Tighten Core's optional behaviours (e.g. require signatures).
 - Add new state-machine transitions on existing entities.
 

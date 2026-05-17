@@ -1,7 +1,7 @@
 {
-  "name": "@hap/reference-core",
+  "name": "@chap/reference-core",
   "version": "0.1.0",
-  "description": "HAP Core reference implementation — weekend-buildable.",
+  "description": "CHAP Core reference implementation — weekend-buildable.",
   "license": "Apache-2.0",
   "type": "module",
   "private": true,

@@ -1,7 +1,7 @@
 {
-  "name": "@hap/reference-core-plus-review",
+  "name": "@chap/reference-core-plus-review",
   "version": "1.0.0",
-  "description": "HAP Core + Review profile reference implementation.",
+  "description": "CHAP Core + Review profile reference implementation.",
   "license": "Apache-2.0",
   "type": "module",
   "private": true,

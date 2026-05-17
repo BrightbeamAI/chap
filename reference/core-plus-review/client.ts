@@ -8,7 +8,7 @@
  *   5. audit log read — the override is now structured data
  */
 
-const HAP = process.env.HAP_URL ?? "http://localhost:8080/hap";
+const CHAP = process.env.CHAP_URL ?? "http://localhost:8080/chap";
 const WS = "wsp_support_triage";
 const ALICE  = "human:alice@example.org";
 const BOT    = "agent:triage-bot";
@@ -17,7 +17,7 @@ const COORD  = "service:coordinator@example.org";
 let nextId = 0;
 async function call(method: string, params: Record<string, unknown>): Promise<any> {
   const env = { jsonrpc: "2.0", id: `c${++nextId}`, method, params };
-  const res = await fetch(HAP, {
+  const res = await fetch(CHAP, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify(env),
@@ -36,7 +36,7 @@ async function call(method: string, params: Record<string, unknown>): Promise<an
 const ts = () => new Date().toISOString();
 
 async function main(): Promise<void> {
-  console.log("HAP Core+Review demo");
+  console.log("CHAP Core+Review demo");
   console.log("=".repeat(50));
 
   // -------- Set up the workspace --------

@@ -1,11 +1,11 @@
 /**
- * HAP Core reference server — weekend-implementation.
+ * CHAP Core reference server — weekend-implementation.
  *
  * Implements all 7 Core methods, in-memory state, plain HTTP+JSON-RPC.
  * No crypto, no profiles. ~300 lines.
  *
  * Run:  npm install && npm run start:demo
- * Test: curl -X POST http://localhost:8080/hap -d '<envelope>'
+ * Test: curl -X POST http://localhost:8080/chap -d '<envelope>'
  *
  * For production, swap the in-memory state for a database, add a real
  * auth layer (bearer or mTLS), and pick the profiles you need from
@@ -384,8 +384,8 @@ function reply(res: ServerResponse, status: number, body: unknown): void {
 }
 
 const server = createServer(async (req, res) => {
-  if (req.method !== "POST" || req.url !== "/hap") {
-    return reply(res, 404, { error: "POST /hap" });
+  if (req.method !== "POST" || req.url !== "/chap") {
+    return reply(res, 404, { error: "POST /chap" });
   }
 
   let env: Envelope;
@@ -402,7 +402,7 @@ const server = createServer(async (req, res) => {
 
 const port = parseInt(process.env.PORT ?? "8080", 10);
 server.listen(port, () => {
-  console.log(`HAP Core reference listening on http://localhost:${port}/hap`);
-  console.log(`Try: curl -X POST http://localhost:${port}/hap -H 'Content-Type: application/json' \\`);
+  console.log(`CHAP Core reference listening on http://localhost:${port}/chap`);
+  console.log(`Try: curl -X POST http://localhost:${port}/chap -H 'Content-Type: application/json' \\`);
   console.log(`     -d '{"jsonrpc":"2.0","id":"1","method":"workspace.describe","params":{"workspace":"wsp_demo"}}'`);
 });

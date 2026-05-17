@@ -27,7 +27,7 @@ The override-analyser service emits an alert as a notification:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZBE0Q9K3X8M2V4N6P8R0TBA",
   "ts": "2026-05-17T16:18:30.000Z",
   "workspace": "wsp_support_triage",
@@ -55,7 +55,7 @@ The on-call operator, Jordan, recently re-authenticated. He sends:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZBE0Q9K3X8M2V4N6P8R0TBC",
   "ts": "2026-05-17T16:19:42.014Z",
   "workspace": "wsp_support_triage",
@@ -107,7 +107,7 @@ Before changing anything, Jordan asks for a workspace snapshot:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZBE0Q9K3X8M2V4N6P8R0TBG",
   "ts": "2026-05-17T16:20:10.000Z",
   "workspace": "wsp_support_triage",
@@ -159,7 +159,7 @@ task targeted at a different (older, known-good) agent version:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZBE0Q9K3X8M2V4N6P8R0TBJ",
   "ts": "2026-05-17T16:24:00.001Z",
   "workspace": "wsp_support_triage",
@@ -203,7 +203,7 @@ agent v3.2 for the time being. He uses `control.rollback`:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZBE0Q9K3X8M2V4N6P8R0TBM",
   "ts": "2026-05-17T16:38:00.001Z",
   "workspace": "wsp_support_triage",
@@ -254,7 +254,7 @@ With the workspace back on the safe configuration, Jordan resumes:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZBE0Q9K3X8M2V4N6P8R0TBN",
   "ts": "2026-05-17T16:40:11.000Z",
   "workspace": "wsp_support_triage",

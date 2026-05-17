@@ -1,6 +1,4 @@
-# Human-Agent Protocol (HAP) — Specification
-
-# Human-Agent Protocol — Specification
+# Collaborative Human-Agent Protocol (CHAP) — Specification
 
 **Audience:** Implementers · **Format:** Combined Core + Profiles reference
 
@@ -27,7 +25,7 @@
 
 ## Status of this document
 
-This document specifies the Human-Agent Protocol. The keywords **MUST**,
+This document specifies the Collaborative Human-Agent Protocol. The keywords **MUST**,
 **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**, **SHOULD**,
 **SHOULD NOT**, **RECOMMENDED**, **MAY**, and **OPTIONAL** are to be
 interpreted as described in [RFC 2119] and [RFC 8174] when,
@@ -77,7 +75,7 @@ systems re-invents the same primitives:
 
 These ad-hoc layers do not interoperate, do not compose with existing
 standards, and produce audit logs whose integrity is hard to verify after
-the fact. HAP standardises this layer.
+the fact. CHAP standardises this layer.
 
 ### 1.2 Design goals
 
@@ -91,18 +89,18 @@ the fact. HAP standardises this layer.
    concerns enforced by the Coordinator.
 5. **Transport-agnostic.** The semantics are identical over WebSocket,
    HTTP+SSE, polling, NATS, Kafka, or RabbitMQ.
-6. **Composable with MCP and A2A.** HAP cites tool calls and cross-system
+6. **Composable with MCP and A2A.** CHAP cites tool calls and cross-system
    agent messages inside its own evidence chain.
 7. **Boring on purpose.** JSON-RPC-2.0-style envelope, JSON Schema for
    every primitive, Ed25519 + JCS for signing.
 
 ### 1.3 Non-goals
 
-HAP is not:
+CHAP is not:
 
 - A user interface specification. It defines a wire format and a method
   catalogue, not the shape of an approval dialog.
-- A workflow engine. HAP carries the messages a workflow engine
+- A workflow engine. CHAP carries the messages a workflow engine
   produces; it does not itself execute long-running business logic.
 - A replacement for MCP or A2A. It composes with both.
 - A confidentiality layer for sensitive payloads. Use opaque
@@ -118,7 +116,7 @@ This section defines terms used normatively throughout the document. See
 
 - **Workspace.** A named, addressable collaboration context with a
   membership list, a policy, a mode, and an append-only evidence log.
-- **Participant.** Any entity that can send or receive HAP messages
+- **Participant.** Any entity that can send or receive CHAP messages
   inside a workspace. Participants are typed as `human`, `agent`,
   `service`, `group`, or `workspace`.
 - **Coordinator.** The component that mediates a workspace: routes
@@ -131,7 +129,7 @@ This section defines terms used normatively throughout the document. See
   a structured record.
 - **Override.** An artefact that records a human's modification of an
   agent's output, including the diff, rationale, and applicable tags.
-- **Evidence entry.** A signed, hash-linked record of a single HAP
+- **Evidence entry.** A signed, hash-linked record of a single CHAP
   message inside a workspace's evidence log.
 - **Mode.** The operational regime of a workspace or a specific task:
   `shadow`, `trial`, or `production`.
@@ -140,32 +138,32 @@ This section defines terms used normatively throughout the document. See
 
 ## 3. Protocol stack and positioning
 
-HAP sits alongside MCP and A2A as the third layer of the agent-protocol
+CHAP sits alongside MCP and A2A as the third layer of the agent-protocol
 stack. The three protocols address disjoint concerns:
 
 | Protocol | Concern                          | Primary endpoints      |
 |----------|----------------------------------|------------------------|
 | **MCP**  | An agent calling a tool          | Agent ↔ Tool server    |
 | **A2A**  | Agents talking across systems    | Agent ↔ Agent          |
-| **HAP**  | The shared collaboration room    | Human ↔ Agent ↔ Human  |
+| **CHAP**  | The shared collaboration room    | Human ↔ Agent ↔ Human  |
 
 A typical deployment looks like:
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│                          HAP Workspace                              │
+│                          CHAP Workspace                              │
 │  (humans, agents, services as peers; one evidence chain)            │
 │                                                                     │
 │   human ──┐                       ┌── agent ──[ MCP ]── tool        │
-│           ├─ HAP ─ Coordinator ─┤                                   │
+│           ├─ CHAP ─ Coordinator ─┤                                   │
 │   human ──┘                       └── agent ──[ A2A ]── peer        │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
 When an agent calls a tool over MCP, the call and its result are cited
-inside the HAP evidence chain so that a single audit covers the full
+inside the CHAP evidence chain so that a single audit covers the full
 human-agent-tool path. When an agent delegates work to a peer in another
-organisation over A2A, a HAP bridge participant represents the remote
+organisation over A2A, a CHAP bridge participant represents the remote
 work in the local workspace.
 
 ---
@@ -174,12 +172,12 @@ work in the local workspace.
 
 ### 4.1 Envelope
 
-Every HAP message is a JSON object conforming to
-[`schemas/hap-envelope.schema.json`](./schemas/hap-envelope.schema.json).
+Every CHAP message is a JSON object conforming to
+[`schemas/chap-envelope.schema.json`](./schemas/chap-envelope.schema.json).
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2A",
   "ts": "2026-05-17T09:14:22.184Z",
   "workspace": "wsp_support_triage",
@@ -199,7 +197,7 @@ Field-by-field:
 
 | Field       | Type            | Required | Description                                                                 |
 |-------------|-----------------|----------|-----------------------------------------------------------------------------|
-| `hap`       | string (SemVer) | yes      | Wire version. Implementations MUST refuse unrecognised major versions.      |
+| `chap`       | string (SemVer) | yes      | Wire version. Implementations MUST refuse unrecognised major versions.      |
 | `id`        | string (ULID)   | yes      | Globally unique message identifier. MUST be a ULID (Crockford-base32, 26 chars). |
 | `ts`        | string (RFC3339) | yes     | UTC timestamp with millisecond precision. MUST be monotonic per `from`.     |
 | `workspace` | string          | yes      | Workspace identifier, prefix `wsp_`.                                        |
@@ -214,7 +212,7 @@ Field-by-field:
 
 ### 4.2 Message types
 
-HAP uses a JSON-RPC-2.0-inspired but not identical three-type model:
+CHAP uses a JSON-RPC-2.0-inspired but not identical three-type model:
 
 - **`request`** — solicits a response. Carries `method` and `params`.
   The Coordinator MAY answer requests directly (e.g. for routing or
@@ -278,7 +276,7 @@ in human-readable UI.
 
 ### 5.2 Signing algorithm
 
-Every HAP message MUST be signed. The signature algorithm is
+Every CHAP message MUST be signed. The signature algorithm is
 **Ed25519** ([RFC 8032]). The signed input is the
 **JCS canonicalisation** ([RFC 8785]) of the envelope **with the
 `evidence.sig` field removed** but `evidence.prev_hash` retained.
@@ -332,7 +330,7 @@ OIDC ID token. The binding follows DPoP ([RFC 9449]) in spirit:
 
 This pattern guarantees that:
 
-- A leaked long-term password cannot be replayed against HAP.
+- A leaked long-term password cannot be replayed against CHAP.
 - A leaked ephemeral key is useful only for the OIDC session's
   remaining lifetime.
 - The audit chain ties every signed action to a specific
@@ -347,7 +345,7 @@ options, in order of preference:
 2. **mTLS** with X.509 certificates issued by an internal CA.
 3. **OIDC client credentials** with a bound JWK.
 
-In every case, the signing key for HAP messages is bound to the
+In every case, the signing key for CHAP messages is bound to the
 workload identity. Long-lived agent identifiers (like
 `agent:triage-bot`) MAY map to a sequence of short-lived keys; the
 mapping is published in the participant descriptor.
@@ -355,7 +353,7 @@ mapping is published in the participant descriptor.
 ### 5.6 Step-up authentication
 
 Methods marked `privileged: true` in the method catalogue
-(see §12 and [`schemas/hap-methods.schema.json`](./schemas/hap-methods.schema.json))
+(see §12 and [`schemas/chap-methods.schema.json`](./schemas/chap-methods.schema.json))
 require step-up authentication. The Coordinator MUST verify that the
 caller's most recent OIDC `auth_time` is within the configured
 step-up window (default: 5 minutes). The step-up window is published
@@ -395,7 +393,7 @@ their evidence chain is sealed. `archived` workspaces are read-only.
 ### 6.2 Descriptor
 
 `workspace.describe` returns a descriptor conforming to
-[`schemas/hap-workspace.schema.json`](./schemas/hap-workspace.schema.json):
+[`schemas/chap-workspace.schema.json`](./schemas/chap-workspace.schema.json):
 
 ```json
 {
@@ -457,7 +455,7 @@ at creation time.
 ### 7.1 Descriptor
 
 Every Participant has a descriptor obtainable via `participant.describe`,
-conforming to [`schemas/hap-participant.schema.json`](./schemas/hap-participant.schema.json):
+conforming to [`schemas/chap-participant.schema.json`](./schemas/chap-participant.schema.json):
 
 ```json
 {
@@ -555,7 +553,7 @@ Transitions are triggered by methods:
 
 ### 8.2 Task descriptor
 
-A Task conforms to [`schemas/hap-task.schema.json`](./schemas/hap-task.schema.json):
+A Task conforms to [`schemas/chap-task.schema.json`](./schemas/chap-task.schema.json):
 
 ```json
 {
@@ -692,7 +690,7 @@ analysing override patterns across time.
 ### 10.1 Evidence chain
 
 Each workspace maintains a single append-only chain of evidence
-entries. Every accepted HAP message produces exactly one entry.
+entries. Every accepted CHAP message produces exactly one entry.
 Entries are linked by SHA-256 hashes:
 
 ```
@@ -799,7 +797,7 @@ higher than the workspace's mode.
 ## 12. Methods
 
 This section enumerates the method catalogue. The authoritative
-machine-readable form is [`schemas/hap-methods.schema.json`](./schemas/hap-methods.schema.json).
+machine-readable form is [`schemas/chap-methods.schema.json`](./schemas/chap-methods.schema.json).
 
 Every method has:
 
@@ -935,17 +933,17 @@ Error responses carry an `error` object:
 
 ### 13.2 Error code ranges
 
-Error codes follow JSON-RPC conventions with HAP-specific extensions:
+Error codes follow JSON-RPC conventions with CHAP-specific extensions:
 
 | Range              | Meaning                                          |
 |--------------------|--------------------------------------------------|
 | -32700             | Parse error                                      |
 | -32600 to -32603   | JSON-RPC standard errors                         |
-| -32400 to -32499   | HAP envelope and identity errors                 |
-| -32500 to -32599   | HAP policy and mode errors                       |
-| -32600 to -32699   | HAP task and lifecycle errors                    |
-| -32700 to -32799   | HAP evidence and audit errors                    |
-| -32800 to -32899   | HAP composition errors (MCP/A2A bridge)          |
+| -32400 to -32499   | CHAP envelope and identity errors                 |
+| -32500 to -32599   | CHAP policy and mode errors                       |
+| -32600 to -32699   | CHAP task and lifecycle errors                    |
+| -32700 to -32799   | CHAP evidence and audit errors                    |
+| -32800 to -32899   | CHAP composition errors (MCP/A2A bridge)          |
 | -32900 to -32999   | Implementation-defined                           |
 
 ### 13.3 Standard error codes
@@ -962,7 +960,7 @@ Error codes follow JSON-RPC conventions with HAP-specific extensions:
 | -32402 | `step_up_required`              | Privileged op without recent auth.                   |
 | -32403 | `unknown_participant`           | `from` or `to` is not a workspace member.            |
 | -32404 | `key_revoked`                   | Signing key has been revoked.                        |
-| -32405 | `version_unsupported`           | `hap` version not recognised.                        |
+| -32405 | `version_unsupported`           | `chap` version not recognised.                        |
 | -32500 | `policy_denied`                 | Caller's role does not permit the method.            |
 | -32501 | `mode_ceiling_exceeded`         | Task mode exceeds workspace ceiling.                 |
 | -32502 | `scope_missing`                 | Recipient has not declared the required scope.       |
@@ -981,7 +979,7 @@ MAY define implementation-specific codes in the -32900 range.
 
 ## 14. Transports
 
-HAP semantics are transport-agnostic. This section defines the
+CHAP semantics are transport-agnostic. This section defines the
 **bindings**: how envelopes are serialised onto specific transports.
 
 ### 14.1 Common requirements
@@ -1000,7 +998,7 @@ For all transports:
 
 The WebSocket binding uses `wss://` URLs. Each WebSocket frame
 contains exactly one envelope. The subprotocol identifier is
-`hap.v1`. Initial connection requires an `Authorization` header
+`chap.v1`. Initial connection requires an `Authorization` header
 carrying the OIDC ID token or service credential.
 
 See [`reference/transport-ws.ts`](./reference/transport-ws.ts) for
@@ -1010,10 +1008,10 @@ a reference implementation.
 
 Two endpoints:
 
-- **`POST /hap`** — single-envelope submission. Returns the
+- **`POST /chap`** — single-envelope submission. Returns the
   Coordinator's acknowledgement (a `response` envelope) in the
   HTTP response body.
-- **`GET /hap/events`** — Server-Sent Events stream of envelopes
+- **`GET /chap/events`** — Server-Sent Events stream of envelopes
   addressed to the authenticated participant. Each event's `data:`
   field is a single envelope. Events use the `id:` field for the
   envelope's `id`.
@@ -1025,8 +1023,8 @@ See [`reference/transport-http-sse.ts`](./reference/transport-http-sse.ts).
 A degraded mode for clients that cannot maintain a persistent
 connection:
 
-- **`POST /hap`** — submission (as above).
-- **`GET /hap/inbox?since=<cursor>`** — return all envelopes
+- **`POST /chap`** — submission (as above).
+- **`GET /chap/inbox?since=<cursor>`** — return all envelopes
   addressed to the authenticated participant since the cursor.
 
 Polling intervals SHOULD NOT exceed 5 seconds in production.
@@ -1039,7 +1037,7 @@ For broker-based deployments, the binding rules are:
   Participant for direct-addressed messages.
 - The message payload is the envelope JSON.
 - The broker's message ID MUST match the envelope's `id`.
-- Broker-level retention does not replace the HAP evidence chain;
+- Broker-level retention does not replace the CHAP evidence chain;
   evidence is appended by the Coordinator regardless of broker
   durability.
 
@@ -1080,7 +1078,7 @@ Conformant implementations SHOULD:
 
 ### 15.3 Confidentiality
 
-HAP does not encrypt artefact content in the evidence chain.
+CHAP does not encrypt artefact content in the evidence chain.
 Sensitive content SHOULD be:
 
 - Referenced by URI (with content held in a separately access-controlled
@@ -1094,11 +1092,11 @@ discussion for the next draft.
 
 ## 16. Composition with MCP and A2A
 
-HAP is designed to compose, not replace.
+CHAP is designed to compose, not replace.
 
 ### 16.1 MCP composition
 
-When an agent calls an MCP tool, the call is cited inside the HAP
+When an agent calls an MCP tool, the call is cited inside the CHAP
 artefact it produces. The citation includes:
 
 - The MCP server URI.
@@ -1106,29 +1104,29 @@ artefact it produces. The citation includes:
 - The call ID.
 - The SHA-256 hash of the canonical input and output.
 
-The hashes (not the bodies) are committed to the HAP evidence chain.
+The hashes (not the bodies) are committed to the CHAP evidence chain.
 This means: a verifier with access to the MCP server's audit log can
 reconstruct the full input and output and confirm they match the
 hashes; a verifier without that access still has cryptographic proof
 of *which* tool was called and that the recorded inputs and outputs
 have not been altered.
 
-See [`integrations/HAP-with-MCP.md`](./integrations/HAP-with-MCP.md)
+See [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md)
 for the full pattern.
 
 ### 16.2 A2A composition
 
 When work crosses an organisational boundary, an **A2A bridge
-service** participates in both protocols. Inside the local HAP
+service** participates in both protocols. Inside the local CHAP
 workspace, the bridge appears as `service:bridge@example.org`. It
-accepts HAP tasks, forwards them over A2A, returns the result as a
-HAP artefact, and cites the A2A correlation IDs in the artefact's
+accepts CHAP tasks, forwards them over A2A, returns the result as a
+CHAP artefact, and cites the A2A correlation IDs in the artefact's
 citations array.
 
-This pattern preserves HAP's evidence semantics inside the
+This pattern preserves CHAP's evidence semantics inside the
 workspace while delegating cross-system communication to A2A.
 
-See [`integrations/HAP-with-A2A.md`](./integrations/HAP-with-A2A.md).
+See [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
 ---
 
@@ -1136,7 +1134,7 @@ See [`integrations/HAP-with-A2A.md`](./integrations/HAP-with-A2A.md).
 
 ### 17.1 Levels
 
-HAP defines three conformance levels:
+CHAP defines three conformance levels:
 
 #### Minimal
 
@@ -1195,10 +1193,10 @@ This specification requests IANA registration of:
 
 - **URI scheme prefixes:** `human:`, `agent:`, `service:`, `group:`,
   `workspace:` under the provisional URI scheme registry.
-- **Media type:** `application/hap+json` for envelopes.
-- **WebSocket subprotocol:** `hap.v1` in the WebSocket Subprotocol
+- **Media type:** `application/chap+json` for envelopes.
+- **WebSocket subprotocol:** `chap.v1` in the WebSocket Subprotocol
   Name Registry.
-- **OIDC confirmation method:** None new; HAP reuses the existing
+- **OIDC confirmation method:** None new; CHAP reuses the existing
   `cnf.jwk` claim from RFC 7800.
 
 Registrations will be filed when the specification reaches Last Call.

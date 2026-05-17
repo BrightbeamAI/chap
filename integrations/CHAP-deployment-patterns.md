@@ -1,6 +1,6 @@
-# HAP Deployment Patterns
+# CHAP Deployment Patterns
 
-This document describes how to deploy HAP in production. It is
+This document describes how to deploy CHAP in production. It is
 vendor-neutral; it does not assume a specific Coordinator implementation,
 storage backend, or cloud provider. The patterns here come from common
 multi-agent system topologies and have been distilled into three
@@ -13,7 +13,7 @@ For the architectural model, see [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
 ## 1. The deployment decision space
 
-Four orthogonal choices shape a HAP deployment:
+Four orthogonal choices shape a CHAP deployment:
 
 | Axis              | Options                                                       |
 |-------------------|---------------------------------------------------------------|
@@ -97,7 +97,7 @@ specialised deployments. Most teams should pick coordinator-mediated.
 ```
 
 Each workspace has its own Coordinator and chain. Cross-workspace
-work crosses an A2A bridge (see [`HAP-with-A2A.md`](./HAP-with-A2A.md)).
+work crosses an A2A bridge (see [`CHAP-with-A2A.md`](./CHAP-with-A2A.md)).
 Each chain remains authoritative locally; cross-chain evidence is
 joined by citation.
 
@@ -150,7 +150,7 @@ Required properties:
 
 ## 4. Storage backends
 
-HAP's evidence chain is append-only and the read patterns are
+CHAP's evidence chain is append-only and the read patterns are
 predictable (forward scan from a known seq; tail-follow for live
 subscribers). Storage choices, ranked:
 
@@ -256,7 +256,7 @@ Use case: one team, one workspace, on-premises or a single cloud account.
 
 ### 6.2 Multi-tenant SaaS
 
-Use case: a service provider hosting HAP workspaces for many customer organisations.
+Use case: a service provider hosting CHAP workspaces for many customer organisations.
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -293,7 +293,7 @@ Use case: a service provider hosting HAP workspaces for many customer organisati
 
 ### 6.3 On-prem regulated deployment
 
-Use case: a regulated organisation (financial services, healthcare) running HAP entirely inside its data centre.
+Use case: a regulated organisation (financial services, healthcare) running CHAP entirely inside its data centre.
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -334,16 +334,16 @@ A production deployment should expose, at minimum:
 
 | Metric                                  | Why                                              |
 |-----------------------------------------|--------------------------------------------------|
-| `hap_messages_total{method,workspace}`  | Overall throughput and per-method usage.         |
-| `hap_message_latency_ms{method}`        | End-to-end latency budget.                       |
-| `hap_chain_append_latency_ms`           | Storage-write latency; primary SLO.              |
-| `hap_signature_verify_failures_total`   | Should be near zero in steady state.             |
-| `hap_step_up_required_total`            | Helps tune the step-up window.                   |
-| `hap_abstain_total{category}`           | Workspace competence boundary signal.            |
-| `hap_override_rate{agent}`              | Agent quality signal; spikes are alerts.         |
-| `hap_whisper_lapse_total{workspace}`    | Coverage signal.                                 |
-| `hap_evidence_count{workspace}`         | Chain growth; capacity planning input.           |
-| `hap_coordinator_leader_election_total` | HA health.                                       |
+| `chap_messages_total{method,workspace}`  | Overall throughput and per-method usage.         |
+| `chap_message_latency_ms{method}`        | End-to-end latency budget.                       |
+| `chap_chain_append_latency_ms`           | Storage-write latency; primary SLO.              |
+| `chap_signature_verify_failures_total`   | Should be near zero in steady state.             |
+| `chap_step_up_required_total`            | Helps tune the step-up window.                   |
+| `chap_abstain_total{category}`           | Workspace competence boundary signal.            |
+| `chap_override_rate{agent}`              | Agent quality signal; spikes are alerts.         |
+| `chap_whisper_lapse_total{workspace}`    | Coverage signal.                                 |
+| `chap_evidence_count{workspace}`         | Chain growth; capacity planning input.           |
+| `chap_coordinator_leader_election_total` | HA health.                                       |
 
 Alerting rules worth having:
 
@@ -404,7 +404,7 @@ should be rare and require admin attestation.
 
 ## 10. Operational runbook (skeleton)
 
-A minimum operational runbook for a HAP deployment covers:
+A minimum operational runbook for a CHAP deployment covers:
 
 | Procedure                                        | Reference                              |
 |--------------------------------------------------|----------------------------------------|

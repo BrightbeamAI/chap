@@ -1,6 +1,6 @@
-# HAP Glossary
+# CHAP Glossary
 
-This glossary covers terms used in the HAP specification, the architecture
+This glossary covers terms used in the CHAP specification, the architecture
 document, and the worked examples. Terms used normatively in the spec carry a
 [normative] tag; the rest are informative.
 
@@ -9,9 +9,9 @@ document, and the worked examples. Terms used normatively in the spec carry a
 ## A
 
 **A2A.** [Agent-to-Agent Protocol](https://a2a.dev). An open protocol for
-agent communication across organisational boundaries. HAP composes with A2A
+agent communication across organisational boundaries. CHAP composes with A2A
 via a bridge service participant — see
-[`integrations/HAP-with-A2A.md`](./integrations/HAP-with-A2A.md).
+[`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
 **Abstention.** A Participant's recorded decision *not* to decide. Used when
 the Participant has insufficient information, insufficient authority, or a
@@ -32,7 +32,7 @@ See §9 of the specification.
 **Assignee.** The Participant a Task is assigned to.
 
 **`auth_time`.** OIDC ID-token claim recording when the human authenticated.
-HAP uses `auth_time` to enforce step-up windows for privileged operations.
+CHAP uses `auth_time` to enforce step-up windows for privileged operations.
 
 **Authority (URI portion).** The `@authority` suffix on a Participant URI
 (e.g. `human:alice@example.org`). Identifies the issuing identity domain.
@@ -62,7 +62,7 @@ workspace: routes messages, enforces policy and mode, appends to the
 evidence chain. Exactly one per workspace.
 
 **`cnf.jwk`.** OIDC confirmation method ([RFC 7800]) carrying a JWK that
-binds the ID token to a specific public key. HAP uses this to bind a
+binds the ID token to a specific public key. CHAP uses this to bind a
 human's ephemeral signing key to an OIDC session.
 
 [RFC 7800]: https://www.rfc-editor.org/rfc/rfc7800
@@ -83,7 +83,7 @@ descriptor and the evidence chain.
 comments and votes; closes with a computed outcome under the workspace's
 decision rule.
 
-**DPoP.** [RFC 9449]. OAuth 2.0 Demonstrating Proof of Possession. HAP
+**DPoP.** [RFC 9449]. OAuth 2.0 Demonstrating Proof of Possession. CHAP
 borrows DPoP's pattern (a `cnf.jwk` claim binding token to key) for
 human identity.
 
@@ -94,12 +94,12 @@ human identity.
 ## E
 
 **Ed25519.** [RFC 8032]. The Edwards-curve digital signature algorithm
-used to sign every HAP message.
+used to sign every CHAP message.
 
 [RFC 8032]: https://www.rfc-editor.org/rfc/rfc8032
 
-**Envelope.** [normative] The JSON object that wraps every HAP message:
-`hap`, `id`, `ts`, `workspace`, `from`, `to`, `type`, `method|params|result|error`,
+**Envelope.** [normative] The JSON object that wraps every CHAP message:
+`chap`, `id`, `ts`, `workspace`, `from`, `to`, `type`, `method|params|result|error`,
 `evidence`. See §4 of the specification.
 
 **Escalation.** Handing a Task up the chain to a higher-authority
@@ -107,7 +107,7 @@ Participant, typically because the current assignee is unable or unwilling
 to decide. Triggered by `escalate.raise`.
 
 **Evidence entry.** [normative] A signed, hash-linked record of one accepted
-HAP message in a workspace's evidence log.
+CHAP message in a workspace's evidence log.
 
 ---
 
@@ -155,11 +155,11 @@ re-use is rejected with error `-32701`.
 ## J
 
 **JCS.** [RFC 8785]. JSON Canonicalization Scheme. The deterministic JSON
-encoding used as the signing input for every HAP message.
+encoding used as the signing input for every CHAP message.
 
 [RFC 8785]: https://www.rfc-editor.org/rfc/rfc8785
 
-**JWK.** [RFC 7517]. JSON Web Key. The format used to publish HAP signing
+**JWK.** [RFC 7517]. JSON Web Key. The format used to publish CHAP signing
 keys.
 
 [RFC 7517]: https://www.rfc-editor.org/rfc/rfc7517
@@ -179,16 +179,16 @@ a hint in the `evidence.sig` value.
 ## M
 
 **MCP.** [Model Context Protocol](https://modelcontextprotocol.io). The
-agent-to-tool protocol. HAP composes with MCP by citing tool invocations
+agent-to-tool protocol. CHAP composes with MCP by citing tool invocations
 inside its evidence chain — see
-[`integrations/HAP-with-MCP.md`](./integrations/HAP-with-MCP.md).
+[`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md).
 
-**Message.** [normative] A single HAP envelope. Becomes exactly one
+**Message.** [normative] A single CHAP envelope. Becomes exactly one
 evidence entry.
 
-**Method.** [normative] The verb of a HAP request or notification, of the
+**Method.** [normative] The verb of a CHAP request or notification, of the
 form `namespace.verb` (e.g. `task.assign`, `decide.approve`). Catalogued
-in [`schemas/hap-methods.schema.json`](./schemas/hap-methods.schema.json).
+in [`schemas/chap-methods.schema.json`](./schemas/chap-methods.schema.json).
 
 **Mode.** [normative] The operational regime of a workspace or task:
 `shadow`, `trial`, or `production`. See §11 of the specification.
@@ -200,14 +200,14 @@ carry. Enforced by the Coordinator on every `task.assign`.
 
 ## N
 
-**Notification.** [normative] A HAP message type that expects no response.
+**Notification.** [normative] A CHAP message type that expects no response.
 Used for status updates, progress, and pub-sub events.
 
 ---
 
 ## O
 
-**OIDC.** OpenID Connect. The identity layer on top of OAuth 2.0. HAP
+**OIDC.** OpenID Connect. The identity layer on top of OAuth 2.0. CHAP
 uses OIDC ID tokens (with `cnf.jwk` binding) to authenticate humans.
 
 **Override.** [normative] An artefact recording a human's modification of
@@ -218,7 +218,7 @@ by `decide.override`.
 
 ## P
 
-**Participant.** [normative] Any entity that can send or receive HAP
+**Participant.** [normative] Any entity that can send or receive CHAP
 messages — human, agent, service, group, or workspace. See §7 of the
 specification.
 
@@ -243,10 +243,10 @@ URI or an array; group and workspace URIs are expanded at dispatch.
 preserving its hash and signature. Triggered by `audit.redact`; itself
 recorded as an evidence entry.
 
-**Request.** [normative] A HAP message type expecting a response. Carries
+**Request.** [normative] A CHAP message type expecting a response. Carries
 `method` and `params`.
 
-**Response.** [normative] A HAP message type answering a previous request.
+**Response.** [normative] A CHAP message type answering a previous request.
 Carries `result` on success or `error` on failure. The `id` matches the
 request's `id`.
 
@@ -313,7 +313,7 @@ precision. Must be strictly monotonic per `from`.
 ## U
 
 **ULID.** [Universally Unique Lexicographically Sortable Identifier](https://github.com/ulid/spec).
-26-character Crockford-base32. Used for all HAP `id` fields and most
+26-character Crockford-base32. Used for all CHAP `id` fields and most
 resource identifiers (tasks, artefacts, evidence entries).
 
 ---
@@ -334,4 +334,4 @@ disambiguation. Triggered by `whisper.ask`; answered by
 
 **Workspace.** [normative] A named, addressable collaboration context
 with a membership list, a policy, a mode, and an append-only evidence
-log. The unit of collaboration in HAP. See §6 of the specification.
+log. The unit of collaboration in CHAP. See §6 of the specification.

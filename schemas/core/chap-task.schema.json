@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hap.dev/schemas/0.1/hap-task.schema.json",
-  "title": "HAP Task / Artefact / Override",
+  "$id": "https://chap.dev/schemas/0.1/chap-task.schema.json",
+  "title": "CHAP Task / Artefact / Override",
   "description": "Schemas for the Task, Artefact, and Override primitives.",
   "$defs": {
     "Task": {

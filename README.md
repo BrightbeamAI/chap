@@ -1,24 +1,24 @@
-# HAP — The Human-Agent Protocol
+# CHAP — The Collaborative Human-Agent Protocol
 
-**HAP is the open standard for multi-human, multi-agent collaboration.**
+**CHAP is the open standard for multi-human, multi-agent collaboration.**
 It defines the wire format, methods, identity bindings, audit
 semantics, and operational primitives required to put humans,
 agents, and services in a shared workspace and have them produce
 verifiable, structured, auditable work together.
 
-HAP is the third pillar of the open agent-protocol stack:
+CHAP is the third pillar of the open agent-protocol stack:
 
 | Protocol  | Owns                                          |
 |-----------|-----------------------------------------------|
 | [MCP](https://modelcontextprotocol.io)  | Agents talking to **tools**.        |
 | [A2A](https://a2a.dev)                  | Agents talking to **agents**.       |
-| **HAP**                                 | Humans, agents, and services talking **together** in a shared, auditable workspace. |
+| **CHAP**                                 | Humans, agents, and services talking **together** in a shared, auditable workspace. |
 
-HAP is licensed CC-BY 4.0 (specification) and Apache 2.0 (code). It
+CHAP is licensed CC-BY 4.0 (specification) and Apache 2.0 (code). It
 is implementable royalty-free, in any language, in any deployment.
 
 > **See it first.** [Open `demo/index.html`](./demo/index.html) for
-> an interactive walkthrough that tells HAP's story in five minutes —
+> an interactive walkthrough that tells CHAP's story in five minutes —
 > the problem, the analogy, the protocol, the override-as-data
 > dividend. Single self-contained HTML file; works offline.
 
@@ -26,12 +26,12 @@ is implementable royalty-free, in any language, in any deployment.
 
 ## Table of contents
 
-1. [What HAP gives you](#what-hap-gives-you)
+1. [What CHAP gives you](#what-chap-gives-you)
 2. [Core + Profiles](#core--profiles)
 3. [5-minute start](#5-minute-start)
 4. [Reading paths](#reading-paths)
 5. [Composition with MCP and A2A](#composition-with-mcp-and-a2a)
-6. [What HAP is not](#what-hap-is-not)
+6. [What CHAP is not](#what-chap-is-not)
 7. [Standards reused](#standards-reused)
 8. [Conformance and adoption](#conformance-and-adoption)
 9. [Repository layout](#repository-layout)
@@ -39,7 +39,7 @@ is implementable royalty-free, in any language, in any deployment.
 
 ---
 
-## What HAP gives you
+## What CHAP gives you
 
 For teams shipping any system where humans and agents share work:
 
@@ -62,14 +62,14 @@ For teams shipping any system where humans and agents share work:
   identity profiles bind to OIDC or W3C Verifiable Credentials —
   no bespoke identity layer.
 - **Clean composition with the rest of the agent stack.** MCP tool
-  calls are *cited* inside HAP artefacts; A2A peers appear as
+  calls are *cited* inside CHAP artefacts; A2A peers appear as
   bridge participants. No re-implementation of either protocol.
 
 ---
 
 ## Core + Profiles
 
-HAP is two layers, and you adopt them in sequence:
+CHAP is two layers, and you adopt them in sequence:
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
@@ -87,7 +87,7 @@ HAP is two layers, and you adopt them in sequence:
 ```
 
 **Core is enough on its own.** A Core deployment is a real,
-useful, conformant HAP deployment. Add profiles only when their
+useful, conformant CHAP deployment. Add profiles only when their
 specific capability is needed.
 
 The most common adoption path:
@@ -109,7 +109,7 @@ Each profile is independent. You pay for what you use.
 
 ```bash
 git clone <repo>
-cd hap-protocol/reference/core
+cd chap-protocol/reference/core
 npm install
 npm run start:demo
 ```
@@ -117,7 +117,7 @@ npm run start:demo
 In another terminal:
 
 ```bash
-curl -sS -X POST http://localhost:8080/hap \
+curl -sS -X POST http://localhost:8080/chap \
   -H 'Content-Type: application/json' \
   -d '{
     "jsonrpc": "2.0",
@@ -135,7 +135,7 @@ curl -sS -X POST http://localhost:8080/hap \
   }'
 ```
 
-That's one HAP message. The full walkthrough — joining, delegating
+That's one CHAP message. The full walkthrough — joining, delegating
 a task, completing it, reading the audit log — is in
 [`examples/00-five-minute-start.md`](./examples/00-five-minute-start.md).
 
@@ -145,12 +145,12 @@ a task, completing it, reading the audit log — is in
 
 | Audience                                  | Read in this order                                                              |
 |-------------------------------------------|---------------------------------------------------------------------------------|
-| **Evaluating** whether HAP fits           | This README → [`HANDBOOK.md`](./HANDBOOK.md) → [`FAQ.md`](./FAQ.md)              |
+| **Evaluating** whether CHAP fits           | This README → [`HANDBOOK.md`](./HANDBOOK.md) → [`FAQ.md`](./FAQ.md)              |
 | **Implementing Core**                     | [`core/SPEC.md`](./core/SPEC.md) → [`reference/core/`](./reference/core/) → [`schemas/core/`](./schemas/core/) |
 | **Adding a profile**                      | [`profiles/PROFILES.md`](./profiles/PROFILES.md) → the specific profile spec    |
 | **Reviewing the design**                  | [`ARCHITECTURE.md`](./ARCHITECTURE.md) → [`SECURITY.md`](./SECURITY.md) → [`RELATIONSHIP-TO-OTHER-STANDARDS.md`](./RELATIONSHIP-TO-OTHER-STANDARDS.md) |
-| **Operating in production**               | [`HANDBOOK.md`](./HANDBOOK.md) → [`integrations/HAP-deployment-patterns.md`](./integrations/HAP-deployment-patterns.md) |
-| **Composing with MCP or A2A**             | [`integrations/HAP-with-MCP.md`](./integrations/HAP-with-MCP.md) · [`integrations/HAP-with-A2A.md`](./integrations/HAP-with-A2A.md) |
+| **Operating in production**               | [`HANDBOOK.md`](./HANDBOOK.md) → [`integrations/CHAP-deployment-patterns.md`](./integrations/CHAP-deployment-patterns.md) |
+| **Composing with MCP or A2A**             | [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md) · [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md) |
 | **Verifying conformance**                 | [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md) · [`conformance/test-vectors.md`](./conformance/test-vectors.md) |
 | **Looking up a term**                     | [`GLOSSARY.md`](./GLOSSARY.md)                                                  |
 | **Contributing**                          | [`CONTRIBUTING.md`](./CONTRIBUTING.md) → [`GOVERNANCE.md`](./GOVERNANCE.md)     |
@@ -162,41 +162,41 @@ into one cross-referenced reference, see [`SPECIFICATION.md`](./SPECIFICATION.md
 
 ## Composition with MCP and A2A
 
-HAP, MCP, and A2A are designed to compose without conflict.
+CHAP, MCP, and A2A are designed to compose without conflict.
 
-**MCP tool calls inside HAP work.** When an agent in a HAP workspace
+**MCP tool calls inside CHAP work.** When an agent in a CHAP workspace
 invokes an MCP tool to do its job, the call is recorded as a
-`citation` inside the agent's HAP artefact, with input and output
-hashes providing a cryptographic boundary. The HAP audit log
+`citation` inside the agent's CHAP artefact, with input and output
+hashes providing a cryptographic boundary. The CHAP audit log
 references — but does not duplicate — the MCP transcript. See
-[`integrations/HAP-with-MCP.md`](./integrations/HAP-with-MCP.md).
+[`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md).
 
 **A2A peers as bridge participants.** When work crosses an
 organisational boundary, the remote A2A peer is represented inside
-the HAP workspace as a `service:bridge…` participant. The bridge
-participant signs HAP envelopes on behalf of the remote peer;
-the A2A traffic itself does not cross the HAP wire. See
-[`integrations/HAP-with-A2A.md`](./integrations/HAP-with-A2A.md).
+the CHAP workspace as a `service:bridge…` participant. The bridge
+participant signs CHAP envelopes on behalf of the remote peer;
+the A2A traffic itself does not cross the CHAP wire. See
+[`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
 ---
 
-## What HAP is not
+## What CHAP is not
 
 To save you time:
 
 - **Not a framework for building agents.** Use LangGraph, AutoGen,
-  CrewAI, or your own. HAP is the wire between them and the humans.
+  CrewAI, or your own. CHAP is the wire between them and the humans.
 - **Not a workflow engine.** Use Temporal, Airflow, or Argo for
-  durable workflow execution. HAP records what happened.
-- **Not a new identity protocol.** HAP reuses OIDC, OAuth 2.0, and
+  durable workflow execution. CHAP records what happened.
+- **Not a new identity protocol.** CHAP reuses OIDC, OAuth 2.0, and
   W3C Verifiable Credentials.
-- **Not a new transparency log.** HAP's `audit-scitt` profile uses
+- **Not a new transparency log.** CHAP's `audit-scitt` profile uses
   IETF SCITT.
-- **Not a new RPC.** HAP envelopes are JSON-RPC 2.0.
+- **Not a new RPC.** CHAP envelopes are JSON-RPC 2.0.
 - **Not vendor-locked.** Multi-implementation by construction;
   Apache 2.0 + CC-BY 4.0 throughout.
 
-HAP **is** the small set of common verbs that every team rebuilds
+CHAP **is** the small set of common verbs that every team rebuilds
 in their own app layer when they put humans and agents on the same
 work — delegate, accept, decline, complete, review, approve,
 override, abstain, escalate, whisper, hand off, pause, resume.
@@ -207,7 +207,7 @@ audits, and learning data that wasn't structured before.
 
 ## Standards reused
 
-HAP defers to existing standards wherever they exist. The full
+CHAP defers to existing standards wherever they exist. The full
 mapping is in [`RELATIONSHIP-TO-OTHER-STANDARDS.md`](./RELATIONSHIP-TO-OTHER-STANDARDS.md).
 Highlights:
 
@@ -224,14 +224,14 @@ Highlights:
 | Provisioning               | SCIM 2.0 (optional binding)                       |
 | Conformance attestations   | in-toto                                           |
 
-The only protocol-level things HAP introduces are the methods and
+The only protocol-level things CHAP introduces are the methods and
 the override-with-rationale shape. Everything else is composition.
 
 ---
 
 ## Conformance and adoption
 
-An implementation is **HAP-conformant** if it implements every
+An implementation is **CHAP-conformant** if it implements every
 Core method and conforms to the wire format. Profile conformance
 is declared separately, one attestation per profile. See
 [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md).
@@ -247,9 +247,9 @@ is **Core + `review` + `modes`**.
 ## Repository layout
 
 ```
-hap-protocol/
+chap-protocol/
 ├── README.md                              You are here.
-├── HANDBOOK.md                            Practical guide to running HAP.
+├── HANDBOOK.md                            Practical guide to running CHAP.
 ├── FAQ.md                                 Common questions.
 │
 ├── core/
@@ -294,10 +294,10 @@ hap-protocol/
 │   └── index.html                         Single-file walkthrough.
 │
 ├── integrations/                          Composition with adjacent standards.
-│   ├── HAP-with-MCP.md
-│   ├── HAP-with-A2A.md
-│   ├── HAP-with-OIDC-OAuth2.md
-│   └── HAP-deployment-patterns.md
+│   ├── CHAP-with-MCP.md
+│   ├── CHAP-with-A2A.md
+│   ├── CHAP-with-OIDC-OAuth2.md
+│   └── CHAP-deployment-patterns.md
 │
 ├── schemas/                               JSON Schema definitions.
 │   ├── core/
@@ -319,13 +319,13 @@ hap-protocol/
 
 ## Getting involved
 
-HAP is developed in the open. Issues, discussions, and proposed
+CHAP is developed in the open. Issues, discussions, and proposed
 changes are welcome.
 
 - **Reporting an issue.** Use the issue tracker for spec ambiguities,
   schema bugs, or interoperability problems. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 - **Proposing a change.** Substantive changes go through the HEP
-  (HAP Enhancement Proposal) process described in [`GOVERNANCE.md`](./GOVERNANCE.md).
+  (CHAP Enhancement Proposal) process described in [`GOVERNANCE.md`](./GOVERNANCE.md).
 - **Implementing the protocol.** The reference implementations in
   [`reference/`](./reference/) are starting points. Run the
   conformance suite to validate your implementation.

@@ -3,7 +3,7 @@
 **Scenario.** Continuing from [`02-task-delegation.md`](./02-task-delegation.md):
 the agent has produced a draft response for ticket INC-48219. Alice
 reviews it, finds it good, and approves. The Coordinator unifies the
-HAP and MCP evidence so the full chain — what Alice approved, plus
+CHAP and MCP evidence so the full chain — what Alice approved, plus
 which tools were called to produce it — is one signed audit trail.
 
 This example shows:
@@ -25,7 +25,7 @@ Explicit form:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YX7K3X8M2V4N6P8R0T4A",
   "ts": "2026-05-17T09:14:27.105Z",
   "workspace": "wsp_support_triage",
@@ -58,7 +58,7 @@ update their UIs:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YX7K3X8M2V4N6P8R0T4B",
   "ts": "2026-05-17T09:14:39.221Z",
   "workspace": "wsp_support_triage",
@@ -85,7 +85,7 @@ and decides the reply is correct as written.
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YX7K3X8M2V4N6P8R0T4C",
   "ts": "2026-05-17T09:15:11.014Z",
   "workspace": "wsp_support_triage",
@@ -109,7 +109,7 @@ Coordinator notifies the agent and any other interested participants:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YX7K3X8M2V4N6P8R0T4D",
   "ts": "2026-05-17T09:15:11.099Z",
   "workspace": "wsp_support_triage",
@@ -157,7 +157,7 @@ reply to INC-48219?" They issue:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZA1AAAAAAAAAAAAAAAAAAA1",
   "ts": "2026-05-24T11:00:00.000Z",
   "workspace": "wsp_support_triage",
@@ -238,7 +238,7 @@ perform this side-channel check leave the field unset.)
   she approved, when, with what comment.
 - **A decision artefact** that downstream systems can use as a first-
   class object (e.g. for SLA reporting or compliance dashboards).
-- **A unified audit** spanning HAP and MCP. Every tool call that
+- **A unified audit** spanning CHAP and MCP. Every tool call that
   contributed to the approved output is identified, hash-verified,
   and linkable to its external audit log.
 

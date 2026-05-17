@@ -1,6 +1,6 @@
-# HAP Conformance Harness
+# CHAP Conformance Harness
 
-Runs the canonical HAP test vectors against any HAP endpoint and
+Runs the canonical CHAP test vectors against any CHAP endpoint and
 reports pass/fail. Produces in-toto-compatible attestations on
 success.
 
@@ -37,7 +37,7 @@ npm install
 npm test
 
 # Test a remote endpoint
-tsx harness.ts --url=https://my-hap.example.org/hap
+tsx harness.ts --url=https://my-chap.example.org/chap
 
 # Core only (no profile tests)
 tsx harness.ts --core-only
@@ -63,7 +63,7 @@ tsx harness.ts --attest > attestation.json
 {
   "_type": "https://in-toto.io/Statement/v1",
   "subject": [{ "name": "...", "digest": { "sha256": "..." } }],
-  "predicateType": "https://hap.dev/conformance/v1",
+  "predicateType": "https://chap.dev/conformance/v1",
   "predicate": {
     "timestamp": "2026-05-17T12:34:56Z",
     "passed": true,

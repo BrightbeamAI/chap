@@ -38,7 +38,7 @@ The customer message:
 
 ## 10.2 The trace
 
-Each numbered step is one HAP message. Signatures and hashes elided.
+Each numbered step is one CHAP message. Signatures and hashes elided.
 
 **(1) Human creates a task and assigns the agent.**
 *Method:* `task.assign` · *From:* `human:alice@example.org` · *To:* `agent:triage-bot#v3.2`
@@ -51,7 +51,7 @@ knowledge-base.
 *Method:* `task.accept` · *From:* `agent:triage-bot#v3.2`
 
 **(3) Agent calls MCP tools (order-lookup, customer-history) to gather
-context.** *(Outside HAP; cited inside the artefact in step 6.)*
+context.** *(Outside CHAP; cited inside the artefact in step 6.)*
 
 **(4) Agent whispers Alice — needs disambiguation.**
 *Method:* `whisper.ask` · *From:* `agent:triage-bot#v3.2` · *To:* `human:alice@example.org`
@@ -128,7 +128,7 @@ completes.**
 transaction id, amount £75, citation hash of the MCP call.
 
 **(15) Coordinator publishes the final response to the customer**
-*(implementation-side action; the HAP record is the final
+*(implementation-side action; the CHAP record is the final
 `task.complete` plus a `notify.message` to Alice and Bob with the
 sent-message reference).*
 
@@ -200,7 +200,7 @@ spelunking to a single query.
 
 ## 10.5 What this is and isn't
 
-**What this is.** A demonstration that HAP's primitives compose. The
+**What this is.** A demonstration that CHAP's primitives compose. The
 review primitive plugged into the deliberation primitive plugged into
 the second task. The MCP citations in the first agent's artefact and
 the credit agent's artefact share a single verification mechanism.
@@ -208,7 +208,7 @@ The override didn't need a custom UI to be useful downstream — its
 diff and tags are queryable as data the moment it was signed.
 
 **What this isn't.** A claim that this exact flow is the right one
-for every support team. The flow is application-defined. HAP's job
+for every support team. The flow is application-defined. CHAP's job
 is to provide the wire format, the identity model, and the evidence
 chain. What you compose on top of those primitives is yours.
 
@@ -218,10 +218,10 @@ chain. What you compose on top of those primitives is yours.
 
 - **Implement.** Start with [`SPECIFICATION.md`](../SPECIFICATION.md)
   and [`reference/`](../reference/).
-- **Compose.** Read [`integrations/HAP-with-MCP.md`](../integrations/HAP-with-MCP.md),
-  [`integrations/HAP-with-A2A.md`](../integrations/HAP-with-A2A.md),
-  and [`integrations/HAP-with-OIDC-OAuth2.md`](../integrations/HAP-with-OIDC-OAuth2.md).
-- **Deploy.** Read [`integrations/HAP-deployment-patterns.md`](../integrations/HAP-deployment-patterns.md).
+- **Compose.** Read [`integrations/CHAP-with-MCP.md`](../integrations/CHAP-with-MCP.md),
+  [`integrations/CHAP-with-A2A.md`](../integrations/CHAP-with-A2A.md),
+  and [`integrations/CHAP-with-OIDC-OAuth2.md`](../integrations/CHAP-with-OIDC-OAuth2.md).
+- **Deploy.** Read [`integrations/CHAP-deployment-patterns.md`](../integrations/CHAP-deployment-patterns.md).
 - **Verify.** Use [`conformance/test-vectors.md`](../conformance/test-vectors.md)
   to check your signer and chain implementation against the canonical
   outputs.

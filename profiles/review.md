@@ -4,7 +4,7 @@
 
 The `review` profile adds the workflow most teams want when humans
 oversee agent output: **request review**, **approve / reject /
-override**, **abstain**, **escalate**. This is HAP's highest-value
+override**, **abstain**, **escalate**. This is CHAP's highest-value
 profile — it's where the structured-override learning data lives.
 
 If you implement only one profile beyond Core, implement this one.
@@ -113,7 +113,7 @@ a chance to revise.
 
 ### 3.3 `decide.override` — the differentiator
 
-The most valuable method in HAP. The reviewer approves a *modified*
+The most valuable method in CHAP. The reviewer approves a *modified*
 version of the draft, carrying a structured diff, rationale, and
 tags. This is what turns human edits into learning data.
 
@@ -242,7 +242,7 @@ aggregation:
 version." That data didn't exist in the world before someone
 captured it; the protocol makes capturing it the default.
 
-This is the single most defensible reason to adopt HAP. Every other
+This is the single most defensible reason to adopt CHAP. Every other
 piece of the protocol is plumbing.
 
 ---

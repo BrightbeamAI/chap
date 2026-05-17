@@ -12,25 +12,25 @@
 }}%%
 flowchart TB
     Apps["<b>Applications</b><br/><span style='font-size:16px;color:#4f4f52'>workflows · UIs · business logic</span>"]
-    HAP["<b>HAP</b><br/><span style='font-size:16px'>workspace · task · review · decide · audit</span>"]
+    CHAP["<b>CHAP</b><br/><span style='font-size:16px'>workspace · task · review · decide · audit</span>"]
     A2A["<b>A2A</b><br/><span style='font-size:16px'>cross-org agent delegation</span>"]
     MCP["<b>MCP</b><br/><span style='font-size:16px'>deterministic tool calls</span>"]
     Trans["<b>Transport</b><br/><span style='font-size:16px;color:#4f4f52'>WebSocket · HTTP+SSE · NATS · Kafka</span>"]
 
-    Apps --> HAP
-    HAP  --> A2A
-    HAP  --> MCP
+    Apps --> CHAP
+    CHAP  --> A2A
+    CHAP  --> MCP
     A2A  --> Trans
     MCP  --> Trans
 
     classDef app   fill:#FFF8F2,stroke:#1a1a1c,color:#1a1a1c,stroke-width:2px
-    classDef hap   fill:#EA4700,stroke:#C73D00,color:#ffffff,stroke-width:2.5px
+    classDef chap   fill:#EA4700,stroke:#C73D00,color:#ffffff,stroke-width:2.5px
     classDef a2a   fill:#EDE0F2,stroke:#6a3d8a,color:#3b0e63,stroke-width:2px
     classDef mcp   fill:#E8F1ED,stroke:#1f5b39,color:#0a3a1c,stroke-width:2px
     classDef trans fill:#f5f5f7,stroke:#4f4f52,color:#1a1a1c,stroke-width:2px
 
     class Apps app
-    class HAP hap
+    class CHAP chap
     class A2A a2a
     class MCP mcp
     class Trans trans

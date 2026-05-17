@@ -1,7 +1,7 @@
 # 5-Minute Start
 
-This is the fastest path from "I've heard of HAP" to "I've sent
-HAP envelopes and read back the audit log." It uses the Core
+This is the fastest path from "I've heard of CHAP" to "I've sent
+CHAP envelopes and read back the audit log." It uses the Core
 reference server at [`../reference/core/`](../reference/core/) and
 plain `curl`. No SDK, no client library.
 
@@ -21,7 +21,7 @@ npm run start:demo
 You should see:
 
 ```
-HAP Core reference listening on http://localhost:8080/hap
+CHAP Core reference listening on http://localhost:8080/chap
 ```
 
 Leave it running. In another terminal:
@@ -31,7 +31,7 @@ Leave it running. In another terminal:
 ## Step 1 — alice joins
 
 ```bash
-curl -s -X POST http://localhost:8080/hap \
+curl -s -X POST http://localhost:8080/chap \
   -H 'Content-Type: application/json' \
   -d '{
     "jsonrpc": "2.0",
@@ -64,7 +64,7 @@ Response:
 ## Step 2 — the agent joins
 
 ```bash
-curl -s -X POST http://localhost:8080/hap \
+curl -s -X POST http://localhost:8080/chap \
   -H 'Content-Type: application/json' \
   -d '{
     "jsonrpc": "2.0",
@@ -88,7 +88,7 @@ curl -s -X POST http://localhost:8080/hap \
 ## Step 3 — see who's in the room
 
 ```bash
-curl -s -X POST http://localhost:8080/hap \
+curl -s -X POST http://localhost:8080/chap \
   -H 'Content-Type: application/json' \
   -d '{
     "jsonrpc": "2.0",
@@ -110,7 +110,7 @@ You'll see both members, the workspace state, and `profiles: ["core/0.1"]`.
 ## Step 4 — alice delegates a task to the bot
 
 ```bash
-curl -s -X POST http://localhost:8080/hap \
+curl -s -X POST http://localhost:8080/chap \
   -H 'Content-Type: application/json' \
   -d '{
     "jsonrpc": "2.0",
@@ -131,7 +131,7 @@ curl -s -X POST http://localhost:8080/hap \
 The response includes a `task_id`. Save it:
 
 ```bash
-TASK=$(curl -s -X POST http://localhost:8080/hap \
+TASK=$(curl -s -X POST http://localhost:8080/chap \
   -H 'Content-Type: application/json' \
   -d '{ ... same as above ... }' | jq -r '.result.task_id')
 echo $TASK
@@ -143,7 +143,7 @@ echo $TASK
 ## Step 5 — the bot starts work
 
 ```bash
-curl -s -X POST http://localhost:8080/hap \
+curl -s -X POST http://localhost:8080/chap \
   -H 'Content-Type: application/json' \
   -d "{
     \"jsonrpc\": \"2.0\",
@@ -166,7 +166,7 @@ curl -s -X POST http://localhost:8080/hap \
 ## Step 6 — the bot delivers
 
 ```bash
-curl -s -X POST http://localhost:8080/hap \
+curl -s -X POST http://localhost:8080/chap \
   -H 'Content-Type: application/json' \
   -d "{
     \"jsonrpc\": \"2.0\",
@@ -192,7 +192,7 @@ curl -s -X POST http://localhost:8080/hap \
 ## Step 7 — read the audit log
 
 ```bash
-curl -s -X POST http://localhost:8080/hap \
+curl -s -X POST http://localhost:8080/chap \
   -H 'Content-Type: application/json' \
   -d '{
     "jsonrpc": "2.0",
@@ -216,7 +216,7 @@ of truth.
 
 ## What just happened
 
-You exercised every one of HAP Core's 7 methods:
+You exercised every one of CHAP Core's 7 methods:
 
 | Method                | What it did                                |
 |-----------------------|--------------------------------------------|
@@ -247,6 +247,6 @@ solo-operator agent farm, structured-task queue.
 | Non-repudiation and signed messages                | [`../profiles/security-signed.md`](../profiles/security-signed.md) |
 | Cryptographic transparency log                     | [`../profiles/audit-scitt.md`](../profiles/audit-scitt.md) |
 | Verified human identity                            | [`../profiles/identity-oidc.md`](../profiles/identity-oidc.md) · [`identity-vc.md`](../profiles/identity-vc.md) |
-| Cite MCP tool calls inside artefacts               | [`../integrations/HAP-with-MCP.md`](../integrations/HAP-with-MCP.md) |
-| Cross-organisation peers (A2A bridge)              | [`../integrations/HAP-with-A2A.md`](../integrations/HAP-with-A2A.md) |
+| Cite MCP tool calls inside artefacts               | [`../integrations/CHAP-with-MCP.md`](../integrations/CHAP-with-MCP.md) |
+| Cross-organisation peers (A2A bridge)              | [`../integrations/CHAP-with-A2A.md`](../integrations/CHAP-with-A2A.md) |
 | Build Core in your favourite language              | [`../core/SPEC.md`](../core/SPEC.md) |

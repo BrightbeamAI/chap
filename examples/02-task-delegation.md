@@ -20,7 +20,7 @@ This example shows:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YX7K3X8M2V4N6P8R0T2F1",
   "ts": "2026-05-17T09:14:22.184Z",
   "workspace": "wsp_support_triage",
@@ -74,7 +74,7 @@ workspace's `permitted_mcp_servers`. All clear — it routes to the agent.
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YX7K3X8M2V4N6P8R0T3C",
   "ts": "2026-05-17T09:14:22.612Z",
   "workspace": "wsp_support_triage",
@@ -102,7 +102,7 @@ along the way:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YX7K3X8M2V4N6P8R0T3D",
   "ts": "2026-05-17T09:14:22.790Z",
   "workspace": "wsp_support_triage",
@@ -117,7 +117,7 @@ along the way:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YX7K3X8M2V4N6P8R0T3E",
   "ts": "2026-05-17T09:14:24.103Z",
   "workspace": "wsp_support_triage",
@@ -141,7 +141,7 @@ along the way:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YX7K3X8M2V4N6P8R0T3F",
   "ts": "2026-05-17T09:14:27.012Z",
   "workspace": "wsp_support_triage",
@@ -202,7 +202,7 @@ task addressed to a human specialist:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZ9YZ7K3X8M2V4N6P8R0T3K",
   "ts": "2026-05-17T10:02:11.510Z",
   "workspace": "wsp_support_triage",

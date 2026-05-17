@@ -1,6 +1,6 @@
-# HAP Core Reference — Weekend Build
+# CHAP Core Reference — Weekend Build
 
-This is the minimal reference implementation of [HAP Core](../../core/SPEC.md).
+This is the minimal reference implementation of [CHAP Core](../../core/SPEC.md).
 It implements all 7 Core methods, an in-memory state model, and the JSON-RPC 2.0
 wire format. **No crypto, no profiles, no external dependencies at runtime.**
 
@@ -25,7 +25,7 @@ application, override-analysis tooling), see
 
 ```bash
 npm install
-npm run start:demo   # server on http://localhost:8080/hap
+npm run start:demo   # server on http://localhost:8080/chap
 # in another terminal:
 npm run demo:client
 ```
@@ -39,7 +39,7 @@ npm run demo
 You should see output like:
 
 ```
-HAP Core demo against http://localhost:8080/hap
+CHAP Core demo against http://localhost:8080/chap
 ============================================================
 
 → participant.join
@@ -68,7 +68,7 @@ HAP Core demo against http://localhost:8080/hap
   ✓ result: {"left":true}
 ```
 
-That's HAP Core, end to end.
+That's CHAP Core, end to end.
 
 ---
 
@@ -88,7 +88,7 @@ That's HAP Core, end to end.
 | §4.6 `task.complete`                              | Handler in `handlers`.           |
 | §4.7 `audit.read`                                 | Handler in `handlers`; filters.  |
 | §5 Error codes                                    | `E` constants and `err()` helper. |
-| §2.4 Transport                                    | `createServer()`, `POST /hap`.   |
+| §2.4 Transport                                    | `createServer()`, `POST /chap`.   |
 
 The full server is one file of ~300 lines. Read it top to bottom; it's
 intentionally shaped like a tutorial.
@@ -114,10 +114,10 @@ through its profile when (and only when) you actually need it.
 
 ## The 8-hour build sequence
 
-If you're implementing HAP Core in a different language, follow the
+If you're implementing CHAP Core in a different language, follow the
 sequence in [`core/SPEC.md §9`](../../core/SPEC.md#9-implementing-core-in-a-weekend):
 
-1. **Hour 1** — HTTP POST `/hap`, JSON-RPC 2.0 parse + dispatch.
+1. **Hour 1** — HTTP POST `/chap`, JSON-RPC 2.0 parse + dispatch.
 2. **Hour 2** — `workspace.describe`, in-memory workspace state.
 3. **Hour 3** — `participant.join`, `participant.leave`.
 4. **Hour 4** — `task.create`, `task.update`, `task.complete` with state machine.

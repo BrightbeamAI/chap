@@ -1,16 +1,16 @@
-# HAP + MCP
+# CHAP + MCP
 
-This document specifies how the Human-Agent Protocol composes with the
-[Model Context Protocol (MCP)](https://modelcontextprotocol.io). HAP and
+This document specifies how the Collaborative Human-Agent Protocol composes with the
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io). CHAP and
 MCP address disjoint concerns:
 
 | Concern                                | Protocol |
 |----------------------------------------|----------|
 | An agent calling a tool                | MCP      |
-| The shared room around the agent       | HAP      |
+| The shared room around the agent       | CHAP      |
 
-The composition pattern is **citation, not encapsulation**. HAP does not
-wrap MCP messages; instead, HAP artefacts cite MCP tool invocations by
+The composition pattern is **citation, not encapsulation**. CHAP does not
+wrap MCP messages; instead, CHAP artefacts cite MCP tool invocations by
 their identifiers and content hashes. The result is one signed audit
 covering both protocols, while each protocol keeps its own ownership
 boundary.
@@ -19,19 +19,19 @@ boundary.
 
 ## 1. The boundary
 
-Inside a HAP workspace, an agent participant may call MCP tools to
+Inside a CHAP workspace, an agent participant may call MCP tools to
 gather information or perform side-effects. The MCP traffic does not
-cross the HAP wire — it goes directly from the agent to the MCP server,
+cross the CHAP wire — it goes directly from the agent to the MCP server,
 authenticated and audited by MCP's own mechanisms.
 
-What enters HAP is the **result of the tool call as it influenced the
+What enters CHAP is the **result of the tool call as it influenced the
 artefact**, plus a cryptographic reference that lets an auditor verify
 exactly which call produced it.
 
 ```
-┌──────────────────────────── HAP workspace ─────────────────────────────┐
+┌──────────────────────────── CHAP workspace ─────────────────────────────┐
 │                                                                         │
-│   human ───HAP───> coordinator ───HAP───> agent ─┐                      │
+│   human ───CHAP───> coordinator ───CHAP───> agent ─┐                      │
 │                                                  │ MCP                  │
 │                                                  ▼                      │
 │                                            ┌─────────────┐              │
@@ -39,7 +39,7 @@ exactly which call produced it.
 │                                            │ + audit log │              │
 │                                            └─────────────┘              │
 │                                                                         │
-│   The agent's HAP artefact carries CITATIONS of the MCP calls:          │
+│   The agent's CHAP artefact carries CITATIONS of the MCP calls:          │
 │      kind          = "mcp_tool_invocation"                              │
 │      server, tool, call_id                                              │
 │      input_hash, output_hash  (sha256 of canonical bytes)               │
@@ -53,7 +53,7 @@ exactly which call produced it.
 
 Every artefact that depended on an MCP call MUST cite that call. The
 citation appears in the artefact's `citations[]` array
-(see [`schemas/hap-task.schema.json`](../schemas/hap-task.schema.json),
+(see [`schemas/chap-task.schema.json`](../schemas/chap-task.schema.json),
 `$defs.Citation`).
 
 ```json
@@ -79,10 +79,10 @@ Field semantics:
 | `output_hash` | SHA-256 of the JCS canonicalisation of the call's `result`. |
 | `summary`     | Optional free-text precis for human readers.              |
 
-The hashes (not the bodies) are what enter the HAP evidence chain. An
+The hashes (not the bodies) are what enter the CHAP evidence chain. An
 auditor who also has access to the MCP server's call log can confirm
 that the recorded hashes match the logged bodies — closing the audit
-loop without requiring HAP to store sensitive tool inputs/outputs.
+loop without requiring CHAP to store sensitive tool inputs/outputs.
 
 ---
 
@@ -110,18 +110,18 @@ its draft response. Sequence:
 sequenceDiagram
     autonumber
     participant H as Human (Alice)
-    participant C as HAP Coordinator
+    participant C as CHAP Coordinator
     participant A as Agent
     participant M1 as MCP: orders
     participant M2 as MCP: shipping
 
-    H->>C: task.assign (HAP)
-    C->>A: dispatch (HAP)
+    H->>C: task.assign (CHAP)
+    C->>A: dispatch (CHAP)
     A->>M1: tools/call lookup_order (MCP)
     M1-->>A: order data (MCP)
     A->>M2: tools/call carrier_tracking (MCP)
     M2-->>A: tracking data (MCP)
-    A->>C: task.complete with artefact<br/>citing both MCP calls (HAP)
+    A->>C: task.complete with artefact<br/>citing both MCP calls (CHAP)
     Note over C: chain entry stores<br/>input_hash + output_hash<br/>for each cited call
 ```
 
@@ -152,23 +152,23 @@ and failed" distinguishable from "the agent didn't try."
 
 ---
 
-## 5. MCP authorisation gated by HAP
+## 5. MCP authorisation gated by CHAP
 
 A common pattern: certain MCP tool calls should require explicit
-human approval before they execute. HAP provides the approval
+human approval before they execute. CHAP provides the approval
 machinery; MCP provides the tool dispatch.
 
 Pattern:
 
 1. The agent identifies that a tool call requires approval. (This
    determination is made by the agent or by an MCP-server-side
-   policy; HAP does not prescribe.)
+   policy; CHAP does not prescribe.)
 2. The agent emits `review.request` with the proposed MCP call (tool
    name, arguments, expected outcome summary) as a `draft` artefact.
 3. The reviewer issues `decide.approve` or `decide.reject`.
 4. On approval, the agent makes the MCP call. The agent's
    `task.complete` artefact cites both the *approved draft* (as an
-   internal HAP artefact reference) and the *resulting MCP call*
+   internal CHAP artefact reference) and the *resulting MCP call*
    (as an MCP citation).
 5. On rejection, the agent does not make the call.
 
@@ -261,22 +261,22 @@ becomes "deferred to audit."
 
 ## 7. Privacy and the hash boundary
 
-The HAP evidence chain contains only **hashes** of MCP inputs and
+The CHAP evidence chain contains only **hashes** of MCP inputs and
 outputs by default. This is a deliberate privacy boundary:
 
 - Sensitive customer data the agent fetched (e.g. PII from
-  `customer-history`) is *not* duplicated into HAP.
-- A verifier with access only to the HAP chain can confirm *that* a
+  `customer-history`) is *not* duplicated into CHAP.
+- A verifier with access only to the CHAP chain can confirm *that* a
   particular tool was called and *that* the recorded effects are
   intact, but cannot read the call's contents.
 - A verifier with the MCP server's audit log can additionally read
   the bodies and confirm the hashes match.
 
-This split makes HAP a good fit for environments where the workspace
+This split makes CHAP a good fit for environments where the workspace
 audit must be highly available and broadly readable, while the tool
 audit lives under stricter access controls.
 
-If an application *does* want the bodies in the HAP chain (because
+If an application *does* want the bodies in the CHAP chain (because
 the workspace and the MCP server share an access boundary), it MAY
 inline the call's arguments and result in the citation's optional
 `raw_input` / `raw_output` fields. Implementations should not do
@@ -304,13 +304,13 @@ workspace policy.
 
 | Question                                            | Answer                              |
 |-----------------------------------------------------|-------------------------------------|
-| Do MCP messages cross the HAP wire?                 | No.                                 |
-| Where does HAP record the MCP call?                 | In the artefact's `citations[]`.    |
-| What does HAP commit to the chain?                  | The hashes, not the bodies.         |
-| Can a HAP-only auditor verify the chain?            | Yes (signatures + hash links).      |
-| Can a HAP-only auditor read MCP inputs/outputs?     | No (by design).                     |
+| Do MCP messages cross the CHAP wire?                 | No.                                 |
+| Where does CHAP record the MCP call?                 | In the artefact's `citations[]`.    |
+| What does CHAP commit to the chain?                  | The hashes, not the bodies.         |
+| Can a CHAP-only auditor verify the chain?            | Yes (signatures + hash links).      |
+| Can a CHAP-only auditor read MCP inputs/outputs?     | No (by design).                     |
 | What if an MCP server requires approval per call?   | Use `review.request` → `decide.*` then call. |
-| What about cross-organisation tool calls?           | Wrap them in an A2A bridge (see [HAP-with-A2A.md](./HAP-with-A2A.md)). |
+| What about cross-organisation tool calls?           | Wrap them in an A2A bridge (see [CHAP-with-A2A.md](./CHAP-with-A2A.md)). |
 
 For the wire-level details, see [`SPECIFICATION.md`](../SPECIFICATION.md)
 §16.1.

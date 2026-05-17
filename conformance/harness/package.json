@@ -1,7 +1,7 @@
 {
-  "name": "@hap/conformance-harness",
+  "name": "@chap/conformance-harness",
   "version": "1.0.0",
-  "description": "HAP conformance test harness — runs canonical vectors against any HAP endpoint.",
+  "description": "CHAP conformance test harness — runs canonical vectors against any CHAP endpoint.",
   "license": "Apache-2.0",
   "type": "module",
   "private": true,

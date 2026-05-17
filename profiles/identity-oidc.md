@@ -2,12 +2,12 @@
 
 **Profile id:** `identity-oidc/1.0` · **Depends on:** Core; pairs with `security-signed`.
 
-Bind human Participant identities to OIDC ID tokens. The HAP
+Bind human Participant identities to OIDC ID tokens. The CHAP
 signing key (advertised in `security-signed`) is bound to the
 session via the OIDC `cnf.jwk` claim (RFC 7800) or DPoP (RFC 9449).
 
-HAP introduces no identity protocol. This profile is the recommended
-way to use OIDC with HAP, but a deployment is free to use any OIDC
+CHAP introduces no identity protocol. This profile is the recommended
+way to use OIDC with CHAP, but a deployment is free to use any OIDC
 flow that produces a token suitable for the bindings below.
 
 ---
@@ -45,7 +45,7 @@ Client → Coordinator: handshake — presents ID token
 Coordinator: verifies ID token; extracts cnf.jwk; pins as participant key
    │
    ▼
-Client → Coordinator: HAP messages signed with K (security-signed profile)
+Client → Coordinator: CHAP messages signed with K (security-signed profile)
 ```
 
 The keypair is generated locally and never leaves the client. The
@@ -57,20 +57,20 @@ echoes it back inside the ID token; the Coordinator pins it.
 
 ## 3. Token shape
 
-A HAP-aware OIDC ID token:
+A CHAP-aware OIDC ID token:
 
 ```json
 {
   "iss": "https://idp.example.org",
   "sub": "user-7f3c2a8e",
-  "aud": "hap-coordinator-prod",
+  "aud": "chap-coordinator-prod",
   "iat": 1747476000,
   "exp": 1747479600,
   "auth_time": 1747476000,
   "acr": "urn:example:authn:mfa",
 
   "email": "[email protected]",
-  "hap_participant_uri": "human:alice@example.org",
+  "chap_participant_uri": "human:alice@example.org",
 
   "cnf": {
     "jwk": { "kty": "OKP", "crv": "Ed25519", "kid": "k-…", "x": "…" }
@@ -78,9 +78,9 @@ A HAP-aware OIDC ID token:
 }
 ```
 
-Required for HAP binding: `iss`, `aud`, `exp`, `sub`, `auth_time`,
-`cnf.jwk`, and either `hap_participant_uri` or a Coordinator-side
-mapping from `sub` to a HAP URI.
+Required for CHAP binding: `iss`, `aud`, `exp`, `sub`, `auth_time`,
+`cnf.jwk`, and either `chap_participant_uri` or a Coordinator-side
+mapping from `sub` to a CHAP URI.
 
 ---
 
@@ -98,27 +98,27 @@ if (privileged_method && auth_time_age > workspace.step_up_window_sec):
 ```
 
 The client recovers by triggering `prompt=login` with the IdP and
-retrying. This is standard OIDC behaviour; HAP only defines the
+retrying. This is standard OIDC behaviour; CHAP only defines the
 error code and the policy hook.
 
 ---
 
 ## 5. Scope and role
 
-OIDC scopes do not directly map to HAP roles. The pattern is:
+OIDC scopes do not directly map to CHAP roles. The pattern is:
 
-1. OIDC scope authorises the bearer to *be* a HAP participant.
+1. OIDC scope authorises the bearer to *be* a CHAP participant.
 2. The workspace's policy decides what that participant can do.
 
 Example mapping:
 
 ```
-OIDC scope            HAP role        Permitted methods
+OIDC scope            CHAP role        Permitted methods
 ─────────────────────────────────────────────────────────
-hap.user              reviewer        decide.*, abstain.*, escalate.*
-hap.user              drafter         task.*, message.*
-hap.admin             admin           control.*, workspace.*
-hap.audit             auditor         audit.* (read-only)
+chap.user              reviewer        decide.*, abstain.*, escalate.*
+chap.user              drafter         task.*, message.*
+chap.admin             admin           control.*, workspace.*
+chap.audit             auditor         audit.* (read-only)
 ```
 
 The mapping is deployment-specific and lives in the workspace
@@ -136,7 +136,7 @@ For agents and services (no human at a keyboard):
 | OAuth 2.0 client credentials | Direct API access                                   |
 | mTLS with private CA         | Inside organisational network                       |
 
-In all three, the workload's identity binds to its HAP signing key
+In all three, the workload's identity binds to its CHAP signing key
 via the same `cnf.jwk` mechanism.
 
 ---
@@ -188,5 +188,5 @@ with the now-discarded key.
 - **With `security-signed`:** the OIDC binding pins which Ed25519
   key the participant signs with.
 - **With `audit-scitt`:** signed envelopes become SCITT statements
-  whose issuer-identity is the OIDC `sub` or `hap_participant_uri`.
+  whose issuer-identity is the OIDC `sub` or `chap_participant_uri`.
 - **With `control`:** step-up is the gate for privileged ops.

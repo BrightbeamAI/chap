@@ -1,12 +1,12 @@
-# HAP Core Specification
+# CHAP Core Specification
 
 **Audience:** Implementers · **Profile id:** `core/1.0`
 
-This document is the **minimum** specification for a HAP-compatible
+This document is the **minimum** specification for a CHAP-compatible
 participant or coordinator. It defines:
 
 - 7 methods, all required.
-- A JSON-RPC 2.0 wire format with HAP-specific extension fields.
+- A JSON-RPC 2.0 wire format with CHAP-specific extension fields.
 - An audit log requirement (in-memory or DB is fine; cryptographic
   audit is a separate optional profile).
 - No required cryptography. No required identity provider. No
@@ -39,7 +39,7 @@ Sections marked **(MAY)** are optional.
 
 ### 2.1 Envelope
 
-Every HAP message is a single JSON object that is **also** a valid
+Every CHAP message is a single JSON object that is **also** a valid
 [JSON-RPC 2.0](https://www.jsonrpc.org/specification) message:
 
 ```json
@@ -58,8 +58,8 @@ Every HAP message is a single JSON object that is **also** a valid
 }
 ```
 
-JSON-RPC's `id` field doubles as HAP's message id. The `method`
-field is one of the 7 Core methods listed in §4. All HAP-specific
+JSON-RPC's `id` field doubles as CHAP's message id. The `method`
+field is one of the 7 Core methods listed in §4. All CHAP-specific
 fields live inside `params`.
 
 For responses:
@@ -92,9 +92,9 @@ For errors, the standard JSON-RPC error shape applies:
 Notifications (no response expected) use JSON-RPC's standard
 notification shape — same as a request, but with `id` omitted.
 
-### 2.2 Required HAP fields inside `params`
+### 2.2 Required CHAP fields inside `params`
 
-Every HAP method's `params` MUST include:
+Every CHAP method's `params` MUST include:
 
 | Field        | Type     | Description                                            |
 |--------------|----------|--------------------------------------------------------|
@@ -126,8 +126,8 @@ workspace:wsp_demo
 
 ### 2.4 Transport (MUST)
 
-A Core implementation MUST accept HAP envelopes over **HTTP POST**
-to a fixed path (`/hap` is recommended). The request body is a
+A Core implementation MUST accept CHAP envelopes over **HTTP POST**
+to a fixed path (`/chap` is recommended). The request body is a
 single envelope; the response body is the corresponding response
 envelope.
 
@@ -474,11 +474,11 @@ Core uses the standard JSON-RPC 2.0 error code ranges:
 |----------|--------------------------------------------------------|
 | `-32700` | Parse error (malformed JSON).                          |
 | `-32600` | Invalid request (not a valid JSON-RPC message).        |
-| `-32601` | Method not found (unknown HAP method).                 |
+| `-32601` | Method not found (unknown CHAP method).                 |
 | `-32602` | Invalid params (missing or wrongly-typed fields).      |
 | `-32603` | Internal error (Coordinator failure).                  |
 
-HAP-specific codes (used by profiles) start at `-32000` and below;
+CHAP-specific codes (used by profiles) start at `-32000` and below;
 Core does not define any. See individual profile docs.
 
 ---
@@ -541,8 +541,8 @@ To make the boundary explicit:
 | Shadow / Trial / Production modes    | [`../profiles/modes.md`](../profiles/modes.md)                     |
 | Handoff between participants         | [`../profiles/handoff.md`](../profiles/handoff.md)                 |
 | Pause / resume / snapshot / rollback | [`../profiles/control.md`](../profiles/control.md)                 |
-| MCP tool-call citations              | [`../integrations/HAP-with-MCP.md`](../integrations/HAP-with-MCP.md) |
-| A2A cross-org delegation             | [`../integrations/HAP-with-A2A.md`](../integrations/HAP-with-A2A.md) |
+| MCP tool-call citations              | [`../integrations/CHAP-with-MCP.md`](../integrations/CHAP-with-MCP.md) |
+| A2A cross-org delegation             | [`../integrations/CHAP-with-A2A.md`](../integrations/CHAP-with-A2A.md) |
 
 A workspace that needs none of these can operate at Core level
 indefinitely. Many real deployments — internal-team chatbots,
@@ -555,7 +555,7 @@ more than Core.
 
 A practical sequence:
 
-1. **Hour 1.** Set up an HTTP server that accepts POST to `/hap`,
+1. **Hour 1.** Set up an HTTP server that accepts POST to `/chap`,
    parses JSON-RPC 2.0, dispatches by `method`.
 2. **Hour 2.** Implement `workspace.describe` and an in-memory
    workspace state with members.
@@ -584,7 +584,7 @@ about 300 lines of TypeScript.
 Once Core works:
 
 1. Add the **`review`** profile if your workflow involves humans
-   approving agent output. This is where HAP's structured-override
+   approving agent output. This is where CHAP's structured-override
    superpower lives.
 2. Add **`security-signed`** if you need non-repudiation or
    cross-trust-boundary audit.

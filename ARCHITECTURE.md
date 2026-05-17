@@ -1,6 +1,6 @@
-# HAP Architecture
+# CHAP Architecture
 
-This document is **informative**. It explains the design choices behind HAP,
+This document is **informative**. It explains the design choices behind CHAP,
 how the primitives fit together, and what deployment topologies are practical.
 For the normative wire format, see [SPECIFICATION.md](./SPECIFICATION.md).
 
@@ -8,7 +8,7 @@ For the normative wire format, see [SPECIFICATION.md](./SPECIFICATION.md).
 
 ## 1. The protocol stack
 
-HAP sits alongside MCP and A2A. Each protocol owns a single concern.
+CHAP sits alongside MCP and A2A. Each protocol owns a single concern.
 
 ```mermaid
 %%{init: {
@@ -35,26 +35,26 @@ flowchart LR
     H1["Human<br/>Reviewer"]:::human
     H2["Human<br/>Approver"]:::human
     A1["Agent<br/>Drafter"]:::agent
-    C["Coordinator<br/>(HAP)"]:::coord
+    C["Coordinator<br/>(CHAP)"]:::coord
     T["Tool Server<br/>(MCP)"]:::tool
     P["Peer Agent<br/>(A2A)"]:::peer
 
-    H1 ===|HAP| C
-    H2 ===|HAP| C
-    A1 ===|HAP| C
+    H1 ===|CHAP| C
+    H2 ===|CHAP| C
+    A1 ===|CHAP| C
     A1 -.->|MCP| T
     A1 -.->|A2A| P
 ```
 
-**Reading the diagram.** Solid lines are HAP. Dotted lines are MCP and A2A.
-HAP sits in the middle, holding the workspace; MCP and A2A radiate outward
+**Reading the diagram.** Solid lines are CHAP. Dotted lines are MCP and A2A.
+CHAP sits in the middle, holding the workspace; MCP and A2A radiate outward
 to tools and external agents respectively.
 
 ---
 
 ## 2. Core primitives
 
-HAP has a small set of primitives, related as follows.
+CHAP has a small set of primitives, related as follows.
 
 ```mermaid
 %%{init: {
@@ -188,7 +188,7 @@ stateDiagram-v2
 
 ## 4. The evidence chain
 
-HAP's audit guarantee is a per-workspace hash-linked log.
+CHAP's audit guarantee is a per-workspace hash-linked log.
 
 ```mermaid
 %%{init: {
@@ -318,8 +318,8 @@ sequenceDiagram
     Note over C: override artefact links<br/>back to original draft via<br/>"based_on" field
 ```
 
-**Why this matters.** Without HAP, an override is "the human changed
-something and clicked Save." With HAP, it is a typed, signed, tagged,
+**Why this matters.** Without CHAP, an override is "the human changed
+something and clicked Save." With CHAP, it is a typed, signed, tagged,
 diff-bearing artefact that downstream systems can learn from without
 reverse-engineering the UI. Override patterns are now an analysable
 asset of the workspace, not a tribal-knowledge loss.
@@ -328,7 +328,7 @@ asset of the workspace, not a tribal-knowledge loss.
 
 ## 7. Multi-human deliberation
 
-When more than one human needs to weigh in, HAP carries the thread.
+When more than one human needs to weigh in, CHAP carries the thread.
 
 ```mermaid
 %%{init: {
@@ -373,7 +373,7 @@ and `weighted_vote_with_veto:threshold` out of the box.
 
 ---
 
-## 8. Composition: HAP + MCP + A2A
+## 8. Composition: CHAP + MCP + A2A
 
 A real deployment composes all three protocols. Here is the full picture.
 
@@ -398,7 +398,7 @@ flowchart TB
     classDef bridge fill:#EDE0F2,stroke:#6a3d8a,stroke-width:2px,color:#3b0e63
     classDef ext   fill:#FFF3E0,stroke:#C76B00,stroke-width:2px,color:#5a3500
 
-    subgraph WS["<b>HAP Workspace</b>"]
+    subgraph WS["<b>CHAP Workspace</b>"]
       H["Human"]:::human
       A["Agent"]:::agent
       C["<b>Coordinator</b>"]:::coord
@@ -409,9 +409,9 @@ flowchart TB
     T2["Tool<br/>(shipping)"]:::tool
     EXT["External Agent<br/>(partner org)"]:::ext
 
-    H -->|HAP| C
-    A -->|HAP| C
-    B -->|HAP| C
+    H -->|CHAP| C
+    A -->|CHAP| C
+    B -->|CHAP| C
     A -.->|MCP| T1
     A -.->|MCP| T2
     B ====>|A2A| EXT
@@ -420,7 +420,7 @@ flowchart TB
 **The audit story.** A regulator asks "show me everything that produced
 this customer reply." The Coordinator returns:
 
-- The HAP messages (signed, hash-linked).
+- The CHAP messages (signed, hash-linked).
 - The cited MCP tool invocations (with hash-verified inputs and outputs).
 - The cited A2A correlations (with cross-system attestation).
 
@@ -430,7 +430,7 @@ One query, one chain, three protocols.
 
 ## 9. Deployment topologies
 
-HAP supports three deployment topologies, each with different trust and
+CHAP supports three deployment topologies, each with different trust and
 operational trade-offs.
 
 ```mermaid
@@ -524,11 +524,11 @@ verification is the dominant cost.
 
 ---
 
-## 11. What HAP is not
+## 11. What CHAP is not
 
 To avoid scope creep:
 
-- **Not a workflow engine.** HAP carries the messages a workflow
+- **Not a workflow engine.** CHAP carries the messages a workflow
   engine produces. The state of *which task comes next* lives in the
   application, not the protocol.
 - **Not a knowledge base.** Artefacts are typed payloads; their
@@ -536,9 +536,9 @@ To avoid scope creep:
 - **Not a chat protocol.** `notify.message` exists but is intended
   for protocol-adjacent communication, not as a Slack replacement.
 - **Not a permission system.** Roles and method-permission matrices
-  live in the workspace policy; HAP carries the policy reference and
+  live in the workspace policy; CHAP carries the policy reference and
   enforces it.
-- **Not an identity provider.** HAP relies on OIDC, SPIFFE, and
+- **Not an identity provider.** CHAP relies on OIDC, SPIFFE, and
   workload identities; it does not issue tokens.
 
 ---

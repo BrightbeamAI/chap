@@ -1,12 +1,12 @@
 /**
- * HAP Core + Review reference server.
+ * CHAP Core + Review reference server.
  *
  * Implements the 7 Core methods plus the 6 review-profile methods:
  *   review.request, decide.approve, decide.reject, decide.override,
  *   abstain.declare, escalate.raise.
  *
  * decide.override carries an RFC 6902 JSON Patch + rationale + tags +
- * policy_refs. This is where HAP's structured-override-as-learning-
+ * policy_refs. This is where CHAP's structured-override-as-learning-
  * data dividend lives.
  *
  * In-memory state, plain HTTP + JSON-RPC 2.0. No external deps beyond
@@ -616,8 +616,8 @@ const server = createServer(async (req, res) => {
     res.end();
     return;
   }
-  if (req.method !== "POST" || req.url !== "/hap") {
-    return reply(res, 404, { error: "POST /hap" });
+  if (req.method !== "POST" || req.url !== "/chap") {
+    return reply(res, 404, { error: "POST /chap" });
   }
 
   let env: Envelope;
@@ -634,6 +634,6 @@ const server = createServer(async (req, res) => {
 
 const port = parseInt(process.env.PORT ?? "8080", 10);
 server.listen(port, () => {
-  console.log(`HAP Core+Review reference on http://localhost:${port}/hap`);
+  console.log(`CHAP Core+Review reference on http://localhost:${port}/chap`);
   console.log(`Profiles: core/1.0, review/1.0`);
 });

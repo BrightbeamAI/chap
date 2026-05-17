@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hap.dev/schemas/0.1/hap-methods.schema.json",
-  "title": "HAP Method Catalogue",
-  "description": "Authoritative catalogue of methods defined by HAP v0.1.",
+  "$id": "https://chap.dev/schemas/0.1/chap-methods.schema.json",
+  "title": "CHAP Method Catalogue",
+  "description": "Authoritative catalogue of methods defined by CHAP v0.1.",
   "type": "object",
   "required": ["version", "methods"],
   "properties": {

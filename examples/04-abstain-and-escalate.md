@@ -50,7 +50,7 @@ correct outcome is probably approval — just not by her.
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZA2K3K3X8M2V4N6P8R0T5B",
   "ts": "2026-05-17T11:02:14.301Z",
   "workspace": "wsp_support_triage",
@@ -100,7 +100,7 @@ The workspace policy includes an `escalation_chain` for the
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZA2K3K3X8M2V4N6P8R0T5E",
   "ts": "2026-05-17T11:02:14.412Z",
   "workspace": "wsp_support_triage",
@@ -164,7 +164,7 @@ asked to triage a case it does not understand:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZA3L4K3X8M2V4N6P8R0T6A",
   "ts": "2026-05-17T11:30:00.100Z",
   "workspace": "wsp_support_triage",
@@ -199,7 +199,7 @@ Because abstentions are first-class evidence entries, an auditor can ask:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZB1AAAAAAAAAAAAAAAAAAA1",
   "ts": "2026-05-24T11:00:00.000Z",
   "workspace": "wsp_support_triage",

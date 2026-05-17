@@ -4,12 +4,12 @@
 
 The `audit-scitt` profile says: **the workspace's audit log is a
 [SCITT](https://datatracker.ietf.org/wg/scitt/about/) transparency
-service.** Every accepted HAP envelope becomes a SCITT signed
+service.** Every accepted CHAP envelope becomes a SCITT signed
 statement; every accepted envelope produces a SCITT receipt that any
 party can verify offline against the transparency service's signed
 log root.
 
-HAP does not define its own transparency primitive; this profile
+CHAP does not define its own transparency primitive; this profile
 defers entirely to SCITT.
 
 ---
@@ -25,9 +25,9 @@ and produces receipts that:
   and the receipt itself.
 - Compose with existing supply-chain tooling (Sigstore Rekor,
   Notary v2, in-toto).
-- Do not require a parallel verification implementation in HAP.
+- Do not require a parallel verification implementation in CHAP.
 
-Adopting SCITT means HAP's audit story benefits from the IETF
+Adopting SCITT means CHAP's audit story benefits from the IETF
 working group's review and from existing SCITT implementations.
 
 ---
@@ -36,7 +36,7 @@ working group's review and from existing SCITT implementations.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                  HAP Workspace                            │
+│                  CHAP Workspace                            │
 │                                                           │
 │   participants ── envelopes ──> Coordinator               │
 │                                       │                   │
@@ -80,15 +80,15 @@ COSE_Sign1 {
       sub: <workspace id>
       iat: <unix ts>
     }
-    content-type: "application/hap+json;version=0.1"
+    content-type: "application/chap+json;version=0.1"
   }
-  payload: <JCS canonicalisation of the HAP envelope>
+  payload: <JCS canonicalisation of the CHAP envelope>
   signature: <Ed25519 signature over the protected headers + payload>
 }
 ```
 
 The protected headers identify the workspace and the issuing
-participant. The payload is the canonical HAP envelope; receivers
+participant. The payload is the canonical CHAP envelope; receivers
 can extract and process it normally.
 
 ---
@@ -109,9 +109,9 @@ in the loop.
 
 ---
 
-## 5. What HAP no longer defines
+## 5. What CHAP no longer defines
 
-This profile **deletes** the following from HAP itself:
+This profile **deletes** the following from CHAP itself:
 
 - The bespoke `EvidenceEntry` schema.
 - The `prev_hash` chain linkage rules.
@@ -121,7 +121,7 @@ This profile **deletes** the following from HAP itself:
 In their place: standard SCITT receipts and the standard SCITT
 verification procedure.
 
-HAP retains `audit.read` (for browsing the log), but the underlying
+CHAP retains `audit.read` (for browsing the log), but the underlying
 storage and verification primitives are now SCITT's.
 
 ---
@@ -151,8 +151,8 @@ provenance and via SCITT receipts. New entries are SCITT-only.
 
 A SCITT log root MAY be anchored to other transparency systems
 (blockchain, RFC 3161 timestamp authority, immutable object store).
-Anchoring is the SCITT working group's concern, not HAP's; whatever
-SCITT decides is what HAP gets.
+Anchoring is the SCITT working group's concern, not CHAP's; whatever
+SCITT decides is what CHAP gets.
 
 ---
 
@@ -185,5 +185,5 @@ SCITT decides is what HAP gets.
   configured. The transparency service may verify the issuer's
   identity chain.
 - **Independence from MCP/A2A:** MCP and A2A have their own audit
-  surfaces; the SCITT audit covers the HAP layer specifically.
+  surfaces; the SCITT audit covers the CHAP layer specifically.
   Cross-protocol audit is by *citation*, not by encapsulation.

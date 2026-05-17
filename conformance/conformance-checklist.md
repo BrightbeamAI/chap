@@ -1,14 +1,14 @@
-# HAP Conformance Checklist
+# CHAP Conformance Checklist
 
-This is the self-attestation template for HAP. An
+This is the self-attestation template for CHAP. An
 implementation claims conformance by:
 
 1. Filling in the **Core** checklist below.
 2. Filling in a **profile checklist** for each profile it implements.
 3. Publishing the completed attestation as an
    [in-toto attestation](https://github.com/in-toto/attestation) with
-   subject `hap-implementation:<name>:<version>` and predicate
-   `hap.dev/conformance/v1`.
+   subject `chap-implementation:<name>:<version>` and predicate
+   `chap.dev/conformance/v1`.
 
 Conformance is **Core + the set of profiles attested**. There is no
 single "overall" conformance level; implementations announce
@@ -36,18 +36,18 @@ list that its attestation claims.
 ## Core conformance (mandatory)
 
 An implementation MUST satisfy every item below to claim any
-HAP conformance.
+CHAP conformance.
 
 ### C1 · Wire format
 
 - [ ] Envelopes are valid [JSON-RPC 2.0](https://www.jsonrpc.org/specification) requests, responses, or notifications.
-- [ ] Required HAP fields (`workspace`, `from`, `to`, `ts`) are present inside `params`.
+- [ ] Required CHAP fields (`workspace`, `from`, `to`, `ts`) are present inside `params`.
 - [ ] `ts` is RFC 3339 with millisecond precision.
 - [ ] Participant URIs match the grammar in [`../SPECIFICATION.md`](../SPECIFICATION.md) §18.
 
 ### C2 · Transport
 
-- [ ] Accepts HAP envelopes over HTTP POST to a documented path (`/hap` recommended).
+- [ ] Accepts CHAP envelopes over HTTP POST to a documented path (`/chap` recommended).
 - [ ] Uses TLS in production deployments.
 - [ ] Returns the corresponding response envelope in the HTTP response body.
 
@@ -176,15 +176,15 @@ A published attestation is an in-toto Statement:
 {
   "_type":         "https://in-toto.io/Statement/v1",
   "subject":       [
-    { "name": "hap-implementation:example-coordinator:1.4.2",
+    { "name": "chap-implementation:example-coordinator:1.4.2",
       "digest": { "sha256": "…" } }
   ],
-  "predicateType": "https://hap.dev/conformance/v1",
+  "predicateType": "https://chap.dev/conformance/v1",
   "predicate": {
     "profiles_claimed": ["core/1.0", "review/1.0", "modes/1.0", "security-signed/1.0"],
     "tested_at":        "2026-05-17T18:00:00Z",
     "test_results":     { "core": "pass", "review": "pass", "modes": "pass", "security-signed": "pass" },
-    "checklist_uri":    "https://example.org/attestations/hap-2026-05-17.md",
+    "checklist_uri":    "https://example.org/attestations/chap-2026-05-17.md",
     "signer":           "did:example:example-org#attestation-key"
   }
 }

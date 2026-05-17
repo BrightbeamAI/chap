@@ -1,15 +1,15 @@
 # Governance
 
-This document describes how the Human-Agent Protocol evolves: the
+This document describes how the Collaborative Human-Agent Protocol evolves: the
 roles, the change process, the versioning policy, the intellectual-
 property terms, and the dispute-resolution path. A protocol without
-documented governance is unfinished; this document is part of HAP.
+documented governance is unfinished; this document is part of CHAP.
 
 ---
 
 ## 1. Charter
 
-**Purpose.** HAP exists to standardise the verbs that humans, agents,
+**Purpose.** CHAP exists to standardise the verbs that humans, agents,
 and services use to collaborate on shared work, and to do so in a way
 that composes with [MCP](https://modelcontextprotocol.io) and
 [A2A](https://a2a.dev).
@@ -52,7 +52,7 @@ protocol decisions.
 ### 2.2 Steering Committee
 
 The Steering Committee is composed of five to nine people drawn from
-organisations that ship production HAP deployments or
+organisations that ship production CHAP deployments or
 implementations. The Committee ratifies major decisions, appoints
 Editors, manages the IPR and license, and acts as the final arbiter
 on disputes.
@@ -86,7 +86,7 @@ clear artefact and a clear decision-maker.
    │                 │               │                   │               │
    ▼                 ▼               ▼                   ▼               ▼
   Issue ──────► Discussion ────► HEP draft ────► Reference impl ────► Spec merge
-              (any forum)     (HAP Enhancement
+              (any forum)     (CHAP Enhancement
                                  Proposal)
 ```
 
@@ -100,7 +100,7 @@ labelled:
 - `bug` — spec says something that doesn't work in practice.
 - `enhancement-proposal` — substantive addition; needs a HEP.
 
-### 3.2 HEP — HAP Enhancement Proposal
+### 3.2 HEP — CHAP Enhancement Proposal
 
 A HEP is a structured document proposing a substantive change. It
 contains:
@@ -170,7 +170,7 @@ A HEP author may withdraw at any time.
 
 ## 4. Versioning
 
-HAP follows [Semantic Versioning 2.0](https://semver.org).
+CHAP follows [Semantic Versioning 2.0](https://semver.org).
 
 - **MAJOR** (`X.0`): wire-breaking changes; old clients cannot
   talk to new servers. A documented migration period of at least
@@ -189,9 +189,9 @@ both the Core version and each profile version it supports via
 
 ### 5.1 Specification license
 
-The HAP specification text is licensed under
+The CHAP specification text is licensed under
 [Creative Commons Attribution 4.0 (CC-BY-4.0)](https://creativecommons.org/licenses/by/4.0/).
-Anyone can implement, redistribute, or extend HAP without
+Anyone can implement, redistribute, or extend CHAP without
 permission.
 
 ### 5.2 Code license
@@ -210,7 +210,7 @@ of Origin (DCO) sign-off.
 
 ### 5.4 Patents
 
-The Steering Committee commits to HAP being implementable royalty-
+The Steering Committee commits to CHAP being implementable royalty-
 free. Contributors implicitly grant a patent license for any
 patents that read on their contributions, as per the Apache 2.0
 patent grant for code and a similar good-faith commitment for spec
@@ -241,13 +241,13 @@ Code of Conduct process in [`CONTRIBUTING.md`](./CONTRIBUTING.md) §8.
 
 ## 7. Forks
 
-HAP is a public standard licensed CC-BY and Apache 2.0. Anyone may
+CHAP is a public standard licensed CC-BY and Apache 2.0. Anyone may
 fork. Three constraints apply if you do:
 
-1. Use a name clearly distinct from HAP.
-2. Don't claim conformance with HAP unless you pass the conformance
+1. Use a name clearly distinct from CHAP.
+2. Don't claim conformance with CHAP unless you pass the conformance
    suite.
-3. Submit changes back upstream if they should be part of HAP.
+3. Submit changes back upstream if they should be part of CHAP.
 
 ---
 

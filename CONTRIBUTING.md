@@ -1,6 +1,6 @@
-# Contributing to HAP
+# Contributing to CHAP
 
-Thank you for considering a contribution to the Human-Agent Protocol. HAP is
+Thank you for considering a contribution to the Collaborative Human-Agent Protocol. CHAP is
 intended to be an **open, vendor-neutral standard**. Contributions of any size
 are welcome — typo fixes, clarifying examples, new test vectors, new transport
 bindings, and substantive proposals for the next draft.
@@ -25,7 +25,7 @@ in scope.
 
 ---
 
-## 2. Proposal format ("HAP Improvement Proposals")
+## 2. Proposal format ("CHAP Improvement Proposals")
 
 For substantive changes, write a proposal that includes:
 
@@ -57,13 +57,13 @@ of the working group before they merge into a draft.
 
 **Out of scope:**
 
-- Vendor- or product-specific extensions. HAP is intentionally
+- Vendor- or product-specific extensions. CHAP is intentionally
   vendor-neutral. Vendors are welcome to layer their own protocols
-  on top of HAP, but the core specification will not encode
+  on top of CHAP, but the core specification will not encode
   vendor-specific semantics.
-- UI conventions. HAP defines a wire format and a method catalogue,
+- UI conventions. CHAP defines a wire format and a method catalogue,
   not a user interface.
-- Business processes. HAP is mechanism, not policy.
+- Business processes. CHAP is mechanism, not policy.
 
 ---
 
@@ -101,7 +101,7 @@ Diagrams:
 
 ## 5. Versioning and release process
 
-HAP follows SemVer on the `hap` envelope field. Until 1.0, MINOR bumps
+CHAP follows SemVer on the `chap` envelope field. Until 1.0, MINOR bumps
 may include breaking changes; implementers should pin exact draft
 versions. See [CHANGELOG.md](./CHANGELOG.md) for the release history
 and the planned items for upcoming drafts.

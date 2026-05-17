@@ -1,6 +1,6 @@
-# HAP FAQ
+# CHAP FAQ
 
-Common questions about the Human-Agent Protocol, grouped by theme.
+Common questions about the Collaborative Human-Agent Protocol, grouped by theme.
 If you don't see your question here, the [Handbook](./HANDBOOK.md)
 covers most operational topics in depth.
 
@@ -8,48 +8,48 @@ covers most operational topics in depth.
 
 ## Positioning
 
-### Is HAP a competitor to MCP or A2A?
+### Is CHAP a competitor to MCP or A2A?
 
-No. HAP is designed to compose with both:
+No. CHAP is designed to compose with both:
 
-- **MCP** lets an agent talk to tools. When a HAP-resident agent
+- **MCP** lets an agent talk to tools. When a CHAP-resident agent
   calls an MCP tool to do its work, the call is *cited* inside the
-  agent's HAP artefact, with input/output hashes providing
+  agent's CHAP artefact, with input/output hashes providing
   cryptographic boundaries.
 - **A2A** lets agents talk to other agents across organisational
-  boundaries. When a HAP participant needs to delegate work to an
+  boundaries. When a CHAP participant needs to delegate work to an
   external A2A peer, the peer is represented as a `service:bridge…`
   participant inside the workspace. A2A traffic stays on the A2A
   wire; the bridge mediates.
 
 The three protocols own different layers of the same stack. See
-[`integrations/HAP-with-MCP.md`](./integrations/HAP-with-MCP.md) and
-[`integrations/HAP-with-A2A.md`](./integrations/HAP-with-A2A.md).
+[`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md) and
+[`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
 ### Why not just use Slack/Teams plus a bot framework?
 
 You can. For internal-team chat with the occasional bot, Slack is
-fine. HAP exists because:
+fine. CHAP exists because:
 
-1. Slack's audit semantics are vendor-specific. HAP's audit log is
+1. Slack's audit semantics are vendor-specific. CHAP's audit log is
    portable across implementations.
 2. Slack has no protocol-level concept of structured override.
    Edits to bot output are lost as plain conversation.
 3. Slack offers no mode promotion ladder. New bots are released or
    not; there's no shadow/trial scaffolding.
-4. Slack is a closed product. HAP is an open standard.
+4. Slack is a closed product. CHAP is an open standard.
 
 If your problem is internal team coordination, Slack is the answer.
 If your problem is producing verifiable, structured work product
-where humans and agents collaborate, HAP is the answer.
+where humans and agents collaborate, CHAP is the answer.
 
 ### Why not just use a workflow engine like Temporal or Airflow?
 
 A workflow engine handles **how** work happens — retries, durability,
-fan-out, scheduling. HAP handles **what** the work is and **who**
+fan-out, scheduling. CHAP handles **what** the work is and **who**
 did each step. They're complementary: a Temporal workflow can use
-HAP envelopes to record its human-touchpoints; the audit log is
-HAP's, the orchestration is Temporal's.
+CHAP envelopes to record its human-touchpoints; the audit log is
+CHAP's, the orchestration is Temporal's.
 
 ### What does "third pillar" actually mean?
 
@@ -57,7 +57,7 @@ The three protocols form a stack:
 
 ```
    ┌─────────────────────────────────────┐
-   │  HAP — humans + agents collaborate  │
+   │  CHAP — humans + agents collaborate  │
    ├─────────────────────────────────────┤
    │  A2A — agents talk to agents        │
    ├─────────────────────────────────────┤
@@ -66,26 +66,26 @@ The three protocols form a stack:
 ```
 
 You can adopt any one alone. They become more useful together: an
-agent in a HAP workspace can use MCP for tools and A2A for remote
-peers, all auditable through the HAP layer.
+agent in a CHAP workspace can use MCP for tools and A2A for remote
+peers, all auditable through the CHAP layer.
 
 ---
 
 ## Adoption
 
-### How long does it take to implement HAP?
+### How long does it take to implement CHAP?
 
-- **HAP Core**, in any language with basic JSON tooling: a weekend.
+- **CHAP Core**, in any language with basic JSON tooling: a weekend.
   ~300–500 LOC. The reference at [`reference/core/`](./reference/core/)
   is ~400 lines of TypeScript.
-- **HAP Core + `review` profile**: another day. ~150 LOC of additional
+- **CHAP Core + `review` profile**: another day. ~150 LOC of additional
   state-machine and method handlers.
 - **A production deployment** with `identity-oidc`, `security-signed`,
   durable audit, monitoring: weeks. The protocol parts are small;
   the operational parts (HA, retention, incident playbooks) are the
   usual production engineering.
 
-### Can I implement Core and call myself HAP-compliant?
+### Can I implement Core and call myself CHAP-compliant?
 
 Yes. Implementing all 7 Core methods plus the wire format and audit
 log makes you Core-conformant. You file an in-toto attestation
@@ -111,7 +111,7 @@ No. A Core-only deployment with manual human review off-protocol is
 useful. A Core + `review` deployment is significantly more useful.
 Profiles are additive; you don't pay for what you don't use.
 
-### Is HAP versioned?
+### Is CHAP versioned?
 
 The wire format and methods are stable. Each profile carries its
 own semantic version (`review/1.0`, `core/1.0`, etc.) so an
@@ -151,16 +151,16 @@ If you need a different scheme for compliance reasons, the
 and the spec leaves room for additional algorithms. Ed25519 is
 required as the baseline; others may be added by HEP.
 
-### Does HAP require a specific identity provider?
+### Does CHAP require a specific identity provider?
 
 No. The `identity-oidc` profile works with any OIDC-compliant IdP
 that supports `cnf.jwk` or that you can wrap with a DPoP-issuing
 shim. The `identity-vc` profile works with any W3C-compliant VC
 issuer. There's no vendor dependency at the protocol layer.
 
-### How does HAP handle GDPR / right-to-be-forgotten?
+### How does CHAP handle GDPR / right-to-be-forgotten?
 
-Append-only logs and erasure rights are in genuine tension. HAP's
+Append-only logs and erasure rights are in genuine tension. CHAP's
 pattern (see [`HANDBOOK.md`](./HANDBOOK.md) §8.3 and
 [`SECURITY.md`](./SECURITY.md) §6):
 
@@ -194,7 +194,7 @@ library).
 
 ## Audit and compliance
 
-### Is HAP suitable for regulated environments?
+### Is CHAP suitable for regulated environments?
 
 Yes, with the right profile combination. A regulated deployment
 typically uses `core` + `review` + `identity-oidc` (or
@@ -243,37 +243,37 @@ service is fine for development.
 
 ## Composition and interop
 
-### Can I mix HAP with my existing app?
+### Can I mix CHAP with my existing app?
 
-Yes. HAP is a protocol, not a framework. A common pattern:
+Yes. CHAP is a protocol, not a framework. A common pattern:
 
-- Your app's UI calls HAP methods as if calling any other API.
+- Your app's UI calls CHAP methods as if calling any other API.
 - Your app's database mirrors the workspace state for UI rendering.
-- Your app's audit needs are met by querying the HAP audit log.
-- Your existing identity system feeds OIDC tokens to HAP.
+- Your app's audit needs are met by querying the CHAP audit log.
+- Your existing identity system feeds OIDC tokens to CHAP.
 
-You don't replace your app; you adopt HAP for the multi-party-
+You don't replace your app; you adopt CHAP for the multi-party-
 collaboration parts.
 
 ### What if I'm already using MCP?
 
-You keep using it. HAP citations inside artefacts reference MCP
+You keep using it. CHAP citations inside artefacts reference MCP
 tool calls with input/output hashes; the MCP traffic stays on the
 MCP wire. Nothing needs to change about your MCP setup.
 
 ### What about A2A?
 
-Same answer. A2A peers appear inside HAP workspaces as
+Same answer. A2A peers appear inside CHAP workspaces as
 `service:bridge…` participants. The bridge mediates; A2A traffic
 stays on the A2A wire.
 
-### Can I use HAP without MCP or A2A?
+### Can I use CHAP without MCP or A2A?
 
-Yes. They're complementary, not required. A HAP-only deployment
+Yes. They're complementary, not required. A CHAP-only deployment
 works perfectly well; tools and remote peers are then handled by
 whatever mechanism you already use.
 
-### Can HAP carry binary content?
+### Can CHAP carry binary content?
 
 Envelopes are JSON, so large binary content (images, PDFs, audio) is
 referenced by URL or content-addressed hash, not embedded base64.
@@ -285,14 +285,14 @@ referenced.
 
 ## Governance and licensing
 
-### Who runs HAP?
+### Who runs CHAP?
 
-HAP is developed in the open. Substantive changes go through the
-HEP (HAP Enhancement Proposal) process: discussion, reference
+CHAP is developed in the open. Substantive changes go through the
+HEP (CHAP Enhancement Proposal) process: discussion, reference
 implementation, public comment, ratification. See
 [`GOVERNANCE.md`](./GOVERNANCE.md) for the full mechanics.
 
-### Is HAP free to use?
+### Is CHAP free to use?
 
 Yes. The specification is licensed CC-BY 4.0; the reference code is
 Apache 2.0. Implement freely, fork freely, redistribute freely.
@@ -308,15 +308,15 @@ schema fixes) are PRs.
 
 Yes, with three constraints (see [`GOVERNANCE.md`](./GOVERNANCE.md) §7):
 
-1. Use a name clearly distinct from HAP.
-2. Don't claim HAP conformance unless you pass the suite.
-3. Submit changes back upstream if they should be part of HAP.
+1. Use a name clearly distinct from CHAP.
+2. Don't claim CHAP conformance unless you pass the suite.
+3. Submit changes back upstream if they should be part of CHAP.
 
 ---
 
 ## Implementation specifics
 
-### What language should I implement HAP in?
+### What language should I implement CHAP in?
 
 Any language with HTTP, JSON, and (for `security-signed`) Ed25519
 and JCS libraries. Reference implementations are in TypeScript;
@@ -343,7 +343,7 @@ audit-volume limits hit first; size for storage.
 
 ### What about partial failures and idempotency?
 
-HAP envelope IDs are unique; a Coordinator MUST de-duplicate by
+CHAP envelope IDs are unique; a Coordinator MUST de-duplicate by
 `(workspace, id)`. Retrying a failed request with the same envelope
 is safe. Operations that mutate state are idempotent on envelope ID.
 

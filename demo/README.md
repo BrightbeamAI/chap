@@ -1,6 +1,6 @@
-# The HAP Demo
+# The CHAP Demo
 
-A single-page interactive demo that tells HAP's story end-to-end.
+A single-page interactive demo that tells CHAP's story end-to-end.
 Self-contained: just `index.html`. No build, no server, no
 dependencies. Open it in any modern browser.
 
@@ -12,12 +12,12 @@ The demo walks through six sections:
    responses drafted by an AI, waiting for review. The framing
    question: *what if every one of those edits became data?*
 
-2. **The analogy.** HAP is track changes for AI. The same shape an
+2. **The analogy.** CHAP is track changes for AI. The same shape an
    editor uses when marking up a writer's draft, structured for
    machines as well as for humans.
 
 3. **The protocol stack.** Three protocols, one stack. MCP for tools,
-   A2A for agents, HAP for humans-with-agents. Plus the seven Core
+   A2A for agents, CHAP for humans-with-agents. Plus the seven Core
    methods.
 
 4. **A workspace at work.** An interactive walkthrough — click through
@@ -54,13 +54,13 @@ Or just double-click the file. No server needed.
 
 ## What it's for
 
-This demo is the answer to *"what does HAP actually do, in five
+This demo is the answer to *"what does CHAP actually do, in five
 minutes, without reading a spec?"*
 
 Use it for:
 
 - **Sharing with non-technical stakeholders** who need to understand
-  why your team is adopting HAP.
+  why your team is adopting CHAP.
 - **Onboarding engineers** before they read [`core/SPEC.md`](../core/SPEC.md).
 - **Conference talks** — the sections can be walked through live as a
   visual story.

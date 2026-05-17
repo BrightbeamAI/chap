@@ -1,18 +1,18 @@
-# HAP + A2A
+# CHAP + A2A
 
-This document specifies how the Human-Agent Protocol composes with the
-[Agent-to-Agent (A2A) protocol](https://a2a.dev). HAP and A2A address
+This document specifies how the Collaborative Human-Agent Protocol composes with the
+[Agent-to-Agent (A2A) protocol](https://a2a.dev). CHAP and A2A address
 disjoint concerns:
 
 | Concern                                                     | Protocol |
 |-------------------------------------------------------------|----------|
 | Two agents talking across organisational boundaries         | A2A      |
-| The shared room — humans and agents collaborating inside one organisation | HAP      |
+| The shared room — humans and agents collaborating inside one organisation | CHAP      |
 
 The composition pattern is **bridge service**, not federation. Inside
-each organisation's HAP workspace, a single Participant of type
+each organisation's CHAP workspace, a single Participant of type
 `service` represents the cross-boundary peer. That service participant
-speaks HAP locally and A2A remotely. Each workspace's evidence chain
+speaks CHAP locally and A2A remotely. Each workspace's evidence chain
 remains authoritative within its own organisation; cross-organisation
 evidence is joined via the bridge's citations.
 
@@ -24,9 +24,9 @@ keeps both protocols simple.
 ## 1. The boundary
 
 ```
-┌─── HAP Workspace A (org A) ────┐         ┌─── HAP Workspace B (org B) ────┐
+┌─── CHAP Workspace A (org A) ────┐         ┌─── CHAP Workspace B (org B) ────┐
 │                                │         │                                │
-│  human ─── HAP ──> coordinator │         │  coordinator <── HAP ─── human │
+│  human ─── CHAP ──> coordinator │         │  coordinator <── CHAP ─── human │
 │                       │        │         │      │                         │
 │                       ▼        │         │      ▼                         │
 │              bridge:partner    │ ─ A2A ─ │  bridge:partner                │
@@ -42,9 +42,9 @@ A request to "delegate this task to a peer at another organisation":
 2. The bridge accepts it, translates it into an A2A request, and
    sends it over A2A to the peer organisation.
 3. The peer organisation does whatever it does — internally, that
-   workspace handles the request via its own HAP flow.
+   workspace handles the request via its own CHAP flow.
 4. The peer returns an A2A response. The local bridge ingests it,
-   produces a HAP artefact citing the A2A correlation, and emits
+   produces a CHAP artefact citing the A2A correlation, and emits
    `task.complete` locally.
 
 From the perspective of every other Participant in the local
@@ -93,13 +93,13 @@ remote endpoints the bridge may contact.
 A document-translation team uses an external partner for languages
 its in-house team doesn't cover. A human delegates a translation
 task to the bridge; the bridge moves the work over A2A; the result
-returns as a HAP artefact.
+returns as a CHAP artefact.
 
 ### 3.1 Local task.assign
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZBF1R0K3X8M2V4N6P8R0TCA",
   "ts": "2026-05-17T16:45:00.000Z",
   "workspace": "wsp_translation_intake",
@@ -143,7 +143,7 @@ returns as a HAP artefact.
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZBF1R0K3X8M2V4N6P8R0TCC",
   "ts": "2026-05-17T16:45:00.412Z",
   "workspace": "wsp_translation_intake",
@@ -169,7 +169,7 @@ A2A request:
   body: { task: 'translation', source: 'en', target: 'ko', doc_uri: '…', deadline: '…' }
 ```
 
-The bridge optionally emits a HAP `task.progress` notification with
+The bridge optionally emits a CHAP `task.progress` notification with
 the correlation id, so local observers see that the bridge is in
 flight:
 
@@ -189,7 +189,7 @@ flight:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZBG2S1K3X8M2V4N6P8R0TCE",
   "ts": "2026-05-17T18:32:14.001Z",
   "workspace": "wsp_translation_intake",
@@ -237,7 +237,7 @@ control flow.
 
 The bridge is the trust anchor. Specifically:
 
-- **Locally**, the bridge signs HAP messages with its own key,
+- **Locally**, the bridge signs CHAP messages with its own key,
   registered in the local workspace. Local Participants trust the
   bridge to the same extent they would trust any service agent in
   the workspace.
@@ -285,9 +285,9 @@ A conformant Coordinator that hosts a bridge SHOULD:
 
 | Question                                                            | Answer                                |
 |---------------------------------------------------------------------|---------------------------------------|
-| Do A2A messages cross the HAP wire?                                 | No.                                   |
+| Do A2A messages cross the CHAP wire?                                 | No.                                   |
 | What represents the remote peer locally?                            | A `service:bridge…` participant.      |
-| Where does cross-organisation evidence go?                          | Into HAP citations + the A2A protocol's own audit log. |
+| Where does cross-organisation evidence go?                          | Into CHAP citations + the A2A protocol's own audit log. |
 | Can a local-only auditor see what happened across the boundary?     | They see *that* it happened, with hashes; bodies require A2A audit access. |
 | Do both workspaces share an evidence chain?                         | No. Each workspace's chain is local.  |
 | What does the local chain commit about the remote work?             | The correlation_id, the input/output hashes, and the bridge's signature. |

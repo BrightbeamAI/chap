@@ -1,10 +1,10 @@
-# HAP Handbook
+# CHAP Handbook
 
-A practical guide to running HAP in real deployments. Where the
+A practical guide to running CHAP in real deployments. Where the
 specification answers "what does the wire look like?", this handbook
 answers "how do I actually use it?"
 
-Read this if you're building or operating a HAP-based system.
+Read this if you're building or operating a CHAP-based system.
 Newcomers should start with the [README](./README.md) and the
 [5-minute start](./examples/00-five-minute-start.md).
 
@@ -30,7 +30,7 @@ Newcomers should start with the [README](./README.md) and the
 
 ## 1. Concepts in 10 minutes
 
-A HAP deployment has three kinds of moving part:
+A CHAP deployment has three kinds of moving part:
 
 **Workspaces.** A workspace is a named context. Inside it, a defined
 set of participants do work, send messages, delegate tasks, and
@@ -67,7 +67,7 @@ If you remember three things:
 
 ## 2. Roles and responsibilities
 
-HAP recognises five role categories. The protocol itself doesn't
+CHAP recognises five role categories. The protocol itself doesn't
 enforce them — your workspace policy does — but the categories are
 consistent across implementations.
 
@@ -246,7 +246,7 @@ audit log.
 
 ## 6. Capturing overrides as learning data
 
-The single most valuable property of HAP is that **every
+The single most valuable property of CHAP is that **every
 override is structured data by construction**. This section
 explains how to actually use that data.
 
@@ -355,16 +355,16 @@ Coordinator checks id_token.auth_time
 The default window is 5 minutes. Configure via the workspace
 descriptor.
 
-### 7.4 Mapping OIDC scopes to HAP roles
+### 7.4 Mapping OIDC scopes to CHAP roles
 
 A reasonable starting map:
 
 ```yaml
 oidc_scope_to_role:
-  hap.read:    auditor
-  hap.user:    [drafter, reviewer]
-  hap.admin:   operator
-  hap.audit:   auditor
+  chap.read:    auditor
+  chap.user:    [drafter, reviewer]
+  chap.admin:   operator
+  chap.audit:   auditor
 ```
 
 Role-to-method permissions live in workspace policy. Example:
@@ -402,7 +402,7 @@ Retention is deployment policy, not protocol. Common settings:
 ### 8.3 Right-to-be-forgotten
 
 Append-only logs and GDPR's erasure right are in genuine tension.
-HAP's recommended pattern:
+CHAP's recommended pattern:
 
 1. **Don't store personal data in envelopes that don't need it.**
    Pseudonymise wherever possible: refer to a customer by an opaque
@@ -431,7 +431,7 @@ the Coordinator's cooperation to confirm an entry is genuine.
 ## 9. Production deployment
 
 A reference production deployment is described fully in
-[`integrations/HAP-deployment-patterns.md`](./integrations/HAP-deployment-patterns.md).
+[`integrations/CHAP-deployment-patterns.md`](./integrations/CHAP-deployment-patterns.md).
 The essentials:
 
 ### 9.1 Topology
@@ -472,7 +472,7 @@ pattern.
 
 ## 10. Monitoring and observability
 
-A useful HAP deployment publishes:
+A useful CHAP deployment publishes:
 
 | Metric                                          | Source                              |
 |-------------------------------------------------|-------------------------------------|
@@ -618,7 +618,7 @@ internal workspace → service:bridge.partner → A2A → partner org
 ```
 
 The bridge participant is a workspace member; A2A traffic is its
-internal concern. See [`integrations/HAP-with-A2A.md`](./integrations/HAP-with-A2A.md).
+internal concern. See [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
 ### 12.7 Tool-using agent with MCP
 
@@ -626,13 +626,13 @@ internal concern. See [`integrations/HAP-with-A2A.md`](./integrations/HAP-with-A
 human creates task → agent calls MCP tool → result cited in artefact → review.request → done
 ```
 
-See [`integrations/HAP-with-MCP.md`](./integrations/HAP-with-MCP.md).
+See [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md).
 
 ---
 
 ## 13. Anti-patterns
 
-Things HAP doesn't stop you from doing but you shouldn't.
+Things CHAP doesn't stop you from doing but you shouldn't.
 
 **One huge workspace for everything.** Per §3.1, narrow workspaces
 beat wide ones. Audit queries get slow, policy gets tangled, mode
@@ -659,12 +659,12 @@ participant doesn't have its own log; it has its messages in
 others' logs. (To get a participant-centric view, query the
 workspace log with `filter.from = participant_uri`.)
 
-**Custom URI schemes inside the protocol.** Reuse the five HAP URI
+**Custom URI schemes inside the protocol.** Reuse the five CHAP URI
 schemes (`human:`, `agent:`, `service:`, `group:`, `workspace:`)
 plus DNS or DID authorities. Inventing your own breaks interop.
 
-**Encapsulating MCP or A2A traffic in HAP envelopes.** Cite them;
-don't copy them. The HAP audit log links to MCP transcripts, it
+**Encapsulating MCP or A2A traffic in CHAP envelopes.** Cite them;
+don't copy them. The CHAP audit log links to MCP transcripts, it
 doesn't contain them.
 
 ---

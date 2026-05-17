@@ -1,11 +1,11 @@
-# HAP Core + Review Reference
+# CHAP Core + Review Reference
 
-A reference implementation of [HAP Core](../../core/SPEC.md) plus the
+A reference implementation of [CHAP Core](../../core/SPEC.md) plus the
 [`review` profile](../../profiles/review.md), in approximately 500
 lines of TypeScript. No external dependencies at runtime; Node 18+
 built-ins only.
 
-This is the implementation that demonstrates HAP's killer feature:
+This is the implementation that demonstrates CHAP's killer feature:
 **every human override of an agent's output becomes structured data
 in the audit log, queryable for free.**
 
@@ -23,7 +23,7 @@ in the audit log, queryable for free.**
 
 ```bash
 npm install
-npm run start:demo                 # server on http://localhost:8080/hap
+npm run start:demo                 # server on http://localhost:8080/chap
 # in another terminal:
 npm run demo:client                # walks the override-capture flow
 npm run analyze                    # produces the learning-data report
@@ -54,7 +54,7 @@ The client script tells one story end-to-end:
 5. **Audit query.** The override is now structured data. A
    filtered `audit.read` returns it.
 
-That's HAP's unique contribution: the override isn't a chat message
+That's CHAP's unique contribution: the override isn't a chat message
 or a comment thread — it's a typed artefact with a diff, rationale,
 tags, and policy references, all queryable from the audit log
 without any extra instrumentation.

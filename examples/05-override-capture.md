@@ -78,7 +78,7 @@ new branch is exercised by an existing integration test.
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZB4M5K3X8M2V4N6P8R0T7D",
   "ts": "2026-05-17T13:51:32.090Z",
   "workspace": "wsp_code_review",
@@ -163,7 +163,7 @@ The task is `completed`. The Coordinator notifies the agent:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZB4M5K3X8M2V4N6P8R0T7F",
   "ts": "2026-05-17T13:51:32.180Z",
   "workspace": "wsp_code_review",
@@ -189,7 +189,7 @@ patterns:
 
 ```json
 {
-  "hap": "0.1",
+  "chap": "0.1",
   "id": "01HZC1AAAAAAAAAAAAAAAAAAA1",
   "ts": "2026-05-24T08:00:00.000Z",
   "workspace": "wsp_code_review",

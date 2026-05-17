@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hap.dev/schemas/0.1/hap-evidence.schema.json",
-  "title": "HAP Evidence Entry",
+  "$id": "https://chap.dev/schemas/0.1/chap-evidence.schema.json",
+  "title": "CHAP Evidence Entry",
   "description": "An entry in a workspace's append-only evidence chain.",
   "type": "object",
   "required": ["seq", "workspace", "envelope_hash", "prev_hash", "sig", "from", "ts", "method_or_type"],
