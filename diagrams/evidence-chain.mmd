@@ -1,30 +1,31 @@
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "15px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
-  }
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#4f4f52"
+  },
+  "flowchart": { "curve": "linear", "nodeSpacing": 60, "rankSpacing": 90, "padding": 22 }
 }}%%
 flowchart LR
-    G["<b>Genesis</b><br/>seq = 0<br/>prev_hash = 0x00…00<br/>workspace.genesis"]
-    E1["<b>Entry</b><br/>seq = 1<br/>method = task.assign<br/>prev_hash → G"]
-    E2["<b>Entry</b><br/>seq = 2<br/>method = task.accept<br/>prev_hash → E1"]
-    E3["<b>Entry</b><br/>seq = 3<br/>method = task.complete<br/>prev_hash → E2"]
-    CP["<b>Checkpoint</b><br/>head + count<br/>+ external anchors"]
-    E4["<b>Entry</b><br/>seq = 4<br/>method = decide.approve<br/>prev_hash → E3"]
+    G["<b>Genesis</b><br/><span style='font-size:17px;color:#4f4f52'>seq = 0<br/>prev_hash = 0x00…<br/>workspace.genesis</span>"]
+    E1["<b>Entry</b><br/><span style='font-size:17px;color:#4f4f52'>seq = 1<br/>task.assign<br/>prev → G</span>"]
+    E2["<b>Entry</b><br/><span style='font-size:17px;color:#4f4f52'>seq = 2<br/>task.accept<br/>prev → E1</span>"]
+    E3["<b>Entry</b><br/><span style='font-size:17px;color:#4f4f52'>seq = 3<br/>task.complete<br/>prev → E2</span>"]
+    CP["<b>Checkpoint</b><br/><span style='font-size:17px;color:#ffffff'>head + count<br/>+ external anchors</span>"]
+    E4["<b>Entry</b><br/><span style='font-size:17px;color:#4f4f52'>seq = 4<br/>decide.approve<br/>prev → E3</span>"]
+    A["<b>External anchor</b><br/><span style='font-size:17px;color:#5a1500'>tape · WORM ·<br/>timestamp authority</span>"]
 
-    G  --> E1 --> E2 --> E3 --> CP --> E4
-    A["<b>External anchor</b><br/>(tape · WORM · timestamp authority)"]
+    G --> E1 --> E2 --> E3 --> CP --> E4
     CP -.attests.-> A
 
-    classDef chain      fill:#fef3c7,stroke:#92400e,color:#5b2806,stroke-width:1.4px;
-    classDef checkpoint fill:#fee2e2,stroke:#7f1d1d,color:#5a0e0e,stroke-width:1.6px;
-    classDef anchor     fill:#dcfce7,stroke:#14532d,color:#0a3a1c,stroke-width:1.4px;
+    classDef chain      fill:#FFF8F2,stroke:#1a1a1c,color:#1a1a1c,stroke-width:2px
+    classDef checkpoint fill:#EA4700,stroke:#C73D00,color:#ffffff,stroke-width:2.5px
+    classDef anchor     fill:#FFE7DD,stroke:#EA4700,color:#5a1500,stroke-width:2px
 
-    class G,E1,E2,E3,E4 chain;
-    class CP checkpoint;
-    class A  anchor;
+    class G,E1,E2,E3,E4 chain
+    class CP checkpoint
+    class A anchor

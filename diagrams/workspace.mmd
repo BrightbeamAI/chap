@@ -1,31 +1,34 @@
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "16px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
-    "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
+    "primaryColor": "#FFF8F2",
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#4f4f52",
+    "classText": "#1a1a1c"
   }
 }}%%
 classDiagram
+    direction TB
+
     class Workspace {
-      +id: wsp_…
-      +mode: shadow|trial|production
-      +mode_ceiling
-      +members[]
+      +id
+      +mode
+      +ceiling
+      +members
       +policy_hash
-      +evidence_head
+      +head
     }
     class Participant {
-      +uri: human|agent|service|group|workspace:…
+      +uri
       +jwks
       +capabilities
       +scopes
     }
     class Task {
-      +id: tsk_…
+      +id
       +kind
       +state
       +mode
@@ -34,18 +37,17 @@ classDiagram
       +review
     }
     class Artefact {
-      +id: art_…
-      +kind: draft|decision|override|abstention|snapshot
+      +id
+      +kind
       +content
-      +citations[]
+      +citations
       +content_hash
     }
     class Message {
-      +id: ULID
-      +type: request|response|notification
+      +id
+      +type
       +method
-      +evidence.sig
-      +evidence.prev_hash
+      +evidence
     }
     class EvidenceEntry {
       +seq
@@ -55,9 +57,14 @@ classDiagram
     }
 
     Workspace "1" o-- "many" Participant : has members
-    Workspace "1" o-- "many" Task        : contains
+    Workspace "1" o-- "many" Task : contains
     Workspace "1" o-- "many" EvidenceEntry : appends
-    Task        "1" o-- "many" Artefact   : produces
-    Task        "1" o-- "many" Message    : drives
-    Message     "1" -- "1"    EvidenceEntry : becomes
-    Artefact    "*" -- "*"    Artefact     : based_on
+    Task "1" o-- "many" Artefact : produces
+    Task "1" o-- "many" Message : drives
+    Message "1" -- "1" EvidenceEntry : becomes
+    Artefact "*" -- "*" Artefact : based on
+
+    note for Workspace "mode &amp; ceiling: shadow | trial | production"
+    note for Participant "uri: human | agent | service | group | workspace"
+    note for Artefact "kind: draft | decision | override | abstention | snapshot"
+    note for Message "type: request | response | notification"

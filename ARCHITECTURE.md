@@ -14,23 +14,23 @@ HAP sits alongside MCP and A2A. Each protocol owns a single concern.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "18px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111",
-    "secondaryColor": "#f3f4f6",
-    "tertiaryColor": "#fafafa"
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#1a1a1c",
+    "secondaryColor": "#f5f5f7",
+    "tertiaryColor": "#FFF8F2"
   },
-  "flowchart": { "curve": "linear", "nodeSpacing": 60, "rankSpacing": 80 }
+  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 90 }
 }}%%
 flowchart LR
-    classDef human  fill:#dbeafe,stroke:#1e3a8a,stroke-width:2px,color:#0b1b3b
-    classDef agent  fill:#fef3c7,stroke:#92400e,stroke-width:2px,color:#3b1d05
-    classDef coord  fill:#fee2e2,stroke:#7f1d1d,stroke-width:2px,color:#3b0a0a
-    classDef tool   fill:#dcfce7,stroke:#14532d,stroke-width:2px,color:#052e16
-    classDef peer   fill:#e9d5ff,stroke:#581c87,stroke-width:2px,color:#1a0633
+    classDef human  fill:#FFF8F2,stroke:#1a1a1c,stroke-width:2px,color:#1a1a1c
+    classDef agent  fill:#FFE7DD,stroke:#EA4700,stroke-width:2px,color:#5a1500
+    classDef coord  fill:#EA4700,stroke:#C73D00,stroke-width:2px,color:#ffffff
+    classDef tool   fill:#E8F1ED,stroke:#1f5b39,stroke-width:2px,color:#0a3a1c
+    classDef peer   fill:#EDE0F2,stroke:#6a3d8a,stroke-width:2px,color:#3b0e63
 
     H1["Human<br/>Reviewer"]:::human
     H2["Human<br/>Approver"]:::human
@@ -60,12 +60,12 @@ HAP has a small set of primitives, related as follows.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "17px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#1a1a1c"
   }
 }}%%
 classDiagram
@@ -141,12 +141,18 @@ A Task is the unit of work. Its state machine is small and explicit.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "16px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
-    "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
+    "primaryColor": "#FFE7DD",
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#EA4700",
+    "secondaryColor": "#FFF8F2",
+    "secondaryTextColor": "#1a1a1c",
+    "secondaryBorderColor": "#1a1a1c",
+    "tertiaryColor": "#FFF8F2",
+    "tertiaryTextColor": "#1a1a1c",
+    "tertiaryBorderColor": "#1a1a1c",
+    "lineColor": "#1a1a1c"
   }
 }}%%
 stateDiagram-v2
@@ -193,19 +199,19 @@ HAP's audit guarantee is a per-workspace hash-linked log.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "16px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#1a1a1c"
   },
-  "flowchart": { "curve": "linear", "nodeSpacing": 40, "rankSpacing": 30 }
+  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 90 }
 }}%%
 flowchart LR
     classDef entry fill:#f8fafc,stroke:#0f172a,stroke-width:2px,color:#0f172a
-    classDef chkpt fill:#fef9c3,stroke:#854d0e,stroke-width:2px,color:#451a03
-    classDef anchor fill:#dcfce7,stroke:#14532d,stroke-width:2px,color:#052e16
+    classDef chkpt fill:#FFF8F2,stroke:#EA4700,stroke-width:2px,color:#1a1a1c
+    classDef anchor fill:#E8F1ED,stroke:#1f5b39,stroke-width:2px,color:#0a3a1c
 
     E0["entry 0<br/>genesis"]:::entry
     E1["entry 1<br/>task.assign"]:::entry
@@ -241,18 +247,19 @@ every dispatch.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "16px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
-  }
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#1a1a1c"
+  },
+  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 90, "padding": 22 }
 }}%%
 flowchart TB
-    classDef mode  fill:#ede9fe,stroke:#5b21b6,stroke-width:2px,color:#1e1338
-    classDef ok    fill:#dcfce7,stroke:#14532d,stroke-width:2px,color:#052e16
-    classDef block fill:#fee2e2,stroke:#7f1d1d,stroke-width:2px,color:#3b0a0a
+    classDef mode  fill:#FFE7DD,stroke:#EA4700,stroke-width:2px,color:#5a1500
+    classDef ok    fill:#E8F1ED,stroke:#1f5b39,stroke-width:2px,color:#0a3a1c
+    classDef block fill:#1a1a1c,stroke:#1a1a1c,stroke-width:2px,color:#ffffff
 
     IN["task.assign<br/>mode = X"]:::mode
     CHK{"X ≤ workspace<br/>mode_ceiling?"}
@@ -286,19 +293,19 @@ that is immediately available for downstream learning.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "16px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111",
-    "actorBkg": "#f3f4f6",
-    "actorTextColor": "#111111",
-    "actorBorder": "#111111",
-    "labelTextColor": "#111111",
-    "noteBkgColor": "#fef9c3",
-    "noteTextColor": "#451a03",
-    "noteBorderColor": "#854d0e"
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#1a1a1c",
+    "actorBkg": "#EA4700",
+    "actorTextColor": "#ffffff",
+    "actorBorder": "#C73D00",
+    "labelTextColor": "#1a1a1c",
+    "noteBkgColor": "#FFF8F2",
+    "noteTextColor": "#1a1a1c",
+    "noteBorderColor": "#EA4700"
   }
 }}%%
 sequenceDiagram
@@ -332,15 +339,15 @@ When more than one human needs to weigh in, HAP carries the thread.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "16px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111",
-    "actorBkg": "#f3f4f6",
-    "actorTextColor": "#111111",
-    "actorBorder": "#111111"
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#1a1a1c",
+    "actorBkg": "#EA4700",
+    "actorTextColor": "#ffffff",
+    "actorBorder": "#C73D00"
   }
 }}%%
 sequenceDiagram
@@ -379,21 +386,22 @@ A real deployment composes all three protocols. Here is the full picture.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "16px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
-  }
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#1a1a1c"
+  },
+  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 90, "padding": 22 }
 }}%%
 flowchart TB
-    classDef human fill:#dbeafe,stroke:#1e3a8a,stroke-width:2px,color:#0b1b3b
-    classDef agent fill:#fef3c7,stroke:#92400e,stroke-width:2px,color:#3b1d05
-    classDef coord fill:#fee2e2,stroke:#7f1d1d,stroke-width:2px,color:#3b0a0a
-    classDef tool  fill:#dcfce7,stroke:#14532d,stroke-width:2px,color:#052e16
-    classDef bridge fill:#e9d5ff,stroke:#581c87,stroke-width:2px,color:#1a0633
-    classDef ext   fill:#fce7f3,stroke:#9d174d,stroke-width:2px,color:#4a0726
+    classDef human fill:#FFF8F2,stroke:#1a1a1c,stroke-width:2px,color:#1a1a1c
+    classDef agent fill:#FFE7DD,stroke:#EA4700,stroke-width:2px,color:#5a1500
+    classDef coord fill:#EA4700,stroke:#C73D00,stroke-width:2px,color:#ffffff
+    classDef tool  fill:#E8F1ED,stroke:#1f5b39,stroke-width:2px,color:#0a3a1c
+    classDef bridge fill:#EDE0F2,stroke:#6a3d8a,stroke-width:2px,color:#3b0e63
+    classDef ext   fill:#FFF3E0,stroke:#C76B00,stroke-width:2px,color:#5a3500
 
     subgraph WS["HAP Workspace"]
       H["Human<br/>Reviewer"]:::human
@@ -437,18 +445,19 @@ operational trade-offs.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "16px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
-  }
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#1a1a1c"
+  },
+  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 90, "padding": 22 }
 }}%%
 flowchart TB
-    classDef coord fill:#fee2e2,stroke:#7f1d1d,stroke-width:2px,color:#3b0a0a
-    classDef part  fill:#f3f4f6,stroke:#111111,stroke-width:2px,color:#111111
-    classDef peer  fill:#e9d5ff,stroke:#581c87,stroke-width:2px,color:#1a0633
+    classDef coord fill:#EA4700,stroke:#C73D00,stroke-width:2px,color:#ffffff
+    classDef part  fill:#f5f5f7,stroke:#1a1a1c,stroke-width:2px,color:#1a1a1c
+    classDef peer  fill:#EDE0F2,stroke:#6a3d8a,stroke-width:2px,color:#3b0e63
 
     subgraph T1["1. Coordinator-mediated (default)"]
       direction LR

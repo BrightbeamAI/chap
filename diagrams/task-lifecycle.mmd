@@ -1,30 +1,36 @@
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "16px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
-    "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
+    "primaryColor": "#FFE7DD",
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#EA4700",
+    "lineColor": "#4f4f52",
+    "secondaryColor": "#FFF8F2",
+    "secondaryTextColor": "#1a1a1c",
+    "secondaryBorderColor": "#1a1a1c",
+    "tertiaryColor": "#FFF8F2",
+    "tertiaryTextColor": "#1a1a1c",
+    "tertiaryBorderColor": "#1a1a1c"
   }
 }}%%
 stateDiagram-v2
+    direction TB
     [*] --> created : task.assign
-    created --> accepted : task.accept
-    created --> declined : task.decline
-    accepted --> in_progress : task.start
-    in_progress --> in_progress : task.progress (notification)
-    in_progress --> review_requested : task.complete (review.required)
-    in_progress --> completed : task.complete (review.required = false)
-    review_requested --> completed : decide.approve / decide.override
-    review_requested --> in_progress : decide.reject (revise)
-    review_requested --> escalated : abstain.declare → escalate.raise
-    escalated --> created : new task on escalation target
-    in_progress --> superseded : control.supersede
-    review_requested --> superseded : control.supersede
-    in_progress --> cancelled : control.cancel
-    accepted --> cancelled : control.cancel
+    created --> accepted : accept
+    created --> declined : decline
+    accepted --> in_progress : start
+    in_progress --> review_requested : complete (review)
+    in_progress --> completed : complete (no review)
+    review_requested --> completed : approve / override
+    review_requested --> in_progress : reject
+    review_requested --> escalated : abstain + escalate
+    escalated --> created : new task
+    in_progress --> cancelled : cancel
+    accepted --> cancelled : cancel
+    in_progress --> superseded : supersede
+    review_requested --> superseded : supersede
     completed --> [*]
     declined --> [*]
     cancelled --> [*]

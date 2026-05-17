@@ -1,16 +1,25 @@
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "15px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111",
-    "actorBkg": "#f3f4f6",
-    "actorTextColor": "#111111",
-    "actorBorder": "#111111"
-  }
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#4f4f52",
+    "actorBkg": "#EA4700",
+    "actorTextColor": "#ffffff",
+    "actorBorder": "#C73D00",
+    "actorLineColor": "#4f4f52",
+    "noteBkgColor": "#FFF8F2",
+    "noteTextColor": "#1a1a1c",
+    "noteBorderColor": "#EA4700",
+    "labelTextColor": "#1a1a1c",
+    "sequenceNumberColor": "#ffffff",
+    "signalColor": "#1a1a1c",
+    "signalTextColor": "#1a1a1c"
+  },
+  "sequence": { "actorMargin": 90, "messageMargin": 50, "noteMargin": 18, "boxMargin": 20 }
 }}%%
 sequenceDiagram
     autonumber
@@ -19,17 +28,17 @@ sequenceDiagram
     participant S as Security
     participant P as Product
 
-    L->>C: deliberate.open<br/>rule = weighted_vote_with_veto:2.0<br/>veto: Security
+    L->>C: deliberate.open<br/>rule = weighted_vote_with_veto<br/>veto = Security
     C->>S: dispatch (notification)
     C->>P: dispatch (notification)
-    S->>C: deliberate.comment<br/>(context: maintenance window)
-    L->>C: deliberate.comment<br/>(context: pre-approval)
-    P->>C: deliberate.comment<br/>(context: customer impact)
+    S->>C: deliberate.comment<br/>(maintenance window)
+    L->>C: deliberate.comment<br/>(pre-approval context)
+    P->>C: deliberate.comment<br/>(customer impact)
     L->>C: deliberate.vote (yea, 1.0)
     P->>C: deliberate.vote (yea, 1.0)
-    S->>C: deliberate.vote (yea, 1.0, veto_invoked=false)
+    S->>C: deliberate.vote (yea, 1.0)
     L->>C: deliberate.close
-    C-->>L: outcome = approved<br/>tally yea=3.0
-    C->>P: notify (decision artefact id)
-    C->>S: notify (decision artefact id)
-    Note over C: All exchanges appended<br/>to evidence chain;<br/>decision artefact produced.
+    C-->>L: outcome = approved<br/>tally yea = 3.0
+    C->>P: notify (decision artefact)
+    C->>S: notify (decision artefact)
+    Note over C: All exchanges appended<br/>to evidence chain.<br/>Decision artefact produced.

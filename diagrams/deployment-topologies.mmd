@@ -1,29 +1,32 @@
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "14px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
-  }
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#4f4f52",
+    "clusterBkg": "#FFF8F2",
+    "clusterBorder": "#1a1a1c"
+  },
+  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 80, "padding": 28 }
 }}%%
 flowchart TB
-    subgraph CM["<b>Coordinator-mediated</b> (default)"]
+    subgraph CM["<b>1. Coordinator-mediated</b> &nbsp;·&nbsp; default"]
       direction LR
       h1["human"]
       h2["human"]
       a1["agent"]
       a2["agent"]
-      cm_c["Coordinator<br/>(chain owner)"]
+      cm_c["<b>Coordinator</b><br/><span style='font-size:17px;color:#ffffff'>chain owner</span>"]
       h1 --- cm_c
       h2 --- cm_c
       a1 --- cm_c
       a2 --- cm_c
     end
 
-    subgraph P2P["<b>Peer-to-peer</b> (advanced)"]
+    subgraph P2P["<b>2. Peer-to-peer</b> &nbsp;·&nbsp; advanced"]
       direction LR
       ph1["human"]
       ph2["agent"]
@@ -33,29 +36,32 @@ flowchart TB
       ph3 --- ph1
     end
 
-    subgraph FED["<b>Federated</b> (cross-org)"]
+    subgraph FED["<b>3. Federated</b> &nbsp;·&nbsp; cross-org"]
       direction LR
       subgraph WA["Workspace A"]
         ha["human"]
         aa["agent"]
-        ca["Coord A"]
+        ca["<b>Coord A</b>"]
         ha --- ca
         aa --- ca
       end
       subgraph WB["Workspace B"]
         hb["human"]
         ab["agent"]
-        cb["Coord B"]
+        cb["<b>Coord B</b>"]
         hb --- cb
         ab --- cb
       end
       ca <-->|A2A bridge| cb
     end
 
-    classDef human fill:#dbeafe,stroke:#1e3a8a,color:#0b1d4f,stroke-width:1.4px;
-    classDef agent fill:#fef3c7,stroke:#92400e,color:#5b2806,stroke-width:1.4px;
-    classDef coord fill:#fee2e2,stroke:#7f1d1d,color:#5a0e0e,stroke-width:1.4px;
+    CM ~~~ P2P
+    P2P ~~~ FED
 
-    class h1,h2,ph1,ha,hb human;
-    class a1,a2,ph2,ph3,aa,ab agent;
-    class cm_c,ca,cb coord;
+    classDef human fill:#FFF8F2,stroke:#1a1a1c,color:#1a1a1c,stroke-width:2px
+    classDef agent fill:#EDE0F2,stroke:#6a3d8a,color:#3b0e63,stroke-width:2px
+    classDef coord fill:#EA4700,stroke:#C73D00,color:#ffffff,stroke-width:2.5px
+
+    class h1,h2,ph1,ha,hb human
+    class a1,a2,ph2,ph3,aa,ab agent
+    class cm_c,ca,cb coord

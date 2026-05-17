@@ -1,43 +1,45 @@
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "16px",
-    "fontFamily": "Helvetica, Arial, sans-serif",
+    "fontSize": "22px",
+    "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
-    "primaryTextColor": "#111111",
-    "primaryBorderColor": "#111111",
-    "lineColor": "#111111"
-  }
+    "primaryTextColor": "#1a1a1c",
+    "primaryBorderColor": "#1a1a1c",
+    "lineColor": "#4f4f52"
+  },
+  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 90, "padding": 22 }
 }}%%
 flowchart TB
-    Start(["Incoming task.assign"])
+    Start(["<b>Incoming task.assign</b>"])
+    CheckCeiling{"Mode ≤<br/>workspace<br/>ceiling?"}
+    Deny["<b>Reject</b><br/><span style='font-size:17px;color:#ffffff'>error -32502<br/>mode_ceiling</span>"]
     CheckMode{"Task<br/>mode?"}
 
-    Shadow["<b>SHADOW</b><br/>agent runs alongside;<br/>output recorded but<br/>NOT delivered to recipient"]
-    Trial["<b>TRIAL</b><br/>output delivered, but<br/>every result reviewed<br/>by a human"]
-    Prod["<b>PRODUCTION</b><br/>output delivered,<br/>review per policy<br/>(may be sampled)"]
-
-    CheckCeiling{"Mode ≤<br/>workspace<br/>ceiling?"}
-    Deny["<b>Reject</b><br/>error -32502<br/>mode_ceiling"]
+    Shadow["<b>SHADOW</b><br/><span style='font-size:17px;color:#5a1500'>agent runs alongside<br/>output recorded<br/>NOT delivered</span>"]
+    Trial["<b>TRIAL</b><br/><span style='font-size:17px;color:#5a1500'>output delivered<br/>every result reviewed<br/>by a human</span>"]
+    Prod["<b>PRODUCTION</b><br/><span style='font-size:17px;color:#ffffff'>output delivered<br/>review per policy<br/>(may be sampled)</span>"]
 
     Start --> CheckCeiling
-    CheckCeiling -->|no|  Deny
+    CheckCeiling -->|no| Deny
     CheckCeiling -->|yes| CheckMode
-    CheckMode -->|shadow|     Shadow
-    CheckMode -->|trial|      Trial
+    CheckMode -->|shadow| Shadow
+    CheckMode -->|trial| Trial
     CheckMode -->|production| Prod
 
-    Shadow -. promote on success metrics .-> Trial
-    Trial  -. promote on override rate < threshold .-> Prod
-    Prod   -. demote on incident .-> Trial
-    Trial  -. demote on incident .-> Shadow
+    Shadow -. promote .-> Trial
+    Trial -. promote .-> Prod
+    Prod -. demote .-> Trial
+    Trial -. demote .-> Shadow
 
-    classDef start fill:#dbeafe,stroke:#1e3a8a,color:#0b1d4f,stroke-width:1.5px;
-    classDef mode  fill:#fef3c7,stroke:#92400e,color:#5b2806,stroke-width:1.5px;
-    classDef deny  fill:#fee2e2,stroke:#7f1d1d,color:#5a0e0e,stroke-width:1.5px;
-    classDef gate  fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px;
+    classDef start fill:#FFF8F2,stroke:#1a1a1c,color:#1a1a1c,stroke-width:2px
+    classDef gate  fill:#ffffff,stroke:#1a1a1c,color:#1a1a1c,stroke-width:2px
+    classDef mode  fill:#FFE7DD,stroke:#EA4700,color:#5a1500,stroke-width:2px
+    classDef prod  fill:#EA4700,stroke:#C73D00,color:#ffffff,stroke-width:2.5px
+    classDef deny  fill:#1a1a1c,stroke:#1a1a1c,color:#ffffff,stroke-width:2px
 
-    class Start start;
-    class Shadow,Trial,Prod mode;
-    class Deny  deny;
-    class CheckMode,CheckCeiling gate;
+    class Start start
+    class CheckMode,CheckCeiling gate
+    class Shadow,Trial mode
+    class Prod prod
+    class Deny deny
