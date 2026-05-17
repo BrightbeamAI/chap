@@ -1,0 +1,31 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "16px",
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#111111",
+    "primaryBorderColor": "#111111",
+    "lineColor": "#111111"
+  }
+}}%%
+stateDiagram-v2
+    [*] --> created : task.assign
+    created --> accepted : task.accept
+    created --> declined : task.decline
+    accepted --> in_progress : task.start
+    in_progress --> in_progress : task.progress (notification)
+    in_progress --> review_requested : task.complete (review.required)
+    in_progress --> completed : task.complete (review.required = false)
+    review_requested --> completed : decide.approve / decide.override
+    review_requested --> in_progress : decide.reject (revise)
+    review_requested --> escalated : abstain.declare → escalate.raise
+    escalated --> created : new task on escalation target
+    in_progress --> superseded : control.supersede
+    review_requested --> superseded : control.supersede
+    in_progress --> cancelled : control.cancel
+    accepted --> cancelled : control.cancel
+    completed --> [*]
+    declined --> [*]
+    cancelled --> [*]
+    superseded --> [*]

@@ -1,0 +1,30 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "15px",
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#111111",
+    "primaryBorderColor": "#111111",
+    "lineColor": "#111111"
+  }
+}}%%
+flowchart LR
+    G["<b>Genesis</b><br/>seq = 0<br/>prev_hash = 0x00…00<br/>workspace.genesis"]
+    E1["<b>Entry</b><br/>seq = 1<br/>method = task.assign<br/>prev_hash → G"]
+    E2["<b>Entry</b><br/>seq = 2<br/>method = task.accept<br/>prev_hash → E1"]
+    E3["<b>Entry</b><br/>seq = 3<br/>method = task.complete<br/>prev_hash → E2"]
+    CP["<b>Checkpoint</b><br/>head + count<br/>+ external anchors"]
+    E4["<b>Entry</b><br/>seq = 4<br/>method = decide.approve<br/>prev_hash → E3"]
+
+    G  --> E1 --> E2 --> E3 --> CP --> E4
+    A["<b>External anchor</b><br/>(tape · WORM · timestamp authority)"]
+    CP -.attests.-> A
+
+    classDef chain      fill:#fef3c7,stroke:#92400e,color:#5b2806,stroke-width:1.4px;
+    classDef checkpoint fill:#fee2e2,stroke:#7f1d1d,color:#5a0e0e,stroke-width:1.6px;
+    classDef anchor     fill:#dcfce7,stroke:#14532d,color:#0a3a1c,stroke-width:1.4px;
+
+    class G,E1,E2,E3,E4 chain;
+    class CP checkpoint;
+    class A  anchor;

@@ -1,0 +1,20 @@
+{
+  "name": "@hap/reference-core-plus-review",
+  "version": "1.0.0",
+  "description": "HAP Core + Review profile reference implementation.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start:demo":   "tsx server.ts",
+    "demo:client":  "tsx client.ts",
+    "analyze":      "tsx analyze-overrides.ts",
+    "demo": "tsx server.ts & sleep 1 && tsx client.ts && tsx analyze-overrides.ts && kill %1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx":         "^4.7.0",
+    "typescript":  "^5.3.0"
+  }
+}

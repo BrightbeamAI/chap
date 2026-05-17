@@ -1,0 +1,2181 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HAP — The Human-Agent Protocol · Brightbeam</title>
+<style>
+/* ============================================================
+   BRIGHTBEAM BRAND TOKENS
+   ============================================================ */
+:root {
+  --ember:     #EA4700;
+  --ember-d:   #C73D00;
+  --amber:     #FF9900;
+  --black:     #1a1a1c;
+  --gray-90:   #2a2a2c;
+  --gray-70:   #4f4f52;
+  --gray-50:   #888;
+  --gray-30:   #d5d5d8;
+  --gray-15:   #ececef;
+  --gray-08:   #f5f5f7;
+  --warm:      #FFF8F2;
+  --pink:      #FFE7DD;
+  --line:      #d9dce0;
+
+  /* Type scale — Brightbeam standard */
+  --t-xxl: clamp(48px, 6.4vw, 86px);
+  --t-xl:  clamp(28px, 3.4vw, 44px);
+  --t-l:   clamp(20px, 2.2vw, 28px);
+  --t-m:   clamp(15px, 1.4vw, 18px);
+  --t-s:   14px;
+  --t-xs:  12px;
+
+  --shadow-sm: 0 1px 2px rgba(20,20,22,0.04), 0 0 0 1px rgba(20,20,22,0.05);
+  --shadow-md: 0 2px 8px rgba(20,20,22,0.06), 0 1px 2px rgba(20,20,22,0.04);
+  --shadow-lg: 0 12px 32px rgba(20,20,22,0.10), 0 4px 12px rgba(20,20,22,0.06);
+}
+
+/* ============================================================
+   RESET
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  background: #fff;
+  color: var(--black);
+  line-height: 1.55;
+  font-size: 17px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+::selection { background: var(--ember); color: #fff; }
+
+/* ============================================================
+   LAYOUT CONTAINERS
+   ============================================================ */
+.container         { max-width: 1080px; margin: 0 auto; padding: 0 32px; }
+.container--narrow { max-width: 720px; }
+.container--wide   { max-width: 1200px; }
+
+section.s { padding: 120px 0; position: relative; }
+section.s.s--lead { padding-top: 100px; }
+
+.s--gray    { background: var(--gray-08); }
+.s--warm    { background: var(--warm); }
+.s--dark    { background: var(--black); color: #fff; }
+
+/* ============================================================
+   TYPOGRAPHY — Arial-based, Brightbeam standard
+   ============================================================ */
+h1, h2, h3, h4 {
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+  color: var(--black);
+  line-height: 1.02;
+}
+h1 { font-size: var(--t-xxl); }
+h2 { font-size: var(--t-xl); margin-bottom: 24px; line-height: 1.05; }
+h3 { font-size: var(--t-l); margin-bottom: 14px; font-weight: 800; line-height: 1.15; }
+h4 { font-size: 16px; line-height: 1.3; font-weight: 800; }
+
+h1 em, h2 em, h3 em {
+  font-style: normal;
+  color: var(--ember);
+  font-weight: inherit;
+}
+
+/* Section tag = Brightbeam eyebrow */
+.section-tag {
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ember);
+  margin-bottom: 22px;
+  display: inline-flex; align-items: center; gap: 14px;
+}
+.section-tag::before {
+  content: "";
+  width: 8px; height: 8px;
+  background: var(--ember);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.lede {
+  font-size: clamp(18px, 1.8vw, 22px);
+  line-height: 1.45;
+  color: var(--gray-70);
+  margin-bottom: 36px;
+  max-width: 34em;
+  font-weight: 400;
+}
+
+p {
+  margin-bottom: 22px;
+  max-width: 36em;
+  color: var(--gray-70);
+  font-size: 17px;
+  line-height: 1.65;
+}
+p strong { color: var(--black); font-weight: 700; }
+p em {
+  color: var(--ember);
+  font-style: normal;
+  font-weight: 600;
+}
+
+code, .mono { font-family: "JetBrains Mono", "SF Mono", Menlo, monospace; font-size: 0.9em; }
+
+a {
+  color: var(--ember);
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(234, 71, 0, 0.4);
+  font-weight: 500;
+  transition: text-decoration-color 0.15s;
+}
+a:hover { text-decoration-color: var(--ember); }
+
+/* Bulleted list — Brightbeam ember arrow */
+ul.tight { list-style: none; padding: 0; }
+ul.tight li {
+  position: relative;
+  padding: 6px 0 6px 22px;
+  font-size: 15px;
+}
+ul.tight li::before {
+  content: '→';
+  position: absolute; left: 0; top: 6px;
+  color: var(--ember);
+  font-weight: bold;
+}
+
+/* ============================================================
+   NAV — Brightbeam: black with ember→amber underline
+   ============================================================ */
+nav.topnav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+  height: 64px;
+  background: var(--black);
+  color: #fff;
+  padding: 0 32px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+nav.topnav::after {
+  content: '';
+  position: absolute; left: 0; right: 0; bottom: -2px; height: 2px;
+  background: linear-gradient(90deg, var(--ember) 0%, var(--amber) 100%);
+}
+.nav-left { display: flex; align-items: center; gap: 18px; }
+.nav-logo { height: 26px; display: flex; align-items: center; }
+.nav-logo svg { height: 100%; width: auto; display: block; }
+.nav-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--amber);
+  padding-left: 18px;
+  border-left: 1px solid #3a3a3c;
+}
+.nav-links { display: flex; gap: 30px; font-size: 13px; }
+.nav-links a {
+  color: #c8c8ca;
+  font-weight: 600;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+}
+.nav-links a:hover { color: var(--amber); }
+@media (max-width: 800px) {
+  .nav-tag { display: none; }
+  .nav-links { display: none; }
+}
+
+.progress {
+  position: fixed; top: 64px; left: 0; height: 3px;
+  background: linear-gradient(90deg, var(--ember), var(--amber));
+  width: 0;
+  z-index: 51;
+  transition: width 0.1s linear;
+}
+
+/* ============================================================
+   HERO — Brightbeam: bold typography + workspace illustration
+   ============================================================ */
+.hero {
+  min-height: 100vh;
+  display: flex; align-items: center;
+  padding: 140px 32px 80px;
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+}
+.hero::before {
+  content: ""; position: absolute; top: 64px; left: 0; right: 0;
+  height: 6px;
+  background: linear-gradient(90deg, var(--ember) 0%, var(--amber) 50%, transparent 100%);
+  opacity: 0.0;
+}
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 80px;
+  align-items: center;
+  max-width: 1240px;
+  margin: 0 auto;
+  width: 100%;
+}
+@media (max-width: 900px) {
+  .hero-grid { grid-template-columns: 1fr; gap: 60px; }
+}
+
+.hero h1 {
+  margin-bottom: 32px;
+  max-width: 11ch;
+}
+.hero .lede {
+  max-width: 30em;
+  font-size: clamp(18px, 2vw, 22px);
+  margin-bottom: 44px;
+  color: var(--gray-70);
+}
+
+.hero-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 26px;
+  margin-top: 64px;
+  padding-top: 36px;
+  border-top: 1px solid var(--line);
+  max-width: 520px;
+}
+.hero-meta div { display: flex; flex-direction: column; gap: 6px; }
+.hero-meta span {
+  font-size: 11px;
+  color: var(--ember);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+}
+.hero-meta strong {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--black);
+}
+
+/* Hero workspace illustration */
+.hero-visual {
+  position: relative;
+  aspect-ratio: 1;
+  max-width: 480px;
+  margin: 0 auto;
+}
+.hero-visual svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.viz-line {
+  stroke: var(--ember);
+  stroke-width: 2;
+  opacity: 0.3;
+  fill: none;
+  stroke-dasharray: 5 7;
+  animation: dash 28s linear infinite;
+}
+@keyframes dash {
+  to { stroke-dashoffset: -240; }
+}
+.viz-pulse {
+  fill: none;
+  stroke-width: 2;
+  opacity: 0;
+}
+.viz-pulse.animate {
+  animation: pulse-ring 2.6s ease-out infinite;
+}
+@keyframes pulse-ring {
+  0%   { r: 36; opacity: 0.65; }
+  100% { r: 72; opacity: 0; }
+}
+.viz-label {
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.viz-center-label {
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   BUTTONS — Brightbeam style
+   ============================================================ */
+.cta-row { display: flex; gap: 14px; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 26px;
+  background: #fff;
+  color: var(--black);
+  border: 1.5px solid var(--black);
+  border-radius: 2px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-family: Arial, sans-serif;
+  cursor: pointer;
+  transition: all 0.18s;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.btn:hover {
+  background: var(--black);
+  color: #fff;
+  text-decoration: none;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+.btn.btn--primary {
+  background: var(--ember);
+  color: #fff;
+  border-color: var(--ember);
+}
+.btn.btn--primary:hover {
+  background: var(--ember-d);
+  border-color: var(--ember-d);
+}
+.btn.btn--ghost {
+  background: transparent;
+  border-color: rgba(255,255,255,0.4);
+  color: #fff;
+}
+.btn.btn--ghost:hover {
+  background: #fff;
+  color: var(--black);
+  border-color: #fff;
+}
+.btn .arrow { transition: transform 0.15s; font-size: 16px; }
+.btn:hover .arrow { transform: translateX(3px); }
+
+/* ============================================================
+   STORY SECTION
+   ============================================================ */
+.story-intro {
+  font-size: 22px;
+  line-height: 1.55;
+  color: var(--black);
+  margin: 44px 0;
+  max-width: 32em;
+  font-weight: 400;
+}
+.story-intro::first-letter {
+  font-size: 96px;
+  font-weight: 900;
+  float: left;
+  line-height: 0.85;
+  margin: 6px 14px 0 0;
+  color: var(--ember);
+}
+.story-intro strong {
+  font-weight: 700;
+  color: var(--ember);
+}
+
+.pullquote {
+  font-size: clamp(34px, 4.8vw, 52px);
+  line-height: 1.1;
+  font-weight: 900;
+  color: var(--black);
+  margin: 56px 0;
+  max-width: 18em;
+  letter-spacing: -0.025em;
+}
+.pullquote em {
+  color: var(--ember);
+  font-style: normal;
+}
+
+/* Stat row — Brightbeam big-numbers pattern */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 36px;
+  margin: 48px 0;
+  padding: 36px 0;
+  border-top: 3px solid var(--ember);
+  border-bottom: 1px solid var(--line);
+}
+@media (max-width: 640px) { .stat-row { grid-template-columns: 1fr; gap: 24px; } }
+.stat { display: flex; flex-direction: column; gap: 8px; }
+.stat-num {
+  font-size: clamp(40px, 5.4vw, 64px);
+  font-weight: 900;
+  color: var(--ember);
+  letter-spacing: -0.02em;
+  line-height: 0.95;
+}
+.stat-label {
+  font-size: 14px;
+  color: var(--gray-70);
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+/* ============================================================
+   ANALOGY COMPARISON
+   ============================================================ */
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin: 48px 0;
+  align-items: stretch;
+}
+.compare-panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--ember);
+  border-radius: 2px;
+  padding: 32px;
+  display: flex; flex-direction: column;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.compare-panel:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.compare-panel.compare-panel--code {
+  border-top-color: var(--amber);
+}
+.compare-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ember);
+  margin-bottom: 22px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.compare-panel--code .compare-label { color: var(--amber); }
+
+@media (max-width: 760px) {
+  .compare { grid-template-columns: 1fr; gap: 16px; }
+}
+
+.draft-doc {
+  font-size: 18px;
+  line-height: 1.85;
+  color: var(--black);
+}
+.draft-doc .strike {
+  text-decoration: line-through;
+  text-decoration-color: #b03a2e;
+  color: #b03a2e;
+  background: rgba(176, 58, 46, 0.08);
+  padding: 0 4px;
+  border-radius: 2px;
+}
+.draft-doc .ins {
+  color: #2d7a4f;
+  background: rgba(45, 122, 79, 0.10);
+  padding: 0 4px;
+  border-radius: 2px;
+  text-decoration: underline;
+  text-decoration-color: #2d7a4f;
+  text-underline-offset: 3px;
+}
+.draft-note {
+  display: inline-block;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ember);
+  background: var(--warm);
+  padding: 6px 14px;
+  border-radius: 2px;
+  margin-top: 18px;
+  border-left: 3px solid var(--ember);
+  font-weight: 500;
+}
+
+pre.code, .code {
+  background: var(--black);
+  color: #ddd5c5;
+  border-radius: 2px;
+  padding: 22px 26px;
+  overflow-x: auto;
+  font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  font-size: 14px;
+  line-height: 1.75;
+  flex: 1;
+}
+.code .k { color: var(--amber); font-weight: 600; }
+.code .s { color: #a8d4a0; }
+.code .n { color: #88c5d1; }
+.code .c { color: #807468; font-style: italic; }
+.code .p { color: #c0b9aa; }
+
+/* ============================================================
+   PROTOCOL STACK
+   ============================================================ */
+.stack-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 70px;
+  align-items: center;
+  margin: 56px 0;
+}
+@media (max-width: 800px) { .stack-section { grid-template-columns: 1fr; gap: 40px; } }
+
+.stack {
+  display: flex; flex-direction: column;
+  gap: 14px;
+}
+.stack-layer {
+  padding: 28px 30px;
+  border-radius: 2px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--gray-50);
+  display: flex; justify-content: space-between; align-items: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: var(--shadow-sm);
+}
+.stack-layer:hover {
+  transform: translateX(6px);
+  box-shadow: var(--shadow-md);
+}
+.stack-layer--hap {
+  background: linear-gradient(135deg, var(--ember) 0%, #FF7F00 60%, var(--amber) 100%);
+  border-top-color: var(--amber);
+  border: none;
+  color: #fff;
+  box-shadow: var(--shadow-md);
+}
+.stack-layer--hap:hover { transform: translateX(8px); box-shadow: var(--shadow-lg); }
+.stack-name {
+  font-size: 32px;
+  font-weight: 900;
+  color: var(--black);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.stack-layer--hap .stack-name { color: #fff; }
+.stack-name small {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ember);
+  margin-top: 8px;
+}
+.stack-layer--hap .stack-name small { color: #fff; opacity: 0.95; }
+.stack-role {
+  color: var(--gray-70);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: right;
+  max-width: 14em;
+  line-height: 1.4;
+}
+.stack-layer--hap .stack-role { color: #fff; opacity: 0.95; }
+
+.stack-explain h3 { margin-bottom: 16px; }
+.stack-explain p { font-size: 16px; line-height: 1.65; }
+
+/* ============================================================
+   METHOD GRID
+   ============================================================ */
+.section-subhead {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ember);
+  margin-bottom: 16px;
+}
+
+.method-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin: 36px 0;
+}
+.method {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--ember);
+  border-radius: 2px;
+  padding: 22px 24px;
+  transition: all 0.2s;
+  box-shadow: var(--shadow-sm);
+}
+.method:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+.method-name {
+  font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  font-size: 15px;
+  color: var(--ember);
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.method-desc {
+  font-size: 14px;
+  color: var(--gray-70);
+  line-height: 1.55;
+}
+
+/* ============================================================
+   WORKSPACE (interactive)
+   ============================================================ */
+.workspace-shell {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 48px 0 24px;
+  box-shadow: var(--shadow-lg);
+}
+.workspace-shell::before {
+  content: "";
+  display: block; height: 4px;
+  background: linear-gradient(90deg, var(--ember) 0%, var(--amber) 100%);
+}
+.workspace-header {
+  padding: 20px 28px;
+  border-bottom: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--gray-08);
+}
+.workspace-header-left { display: flex; align-items: center; gap: 16px; }
+.window-dots {
+  display: flex; gap: 7px;
+}
+.window-dots span {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+}
+.window-dots span:nth-child(1) { background: #f47f6b; }
+.window-dots span:nth-child(2) { background: var(--amber); }
+.window-dots span:nth-child(3) { background: #76c889; }
+
+.workspace-id {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 16px;
+  color: var(--ember);
+  font-weight: 700;
+}
+.workspace-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--gray-50);
+  margin-bottom: 2px;
+}
+.live-pulse {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-size: 12px;
+  color: #2d7a4f;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+.live-pulse::before {
+  content: "";
+  width: 8px; height: 8px;
+  background: #2d7a4f; border-radius: 50%;
+  box-shadow: 0 0 0 0 #2d7a4f;
+  animation: pulse 1.8s infinite;
+}
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(45, 122, 79, 0.5); }
+  70%  { box-shadow: 0 0 0 10px rgba(45, 122, 79, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(45, 122, 79, 0); }
+}
+
+.workspace-body { padding: 28px; background: #fff; }
+
+.participants {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 26px;
+}
+@media (max-width: 640px) { .participants { grid-template-columns: 1fr; } }
+.participant {
+  background: #fff;
+  border: 1.5px solid var(--line);
+  border-radius: 2px;
+  padding: 16px 18px;
+  display: flex; align-items: center; gap: 14px;
+  transition: all 0.3s ease;
+}
+.participant.active {
+  background: var(--warm);
+  border-color: var(--ember);
+  border-left-width: 4px;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.avatar {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: Arial, sans-serif;
+  font-weight: 900;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.avatar--human   { background: #d8ecdf; color: #1f5b39; }
+.avatar--agent   { background: #ede0f2; color: #6a3d8a; }
+.avatar--service { background: var(--pink); color: var(--ember); }
+.participant-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--black);
+  letter-spacing: -0.01em;
+}
+.participant-role {
+  font-size: 12px;
+  color: var(--gray-50);
+  margin-top: 2px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.audit-log {
+  background: var(--gray-08);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  max-height: 380px; min-height: 240px;
+  overflow-y: auto;
+}
+.audit-empty {
+  padding: 80px 24px;
+  text-align: center;
+  color: var(--gray-50);
+  font-style: italic;
+  font-size: 14px;
+}
+.audit-entry {
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  display: grid;
+  grid-template-columns: 40px 220px 1fr auto 1fr;
+  gap: 16px;
+  align-items: center;
+  animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  background: #fff;
+}
+.audit-entry:last-child { border-bottom: none; }
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.seq      { color: var(--gray-50); font-size: 12px; font-weight: 600; }
+.method-cell {
+  color: var(--black);
+  font-weight: 700;
+  display: inline-flex; align-items: center; gap: 10px;
+}
+.method-cell::before {
+  content: "";
+  width: 8px; height: 8px;
+  background: var(--gray-50);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.method-cell.highlight { color: var(--ember); }
+.method-cell.highlight::before { background: var(--ember); }
+.from-uri { color: #1f5b39; font-size: 13px; }
+.arrow    { color: var(--gray-50); }
+.to-uri   { color: #6a3d8a; font-size: 13px; }
+@media (max-width: 720px) {
+  .audit-entry { grid-template-columns: 28px 1fr; font-size: 12px; }
+  .audit-entry > :nth-child(n+3) { display: none; }
+}
+
+.workspace-footer {
+  padding: 22px 28px;
+  background: var(--gray-08);
+  border-top: 1px solid var(--line);
+}
+.controls {
+  display: flex; gap: 10px; align-items: center;
+  flex-wrap: wrap;
+}
+.step-btn {
+  padding: 11px 22px;
+  background: #fff;
+  border: 1.5px solid var(--black);
+  color: var(--black);
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: Arial, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.step-btn:hover:not(:disabled) {
+  background: var(--black);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.step-btn.primary {
+  background: var(--ember);
+  border-color: var(--ember);
+  color: #fff;
+}
+.step-btn.primary:hover:not(:disabled) {
+  background: var(--ember-d);
+  border-color: var(--ember-d);
+}
+.step-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.step-counter {
+  font-size: 13px;
+  color: var(--gray-70);
+  margin-left: auto;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+}
+
+.step-explainer {
+  margin-top: 18px;
+  padding: 18px 22px;
+  background: var(--warm);
+  border-left: 4px solid var(--ember);
+  border-radius: 0 2px 2px 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--black);
+}
+.step-explainer strong {
+  color: var(--ember);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ============================================================
+   ANATOMY (override)
+   ============================================================ */
+.artefact-shell {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--ember);
+  border-radius: 2px;
+  padding: 38px;
+  margin-top: 48px;
+  box-shadow: var(--shadow-md);
+}
+.artefact-header {
+  display: flex; align-items: center; gap: 18px;
+  padding-bottom: 26px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.artefact-id {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  color: var(--ember);
+  background: var(--pink);
+  padding: 5px 12px;
+  border-radius: 2px;
+  font-weight: 700;
+}
+.artefact-tag {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--gray-50);
+}
+
+.fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+@media (max-width: 720px) { .fields-grid { grid-template-columns: 1fr; } }
+.field {
+  background: var(--gray-08);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--ember);
+  border-radius: 2px;
+  padding: 26px 28px;
+  transition: all 0.2s;
+}
+.field:hover {
+  background: #fff;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.field-name {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 16px;
+  color: var(--ember);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.field-purpose {
+  font-size: 11px;
+  color: var(--gray-50);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin-bottom: 22px;
+  font-weight: 700;
+}
+.field-body { font-size: 15px; line-height: 1.65; color: var(--black); }
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 14px;
+  padding: 10px 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  border-bottom: 1px dashed var(--line);
+}
+.diff-line:last-child { border-bottom: none; }
+.diff-op {
+  color: var(--ember);
+  font-weight: 700;
+}
+.diff-path { color: var(--black); font-weight: 600; }
+.diff-path .ar { color: var(--gray-50); margin: 0 8px; }
+.diff-val { color: #1f5b39; font-weight: 600; }
+
+.tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag-pill {
+  display: inline-block;
+  background: var(--ember);
+  color: #fff;
+  padding: 6px 14px;
+  border-radius: 2px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.policy-pill {
+  display: inline-block;
+  background: var(--amber);
+  color: var(--black);
+  padding: 6px 14px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  margin-right: 6px;
+  margin-bottom: 6px;
+}
+
+.rationale {
+  font-style: italic;
+  color: var(--black);
+  font-size: 16px;
+  line-height: 1.6;
+  position: relative;
+  padding-left: 18px;
+}
+.rationale::before {
+  content: "";
+  position: absolute; left: 0; top: 4px; bottom: 4px;
+  width: 3px; background: var(--ember);
+}
+
+.artefact-footnote {
+  margin-top: 32px;
+  padding-top: 26px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 14px 20px;
+  font-size: 14px;
+}
+.artefact-footnote .label {
+  color: var(--gray-50);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 11px;
+  font-weight: 700;
+  padding-top: 2px;
+}
+.artefact-footnote .value {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--gray-70);
+  font-weight: 500;
+}
+
+/* ============================================================
+   DIVIDEND CHART
+   ============================================================ */
+.chart-section {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 48px;
+  align-items: start;
+  margin: 48px 0;
+}
+@media (max-width: 900px) { .chart-section { grid-template-columns: 1fr; gap: 32px; } }
+
+.chart {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--ember);
+  border-radius: 2px;
+  padding: 34px 38px;
+  box-shadow: var(--shadow-sm);
+}
+.chart-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ember);
+  margin-bottom: 8px;
+}
+.chart-period {
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--black);
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+  line-height: 1;
+}
+.chart-period-detail {
+  font-size: 14px;
+  color: var(--gray-70);
+  margin-bottom: 32px;
+  font-weight: 500;
+}
+.chart-bar {
+  display: grid;
+  grid-template-columns: 200px 1fr 54px;
+  gap: 18px;
+  align-items: center;
+  padding: 14px 0;
+}
+.chart-bar + .chart-bar { border-top: 1px solid var(--gray-15); }
+.chart-tag {
+  color: var(--black);
+  font-weight: 700;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+}
+.chart-track {
+  background: var(--gray-15);
+  height: 16px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.chart-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ember), var(--amber));
+  border-radius: 2px;
+  width: 0;
+  transition: width 1.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.chart.in-view .chart-fill { width: var(--w, 0%); }
+.chart-bar:nth-child(n+5) .chart-fill {
+  background: linear-gradient(90deg, var(--gray-50), var(--gray-70));
+}
+.chart-count {
+  text-align: right;
+  font-family: "JetBrains Mono", monospace;
+  color: var(--black);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.insight {
+  background: var(--warm);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--ember);
+  border-radius: 0 2px 2px 0;
+  padding: 32px;
+}
+.insight-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ember);
+  margin-bottom: 20px;
+}
+.insight h3 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  line-height: 1.2;
+}
+.insight p {
+  font-size: 15px;
+  margin-bottom: 16px;
+  color: var(--gray-70);
+  line-height: 1.6;
+}
+.insight p:last-child { margin-bottom: 0; }
+.insight .key {
+  color: #fff;
+  background: var(--ember);
+  font-family: "JetBrains Mono", monospace;
+  padding: 2px 9px;
+  border-radius: 2px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.insight-detail {
+  margin-top: 22px; padding-top: 20px;
+  border-top: 1px solid rgba(234, 71, 0, 0.2);
+  font-size: 13.5px; color: var(--gray-70);
+  font-style: italic;
+}
+
+/* ============================================================
+   PROFILES
+   ============================================================ */
+.profiles-section { margin: 48px 0; }
+.profile-group { margin-bottom: 44px; }
+.profile-group-label {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--black);
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--ember);
+  display: flex; align-items: center; gap: 12px;
+}
+.profile-group-label .count {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ember);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  background: var(--pink);
+  padding: 3px 10px;
+  border-radius: 2px;
+}
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.profile {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--gray-50);
+  border-radius: 2px;
+  padding: 22px 24px;
+  transition: all 0.2s;
+  box-shadow: var(--shadow-sm);
+}
+.profile:hover {
+  border-top-color: var(--ember);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+.profile.profile--core {
+  background: var(--warm);
+  border-top-color: var(--ember);
+}
+.profile-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.profile-name {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 16px;
+  color: var(--black);
+  font-weight: 700;
+}
+.profile-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  background: var(--ember);
+  color: #fff;
+  padding: 4px 11px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.profile-desc {
+  font-size: 14px;
+  color: var(--gray-70);
+  line-height: 1.55;
+}
+
+.standards-note {
+  background: var(--gray-08);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--amber);
+  border-radius: 0 2px 2px 0;
+  padding: 26px 30px;
+  margin: 36px 0;
+  font-size: 14.5px;
+  color: var(--gray-70);
+  line-height: 1.7;
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 28px;
+  align-items: start;
+}
+@media (max-width: 640px) { .standards-note { grid-template-columns: 1fr; gap: 12px; } }
+.standards-note .title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--amber);
+}
+.standards-note strong { color: var(--black); font-weight: 700; }
+
+/* ============================================================
+   FINAL CTA — Brightbeam cover-stage gradient
+   ============================================================ */
+.final-cta {
+  padding: 140px 32px 120px;
+  text-align: center;
+  background: linear-gradient(135deg, #EA4700 0%, #FF7F00 50%, #FF9900 100%);
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+}
+.final-cta::before {
+  content: '';
+  position: absolute;
+  top: -100px; right: -100px; width: 480px; height: 480px;
+  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 60%);
+  pointer-events: none;
+}
+.final-cta::after {
+  content: '';
+  position: absolute;
+  bottom: -120px; left: 30%; width: 540px; height: 540px;
+  background: radial-gradient(circle, rgba(26,26,28,0.18) 0%, transparent 65%);
+  pointer-events: none;
+}
+.final-cta > * { position: relative; z-index: 2; }
+.final-cta h2 {
+  margin-bottom: 28px;
+  color: #fff;
+  font-size: var(--t-xxl);
+  max-width: 14ch;
+  margin-left: auto; margin-right: auto;
+  line-height: 0.98;
+}
+.final-cta h2 em { color: var(--black); font-style: normal; }
+.final-cta .lede {
+  margin: 0 auto 44px;
+  max-width: 28em;
+  font-size: 20px;
+  color: #fff;
+  opacity: 0.95;
+  font-weight: 400;
+}
+.final-cta .cta-row { justify-content: center; }
+.final-cta .footer-meta {
+  margin-top: 96px;
+  padding-top: 36px;
+  border-top: 1px solid rgba(255,255,255,0.25);
+  display: flex; justify-content: center; gap: 28px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: #fff;
+  opacity: 0.85;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+section.s { scroll-margin-top: 80px; }
+
+/* ============================================================
+   SCROLL REVEAL
+   ============================================================ */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal.in-view {
+  opacity: 1;
+  transform: translateY(0);
+}
+.reveal--d1 { transition-delay: 0.1s; }
+.reveal--d2 { transition-delay: 0.2s; }
+.reveal--d3 { transition-delay: 0.3s; }
+</style>
+</head>
+<body>
+
+<!-- Brightbeam navigation -->
+<nav class="topnav">
+  <div class="nav-left">
+    <div class="nav-logo">
+      <!-- Brightbeam wordmark — orange ember bars + white type, but adapted for nav -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 342.1 160.7" aria-label="Brightbeam">
+        <g>
+          <path fill="#fff" d="M0,73.3V1.7h24.3c16,0,24.3,9.5,24.3,18.8s-6.1,12.9-9.2,15.1c5,2.3,12.2,7.4,12.2,17.3s-8.6,20.4-25.6,20.4H0ZM14.8,31.4h9c6,0,9.8-3.7,9.8-8.4s-3.7-8.3-9.9-8.3h-8.9v16.8ZM14.8,60.3h11.1c6.9,0,10.5-3.8,10.5-8.6s-3.9-8.4-10.7-8.4h-11v17Z"/>
+          <path fill="#fff" d="M116.5,73.3h-18.1l-19.4-26.2h-4.1v26.2h-15V1.7h22.4c17,0,27.2,9.9,27.2,22.9s-5.7,17.2-15.5,20.7l22.3,28.1ZM74.9,14.8v20.2h7.4c8.2,0,12.1-4.5,12.1-10.1s-3.8-10.1-12.1-10.1h-7.4Z"/>
+          <path fill="#fff" d="M121.3,73.3V1.7h15v71.6h-15Z"/>
+          <path fill="#fff" d="M145.5,37.5c0-21,16.5-37.5,39.8-37.5s19.1,3,24.5,5.7v15.4c-7.3-4.3-14.9-7.5-24.5-7.5-15.1,0-24.3,9.7-24.3,23.8s9.5,24,23.6,24,9-1,12.5-2.5v-11.7h-14.1v-12.5h28.3v32.4c-3.6,2.3-12.8,7.8-26.8,7.8-22.6,0-39.1-16.6-39.1-37.6Z"/>
+          <path fill="#fff" d="M222.2,73.3V1.7h15v28.3h29.3V1.7h15v71.6h-15v-29.7h-29.3v29.7h-15Z"/>
+          <path fill="#fff" d="M308,73.3V15.2h-19.1V1.7h53.3v13.6h-19.1v58.1h-15Z"/>
+          <path fill="#fff" d="M0,159.8v-71.6h24.3c16,0,24.3,9.5,24.3,18.8s-6.1,12.9-9.2,15.1c5,2.3,12.2,7.4,12.2,17.3s-8.6,20.4-25.6,20.4H0ZM14.8,117.9h9c6,0,9.8-3.7,9.8-8.4s-3.7-8.3-9.9-8.3h-8.9v16.8ZM14.8,146.8h11.1c6.9,0,10.5-3.8,10.5-8.6s-3.9-8.4-10.7-8.4h-11v17Z"/>
+          <path fill="#fff" d="M236.2,159.8l-4.4-10.6h-29.9l-4.4,10.6h-16.5l33.4-72.5h5.3l33.4,72.5h-16.8ZM207.3,136.3h19.1l-9.6-22.8-9.6,22.8Z"/>
+          <path fill="#fff" d="M258,159.8l13.3-72.7h5.8l23.2,46.9,23.1-46.9h5.8l12.8,72.7h-15.5l-6-38.5-19.3,39.4h-2.7l-19-39.4-6.3,38.5h-15.3Z"/>
+          <rect fill="#ea4700" x="60" y="117.3" width="115.3" height="13.4"/>
+          <rect fill="#ea4700" x="60" y="146.3" width="115.3" height="13.5"/>
+          <rect fill="#ea4700" x="60" y="88.1" width="115.3" height="13.5"/>
+        </g>
+      </svg>
+    </div>
+    <div class="nav-tag">HAP · Demonstrator</div>
+  </div>
+  <div class="nav-links">
+    <a href="#problem">Problem</a>
+    <a href="#protocol">Protocol</a>
+    <a href="#walkthrough">Walkthrough</a>
+    <a href="#anatomy">Anatomy</a>
+    <a href="#dividend">Dividend</a>
+    <a href="#profiles">Profiles</a>
+  </div>
+</nav>
+
+<div class="progress" id="progress"></div>
+
+<!-- ============================== HERO ============================== -->
+<header class="hero">
+  <div class="hero-grid">
+    <div class="hero-text">
+      <div class="section-tag reveal">The Human-Agent Protocol</div>
+      <h1 class="reveal reveal--d1">
+        The room where humans and agents do <em>real work.</em>
+      </h1>
+      <p class="lede reveal reveal--d2">
+        HAP is the open standard for multi-human, multi-agent
+        collaboration. Third pillar of the agent protocol stack —
+        alongside MCP and A2A — for what happens when humans, agents,
+        and tools work together in one shared workspace.
+      </p>
+      <div class="cta-row reveal reveal--d3">
+        <a href="#problem" class="btn btn--primary">
+          See it in action <span class="arrow">→</span>
+        </a>
+        <a href="#protocol" class="btn">How it works</a>
+      </div>
+
+      <div class="hero-meta reveal reveal--d3">
+        <div><span>Core spec</span><strong>7 methods · weekend build</strong></div>
+        <div><span>Profiles</span><strong>10 optional · à la carte</strong></div>
+        <div><span>License</span><strong>CC-BY 4.0 · Apache 2.0</strong></div>
+        <div><span>Conformance</span><strong>21-test harness</strong></div>
+      </div>
+    </div>
+
+    <!-- Animated workspace visual — BIG fonts -->
+    <div class="hero-visual reveal reveal--d2">
+      <svg viewBox="0 0 480 480" aria-hidden="true">
+        <!-- Connection lines -->
+        <line class="viz-line" x1="240" y1="90"  x2="115" y2="335"/>
+        <line class="viz-line" x1="240" y1="90"  x2="365" y2="335"/>
+        <line class="viz-line" x1="115" y1="335" x2="365" y2="335"/>
+        <!-- Background workspace ring -->
+        <circle cx="240" cy="240" r="180" fill="none" stroke="#d9dce0" stroke-width="1.5" stroke-dasharray="3 10"/>
+
+        <!-- Node 1: Human (top) -->
+        <g transform="translate(240, 90)">
+          <circle class="viz-pulse animate" r="44" stroke="#1f5b39"/>
+          <circle r="50" fill="#fff" stroke="#1f5b39" stroke-width="2.5"/>
+          <circle r="40" fill="#d8ecdf"/>
+          <text x="0" y="11" text-anchor="middle" font-family="Arial, sans-serif"
+                font-size="32" font-weight="900" fill="#1f5b39">M</text>
+          <text class="viz-label" x="0" y="86" text-anchor="middle" fill="#1a1a1c">HUMAN</text>
+        </g>
+
+        <!-- Node 2: Agent (bottom left) -->
+        <g transform="translate(115, 335)">
+          <circle class="viz-pulse animate" r="44" stroke="#6a3d8a" style="animation-delay: 0.9s;"/>
+          <circle r="50" fill="#fff" stroke="#6a3d8a" stroke-width="2.5"/>
+          <circle r="40" fill="#ede0f2"/>
+          <text x="0" y="11" text-anchor="middle" font-family="Arial, sans-serif"
+                font-size="32" font-weight="900" fill="#6a3d8a">T</text>
+          <text class="viz-label" x="0" y="86" text-anchor="middle" fill="#1a1a1c">AGENT</text>
+        </g>
+
+        <!-- Node 3: Service (bottom right) -->
+        <g transform="translate(365, 335)">
+          <circle class="viz-pulse animate" r="44" stroke="#EA4700" style="animation-delay: 1.8s;"/>
+          <circle r="50" fill="#fff" stroke="#EA4700" stroke-width="2.5"/>
+          <circle r="40" fill="#FFE7DD"/>
+          <text x="0" y="11" text-anchor="middle" font-family="Arial, sans-serif"
+                font-size="32" font-weight="900" fill="#EA4700">C</text>
+          <text class="viz-label" x="0" y="86" text-anchor="middle" fill="#1a1a1c">COORDINATOR</text>
+        </g>
+
+        <!-- Center label -->
+        <text class="viz-center-label" x="240" y="235" text-anchor="middle" fill="#888">WORKSPACE</text>
+        <text x="240" y="258" text-anchor="middle"
+              font-family="JetBrains Mono, monospace"
+              font-size="14" font-weight="700" fill="#EA4700">wsp_support</text>
+      </svg>
+    </div>
+  </div>
+</header>
+
+<!-- ============================== PROBLEM ============================== -->
+<section class="s s--lead" id="problem">
+  <div class="container container--narrow">
+    <div class="section-tag reveal">The problem · told as a story</div>
+    <h2 class="reveal">Tuesday afternoon at TechCorp&nbsp;Support.</h2>
+
+    <p class="story-intro reveal">
+      <strong>Maya</strong>, a senior support agent, opens her review
+      queue. Forty-seven customer responses are waiting — drafted
+      overnight by an AI agent. She'll approve most. A few she'll
+      reject. Some she'll edit before sending.
+    </p>
+
+    <div class="stat-row reveal">
+      <div class="stat">
+        <div class="stat-num">47</div>
+        <div class="stat-label">drafts in Maya's queue this afternoon</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">300</div>
+        <div class="stat-label">drafts she'll review by Friday</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num">15,000</div>
+        <div class="stat-label">drafts she'll review by year-end</div>
+      </div>
+    </div>
+
+    <p class="reveal">
+      Here's the question that pays for HAP:
+    </p>
+
+    <p class="pullquote reveal">
+      what if every one of those edits became <em>data?</em>
+    </p>
+
+    <p class="reveal">
+      In most companies today, they don't. Maya edits the AI's draft,
+      sends the response, and moves on. The edit lives in nobody's
+      database. Nobody learns from it. Next week the AI makes the
+      same mistake. Maya edits it again.
+    </p>
+
+    <p class="reveal">
+      Repeat for a year, and you've thrown away the world's richest
+      fine-tuning dataset — the one your humans built for free by
+      doing their normal job.
+    </p>
+
+    <p class="reveal">
+      HAP exists to capture that signal. <em>Not as a side feature.</em>
+      As the core wire format. Every override is structured (diff,
+      rationale, tags, policy references) and lives in the audit log
+      forever. Queryable. Aggregatable. Trainable on.
+    </p>
+  </div>
+</section>
+
+<!-- ============================== ANALOGY ============================== -->
+<section class="s s--gray">
+  <div class="container">
+    <div class="container container--narrow" style="padding: 0;">
+      <div class="section-tag reveal">The analogy</div>
+      <h2 class="reveal">It's <em>track changes</em> for&nbsp;AI.</h2>
+      <p class="lede reveal">
+        The same shape an editor uses when marking up a writer's draft —
+        structured for machines as well as for humans.
+      </p>
+    </div>
+
+    <div class="compare reveal">
+      <div class="compare-panel compare-panel--draft">
+        <div class="compare-label">What Maya sees</div>
+        <p class="draft-doc">
+          We <span class="strike">sincerely apologise for the extreme delay</span><span class="ins">just wanted to follow up — your order</span> is in transit and will arrive within the next three business days. <span class="strike">We deeply regret any inconvenience caused.</span><span class="ins">Let me know if you don't see it by then.</span>
+        </p>
+        <span class="draft-note">Tone too apologetic for a routine tracking question</span>
+      </div>
+
+      <div class="compare-panel compare-panel--code">
+        <div class="compare-label">What HAP records</div>
+<pre class="code"><span class="k">"method"</span>: <span class="s">"decide.override"</span>,
+<span class="k">"params"</span>: {
+  <span class="k">"task_id"</span>: <span class="s">"tsk_…"</span>,
+  <span class="k">"diff"</span>: [
+    { <span class="k">"op"</span>: <span class="s">"replace"</span>,
+      <span class="k">"path"</span>: <span class="s">"/body"</span>,
+      <span class="k">"value"</span>: <span class="s">"Thanks for following…"</span> },
+    { <span class="k">"op"</span>: <span class="s">"replace"</span>,
+      <span class="k">"path"</span>: <span class="s">"/tone"</span>,
+      <span class="k">"value"</span>: <span class="s">"warm_professional"</span> }
+  ],
+  <span class="k">"rationale"</span>: <span class="s">"Over-apologetic for routine"</span>,
+  <span class="k">"tags"</span>: [<span class="s">"tone-softened"</span>],
+  <span class="k">"policy_refs"</span>: [<span class="s">"support-tone-v2"</span>]
+}</pre>
+      </div>
+    </div>
+
+    <div class="container container--narrow" style="padding: 0;">
+      <p class="reveal" style="margin-top: 32px;">
+        The track changes on the left are what Maya naturally does. The
+        JSON on the right is what the protocol records. <em>Same shape, different audience.</em>
+      </p>
+      <p class="reveal">
+        JSON Patch (<a href="https://datatracker.ietf.org/doc/html/rfc6902">RFC 6902</a>)
+        isn't new. Rationale fields aren't new. Tags aren't new. What's
+        new is that they live together as a typed protocol primitive,
+        captured automatically as part of the review flow.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== PROTOCOL ============================== -->
+<section class="s" id="protocol">
+  <div class="container">
+    <div class="container container--narrow" style="padding: 0;">
+      <div class="section-tag reveal">The protocol</div>
+      <h2 class="reveal">Three pillars. <em>One stack.</em></h2>
+      <p class="lede reveal">
+        The open agent protocol stack has been forming over the last two
+        years. HAP is the layer where humans live.
+      </p>
+    </div>
+
+    <div class="stack-section reveal">
+      <div class="stack">
+        <div class="stack-layer stack-layer--hap">
+          <div class="stack-name">HAP <small>THIS LAYER</small></div>
+          <div class="stack-role">Humans + agents collaborating in workspaces</div>
+        </div>
+        <div class="stack-layer">
+          <div class="stack-name">A2A</div>
+          <div class="stack-role">Agents delegating to agents</div>
+        </div>
+        <div class="stack-layer">
+          <div class="stack-name">MCP</div>
+          <div class="stack-role">Agents calling tools</div>
+        </div>
+      </div>
+
+      <div class="stack-explain">
+        <h3>Each protocol owns one concern.</h3>
+        <p>
+          They compose without conflict. An agent inside a HAP workspace
+          can call MCP tools and delegate to A2A peers. The HAP audit
+          log cites those interactions <em>without re-implementing either protocol.</em>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="container container--narrow" style="margin-top: 72px;">
+    <div class="section-subhead reveal">Core in seven methods</div>
+    <p class="reveal" style="margin-bottom: 20px;">
+      HAP Core is the minimum — implementable in a weekend in any
+      language. Seven methods over JSON-RPC 2.0. That's enough to run
+      a compliant workspace.
+    </p>
+  </div>
+
+  <div class="container">
+    <div class="method-grid reveal">
+      <div class="method">
+        <div class="method-name">workspace.describe</div>
+        <div class="method-desc">What is this room? Who's in it? Which profiles are advertised?</div>
+      </div>
+      <div class="method">
+        <div class="method-name">participant.join</div>
+        <div class="method-desc">Add a human, agent, or service to the workspace.</div>
+      </div>
+      <div class="method">
+        <div class="method-name">participant.leave</div>
+        <div class="method-desc">Remove a participant.</div>
+      </div>
+      <div class="method">
+        <div class="method-name">task.create</div>
+        <div class="method-desc">Delegate work to an assignee with structured input.</div>
+      </div>
+      <div class="method">
+        <div class="method-name">task.update</div>
+        <div class="method-desc">Report progress; transition state.</div>
+      </div>
+      <div class="method">
+        <div class="method-name">task.complete</div>
+        <div class="method-desc">Deliver output and finalise the task.</div>
+      </div>
+      <div class="method">
+        <div class="method-name">audit.read</div>
+        <div class="method-desc">Query the workspace's history with filters and ranges.</div>
+      </div>
+    </div>
+
+    <div class="container container--narrow" style="padding: 0;">
+      <p class="reveal">
+        Everything else — structured review, multi-party deliberation,
+        mode promotion, signed audit, identity binding — is an optional
+        profile layered on top. <em>You pay for what you use.</em>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== WALKTHROUGH ============================== -->
+<section class="s s--gray" id="walkthrough">
+  <div class="container container--wide">
+    <div class="container container--narrow" style="padding: 0;">
+      <div class="section-tag reveal">Interactive · step through</div>
+      <h2 class="reveal">Watch a workspace at work.</h2>
+      <p class="lede reveal">
+        Six envelopes. One support ticket. From "AI drafts a response"
+        to "human overrides with rationale" to "audit log preserves the
+        structured edit." Click through to see each step build the log.
+      </p>
+    </div>
+
+    <div class="workspace-shell reveal">
+      <div class="workspace-header">
+        <div class="workspace-header-left">
+          <div class="window-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <div>
+            <div class="workspace-label">Workspace</div>
+            <div class="workspace-id">wsp_support_triage</div>
+          </div>
+        </div>
+        <div class="live-pulse">Live</div>
+      </div>
+
+      <div class="workspace-body">
+        <div class="participants" id="participants">
+          <div class="participant" data-uri="human:maya">
+            <div class="avatar avatar--human">M</div>
+            <div>
+              <div class="participant-name">Maya</div>
+              <div class="participant-role">human · reviewer</div>
+            </div>
+          </div>
+          <div class="participant" data-uri="agent:triage-bot">
+            <div class="avatar avatar--agent">T</div>
+            <div>
+              <div class="participant-name">Triage Bot</div>
+              <div class="participant-role">agent · drafter</div>
+            </div>
+          </div>
+          <div class="participant" data-uri="service:coord">
+            <div class="avatar avatar--service">C</div>
+            <div>
+              <div class="participant-name">Coordinator</div>
+              <div class="participant-role">service · workspace</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="audit-log" id="audit-log">
+          <div class="audit-empty">Audit log empty. Click "Start" to begin.</div>
+        </div>
+      </div>
+
+      <div class="workspace-footer">
+        <div class="controls">
+          <button class="step-btn" id="prev-btn" disabled>← Back</button>
+          <button class="step-btn primary" id="next-btn">Start →</button>
+          <button class="step-btn" id="reset-btn">Reset</button>
+          <div class="step-counter" id="step-counter">0 / 6</div>
+        </div>
+        <div class="step-explainer" id="step-explainer">
+          Click <strong>Start</strong> to walk through a real HAP flow, envelope by envelope.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== ANATOMY ============================== -->
+<section class="s" id="anatomy">
+  <div class="container">
+    <div class="container container--narrow" style="padding: 0;">
+      <div class="section-tag reveal">The killer move</div>
+      <h2 class="reveal">Anatomy of <em>an override.</em></h2>
+      <p class="lede reveal">
+        When Maya edits the bot's draft, four things get recorded
+        together. Every one of them is queryable structured data — no
+        separate tagging step, no manual logging, no afterthought.
+      </p>
+    </div>
+
+    <div class="artefact-shell reveal">
+      <div class="artefact-header">
+        <span class="artefact-tag">Override artefact</span>
+        <span class="artefact-id">art_01HZ9YX7K3X8M2V4N6P8R0T3B</span>
+      </div>
+
+      <div class="fields-grid">
+        <div class="field">
+          <div class="field-name">diff</div>
+          <div class="field-purpose">What changed · RFC 6902</div>
+          <div class="field-body">
+            <div class="diff-line">
+              <span class="diff-op">replace</span>
+              <span class="diff-path">/body</span>
+            </div>
+            <div class="diff-line">
+              <span class="diff-op">replace</span>
+              <span class="diff-path">/tone <span class="ar">→</span> <span class="diff-val">"warm_professional"</span></span>
+            </div>
+            <div class="diff-line">
+              <span class="diff-op">replace</span>
+              <span class="diff-path">/severity <span class="ar">→</span> <span class="diff-val">"low"</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-name">rationale</div>
+          <div class="field-purpose">Why · free text</div>
+          <div class="field-body rationale">
+            Tone was over-apologetic for a routine tracking enquiry.
+            Severity downgraded since the order is in normal transit.
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-name">tags</div>
+          <div class="field-purpose">Aggregation keys · controlled vocab</div>
+          <div class="field-body tag-list">
+            <span class="tag-pill">tone-softened</span>
+            <span class="tag-pill">severity-downgraded</span>
+            <span class="tag-pill">length-reduced</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-name">policy_refs</div>
+          <div class="field-purpose">Anchors · external guidelines</div>
+          <div class="field-body">
+            <span class="policy-pill">support-tone-guideline-v2</span>
+            <span class="policy-pill">severity-rubric-v3</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="artefact-footnote">
+        <span class="label">Reviewer</span>
+        <span class="value">human:maya@techcorp.example</span>
+        <span class="label">Applied to</span>
+        <span class="value">tsk_01HZ9YX7K3X8M2V4N6P8R0T3B</span>
+        <span class="label">Timestamp</span>
+        <span class="value">2026-05-12T14:38:22.481Z</span>
+      </div>
+    </div>
+
+    <div class="container container--narrow" style="padding: 0; margin-top: 48px;">
+      <p class="reveal">
+        None of the four fields is novel on its own. The novelty is that
+        they live together as a single typed protocol object — captured
+        at the moment of review, preserved in the audit log forever,
+        available to anyone with audit access.
+      </p>
+      <p class="reveal">
+        Think of it as <em>double-entry bookkeeping for AI oversight.</em>
+        Each override has both <strong>what changed</strong> and <strong>why</strong>,
+        locked together at the time of the entry. You can't have one
+        without the other; the protocol won't let the entry through.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== DIVIDEND ============================== -->
+<section class="s s--gray" id="dividend">
+  <div class="container container--wide">
+    <div class="container container--narrow" style="padding: 0;">
+      <div class="section-tag reveal">A week later</div>
+      <h2 class="reveal">The <em>dividend.</em></h2>
+      <p class="lede reveal">
+        One override is a data point. A week is a tuning signal. A
+        month is a fine-tuning dataset. All produced as a side effect
+        of normal work.
+      </p>
+    </div>
+
+    <div class="chart-section reveal">
+      <div class="chart" id="chart">
+        <div class="chart-title">Override tags</div>
+        <div class="chart-period">May 6 – May 12</div>
+        <div class="chart-period-detail">79 overrides · workspace wsp_support_triage</div>
+
+        <div class="chart-bar">
+          <div class="chart-tag">tone-softened</div>
+          <div class="chart-track"><div class="chart-fill" style="--w: 100%;"></div></div>
+          <div class="chart-count">41</div>
+        </div>
+        <div class="chart-bar">
+          <div class="chart-tag">severity-downgraded</div>
+          <div class="chart-track"><div class="chart-fill" style="--w: 39%;"></div></div>
+          <div class="chart-count">16</div>
+        </div>
+        <div class="chart-bar">
+          <div class="chart-tag">factual-fix</div>
+          <div class="chart-track"><div class="chart-fill" style="--w: 19%;"></div></div>
+          <div class="chart-count">8</div>
+        </div>
+        <div class="chart-bar">
+          <div class="chart-tag">length-reduced</div>
+          <div class="chart-track"><div class="chart-fill" style="--w: 17%;"></div></div>
+          <div class="chart-count">7</div>
+        </div>
+        <div class="chart-bar">
+          <div class="chart-tag">scope-expanded</div>
+          <div class="chart-track"><div class="chart-fill" style="--w: 9%;"></div></div>
+          <div class="chart-count">4</div>
+        </div>
+        <div class="chart-bar">
+          <div class="chart-tag">other</div>
+          <div class="chart-track"><div class="chart-fill" style="--w: 7%;"></div></div>
+          <div class="chart-count">3</div>
+        </div>
+      </div>
+
+      <aside class="insight">
+        <div class="insight-label">What this tells you</div>
+        <h3>The agent is getting <em>the tone wrong.</em></h3>
+        <p>
+          <span class="key">tone-softened</span> dominates at 52% of
+          overrides. The agent is over-apologetic for routine queries.
+          <em>One-line prompt change away from a fix.</em>
+        </p>
+        <p>
+          Secondary signal: severity classification skews high. The
+          rubric needs more low-severity examples.
+        </p>
+        <div class="insight-detail">
+          This report came from nothing but the audit log. No analytics
+          instrumentation. No retroactive labelling. Every data point
+          fell out of Maya doing her job.
+        </div>
+      </aside>
+    </div>
+
+    <div class="container container--narrow" style="padding: 0; margin-top: 56px;">
+      <p class="reveal">
+        That's the dividend. By Wednesday next week, the prompt is
+        updated. By Friday, the tag distribution starts shifting. By
+        the end of the next sprint, the agent is <em>measurably better</em> at
+        the thing Maya was already correcting it on.
+      </p>
+      <p class="reveal">
+        The protocol made the loop visible. <em>The protocol kept the loop short.</em>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== PROFILES ============================== -->
+<section class="s" id="profiles">
+  <div class="container">
+    <div class="container container--narrow" style="padding: 0;">
+      <div class="section-tag reveal">Adoption</div>
+      <h2 class="reveal">Pick what you need. <em>Skip what you don't.</em></h2>
+      <p class="lede reveal">
+        HAP is Core plus ten optional profiles. A working deployment
+        starts with Core alone. Each profile adds a focused capability
+        and stays independent of the rest.
+      </p>
+    </div>
+
+    <div class="profiles-section">
+      <div class="profile-group reveal">
+        <div class="profile-group-label">
+          Start here <span class="count">2 profiles</span>
+        </div>
+        <div class="profile-grid">
+          <div class="profile profile--core">
+            <div class="profile-header">
+              <span class="profile-name">core/1.0</span>
+              <span class="profile-badge">Mandatory</span>
+            </div>
+            <div class="profile-desc">7 methods. Workspaces, participants, tasks, audit log. Weekend build.</div>
+          </div>
+          <div class="profile profile--core">
+            <div class="profile-header">
+              <span class="profile-name">review/1.0</span>
+              <span class="profile-badge">Killer feature</span>
+            </div>
+            <div class="profile-desc">request, approve, reject, override, abstain, escalate. The one you just saw.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="profile-group reveal">
+        <div class="profile-group-label">
+          Workflow <span class="count">4 profiles</span>
+        </div>
+        <div class="profile-grid">
+          <div class="profile">
+            <div class="profile-header"><span class="profile-name">modes/1.0</span></div>
+            <div class="profile-desc">Shadow → trial → production. Roll out new agents safely.</div>
+          </div>
+          <div class="profile">
+            <div class="profile-header"><span class="profile-name">deliberation/1.0</span></div>
+            <div class="profile-desc">Quorum, weighted votes, vetoes. Multi-party decisions.</div>
+          </div>
+          <div class="profile">
+            <div class="profile-header"><span class="profile-name">whisper/1.0</span></div>
+            <div class="profile-desc">Deadline-bound interrupt questions with default-if-lapsed.</div>
+          </div>
+          <div class="profile">
+            <div class="profile-header"><span class="profile-name">handoff/1.0</span></div>
+            <div class="profile-desc">Shift changes; group-routed handoffs.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="profile-group reveal">
+        <div class="profile-group-label">
+          Identity &amp; trust <span class="count">4 profiles</span>
+        </div>
+        <div class="profile-grid">
+          <div class="profile">
+            <div class="profile-header"><span class="profile-name">identity-oidc/1.0</span></div>
+            <div class="profile-desc">OIDC binding with cnf.jwk or DPoP. Reuse your existing identity layer.</div>
+          </div>
+          <div class="profile">
+            <div class="profile-header"><span class="profile-name">identity-vc/1.0</span></div>
+            <div class="profile-desc">W3C Verifiable Credentials. For regulated or cross-org identity.</div>
+          </div>
+          <div class="profile">
+            <div class="profile-header"><span class="profile-name">security-signed/1.0</span></div>
+            <div class="profile-desc">Ed25519 + JCS canonicalisation. Per-message non-repudiation.</div>
+          </div>
+          <div class="profile">
+            <div class="profile-header"><span class="profile-name">audit-scitt/1.0</span></div>
+            <div class="profile-desc">IETF SCITT transparency log. Offline-verifiable receipts.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="profile-group reveal">
+        <div class="profile-group-label">
+          Operations <span class="count">1 profile</span>
+        </div>
+        <div class="profile-grid">
+          <div class="profile">
+            <div class="profile-header"><span class="profile-name">control/1.0</span></div>
+            <div class="profile-desc">Pause, resume, snapshot, rollback. Operational control plane.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="standards-note reveal">
+      <div class="title">Standards reused</div>
+      <div>
+        <strong>JSON-RPC 2.0</strong>, <strong>RFC 8785</strong> (JCS),
+        <strong>RFC 6902</strong> (JSON Patch), <strong>OIDC + RFC 7800</strong> (cnf.jwk),
+        <strong>W3C VC 2.0</strong>, <strong>IETF SCITT</strong>, <strong>COSE</strong> (RFC 9052),
+        <strong>SPIFFE</strong>, <strong>in-toto</strong>. The only protocol-level inventions are
+        the methods themselves and the override-with-rationale shape.
+        Everything else is composition.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== FINAL CTA — Brightbeam gradient ============================== -->
+<section class="final-cta">
+  <h2>The smallest weekend that <em>pays off forever.</em></h2>
+  <p class="lede">
+    Implement Core. Add the review profile. Watch the
+    override-as-data dividend start the day you ship. Layer in other
+    profiles as your workflow demands.
+  </p>
+  <div class="cta-row">
+    <a href="../core/SPEC.md" class="btn" style="background:#fff;color:var(--ember);border-color:#fff;">
+      Read the Core spec <span class="arrow">→</span>
+    </a>
+    <a href="../HANDBOOK.md" class="btn btn--ghost">Read the Handbook</a>
+    <a href="../reference/core-plus-review/" class="btn btn--ghost">Run the reference</a>
+  </div>
+  <div class="footer-meta">
+    <span>Apache 2.0 (code)</span>
+    <span>·</span>
+    <span>CC-BY 4.0 (specification)</span>
+    <span>·</span>
+    <span>Open standard</span>
+  </div>
+</section>
+
+<!-- ============================== SCRIPT ============================== -->
+<script>
+(() => {
+  const steps = [
+    {
+      seq: 0,
+      method: "participant.join",
+      from: "human:maya",
+      to: "service:coord",
+      activate: ["human:maya", "service:coord"],
+      explainer: "Maya, a senior support agent, joins the workspace as a reviewer."
+    },
+    {
+      seq: 1,
+      method: "participant.join",
+      from: "agent:triage-bot",
+      to: "service:coord",
+      activate: ["agent:triage-bot"],
+      explainer: "The Triage Bot agent joins as a drafter, capable of producing draft_response artefacts."
+    },
+    {
+      seq: 2,
+      method: "task.create",
+      from: "human:maya",
+      to: "agent:triage-bot",
+      activate: ["human:maya", "agent:triage-bot"],
+      explainer: "Maya creates a draft_response task for the bot. Input: ticket INC-48219, the customer message."
+    },
+    {
+      seq: 3,
+      method: "task.update",
+      from: "agent:triage-bot",
+      to: "human:maya",
+      activate: ["agent:triage-bot"],
+      explainer: "The bot reports in_progress; it's looking up the order in the carrier's system."
+    },
+    {
+      seq: 4,
+      method: "review.request",
+      from: "agent:triage-bot",
+      to: "human:maya",
+      activate: ["agent:triage-bot", "human:maya"],
+      explainer: "The bot finishes drafting and requests Maya's review on the draft response artefact."
+    },
+    {
+      seq: 5,
+      method: "decide.override",
+      from: "human:maya",
+      to: "service:coord",
+      activate: ["human:maya"],
+      highlight: true,
+      explainer: "Maya overrides. The draft was over-apologetic for a routine tracking question. She edits the body, downgrades severity from high → low, softens the tone. Her diff + rationale + tags + policy refs are captured as a structured artefact."
+    }
+  ];
+
+  const auditLog  = document.getElementById("audit-log");
+  const nextBtn   = document.getElementById("next-btn");
+  const prevBtn   = document.getElementById("prev-btn");
+  const resetBtn  = document.getElementById("reset-btn");
+  const counter   = document.getElementById("step-counter");
+  const explainer = document.getElementById("step-explainer");
+  let current = 0;
+
+  function entryHtml(step) {
+    const cls = step.highlight ? "method-cell highlight" : "method-cell";
+    return `
+      <div class="audit-entry">
+        <span class="seq">${String(step.seq).padStart(3, "0")}</span>
+        <span class="${cls}">${step.method}</span>
+        <span class="from-uri">${step.from}</span>
+        <span class="arrow">→</span>
+        <span class="to-uri">${step.to}</span>
+      </div>`;
+  }
+
+  function render() {
+    auditLog.innerHTML = "";
+    if (current === 0) {
+      auditLog.innerHTML = `<div class="audit-empty">Audit log empty. Click "Start" to begin.</div>`;
+      explainer.innerHTML = `Click <strong>Start</strong> to walk through a real HAP flow, envelope by envelope.`;
+    } else {
+      for (let i = 0; i < current; i++) {
+        auditLog.insertAdjacentHTML("beforeend", entryHtml(steps[i]));
+      }
+      auditLog.scrollTop = auditLog.scrollHeight;
+      const step = steps[current - 1];
+      explainer.innerHTML = `<strong>${step.method}</strong> &nbsp; ${step.explainer}`;
+    }
+    document.querySelectorAll(".participant").forEach((p) => p.classList.remove("active"));
+    if (current > 0) {
+      const activate = steps[current - 1].activate ?? [];
+      activate.forEach((uri) => {
+        const el = document.querySelector(`.participant[data-uri="${uri}"]`);
+        if (el) el.classList.add("active");
+      });
+    }
+    counter.textContent = `${current} / ${steps.length}`;
+    nextBtn.disabled = current === steps.length;
+    prevBtn.disabled = current === 0;
+    if (current === steps.length) nextBtn.textContent = "Done ✓";
+    else if (current === 0) nextBtn.textContent = "Start →";
+    else nextBtn.textContent = "Next →";
+  }
+
+  nextBtn.addEventListener("click", () => { if (current < steps.length) { current++; render(); } });
+  prevBtn.addEventListener("click", () => { if (current > 0) { current--; render(); } });
+  resetBtn.addEventListener("click", () => { current = 0; render(); });
+  render();
+
+  // Scroll progress
+  const progress = document.getElementById("progress");
+  window.addEventListener("scroll", () => {
+    const h = document.documentElement;
+    const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+    progress.style.width = pct + "%";
+  }, { passive: true });
+
+  // Scroll-reveal
+  if ("IntersectionObserver" in window) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("in-view");
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: "0px 0px -60px 0px" });
+
+    document.querySelectorAll(".reveal, .chart").forEach((el) => observer.observe(el));
+  } else {
+    document.querySelectorAll(".reveal, .chart").forEach((el) => el.classList.add("in-view"));
+  }
+})();
+</script>
+
+</body>
+</html>

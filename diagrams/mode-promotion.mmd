@@ -1,0 +1,43 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "16px",
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#111111",
+    "primaryBorderColor": "#111111",
+    "lineColor": "#111111"
+  }
+}}%%
+flowchart TB
+    Start(["Incoming task.assign"])
+    CheckMode{"Task<br/>mode?"}
+
+    Shadow["<b>SHADOW</b><br/>agent runs alongside;<br/>output recorded but<br/>NOT delivered to recipient"]
+    Trial["<b>TRIAL</b><br/>output delivered, but<br/>every result reviewed<br/>by a human"]
+    Prod["<b>PRODUCTION</b><br/>output delivered,<br/>review per policy<br/>(may be sampled)"]
+
+    CheckCeiling{"Mode ≤<br/>workspace<br/>ceiling?"}
+    Deny["<b>Reject</b><br/>error -32502<br/>mode_ceiling"]
+
+    Start --> CheckCeiling
+    CheckCeiling -->|no|  Deny
+    CheckCeiling -->|yes| CheckMode
+    CheckMode -->|shadow|     Shadow
+    CheckMode -->|trial|      Trial
+    CheckMode -->|production| Prod
+
+    Shadow -. promote on success metrics .-> Trial
+    Trial  -. promote on override rate < threshold .-> Prod
+    Prod   -. demote on incident .-> Trial
+    Trial  -. demote on incident .-> Shadow
+
+    classDef start fill:#dbeafe,stroke:#1e3a8a,color:#0b1d4f,stroke-width:1.5px;
+    classDef mode  fill:#fef3c7,stroke:#92400e,color:#5b2806,stroke-width:1.5px;
+    classDef deny  fill:#fee2e2,stroke:#7f1d1d,color:#5a0e0e,stroke-width:1.5px;
+    classDef gate  fill:#ffffff,stroke:#111111,color:#111111,stroke-width:1.5px;
+
+    class Start start;
+    class Shadow,Trial,Prod mode;
+    class Deny  deny;
+    class CheckMode,CheckCeiling gate;

@@ -1,0 +1,20 @@
+{
+  "name": "@hap/conformance-harness",
+  "version": "1.0.0",
+  "description": "HAP conformance test harness — runs canonical vectors against any HAP endpoint.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test":         "tsx harness.ts",
+    "test:verbose": "tsx harness.ts -v",
+    "test:core":    "tsx harness.ts --core-only",
+    "attest":       "tsx harness.ts --attest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx":         "^4.7.0",
+    "typescript":  "^5.3.0"
+  }
+}

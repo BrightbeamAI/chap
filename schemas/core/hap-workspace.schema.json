@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hap.dev/schemas/0.1/hap-workspace.schema.json",
+  "title": "HAP Workspace Descriptor",
+  "description": "Descriptor for a HAP workspace.",
+  "type": "object",
+  "required": [
+    "id", "name", "created", "state", "mode", "mode_ceiling",
+    "coordinator", "members", "evidence_head", "evidence_count"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^wsp_[A-Za-z0-9_-]+$"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-friendly name."
+    },
+    "description": {
+      "type": "string"
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["created", "active", "paused", "closed", "archived"]
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["shadow", "trial", "production"]
+    },
+    "mode_ceiling": {
+      "type": "string",
+      "enum": ["shadow", "trial", "production"],
+      "description": "Maximum mode the workspace's tasks may carry."
+    },
+    "step_up_window_sec": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 300,
+      "description": "Seconds within which a privileged operation requires recent auth_time."
+    },
+    "max_envelope_bytes": {
+      "type": "integer",
+      "minimum": 1024,
+      "default": 1048576,
+      "description": "Maximum envelope size accepted by this workspace."
+    },
+    "coordinator": {
+      "type": "string",
+      "pattern": "^service:[^\\s]+$",
+      "description": "URI of the workspace's Coordinator service."
+    },
+    "policy_uri": {
+      "type": "string",
+      "format": "uri",
+      "description": "URI to the workspace's policy document."
+    },
+    "policy_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Hash of the policy document committed at workspace creation or last policy change."
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["uri", "role"],
+        "properties": {
+          "uri": {
+            "type": "string",
+            "pattern": "^(human|agent|service|group):[^\\s]+$"
+          },
+          "role": {
+            "type": "string",
+            "description": "Workspace-local role name. Reserved roles: `coordinator`, `admin`."
+          },
+          "joined": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "weight": {
+            "type": "number",
+            "description": "Optional vote weight for weighted decision rules."
+          },
+          "veto": {
+            "type": "boolean",
+            "description": "Whether this member can veto under weighted_vote_with_veto rules.",
+            "default": false
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "shadow_observers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(human|agent|service|group):[^\\s]+$"
+      },
+      "description": "Participants who receive copies of shadow-mode output."
+    },
+    "evidence_head": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Hash of the current chain head."
+    },
+    "evidence_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of entries currently in the chain."
+    },
+    "anchors": {
+      "type": "array",
+      "description": "Optional list of external anchor references.",
+      "items": {
+        "type": "object",
+        "required": ["kind", "ref"],
+        "properties": {
+          "kind": { "type": "string" },
+          "ref": { "type": "string" },
+          "anchored_at": { "type": "string", "format": "date-time" },
+          "anchored_count": { "type": "integer" }
+        }
+      }
+    },
+    "permitted_mcp_servers": {
+      "type": "array",
+      "items": { "type": "string", "format": "uri" }
+    },
+    "permitted_a2a_peers": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "retention": {
+      "type": "object",
+      "properties": {
+        "evidence_days": {
+          "type": "integer",
+          "description": "Retention period for evidence entries in days. 0 = indefinite."
+        },
+        "artefact_days": {
+          "type": "integer",
+          "description": "Retention period for artefact content. 0 = indefinite."
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Free-form, application-specific metadata. Not signed."
+    }
+  }
+}

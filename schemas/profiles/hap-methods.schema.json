@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hap.dev/schemas/0.1/hap-methods.schema.json",
+  "title": "HAP Method Catalogue",
+  "description": "Authoritative catalogue of methods defined by HAP v0.1.",
+  "type": "object",
+  "required": ["version", "methods"],
+  "properties": {
+    "version": { "const": "0.1" },
+    "methods": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/MethodSpec" }
+    }
+  },
+  "$defs": {
+    "MethodSpec": {
+      "type": "object",
+      "required": ["namespace", "type", "summary", "required_scope", "privileged"],
+      "properties": {
+        "namespace":     { "type": "string" },
+        "type":          { "type": "string", "enum": ["request", "notification"] },
+        "summary":       { "type": "string" },
+        "required_scope": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "privileged":    { "type": "boolean" },
+        "since":         { "type": "string" },
+        "params_schema": { "type": "string", "format": "uri" },
+        "result_schema": { "type": "string", "format": "uri" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "version": "0.1",
+      "methods": {
+        "workspace.create":   { "namespace": "workspace",  "type": "request",      "summary": "Create a new workspace.", "required_scope": ["workspace.admin"], "privileged": true },
+        "workspace.describe": { "namespace": "workspace",  "type": "request",      "summary": "Return the workspace descriptor.", "required_scope": [], "privileged": false },
+        "workspace.invite":   { "namespace": "workspace",  "type": "request",      "summary": "Invite a Participant.", "required_scope": ["workspace.admin"], "privileged": true },
+        "workspace.evict":    { "namespace": "workspace",  "type": "request",      "summary": "Remove a Participant.", "required_scope": ["workspace.admin"], "privileged": true },
+        "workspace.set_mode": { "namespace": "workspace",  "type": "request",      "summary": "Change the workspace mode.", "required_scope": ["workspace.admin"], "privileged": true },
+        "workspace.pause":    { "namespace": "workspace",  "type": "request",      "summary": "Suspend new task acceptance.", "required_scope": ["workspace.admin"], "privileged": true },
+        "workspace.resume":   { "namespace": "workspace",  "type": "request",      "summary": "Resume operation.", "required_scope": ["workspace.admin"], "privileged": true },
+        "workspace.close":    { "namespace": "workspace",  "type": "request",      "summary": "Seal the workspace.", "required_scope": ["workspace.admin"], "privileged": true },
+
+        "participant.describe":   { "namespace": "participant", "type": "request",      "summary": "Return a Participant's descriptor.", "required_scope": [], "privileged": false },
+        "participant.announce":   { "namespace": "participant", "type": "notification", "summary": "Announce presence/availability.", "required_scope": [], "privileged": false },
+        "participant.heartbeat":  { "namespace": "participant", "type": "notification", "summary": "Periodic liveness signal.", "required_scope": [], "privileged": false },
+        "participant.rotate_key": { "namespace": "participant", "type": "request",      "summary": "Replace signing key (signed with old key).", "required_scope": [], "privileged": false },
+        "participant.revoke_key": { "namespace": "participant", "type": "request",      "summary": "Mark a key compromised.", "required_scope": ["workspace.admin"], "privileged": true },
+
+        "task.assign":   { "namespace": "task", "type": "request",      "summary": "Propose a task to an assignee.", "required_scope": ["task.delegate"], "privileged": false },
+        "task.accept":   { "namespace": "task", "type": "request",      "summary": "Accept an assignment.", "required_scope": ["task.accept"], "privileged": false },
+        "task.decline":  { "namespace": "task", "type": "request",      "summary": "Decline an assignment.", "required_scope": ["task.accept"], "privileged": false },
+        "task.start":    { "namespace": "task", "type": "notification", "summary": "The assignee has begun work.", "required_scope": [], "privileged": false },
+        "task.progress": { "namespace": "task", "type": "notification", "summary": "Progress update.", "required_scope": [], "privileged": false },
+        "task.complete": { "namespace": "task", "type": "request",      "summary": "Submit a completed task with its artefact.", "required_scope": ["task.complete"], "privileged": false },
+        "task.describe": { "namespace": "task", "type": "request",      "summary": "Return a task's current state.", "required_scope": [], "privileged": false },
+
+        "review.request":     { "namespace": "review", "type": "request",      "summary": "Ask reviewers to evaluate an artefact.", "required_scope": ["review.request"], "privileged": false },
+        "review.acknowledge": { "namespace": "review", "type": "notification", "summary": "Reviewer signals they have begun review.", "required_scope": [], "privileged": false },
+
+        "decide.approve":   { "namespace": "decide",   "type": "request", "summary": "Approve a draft as-is.", "required_scope": ["decide"], "privileged": false },
+        "decide.reject":    { "namespace": "decide",   "type": "request", "summary": "Reject a draft with a reason.", "required_scope": ["decide"], "privileged": false },
+        "decide.override":  { "namespace": "decide",   "type": "request", "summary": "Approve a modified version; produces an override artefact.", "required_scope": ["decide"], "privileged": false },
+        "abstain.declare":  { "namespace": "abstain",  "type": "request", "summary": "Decline to decide; flags for escalation.", "required_scope": ["decide"], "privileged": false },
+        "escalate.raise":   { "namespace": "escalate", "type": "request", "summary": "Hand a task up the chain with context.", "required_scope": ["decide"], "privileged": false },
+
+        "whisper.ask":     { "namespace": "whisper", "type": "request", "summary": "Quick deadline-bound interrupt question.", "required_scope": ["whisper.ask"], "privileged": false },
+        "whisper.answer":  { "namespace": "whisper", "type": "request", "summary": "Answer a whisper.", "required_scope": ["whisper.answer"], "privileged": false },
+        "capture.append":  { "namespace": "capture", "type": "request", "summary": "Append an ad-hoc fragment to a task.", "required_scope": ["capture"], "privileged": false },
+
+        "handoff.propose": { "namespace": "handoff", "type": "request", "summary": "Propose transferring work.", "required_scope": ["handoff"], "privileged": false },
+        "handoff.accept":  { "namespace": "handoff", "type": "request", "summary": "Accept a handoff.", "required_scope": ["handoff"], "privileged": false },
+        "handoff.decline": { "namespace": "handoff", "type": "request", "summary": "Decline a handoff.", "required_scope": ["handoff"], "privileged": false },
+
+        "notify.message":  { "namespace": "notify", "type": "notification", "summary": "Generic free-text message.", "required_scope": [], "privileged": false },
+        "notify.alert":    { "namespace": "notify", "type": "notification", "summary": "High-priority alert with severity.", "required_scope": [], "privileged": false },
+
+        "deliberate.open":    { "namespace": "deliberate", "type": "request",      "summary": "Open a multi-party thread with a decision rule.", "required_scope": ["deliberate.open"], "privileged": false },
+        "deliberate.comment": { "namespace": "deliberate", "type": "notification", "summary": "Add a comment to an open deliberation.", "required_scope": [], "privileged": false },
+        "deliberate.vote":    { "namespace": "deliberate", "type": "request",      "summary": "Cast a vote.", "required_scope": ["deliberate.vote"], "privileged": false },
+        "deliberate.close":   { "namespace": "deliberate", "type": "request",      "summary": "Close the deliberation; compute the outcome.", "required_scope": ["deliberate.close"], "privileged": false },
+
+        "control.pause":     { "namespace": "control", "type": "request", "summary": "Pause a task.", "required_scope": ["control"], "privileged": true },
+        "control.resume":    { "namespace": "control", "type": "request", "summary": "Resume a paused task.", "required_scope": ["control"], "privileged": true },
+        "control.cancel":    { "namespace": "control", "type": "request", "summary": "Cancel a task (terminal).", "required_scope": ["control"], "privileged": true },
+        "control.supersede": { "namespace": "control", "type": "request", "summary": "Replace a task with another.", "required_scope": ["control"], "privileged": true },
+        "control.snapshot":  { "namespace": "control", "type": "request", "summary": "Produce a workspace snapshot artefact.", "required_scope": ["control"], "privileged": true },
+        "control.rollback":  { "namespace": "control", "type": "request", "summary": "Roll back to a prior snapshot.", "required_scope": ["control"], "privileged": true },
+
+        "audit.read":       { "namespace": "audit", "type": "request",      "summary": "Read a range of evidence entries.", "required_scope": ["audit.read"], "privileged": false },
+        "audit.verify":     { "namespace": "audit", "type": "request",      "summary": "Verify the chain over a range.", "required_scope": ["audit.read"], "privileged": false },
+        "audit.checkpoint": { "namespace": "audit", "type": "notification", "summary": "Coordinator-emitted checkpoint.", "required_scope": [], "privileged": false },
+        "audit.redact":     { "namespace": "audit", "type": "request",      "summary": "Redact a prior entry (preserves hash).", "required_scope": ["audit.redact"], "privileged": true },
+        "audit.export":     { "namespace": "audit", "type": "request",      "summary": "Export the chain in a portable format.", "required_scope": ["audit.export"], "privileged": true }
+      }
+    }
+  ]
+}

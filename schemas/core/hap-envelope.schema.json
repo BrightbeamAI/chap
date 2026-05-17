@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hap.dev/schemas/0.1/hap-envelope.schema.json",
+  "title": "HAP Envelope",
+  "description": "The envelope wrapping every Human-Agent Protocol message.",
+  "type": "object",
+  "required": ["hap", "id", "ts", "workspace", "from", "to", "type", "evidence"],
+  "properties": {
+    "hap": {
+      "type": "string",
+      "description": "Wire version of the protocol (SemVer).",
+      "pattern": "^\\d+\\.\\d+(\\.\\d+)?(-[A-Za-z0-9.-]+)?$",
+      "examples": ["0.1", "0.1.0", "0.1.0-draft"]
+    },
+    "id": {
+      "type": "string",
+      "description": "Globally unique message identifier (ULID, Crockford-base32, 26 chars).",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "examples": ["01HZ9YWQ7K3X8M2V4N6P8R0T2A"]
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp with millisecond precision (RFC 3339). MUST be strictly monotonic per `from`."
+    },
+    "workspace": {
+      "type": "string",
+      "description": "Workspace identifier (prefix wsp_).",
+      "pattern": "^wsp_[A-Za-z0-9_-]+$"
+    },
+    "from": {
+      "$ref": "#/$defs/ParticipantUri"
+    },
+    "to": {
+      "oneOf": [
+        { "$ref": "#/$defs/ParticipantUri" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ParticipantUri" },
+          "minItems": 1
+        }
+      ]
+    },
+    "type": {
+      "type": "string",
+      "enum": ["request", "response", "notification"]
+    },
+    "method": {
+      "type": "string",
+      "description": "Method name of the form `namespace.verb`. Required for request and notification.",
+      "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"
+    },
+    "params": {
+      "description": "Parameters for the method. Required for request and notification."
+    },
+    "result": {
+      "description": "Result of a successful response."
+    },
+    "error": {
+      "$ref": "#/$defs/Error"
+    },
+    "evidence": {
+      "$ref": "#/$defs/Evidence"
+    },
+    "correlation_id": {
+      "type": "string",
+      "description": "Optional ULID for correlating related messages outside the request/response pair (e.g. saga IDs).",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "reply_to": {
+      "type": "string",
+      "description": "Optional message id this message answers; on a response MUST equal the request id."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "request" } } },
+      "then": { "required": ["method", "params"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "notification" } } },
+      "then": { "required": ["method", "params"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "response" } } },
+      "then": {
+        "oneOf": [
+          { "required": ["result"], "not": { "required": ["error"] } },
+          { "required": ["error"],  "not": { "required": ["result"] } }
+        ],
+        "required": ["reply_to"]
+      }
+    }
+  ],
+  "$defs": {
+    "ParticipantUri": {
+      "type": "string",
+      "description": "A Participant URI. Schemes: human:, agent:, service:, group:, workspace:.",
+      "pattern": "^(human|agent|service|group|workspace):[^\\s]+$",
+      "examples": [
+        "human:alice@example.org",
+        "agent:triage-bot#v3.2",
+        "service:coordinator@example.org",
+        "group:on-call-engineers@example.org",
+        "workspace:wsp_support_triage"
+      ]
+    },
+    "Evidence": {
+      "type": "object",
+      "required": ["prev_hash", "sig"],
+      "properties": {
+        "prev_hash": {
+          "type": "string",
+          "description": "SHA-256 of the previous evidence entry. `sha256:` + 64 hex chars. Genesis entry uses sha256:0000…0000.",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "sig": {
+          "type": "string",
+          "description": "Ed25519 signature over the JCS canonicalisation of the envelope with this `sig` field removed. Optionally prefixed with key id: `ed25519:<kid>:<base64-sig>`.",
+          "pattern": "^ed25519:([A-Za-z0-9._-]+:)?[A-Za-z0-9+/=]+$"
+        }
+      }
+    },
+    "Error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "integer",
+          "description": "Error code. See SPECIFICATION.md §13."
+        },
+        "message": {
+          "type": "string"
+        },
+        "data": {
+          "description": "Optional structured error data."
+        }
+      }
+    }
+  }
+}

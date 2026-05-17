@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hap.dev/schemas/0.1/hap-task.schema.json",
+  "title": "HAP Task / Artefact / Override",
+  "description": "Schemas for the Task, Artefact, and Override primitives.",
+  "$defs": {
+    "Task": {
+      "type": "object",
+      "required": ["id", "workspace", "kind", "state", "mode", "assignee", "delegator", "created"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "workspace": {
+          "type": "string",
+          "pattern": "^wsp_[A-Za-z0-9_-]+$"
+        },
+        "kind": {
+          "type": "string",
+          "description": "Workspace-defined task kind (e.g. draft_response, classify, code_review)."
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "created", "assigned", "accepted", "declined",
+            "in_progress", "review_requested", "completed",
+            "abstained", "escalated", "cancelled", "superseded"
+          ]
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["shadow", "trial", "production"]
+        },
+        "assignee": {
+          "type": "string",
+          "pattern": "^(human|agent|service|group):[^\\s]+$"
+        },
+        "delegator": {
+          "type": "string",
+          "pattern": "^(human|agent|service|group):[^\\s]+$"
+        },
+        "input": {
+          "description": "Application-defined task input."
+        },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "deadline": { "type": "string", "format": "date-time" },
+            "max_tool_calls": { "type": "integer", "minimum": 0 },
+            "max_tokens": { "type": "integer", "minimum": 0 },
+            "permitted_tools": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "permitted_modes": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["shadow", "trial", "production"] }
+            }
+          }
+        },
+        "review": {
+          "type": "object",
+          "properties": {
+            "required": { "type": "boolean" },
+            "reviewers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(human|agent|service|group):[^\\s]+$"
+              }
+            },
+            "rule": {
+              "type": "string",
+              "description": "Decision rule. One of: any_one_approves, all_approve, quorum:<n>, weighted_vote:<threshold>, weighted_vote_with_veto:<threshold>.",
+              "pattern": "^(any_one_approves|all_approve|quorum:\\d+|weighted_vote:\\d+(\\.\\d+)?|weighted_vote_with_veto:\\d+(\\.\\d+)?)$"
+            },
+            "deadline": { "type": "string", "format": "date-time" }
+          }
+        },
+        "artefacts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+          }
+        },
+        "supersedes": {
+          "type": "string",
+          "description": "If set, the id of the task this one supersedes.",
+          "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "parent": {
+          "type": "string",
+          "description": "Optional parent task id for sub-tasks.",
+          "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "created": { "type": "string", "format": "date-time" },
+        "updated": { "type": "string", "format": "date-time" },
+        "metadata": { "type": "object" }
+      }
+    },
+    "Artefact": {
+      "type": "object",
+      "required": ["id", "kind", "produced_by", "produced_at", "content_hash"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "kind": {
+          "type": "string",
+          "description": "Standard kinds: draft, decision, override, abstention, escalation, citation_set, snapshot, capture_fragment. Implementations may add kinds with a `schema` reference."
+        },
+        "schema": {
+          "type": "string",
+          "format": "uri",
+          "description": "URI of the JSON Schema for this artefact's content. Required for non-standard kinds."
+        },
+        "produced_by": {
+          "type": "string",
+          "pattern": "^(human|agent|service|group):[^\\s]+$"
+        },
+        "produced_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "task": {
+          "type": "string",
+          "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "based_on": {
+          "type": "string",
+          "description": "For override and decision artefacts, the artefact id this one refers to.",
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "content": {
+          "description": "Inline content. Implementations MAY substitute a URI reference for large content."
+        },
+        "content_uri": {
+          "type": "string",
+          "format": "uri",
+          "description": "If content is too large to inline, a URI to where it lives. The content_hash MUST still cover the canonical content bytes."
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "SHA-256 of the canonical content bytes (JCS for JSON content)."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Agents only. Self-reported confidence in the artefact content."
+        },
+        "citations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Citation" }
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "metadata": { "type": "object" }
+      }
+    },
+    "OverrideContent": {
+      "type": "object",
+      "description": "Content payload for an artefact of kind=override.",
+      "required": ["based_on", "diff", "rationale"],
+      "properties": {
+        "based_on": {
+          "type": "string",
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "diff": {
+          "type": "array",
+          "description": "JSON Patch operations (RFC 6902) with optional `from` on replace for context.",
+          "items": {
+            "type": "object",
+            "required": ["op", "path"],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": ["add", "remove", "replace", "move", "copy", "test"]
+              },
+              "path": { "type": "string" },
+              "value": {},
+              "from":  {}
+            }
+          }
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Free-text justification for the override."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Workspace-defined categorisations."
+        },
+        "policy_refs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "Citation": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["mcp_tool_invocation", "a2a_correlation", "uri", "evidence_entry", "artefact"]
+        },
+        "server": { "type": "string", "format": "uri" },
+        "tool":   { "type": "string" },
+        "call_id":{ "type": "string" },
+        "input_hash":  { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "output_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "correlation_id": { "type": "string" },
+        "peer": { "type": "string" },
+        "uri":  { "type": "string", "format": "uri" },
+        "evidence_seq": { "type": "integer" },
+        "artefact_id":  {
+          "type": "string",
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "summary": { "type": "string" }
+      }
+    }
+  }
+}

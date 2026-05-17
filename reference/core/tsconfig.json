@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target":           "ES2022",
+    "module":           "ESNext",
+    "moduleResolution": "node",
+    "esModuleInterop":  true,
+    "strict":           true,
+    "skipLibCheck":     true,
+    "noEmit":           true,
+    "isolatedModules":  true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": false
+  },
+  "include": ["server.ts", "client.ts"]
+}

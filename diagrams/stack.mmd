@@ -1,0 +1,37 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "17px",
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#111111",
+    "primaryBorderColor": "#111111",
+    "lineColor": "#111111"
+  }
+}}%%
+flowchart TB
+    subgraph S[" "]
+      direction TB
+      Apps["Applications<br/>(workflows, UIs, business logic)"]
+      HAP["<b>HAP</b> — Human ↔ Agent ↔ Human<br/>(workspace, task, review, decide, audit)"]
+      A2A["<b>A2A</b> — Agent ↔ Agent<br/>(cross-org delegation)"]
+      MCP["<b>MCP</b> — Agent → Tool<br/>(deterministic tool calls)"]
+      Trans["Transport<br/>(WebSocket · HTTP+SSE · NATS · Kafka)"]
+      Apps --> HAP
+      HAP  --> A2A
+      HAP  --> MCP
+      A2A  --> Trans
+      MCP  --> Trans
+    end
+
+    classDef app   fill:#dbeafe,stroke:#1e3a8a,color:#0b1d4f,stroke-width:1.5px;
+    classDef hap   fill:#fee2e2,stroke:#7f1d1d,color:#5a0e0e,stroke-width:1.5px;
+    classDef a2a   fill:#e9d5ff,stroke:#581c87,color:#3b0e63,stroke-width:1.5px;
+    classDef mcp   fill:#dcfce7,stroke:#14532d,color:#0a3a1c,stroke-width:1.5px;
+    classDef trans fill:#fef3c7,stroke:#92400e,color:#5b2806,stroke-width:1.5px;
+
+    class Apps  app;
+    class HAP   hap;
+    class A2A   a2a;
+    class MCP   mcp;
+    class Trans trans;

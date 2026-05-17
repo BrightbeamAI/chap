@@ -1,0 +1,22 @@
+{
+  "name": "@hap/reference-core",
+  "version": "0.1.0",
+  "description": "HAP Core reference implementation — weekend-buildable.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start:demo": "tsx server.ts",
+    "demo:client": "tsx client.ts",
+    "demo": "tsx server.ts & sleep 1 && tsx client.ts && kill %1",
+    "test": "tsx client.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}

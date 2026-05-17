@@ -1,0 +1,63 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "16px",
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#111111",
+    "primaryBorderColor": "#111111",
+    "lineColor": "#111111"
+  }
+}}%%
+classDiagram
+    class Workspace {
+      +id: wsp_…
+      +mode: shadow|trial|production
+      +mode_ceiling
+      +members[]
+      +policy_hash
+      +evidence_head
+    }
+    class Participant {
+      +uri: human|agent|service|group|workspace:…
+      +jwks
+      +capabilities
+      +scopes
+    }
+    class Task {
+      +id: tsk_…
+      +kind
+      +state
+      +mode
+      +assignee
+      +delegator
+      +review
+    }
+    class Artefact {
+      +id: art_…
+      +kind: draft|decision|override|abstention|snapshot
+      +content
+      +citations[]
+      +content_hash
+    }
+    class Message {
+      +id: ULID
+      +type: request|response|notification
+      +method
+      +evidence.sig
+      +evidence.prev_hash
+    }
+    class EvidenceEntry {
+      +seq
+      +envelope_hash
+      +prev_hash
+      +sig
+    }
+
+    Workspace "1" o-- "many" Participant : has members
+    Workspace "1" o-- "many" Task        : contains
+    Workspace "1" o-- "many" EvidenceEntry : appends
+    Task        "1" o-- "many" Artefact   : produces
+    Task        "1" o-- "many" Message    : drives
+    Message     "1" -- "1"    EvidenceEntry : becomes
+    Artefact    "*" -- "*"    Artefact     : based_on

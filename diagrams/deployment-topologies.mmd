@@ -1,0 +1,61 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "14px",
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#111111",
+    "primaryBorderColor": "#111111",
+    "lineColor": "#111111"
+  }
+}}%%
+flowchart TB
+    subgraph CM["<b>Coordinator-mediated</b> (default)"]
+      direction LR
+      h1["human"]
+      h2["human"]
+      a1["agent"]
+      a2["agent"]
+      cm_c["Coordinator<br/>(chain owner)"]
+      h1 --- cm_c
+      h2 --- cm_c
+      a1 --- cm_c
+      a2 --- cm_c
+    end
+
+    subgraph P2P["<b>Peer-to-peer</b> (advanced)"]
+      direction LR
+      ph1["human"]
+      ph2["agent"]
+      ph3["agent"]
+      ph1 --- ph2
+      ph2 --- ph3
+      ph3 --- ph1
+    end
+
+    subgraph FED["<b>Federated</b> (cross-org)"]
+      direction LR
+      subgraph WA["Workspace A"]
+        ha["human"]
+        aa["agent"]
+        ca["Coord A"]
+        ha --- ca
+        aa --- ca
+      end
+      subgraph WB["Workspace B"]
+        hb["human"]
+        ab["agent"]
+        cb["Coord B"]
+        hb --- cb
+        ab --- cb
+      end
+      ca <-->|A2A bridge| cb
+    end
+
+    classDef human fill:#dbeafe,stroke:#1e3a8a,color:#0b1d4f,stroke-width:1.4px;
+    classDef agent fill:#fef3c7,stroke:#92400e,color:#5b2806,stroke-width:1.4px;
+    classDef coord fill:#fee2e2,stroke:#7f1d1d,color:#5a0e0e,stroke-width:1.4px;
+
+    class h1,h2,ph1,ha,hb human;
+    class a1,a2,ph2,ph3,aa,ab agent;
+    class cm_c,ca,cb coord;

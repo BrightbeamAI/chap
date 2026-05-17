@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hap.dev/schemas/0.1/hap-participant.schema.json",
+  "title": "HAP Participant Descriptor",
+  "description": "Descriptor for a Participant in a HAP workspace.",
+  "type": "object",
+  "required": ["uri", "type", "jwks"],
+  "properties": {
+    "uri": {
+      "type": "string",
+      "description": "Participant URI. See SPECIFICATION.md §5.1.",
+      "pattern": "^(human|agent|service|group|workspace):[^\\s]+$"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["human", "agent", "service", "group", "workspace"]
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Human-friendly label."
+    },
+    "version": {
+      "type": "string",
+      "description": "For agents and services, an opaque version string."
+    },
+    "jwks": {
+      "type": "object",
+      "description": "Active signing keys for this Participant. JWK Set per RFC 7517.",
+      "required": ["keys"],
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Jwk" },
+          "minItems": 1
+        }
+      }
+    },
+    "jwks_uri": {
+      "type": "string",
+      "format": "uri",
+      "description": "Optional URI to a published JWK Set; takes precedence over inline jwks if present."
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Descriptive capability profile. Informs routing; does not grant authority.",
+      "properties": {
+        "kinds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Task kinds the Participant can perform."
+        },
+        "modes": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["shadow", "trial", "production"] },
+          "description": "Modes the Participant may operate in."
+        },
+        "max_concurrent": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum simultaneous tasks."
+        },
+        "avg_latency_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Expected time-to-first-response in milliseconds."
+        },
+        "confidence_calibration": {
+          "type": "object",
+          "description": "Agents only. Self-reported calibration metrics."
+        },
+        "tool_inventory": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Agents only. MCP tools the Participant has access to."
+        },
+        "working_hours": {
+          "type": "object",
+          "description": "Humans only. Availability window for routing.",
+          "properties": {
+            "timezone": { "type": "string" },
+            "weekly": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["day", "start", "end"],
+                "properties": {
+                  "day": {
+                    "type": "string",
+                    "enum": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                  },
+                  "start": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "end": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "scopes": {
+      "type": "array",
+      "description": "Methods the Participant has declared willingness to receive.",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$" }
+    },
+    "supported_methods": {
+      "type": "array",
+      "description": "Methods the Participant implements (for libraries advertising capability).",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$" }
+    },
+    "mcp_servers": {
+      "type": "array",
+      "description": "Agents only. MCP servers this agent is configured to use.",
+      "items": {
+        "type": "object",
+        "required": ["uri", "name"],
+        "properties": {
+          "uri": { "type": "string", "format": "uri" },
+          "name": { "type": "string" }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Free-form, application-specific metadata. Not signed."
+    }
+  },
+  "$defs": {
+    "Jwk": {
+      "type": "object",
+      "required": ["kty", "kid"],
+      "properties": {
+        "kty": { "type": "string" },
+        "kid": { "type": "string" },
+        "crv": { "type": "string" },
+        "x":   { "type": "string" },
+        "use": { "type": "string", "enum": ["sig"] },
+        "alg": { "type": "string", "enum": ["EdDSA"] }
+      },
+      "additionalProperties": true
+    }
+  }
+}

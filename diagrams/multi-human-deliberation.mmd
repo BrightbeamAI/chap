@@ -1,0 +1,35 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontSize": "15px",
+    "fontFamily": "Helvetica, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#111111",
+    "primaryBorderColor": "#111111",
+    "lineColor": "#111111",
+    "actorBkg": "#f3f4f6",
+    "actorTextColor": "#111111",
+    "actorBorder": "#111111"
+  }
+}}%%
+sequenceDiagram
+    autonumber
+    participant L as Eng Lead
+    participant C as Coordinator
+    participant S as Security
+    participant P as Product
+
+    L->>C: deliberate.open<br/>rule = weighted_vote_with_veto:2.0<br/>veto: Security
+    C->>S: dispatch (notification)
+    C->>P: dispatch (notification)
+    S->>C: deliberate.comment<br/>(context: maintenance window)
+    L->>C: deliberate.comment<br/>(context: pre-approval)
+    P->>C: deliberate.comment<br/>(context: customer impact)
+    L->>C: deliberate.vote (yea, 1.0)
+    P->>C: deliberate.vote (yea, 1.0)
+    S->>C: deliberate.vote (yea, 1.0, veto_invoked=false)
+    L->>C: deliberate.close
+    C-->>L: outcome = approved<br/>tally yea=3.0
+    C->>P: notify (decision artefact id)
+    C->>S: notify (decision artefact id)
+    Note over C: All exchanges appended<br/>to evidence chain;<br/>decision artefact produced.

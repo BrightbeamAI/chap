@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hap.dev/schemas/0.1/hap-evidence.schema.json",
+  "title": "HAP Evidence Entry",
+  "description": "An entry in a workspace's append-only evidence chain.",
+  "type": "object",
+  "required": ["seq", "workspace", "envelope_hash", "prev_hash", "sig", "from", "ts", "method_or_type"],
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonically increasing entry sequence number per workspace. Genesis is 0."
+    },
+    "workspace": {
+      "type": "string",
+      "pattern": "^wsp_[A-Za-z0-9_-]+$"
+    },
+    "envelope_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 of the JCS canonicalisation of the envelope with evidence.sig removed."
+    },
+    "prev_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 of the previous entry's envelope_hash concatenated with its sig. Genesis uses sha256:0000…0000."
+    },
+    "sig": {
+      "type": "string",
+      "pattern": "^ed25519:([A-Za-z0-9._-]+:)?[A-Za-z0-9+/=]+$",
+      "description": "Originator's Ed25519 signature on this envelope."
+    },
+    "coord_sig": {
+      "type": "string",
+      "pattern": "^ed25519:([A-Za-z0-9._-]+:)?[A-Za-z0-9+/=]+$",
+      "description": "Optional Coordinator co-signature attesting acceptance into the chain."
+    },
+    "from": {
+      "type": "string",
+      "pattern": "^(human|agent|service|group|workspace):[^\\s]+$"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "method_or_type": {
+      "type": "string",
+      "description": "The envelope's `method` (for request/notification) or literal `response`."
+    },
+    "envelope_id": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "The envelope's `id` for cross-reference."
+    },
+    "redaction": {
+      "type": "object",
+      "description": "Present only on redacted entries.",
+      "required": ["redacted_at", "redactor", "redactor_sig"],
+      "properties": {
+        "redacted_at": { "type": "string", "format": "date-time" },
+        "redactor":    { "type": "string", "pattern": "^(human|service):[^\\s]+$" },
+        "reason":      { "type": "string" },
+        "policy_refs": { "type": "array", "items": { "type": "string" } },
+        "placeholder": { "type": "string", "description": "Opaque marker shown in place of the redacted content." },
+        "redactor_sig": {
+          "type": "string",
+          "pattern": "^ed25519:([A-Za-z0-9._-]+:)?[A-Za-z0-9+/=]+$"
+        }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "description": "Present only on checkpoint entries emitted by the Coordinator.",
+      "required": ["count_at_checkpoint", "head_at_checkpoint"],
+      "properties": {
+        "count_at_checkpoint": { "type": "integer", "minimum": 0 },
+        "head_at_checkpoint":  { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "external_anchors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "ref"],
+            "properties": {
+              "kind": { "type": "string" },
+              "ref":  { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
