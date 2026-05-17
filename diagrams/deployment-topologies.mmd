@@ -1,7 +1,7 @@
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "22px",
+    "fontSize": "20px",
     "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
     "primaryTextColor": "#1a1a1c",
@@ -10,23 +10,23 @@
     "clusterBkg": "#FFF8F2",
     "clusterBorder": "#1a1a1c"
   },
-  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 80, "padding": 28 }
+  "flowchart": { "curve": "linear", "nodeSpacing": 50, "rankSpacing": 60, "padding": 18 }
 }}%%
 flowchart TB
-    subgraph CM["<b>1. Coordinator-mediated</b> &nbsp;·&nbsp; default"]
+    subgraph CM["<b>1. Coordinator-mediated</b>"]
       direction LR
       h1["human"]
       h2["human"]
       a1["agent"]
       a2["agent"]
-      cm_c["<b>Coordinator</b><br/><span style='font-size:17px;color:#ffffff'>chain owner</span>"]
+      cm_c["<b>Coordinator</b>"]
       h1 --- cm_c
       h2 --- cm_c
       a1 --- cm_c
       a2 --- cm_c
     end
 
-    subgraph P2P["<b>2. Peer-to-peer</b> &nbsp;·&nbsp; advanced"]
+    subgraph P2P["<b>2. Peer-to-peer</b>"]
       direction LR
       ph1["human"]
       ph2["agent"]
@@ -36,23 +36,11 @@ flowchart TB
       ph3 --- ph1
     end
 
-    subgraph FED["<b>3. Federated</b> &nbsp;·&nbsp; cross-org"]
+    subgraph FED["<b>3. Federated</b>"]
       direction LR
-      subgraph WA["Workspace A"]
-        ha["human"]
-        aa["agent"]
-        ca["<b>Coord A</b>"]
-        ha --- ca
-        aa --- ca
-      end
-      subgraph WB["Workspace B"]
-        hb["human"]
-        ab["agent"]
-        cb["<b>Coord B</b>"]
-        hb --- cb
-        ab --- cb
-      end
-      ca <-->|A2A bridge| cb
+      ca["<b>Coord A</b>"]
+      cb["<b>Coord B</b>"]
+      ca <-->|A2A| cb
     end
 
     CM ~~~ P2P
@@ -62,6 +50,6 @@ flowchart TB
     classDef agent fill:#EDE0F2,stroke:#6a3d8a,color:#3b0e63,stroke-width:2px
     classDef coord fill:#EA4700,stroke:#C73D00,color:#ffffff,stroke-width:2.5px
 
-    class h1,h2,ph1,ha,hb human
-    class a1,a2,ph2,ph3,aa,ab agent
+    class h1,h2,ph1 human
+    class a1,a2,ph2,ph3 agent
     class cm_c,ca,cb coord

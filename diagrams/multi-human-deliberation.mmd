@@ -1,7 +1,7 @@
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "22px",
+    "fontSize": "20px",
     "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
     "primaryTextColor": "#1a1a1c",
@@ -19,26 +19,26 @@
     "signalColor": "#1a1a1c",
     "signalTextColor": "#1a1a1c"
   },
-  "sequence": { "actorMargin": 90, "messageMargin": 50, "noteMargin": 18, "boxMargin": 20 }
+  "sequence": { "actorMargin": 60, "messageMargin": 40, "noteMargin": 15, "boxMargin": 16 }
 }}%%
 sequenceDiagram
     autonumber
-    participant L as Eng Lead
-    participant C as Coordinator
+    participant L as Lead
+    participant C as Coord
     participant S as Security
     participant P as Product
 
-    L->>C: deliberate.open<br/>rule = weighted_vote_with_veto<br/>veto = Security
-    C->>S: dispatch (notification)
-    C->>P: dispatch (notification)
-    S->>C: deliberate.comment<br/>(maintenance window)
-    L->>C: deliberate.comment<br/>(pre-approval context)
-    P->>C: deliberate.comment<br/>(customer impact)
-    L->>C: deliberate.vote (yea, 1.0)
-    P->>C: deliberate.vote (yea, 1.0)
-    S->>C: deliberate.vote (yea, 1.0)
+    L->>C: deliberate.open<br/>weighted_vote + veto
+    C->>S: dispatch
+    C->>P: dispatch
+    S->>C: comment (window)
+    L->>C: comment (pre-approval)
+    P->>C: comment (impact)
+    L->>C: vote (yea)
+    P->>C: vote (yea)
+    S->>C: vote (yea)
     L->>C: deliberate.close
-    C-->>L: outcome = approved<br/>tally yea = 3.0
-    C->>P: notify (decision artefact)
-    C->>S: notify (decision artefact)
-    Note over C: All exchanges appended<br/>to evidence chain.<br/>Decision artefact produced.
+    C-->>L: outcome = approved
+    C->>P: notify
+    C->>S: notify
+    Note over C: Appended to evidence chain.<br/>Decision artefact produced.

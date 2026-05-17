@@ -60,44 +60,42 @@ HAP has a small set of primitives, related as follows.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "22px",
+    "fontSize": "20px",
     "fontFamily": "Arial, Helvetica, sans-serif",
-    "primaryColor": "#ffffff",
+    "primaryColor": "#FFF8F2",
     "primaryTextColor": "#1a1a1c",
     "primaryBorderColor": "#1a1a1c",
-    "lineColor": "#1a1a1c"
+    "lineColor": "#4f4f52"
   }
 }}%%
 classDiagram
-    direction LR
+    direction TB
     class Workspace {
-      +id: wsp_xxx
-      +state: active|paused|closed
-      +mode: shadow|trial|production
-      +members: Participant[]
+      +id
+      +state
+      +mode
+      +members
       +policy_uri
       +evidence_head
     }
     class Participant {
       +uri
-      +type: human|agent|service|group
+      +type
       +jwks
       +capabilities
       +scopes
     }
     class Task {
-      +id: tsk_xxx
+      +id
       +kind
       +state
       +mode
       +assignee
       +delegator
-      +artefacts
     }
     class Artefact {
-      +id: art_xxx
+      +id
       +kind
-      +produced_by
       +content
       +citations
       +content_hash
@@ -109,21 +107,20 @@ classDiagram
       +sig
     }
     class Message {
-      +id (ULID)
+      +id
       +ts
       +from
       +to
-      +type
       +method
       +evidence
     }
 
     Workspace "1" --> "*" Participant : members
-    Workspace "1" --> "*" Task        : holds
+    Workspace "1" --> "*" Task : holds
     Workspace "1" --> "*" EvidenceEntry : append-only log
-    Task      "1" --> "*" Artefact    : produces
-    Message   "1" --> "1" EvidenceEntry : becomes
-    Participant "1" --> "*" Message   : sends
+    Task "1" --> "*" Artefact : produces
+    Message "1" --> "1" EvidenceEntry : becomes
+    Participant "1" --> "*" Message : sends
 ```
 
 **The contract.** Every Message becomes exactly one EvidenceEntry. Tasks
@@ -141,7 +138,7 @@ A Task is the unit of work. Its state machine is small and explicit.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "22px",
+    "fontSize": "20px",
     "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#FFE7DD",
     "primaryTextColor": "#1a1a1c",
@@ -152,32 +149,30 @@ A Task is the unit of work. Its state machine is small and explicit.
     "tertiaryColor": "#FFF8F2",
     "tertiaryTextColor": "#1a1a1c",
     "tertiaryBorderColor": "#1a1a1c",
-    "lineColor": "#1a1a1c"
+    "lineColor": "#4f4f52"
   }
 }}%%
 stateDiagram-v2
-    direction LR
-    [*] --> Created
-    Created --> Assigned: task.assign
-    Assigned --> Accepted: task.accept
-    Assigned --> Declined:  task.decline
-    Accepted --> InProgress: task.start
-    InProgress --> ReviewRequested: review.request
-    InProgress --> Completed: task.complete (no review)
-    ReviewRequested --> Completed: decide.approve / decide.override
-    ReviewRequested --> InProgress: decide.reject (retry)
-    InProgress --> Abstained: abstain.declare
-    InProgress --> Escalated: escalate.raise
-    InProgress --> Cancelled: control.cancel
-    Accepted    --> Cancelled: control.cancel
-    Assigned    --> Cancelled: control.cancel
-    InProgress  --> Superseded: control.supersede
-    Completed   --> [*]
-    Declined    --> [*]
-    Cancelled   --> [*]
-    Abstained   --> [*]
-    Escalated   --> [*]
-    Superseded  --> [*]
+    direction TB
+    [*] --> Created : task.assign
+    Created --> Accepted : accept
+    Created --> Declined : decline
+    Accepted --> InProgress : start
+    InProgress --> ReviewRequested : review
+    InProgress --> Completed : complete
+    ReviewRequested --> Completed : approve
+    ReviewRequested --> InProgress : reject
+    InProgress --> Abstained : abstain
+    InProgress --> Escalated : escalate
+    InProgress --> Cancelled : cancel
+    Accepted --> Cancelled : cancel
+    InProgress --> Superseded : supersede
+    Completed --> [*]
+    Declined --> [*]
+    Cancelled --> [*]
+    Abstained --> [*]
+    Escalated --> [*]
+    Superseded --> [*]
 ```
 
 **Things to note.**
@@ -199,28 +194,28 @@ HAP's audit guarantee is a per-workspace hash-linked log.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "22px",
+    "fontSize": "20px",
     "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
     "primaryTextColor": "#1a1a1c",
     "primaryBorderColor": "#1a1a1c",
-    "lineColor": "#1a1a1c"
+    "lineColor": "#4f4f52"
   },
-  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 90 }
+  "flowchart": { "curve": "linear", "nodeSpacing": 50, "rankSpacing": 50, "padding": 16 }
 }}%%
-flowchart LR
-    classDef entry fill:#f8fafc,stroke:#0f172a,stroke-width:2px,color:#0f172a
-    classDef chkpt fill:#FFF8F2,stroke:#EA4700,stroke-width:2px,color:#1a1a1c
-    classDef anchor fill:#E8F1ED,stroke:#1f5b39,stroke-width:2px,color:#0a3a1c
+flowchart TB
+    classDef entry  fill:#FFF8F2,stroke:#1a1a1c,stroke-width:2px,color:#1a1a1c
+    classDef chkpt  fill:#EA4700,stroke:#C73D00,stroke-width:2.5px,color:#ffffff
+    classDef anchor fill:#FFE7DD,stroke:#EA4700,stroke-width:2px,color:#5a1500
 
-    E0["entry 0<br/>genesis"]:::entry
-    E1["entry 1<br/>task.assign"]:::entry
-    E2["entry 2<br/>task.accept"]:::entry
-    E3["entry 3<br/>task.complete"]:::entry
-    E4["entry 4<br/>review.request"]:::entry
-    E5["entry 5<br/>decide.approve"]:::entry
-    CK["checkpoint<br/>(every 1000)"]:::chkpt
-    AN["external<br/>anchor"]:::anchor
+    E0["<b>entry 0</b> · genesis"]:::entry
+    E1["<b>entry 1</b> · task.assign"]:::entry
+    E2["<b>entry 2</b> · task.accept"]:::entry
+    E3["<b>entry 3</b> · task.complete"]:::entry
+    E4["<b>entry 4</b> · review.request"]:::entry
+    E5["<b>entry 5</b> · decide.approve"]:::entry
+    CK["<b>checkpoint</b><br/>every 1000"]:::chkpt
+    AN["<b>external anchor</b>"]:::anchor
 
     E0 -->|prev_hash| E1
     E1 -->|prev_hash| E2
@@ -386,32 +381,32 @@ A real deployment composes all three protocols. Here is the full picture.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "22px",
+    "fontSize": "20px",
     "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
     "primaryTextColor": "#1a1a1c",
     "primaryBorderColor": "#1a1a1c",
-    "lineColor": "#1a1a1c"
+    "lineColor": "#4f4f52"
   },
-  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 90, "padding": 22 }
+  "flowchart": { "curve": "linear", "nodeSpacing": 50, "rankSpacing": 60, "padding": 16 }
 }}%%
 flowchart TB
     classDef human fill:#FFF8F2,stroke:#1a1a1c,stroke-width:2px,color:#1a1a1c
     classDef agent fill:#FFE7DD,stroke:#EA4700,stroke-width:2px,color:#5a1500
-    classDef coord fill:#EA4700,stroke:#C73D00,stroke-width:2px,color:#ffffff
+    classDef coord fill:#EA4700,stroke:#C73D00,stroke-width:2.5px,color:#ffffff
     classDef tool  fill:#E8F1ED,stroke:#1f5b39,stroke-width:2px,color:#0a3a1c
     classDef bridge fill:#EDE0F2,stroke:#6a3d8a,stroke-width:2px,color:#3b0e63
     classDef ext   fill:#FFF3E0,stroke:#C76B00,stroke-width:2px,color:#5a3500
 
-    subgraph WS["HAP Workspace"]
-      H["Human<br/>Reviewer"]:::human
-      A["Agent<br/>Drafter"]:::agent
-      C["Coordinator"]:::coord
-      B["A2A Bridge<br/>(service)"]:::bridge
+    subgraph WS["<b>HAP Workspace</b>"]
+      H["Human"]:::human
+      A["Agent"]:::agent
+      C["<b>Coordinator</b>"]:::coord
+      B["A2A Bridge"]:::bridge
     end
 
-    T1["Tool Server<br/>(orders)"]:::tool
-    T2["Tool Server<br/>(shipping)"]:::tool
+    T1["Tool<br/>(orders)"]:::tool
+    T2["Tool<br/>(shipping)"]:::tool
     EXT["External Agent<br/>(partner org)"]:::ext
 
     H -->|HAP| C
@@ -420,9 +415,6 @@ flowchart TB
     A -.->|MCP| T1
     A -.->|MCP| T2
     B ====>|A2A| EXT
-
-    Note1["The evidence chain inside the workspace<br/>cites the MCP calls and the A2A correlation IDs.<br/>One audit covers all three protocols."]
-    C -. annotates .- Note1
 ```
 
 **The audit story.** A regulator asks "show me everything that produced
@@ -445,49 +437,54 @@ operational trade-offs.
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "22px",
+    "fontSize": "20px",
     "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#ffffff",
     "primaryTextColor": "#1a1a1c",
     "primaryBorderColor": "#1a1a1c",
-    "lineColor": "#1a1a1c"
+    "lineColor": "#4f4f52",
+    "clusterBkg": "#FFF8F2",
+    "clusterBorder": "#1a1a1c"
   },
-  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 90, "padding": 22 }
+  "flowchart": { "curve": "linear", "nodeSpacing": 50, "rankSpacing": 60, "padding": 18 }
 }}%%
 flowchart TB
-    classDef coord fill:#EA4700,stroke:#C73D00,stroke-width:2px,color:#ffffff
-    classDef part  fill:#f5f5f7,stroke:#1a1a1c,stroke-width:2px,color:#1a1a1c
+    classDef coord fill:#EA4700,stroke:#C73D00,stroke-width:2.5px,color:#ffffff
+    classDef part  fill:#FFF8F2,stroke:#1a1a1c,stroke-width:2px,color:#1a1a1c
     classDef peer  fill:#EDE0F2,stroke:#6a3d8a,stroke-width:2px,color:#3b0e63
 
-    subgraph T1["1. Coordinator-mediated (default)"]
+    subgraph T1["<b>1. Coordinator-mediated</b>"]
       direction LR
       P1A["participant"]:::part
       P1B["participant"]:::part
       P1C["participant"]:::part
-      C1["Coordinator"]:::coord
+      C1["<b>Coordinator</b>"]:::coord
       P1A --- C1
       P1B --- C1
       P1C --- C1
     end
 
-    subgraph T2["2. Peer-to-peer (small workspaces)"]
+    subgraph T2["<b>2. Peer-to-peer</b>"]
       direction LR
-      P2A["participant<br/>+ local chain"]:::part
-      P2B["participant<br/>+ local chain"]:::part
-      P2C["participant<br/>+ local chain"]:::part
+      P2A["participant"]:::part
+      P2B["participant"]:::part
+      P2C["participant"]:::part
       P2A --- P2B
       P2B --- P2C
       P2A --- P2C
     end
 
-    subgraph T3["3. Federated (cross-organisation)"]
+    subgraph T3["<b>3. Federated</b>"]
       direction LR
-      C3A["Coordinator A"]:::coord
-      C3B["Coordinator B"]:::coord
-      BR["Bridge<br/>(A2A)"]:::peer
+      C3A["<b>Coord A</b>"]:::coord
+      BR["<b>Bridge</b><br/>A2A"]:::peer
+      C3B["<b>Coord B</b>"]:::coord
       C3A --- BR
       BR --- C3B
     end
+
+    T1 ~~~ T2
+    T2 ~~~ T3
 ```
 
 **1. Coordinator-mediated.** The default. One Coordinator per workspace,

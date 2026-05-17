@@ -8,16 +8,16 @@
     "primaryBorderColor": "#1a1a1c",
     "lineColor": "#4f4f52"
   },
-  "flowchart": { "curve": "linear", "nodeSpacing": 60, "rankSpacing": 90, "padding": 22 }
+  "flowchart": { "curve": "linear", "nodeSpacing": 50, "rankSpacing": 50, "padding": 16 }
 }}%%
-flowchart LR
-    G["<b>Genesis</b><br/><span style='font-size:17px;color:#4f4f52'>seq = 0<br/>prev_hash = 0x00…<br/>workspace.genesis</span>"]
-    E1["<b>Entry</b><br/><span style='font-size:17px;color:#4f4f52'>seq = 1<br/>task.assign<br/>prev → G</span>"]
-    E2["<b>Entry</b><br/><span style='font-size:17px;color:#4f4f52'>seq = 2<br/>task.accept<br/>prev → E1</span>"]
-    E3["<b>Entry</b><br/><span style='font-size:17px;color:#4f4f52'>seq = 3<br/>task.complete<br/>prev → E2</span>"]
-    CP["<b>Checkpoint</b><br/><span style='font-size:17px;color:#ffffff'>head + count<br/>+ external anchors</span>"]
-    E4["<b>Entry</b><br/><span style='font-size:17px;color:#4f4f52'>seq = 4<br/>decide.approve<br/>prev → E3</span>"]
-    A["<b>External anchor</b><br/><span style='font-size:17px;color:#5a1500'>tape · WORM ·<br/>timestamp authority</span>"]
+flowchart TB
+    G["<b>Genesis</b> &nbsp;·&nbsp; seq 0<br/><span style='font-size:16px;color:#4f4f52'>workspace.genesis</span>"]
+    E1["<b>Entry</b> &nbsp;·&nbsp; seq 1<br/><span style='font-size:16px;color:#4f4f52'>task.assign</span>"]
+    E2["<b>Entry</b> &nbsp;·&nbsp; seq 2<br/><span style='font-size:16px;color:#4f4f52'>task.accept</span>"]
+    E3["<b>Entry</b> &nbsp;·&nbsp; seq 3<br/><span style='font-size:16px;color:#4f4f52'>task.complete</span>"]
+    CP["<b>Checkpoint</b><br/><span style='font-size:16px;color:#ffffff'>head + count<br/>signs anchor</span>"]
+    E4["<b>Entry</b> &nbsp;·&nbsp; seq 4<br/><span style='font-size:16px;color:#4f4f52'>decide.approve</span>"]
+    A["<b>External anchor</b><br/><span style='font-size:16px;color:#5a1500'>tape · WORM ·<br/>timestamp authority</span>"]
 
     G --> E1 --> E2 --> E3 --> CP --> E4
     CP -.attests.-> A

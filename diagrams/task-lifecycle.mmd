@@ -1,7 +1,7 @@
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "22px",
+    "fontSize": "20px",
     "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#FFE7DD",
     "primaryTextColor": "#1a1a1c",
@@ -17,20 +17,18 @@
 }}%%
 stateDiagram-v2
     direction TB
-    [*] --> created : task.assign
+    [*] --> created : assign
     created --> accepted : accept
     created --> declined : decline
     accepted --> in_progress : start
-    in_progress --> review_requested : complete (review)
-    in_progress --> completed : complete (no review)
-    review_requested --> completed : approve / override
+    in_progress --> review_requested : needs review
+    in_progress --> completed : complete
+    review_requested --> completed : approve
     review_requested --> in_progress : reject
-    review_requested --> escalated : abstain + escalate
+    review_requested --> escalated : escalate
     escalated --> created : new task
     in_progress --> cancelled : cancel
-    accepted --> cancelled : cancel
     in_progress --> superseded : supersede
-    review_requested --> superseded : supersede
     completed --> [*]
     declined --> [*]
     cancelled --> [*]

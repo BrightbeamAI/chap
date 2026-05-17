@@ -8,17 +8,17 @@
     "primaryBorderColor": "#1a1a1c",
     "lineColor": "#4f4f52"
   },
-  "flowchart": { "curve": "linear", "nodeSpacing": 70, "rankSpacing": 90, "padding": 22 }
+  "flowchart": { "curve": "linear", "nodeSpacing": 60, "rankSpacing": 70, "padding": 18 }
 }}%%
 flowchart TB
     Start(["<b>Incoming task.assign</b>"])
-    CheckCeiling{"Mode ≤<br/>workspace<br/>ceiling?"}
-    Deny["<b>Reject</b><br/><span style='font-size:17px;color:#ffffff'>error -32502<br/>mode_ceiling</span>"]
+    CheckCeiling{"Mode ≤<br/>ceiling?"}
+    Deny["<b>Reject</b><br/><span style='font-size:16px;color:#ffffff'>error -32502</span>"]
     CheckMode{"Task<br/>mode?"}
 
-    Shadow["<b>SHADOW</b><br/><span style='font-size:17px;color:#5a1500'>agent runs alongside<br/>output recorded<br/>NOT delivered</span>"]
-    Trial["<b>TRIAL</b><br/><span style='font-size:17px;color:#5a1500'>output delivered<br/>every result reviewed<br/>by a human</span>"]
-    Prod["<b>PRODUCTION</b><br/><span style='font-size:17px;color:#ffffff'>output delivered<br/>review per policy<br/>(may be sampled)</span>"]
+    Shadow["<b>SHADOW</b><br/><span style='font-size:16px;color:#5a1500'>runs alongside<br/>NOT delivered</span>"]
+    Trial["<b>TRIAL</b><br/><span style='font-size:16px;color:#5a1500'>delivered<br/>human-reviewed</span>"]
+    Prod["<b>PRODUCTION</b><br/><span style='font-size:16px;color:#ffffff'>delivered<br/>policy-sampled</span>"]
 
     Start --> CheckCeiling
     CheckCeiling -->|no| Deny

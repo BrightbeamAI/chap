@@ -1,7 +1,7 @@
 %%{init: {
   "theme": "base",
   "themeVariables": {
-    "fontSize": "22px",
+    "fontSize": "20px",
     "fontFamily": "Arial, Helvetica, sans-serif",
     "primaryColor": "#FFF8F2",
     "primaryTextColor": "#1a1a1c",
@@ -34,7 +34,6 @@ classDiagram
       +mode
       +assignee
       +delegator
-      +review
     }
     class Artefact {
       +id
@@ -56,15 +55,9 @@ classDiagram
       +sig
     }
 
-    Workspace "1" o-- "many" Participant : has members
+    Workspace "1" o-- "many" Participant : members
     Workspace "1" o-- "many" Task : contains
     Workspace "1" o-- "many" EvidenceEntry : appends
     Task "1" o-- "many" Artefact : produces
     Task "1" o-- "many" Message : drives
     Message "1" -- "1" EvidenceEntry : becomes
-    Artefact "*" -- "*" Artefact : based on
-
-    note for Workspace "mode &amp; ceiling: shadow | trial | production"
-    note for Participant "uri: human | agent | service | group | workspace"
-    note for Artefact "kind: draft | decision | override | abstention | snapshot"
-    note for Message "type: request | response | notification"
