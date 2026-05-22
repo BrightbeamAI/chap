@@ -85,7 +85,7 @@ clear artefact and a clear decision-maker.
   Idea           Discussion       Proposal         Implementation     Adoption
    │                 │               │                   │               │
    ▼                 ▼               ▼                   ▼               ▼
-  Issue ──────► Discussion ────► HEP draft ────► Reference impl ────► Spec merge
+  Issue ──────► Discussion ────► CEP draft ────► Reference impl ────► Spec merge
               (any forum)     (CHAP Enhancement
                                  Proposal)
 ```
@@ -98,16 +98,16 @@ labelled:
 
 - `clarification` — needs spec text refinement; no semantic change.
 - `bug` — spec says something that doesn't work in practice.
-- `enhancement-proposal` — substantive addition; needs a HEP.
+- `enhancement-proposal` — substantive addition; needs a CEP.
 
-### 3.2 HEP — CHAP Enhancement Proposal
+### 3.2 CEP — CHAP Enhancement Proposal
 
-A HEP is a structured document proposing a substantive change. It
+A CEP is a structured document proposing a substantive change. It
 contains:
 
 | Section            | Content                                              |
 |--------------------|------------------------------------------------------|
-| Title              | `HEP-N: short title`                                 |
+| Title              | `CEP-N: short title`                                 |
 | Status             | Draft / Active / Accepted / Rejected / Withdrawn     |
 | Author(s)          | Names and affiliations                               |
 | Abstract           | One paragraph                                        |
@@ -120,27 +120,27 @@ contains:
 | Security           | Threats introduced, mitigated, or unchanged          |
 | Open questions     | Known unresolved items                               |
 
-HEPs are submitted as a pull request to `heps/HEP-NNN.md`. The
+CEPs are submitted as a pull request to `heps/CEP-NNN.md`. The
 Editor assigns the number and triages.
 
 ### 3.3 Discussion period
 
-A HEP enters a **public discussion period of fourteen days minimum**.
+A CEP enters a **public discussion period of fourteen days minimum**.
 During this period anyone may comment; the relevant Working Group
 (if any) meets at least once; the Steering Committee tracks but
 does not decide. After discussion, the author revises and marks the
-HEP Active.
+CEP Active.
 
 ### 3.4 Reference-implementation requirement
 
-A HEP cannot be Accepted without a working reference implementation
+A CEP cannot be Accepted without a working reference implementation
 that passes the conformance tests for the relevant profile. This
 requirement is non-negotiable. Speculative specification text is
 not accepted.
 
 The implementation may live in [`reference/`](./reference/) for
 Core changes, or in any contributor's repository (linked from the
-HEP) for profile changes.
+CEP) for profile changes.
 
 ### 3.5 Acceptance
 
@@ -160,11 +160,11 @@ tallies, and signed by the chair.
 
 ### 3.6 Rejection and withdrawal
 
-A rejected HEP remains in the repository with status Rejected and
+A rejected CEP remains in the repository with status Rejected and
 a brief rationale. This prevents the same proposal from being
-re-litigated; a fresh HEP on the same topic requires new arguments.
+re-litigated; a fresh CEP on the same topic requires new arguments.
 
-A HEP author may withdraw at any time.
+A CEP author may withdraw at any time.
 
 ---
 
@@ -253,7 +253,7 @@ fork. Three constraints apply if you do:
 
 ## 8. Amending this document
 
-Changes to this Governance document go through the HEP process like
+Changes to this Governance document go through the CEP process like
 any other substantive change, with two additional requirements:
 
 - Governance changes require a twenty-one-day public-comment

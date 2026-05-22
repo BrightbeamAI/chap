@@ -98,7 +98,7 @@ and standards bindings.
 
 ### Governance
 
-- HEP (CHAP Enhancement Proposal) process documented in
+- CEP (CHAP Enhancement Proposal) process documented in
   [`GOVERNANCE.md`](./GOVERNANCE.md).
 - License: Apache 2.0 (code) + CC-BY 4.0 (specification).
 - Independent profile versioning; backward-compatible additions are
@@ -156,7 +156,7 @@ implements via `workspace.describe`'s `profiles` field.
 ## Future direction
 
 Items under active consideration for future versions, tracked as
-HEPs in the issue tracker:
+CEPs in the issue tracker:
 
 - `federation-activitypub`: workspace-to-workspace federation via
   ActivityPub Actor/Inbox model.

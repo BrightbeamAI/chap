@@ -148,7 +148,7 @@ Profiles are additive; you don't pay for what you don't use.
 The wire format and methods are stable. Each profile carries its
 own semantic version (`review/1.0`, `core/1.0`, etc.) so an
 implementation can advertise which profiles it implements and at
-which version. Changes follow the HEP process in
+which version. Changes follow the CEP process in
 [`GOVERNANCE.md`](./GOVERNANCE.md).
 
 ### Will my Core implementation keep working as profiles evolve?
@@ -181,7 +181,7 @@ Ed25519.
 If you need a different scheme for compliance reasons, the
 `security-signed` profile's signature format is `<alg>:<kid>:<sig>`
 and the spec leaves room for additional algorithms. Ed25519 is
-required as the baseline; others may be added by HEP.
+required as the baseline; others may be added by CEP.
 
 ### Does CHAP require a specific identity provider?
 
@@ -320,7 +320,7 @@ referenced.
 ### Who runs CHAP?
 
 CHAP is developed in the open. Substantive changes go through the
-HEP (CHAP Enhancement Proposal) process: discussion, reference
+CEP (CHAP Enhancement Proposal) process: discussion, reference
 implementation, public comment, ratification. See
 [`GOVERNANCE.md`](./GOVERNANCE.md) for the full mechanics.
 
@@ -333,7 +333,7 @@ Patent licence granted via Apache 2.0 for code contributions.
 ### Can my company contribute?
 
 Yes. See [`CONTRIBUTING.md`](./CONTRIBUTING.md). Substantive
-changes go through HEPs; small changes (clarifications, typos,
+changes go through CEPs; small changes (clarifications, typos,
 schema fixes) are PRs.
 
 ### Can my company brand a fork?

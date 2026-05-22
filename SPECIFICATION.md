@@ -173,7 +173,7 @@ work in the local workspace.
 ### 4.1 Envelope
 
 Every CHAP message is a JSON object conforming to
-[`schemas/chap-envelope.schema.json`](./schemas/chap-envelope.schema.json).
+[`schemas/chap-envelope.schema.json`](./schemas/core/chap-envelope.schema.json).
 
 ```json
 {
@@ -353,7 +353,7 @@ mapping is published in the participant descriptor.
 ### 5.6 Step-up authentication
 
 Methods marked `privileged: true` in the method catalogue
-(see §12 and [`schemas/chap-methods.schema.json`](./schemas/chap-methods.schema.json))
+(see §12 and [`schemas/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json))
 require step-up authentication. The Coordinator MUST verify that the
 caller's most recent OIDC `auth_time` is within the configured
 step-up window (default: 5 minutes). The step-up window is published
@@ -393,7 +393,7 @@ their evidence chain is sealed. `archived` workspaces are read-only.
 ### 6.2 Descriptor
 
 `workspace.describe` returns a descriptor conforming to
-[`schemas/chap-workspace.schema.json`](./schemas/chap-workspace.schema.json):
+[`schemas/chap-workspace.schema.json`](./schemas/core/chap-workspace.schema.json):
 
 ```json
 {
@@ -455,7 +455,7 @@ at creation time.
 ### 7.1 Descriptor
 
 Every Participant has a descriptor obtainable via `participant.describe`,
-conforming to [`schemas/chap-participant.schema.json`](./schemas/chap-participant.schema.json):
+conforming to [`schemas/chap-participant.schema.json`](./schemas/core/chap-participant.schema.json):
 
 ```json
 {
@@ -553,7 +553,7 @@ Transitions are triggered by methods:
 
 ### 8.2 Task descriptor
 
-A Task conforms to [`schemas/chap-task.schema.json`](./schemas/chap-task.schema.json):
+A Task conforms to [`schemas/chap-task.schema.json`](./schemas/core/chap-task.schema.json):
 
 ```json
 {
@@ -876,7 +876,7 @@ higher than the workspace's mode.
 ## 12. Methods
 
 This section enumerates the method catalogue. The authoritative
-machine-readable form is [`schemas/chap-methods.schema.json`](./schemas/chap-methods.schema.json).
+machine-readable form is [`schemas/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json).
 
 Every method has:
 
@@ -1095,8 +1095,8 @@ contains exactly one envelope. The subprotocol identifier is
 `chap.v1`. Initial connection requires an `Authorization` header
 carrying the OIDC ID token or service credential.
 
-See [`reference/transport-ws.ts`](./reference/transport-ws.ts) for
-a reference implementation.
+> The v0.1 reference implementations use plain HTTP POST; a
+> WebSocket reference binding is planned for v0.2.
 
 ### 14.3 HTTP+SSE binding (RECOMMENDED)
 
@@ -1110,7 +1110,9 @@ Two endpoints:
   field is a single envelope. Events use the `id:` field for the
   envelope's `id`.
 
-See [`reference/transport-http-sse.ts`](./reference/transport-http-sse.ts).
+The playground at [`reference/playground/`](./reference/playground/)
+implements this binding (POST and SSE, with `/rpc` instead of
+`/chap` to avoid clashing with the project name).
 
 ### 14.4 HTTP polling binding
 

@@ -139,7 +139,7 @@ at the 1.0 release.
 If you have a workflow pattern not covered by an existing profile,
 the path to standardising it is:
 
-1. Write a HEP (CHAP Enhancement Proposal) — see [`../GOVERNANCE.md`](../GOVERNANCE.md) §3.2.
+1. Write a CEP (CHAP Enhancement Proposal) — see [`../GOVERNANCE.md`](../GOVERNANCE.md) §3.2.
 2. Build a reference implementation alongside the proposal.
 3. Demonstrate at least one production use.
 4. Submit the profile spec as a PR to `profiles/<name>.md`.

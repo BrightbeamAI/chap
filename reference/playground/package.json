@@ -1,0 +1,22 @@
+{
+  "name": "@chap/playground",
+  "version": "1.0.0",
+  "description": "CHAP playground — a runnable two-human + agent demo using local Ollama (Gemma3).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start":       "tsx src/server.ts",
+    "test":        "node --test --experimental-strip-types tests/smoke.test.ts",
+    "test:tsx":    "tsx --test tests/smoke.test.ts"
+  },
+  "dependencies": {
+    "@chap/coordinator": "file:../../packages/coordinator"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx":         "^4.7.0",
+    "typescript":  "^5.3.0"
+  }
+}

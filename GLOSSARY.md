@@ -188,7 +188,7 @@ evidence entry.
 
 **Method.** [normative] The verb of a CHAP request or notification, of the
 form `namespace.verb` (e.g. `task.assign`, `decide.approve`). Catalogued
-in [`schemas/chap-methods.schema.json`](./schemas/chap-methods.schema.json).
+in [`schemas/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json).
 
 **Mode.** [normative] The operational regime of a workspace or task:
 `shadow`, `trial`, or `production`. See §11 of the specification.

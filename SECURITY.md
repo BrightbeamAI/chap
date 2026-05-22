@@ -108,7 +108,7 @@ long-term audit. The key SHOULD be backed by an HSM in production.
 
 ## 4. Privileged operations
 
-Methods marked `privileged: true` in [`schemas/chap-methods.schema.json`](./schemas/chap-methods.schema.json)
+Methods marked `privileged: true` in [`schemas/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json)
 require step-up authentication. The Coordinator MUST enforce that the
 caller's most recent OIDC `auth_time` is within the configured step-up
 window (default: 5 minutes) and that the caller's token carries an
@@ -116,7 +116,7 @@ appropriate `acr` (authentication context class reference) value.
 
 Privileged operations include: `control.pause`, `control.rollback`,
 `control.snapshot`, `workspace.set_mode` (to `production`), and
-`participant.invite` (for admin roles).
+`workspace.invite` (for admin roles).
 
 ---
 

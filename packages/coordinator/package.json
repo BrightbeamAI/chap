@@ -1,0 +1,17 @@
+{
+  "name": "@chap/coordinator",
+  "version": "1.0.0",
+  "description": "CHAP Coordinator library — the protocol code as an importable module. Use this to build CHAP applications.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".":          "./src/index.ts",
+    "./jsonrpc":  "./src/jsonrpc.ts",
+    "./patch":    "./src/patch.ts",
+    "./types":    "./src/types.ts",
+    "./routing":  "./src/routing.ts"
+  },
+  "private": true,
+  "engines": { "node": ">=18" }
+}

@@ -53,7 +53,7 @@ exactly which call produced it.
 
 Every artefact that depended on an MCP call MUST cite that call. The
 citation appears in the artefact's `citations[]` array
-(see [`schemas/chap-task.schema.json`](../schemas/chap-task.schema.json),
+(see [`schemas/chap-task.schema.json`](../schemas/core/chap-task.schema.json),
 `$defs.Citation`).
 
 ```json

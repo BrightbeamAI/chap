@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CHAP Playground · TechCorp Support</title>
+<link rel="stylesheet" href="/playground.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-dot"></span>
+    <span class="brand-name">CHAP Playground</span>
+    <span class="brand-divider"></span>
+    <span class="brand-context">TechCorp Support · live workspace</span>
+  </div>
+  <nav class="topbar-nav">
+    <a class="role-pill" data-role="maya" href="#" id="nav-maya">Maya</a>
+    <a class="role-pill" data-role="sam"  href="#" id="nav-sam">Sam</a>
+    <span class="role-divider"></span>
+    <button class="btn-ghost" id="toggle-wire">Show the wire</button>
+    <button class="btn-ghost" id="reset-btn" title="Wipe state and re-draft all tickets">Reset</button>
+  </nav>
+</header>
+
+<main id="root">
+
+  <!-- =========================================================
+       ROLE PICKER (default view)
+       ========================================================= -->
+  <section class="picker" id="picker">
+    <div class="picker-hero">
+      <h1>Two humans. One agent. CHAP in the middle.</h1>
+      <p>
+        TechCorp's support queue is staffed by Maya (front-line) and Sam (senior).
+        A local <span class="kbd">gemma3:4b</span> agent drafts every response.
+        Maya reviews and overrides; high-criticality items auto-escalate to Sam.
+        Every message on the wire is a real CHAP envelope you can inspect.
+      </p>
+      <p class="picker-sub">
+        Open <strong>one tab as Maya</strong> and a <strong>second tab as Sam</strong>
+        to see live two-human collaboration over the protocol.
+      </p>
+    </div>
+
+    <div class="picker-cards">
+      <a class="role-card role-card--maya" data-role="maya" href="#">
+        <div class="role-card-header">
+          <span class="role-avatar">M</span>
+          <div>
+            <h2>I'm Maya</h2>
+            <p>Front-line support</p>
+          </div>
+        </div>
+        <ul class="role-card-list">
+          <li>Reviews every bot draft</li>
+          <li>Edits and overrides drafts inline</li>
+          <li>Escalates high-criticality items to Sam</li>
+          <li>Sees live override-tag dividend</li>
+        </ul>
+        <div class="role-card-cta">Enter as Maya →</div>
+      </a>
+
+      <a class="role-card role-card--sam" data-role="sam" href="#">
+        <div class="role-card-header">
+          <span class="role-avatar">S</span>
+          <div>
+            <h2>I'm Sam</h2>
+            <p>Senior reviewer</p>
+          </div>
+        </div>
+        <ul class="role-card-list">
+          <li>Reviews only what's escalated up</li>
+          <li>Sees the full lineage: bot → Maya → Sam</li>
+          <li>Approve, override-Maya, or send back</li>
+          <li>Different dividend: what gets escalated and why</li>
+        </ul>
+        <div class="role-card-cta">Enter as Sam →</div>
+      </a>
+    </div>
+
+    <div class="picker-footer">
+      <div class="footer-block">
+        <div class="footer-label">What's real</div>
+        <ul>
+          <li>Real CHAP coordinator on localhost — protocol code is <span class="kbd">@chap/coordinator</span></li>
+          <li>Real Ollama-backed agent (<span class="kbd" id="model-label">gemma3:4b</span>)</li>
+          <li>Real RFC 6902 JSON Patch on overrides</li>
+          <li>Real evidence chain, persisted to disk</li>
+        </ul>
+      </div>
+      <div class="footer-block">
+        <div class="footer-label">What's simplified for the demo</div>
+        <ul>
+          <li>No auth (production: <span class="kbd">identity-oidc/1.0</span>)</li>
+          <li>Routing policy in-process (production: <span class="kbd">routing/1.0</span> profile)</li>
+          <li>Persisted to local JSON (production: database)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================
+       MAYA's UI — front-line review queue
+       ========================================================= -->
+  <section class="role-view" id="view-maya" hidden>
+    <div class="role-view-grid">
+
+      <aside class="queue-pane" id="maya-queue">
+        <div class="pane-header">
+          <h3>Your queue</h3>
+          <span class="pane-count" id="maya-queue-count">0</span>
+        </div>
+        <div class="pane-body" id="maya-queue-list"></div>
+      </aside>
+
+      <section class="work-pane" id="maya-work">
+        <div id="maya-empty" class="empty-state">
+          <h2>Pick a ticket from your queue.</h2>
+          <p>Bot drafts will appear here as <span class="kbd">gemma3:4b</span> finishes them.</p>
+        </div>
+        <div id="maya-editor" hidden>
+          <header class="ticket-head">
+            <div>
+              <h2 id="maya-ticket-id"></h2>
+              <p id="maya-ticket-subject" class="ticket-subject"></p>
+              <p id="maya-ticket-from" class="ticket-from"></p>
+            </div>
+            <div class="ticket-badges">
+              <span class="badge" id="maya-crit-badge">criticality</span>
+              <span class="badge badge-confidence" id="maya-conf-badge">conf —</span>
+              <span class="badge badge-model" id="maya-model-badge">model —</span>
+            </div>
+          </header>
+
+          <div class="ticket-body" id="maya-ticket-body"></div>
+
+          <div class="draft-block">
+            <div class="draft-label">
+              <span>Bot's draft</span>
+              <span class="draft-sublabel">edit below; the diff updates live</span>
+            </div>
+            <textarea class="draft-editor" id="maya-draft" rows="6"></textarea>
+            <div class="diff-preview" id="maya-diff">No changes yet</div>
+          </div>
+
+          <div class="override-meta">
+            <label>
+              <span>Tags</span>
+              <div class="tag-picker" id="maya-tags">
+                <button data-tag="tone-softened">tone-softened</button>
+                <button data-tag="severity-upgraded">severity-upgraded</button>
+                <button data-tag="severity-downgraded">severity-downgraded</button>
+                <button data-tag="factual-fix">factual-fix</button>
+                <button data-tag="length-reduced">length-reduced</button>
+                <button data-tag="scope-redirected">scope-redirected</button>
+              </div>
+            </label>
+            <label>
+              <span>Rationale</span>
+              <textarea class="rationale-input" id="maya-rationale" rows="2" placeholder="Why this change? (required for override)"></textarea>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="btn-primary" id="maya-send">Override &amp; send</button>
+            <button class="btn-secondary" id="maya-approve">Approve as-is</button>
+            <button class="btn-tertiary" id="maya-escalate">Escalate to Sam</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="dividend-pane">
+        <div class="pane-header">
+          <h3>Your override dividend</h3>
+          <span class="pane-sub">tags aggregated over time</span>
+        </div>
+        <div class="pane-body">
+          <div class="dividend-empty" id="maya-dividend-empty">
+            No overrides yet. The dividend chart appears once you override two or more drafts.
+          </div>
+          <div class="dividend-chart" id="maya-dividend" hidden></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- =========================================================
+       SAM's UI — escalation queue
+       ========================================================= -->
+  <section class="role-view" id="view-sam" hidden>
+    <div class="role-view-grid">
+
+      <aside class="queue-pane" id="sam-queue">
+        <div class="pane-header">
+          <h3>Escalations</h3>
+          <span class="pane-count" id="sam-queue-count">0</span>
+        </div>
+        <div class="pane-body" id="sam-queue-list"></div>
+      </aside>
+
+      <section class="work-pane" id="sam-work">
+        <div id="sam-empty" class="empty-state">
+          <h2>Nothing escalated yet.</h2>
+          <p>
+            Items appear here automatically when the routing policy decides they
+            need senior eyes — <span class="kbd">criticality=critical</span>, or
+            <span class="kbd">criticality=high</span> with bot confidence under 0.6.
+          </p>
+        </div>
+        <div id="sam-editor" hidden>
+          <header class="ticket-head">
+            <div>
+              <h2 id="sam-ticket-id"></h2>
+              <p id="sam-ticket-subject" class="ticket-subject"></p>
+              <p id="sam-ticket-from" class="ticket-from"></p>
+            </div>
+            <div class="ticket-badges">
+              <span class="badge" id="sam-crit-badge">criticality</span>
+              <span class="badge badge-routing" id="sam-routing-badge">auto-escalated</span>
+            </div>
+          </header>
+
+          <div class="ticket-body" id="sam-ticket-body"></div>
+
+          <div class="lineage" id="sam-lineage">
+            <div class="lineage-label">Lineage</div>
+            <div class="lineage-track" id="sam-lineage-track"></div>
+          </div>
+
+          <div class="draft-block">
+            <div class="draft-label">
+              <span>Current draft</span>
+              <span class="draft-sublabel" id="sam-draft-sub">most recent revision</span>
+            </div>
+            <textarea class="draft-editor" id="sam-draft" rows="6"></textarea>
+            <div class="diff-preview" id="sam-diff">No changes yet</div>
+          </div>
+
+          <div class="override-meta">
+            <label>
+              <span>Tags</span>
+              <div class="tag-picker" id="sam-tags">
+                <button data-tag="policy-clarification">policy-clarification</button>
+                <button data-tag="legal-review-needed">legal-review-needed</button>
+                <button data-tag="commit-authority">commit-authority</button>
+                <button data-tag="customer-retention">customer-retention</button>
+                <button data-tag="fraud-confirmed">fraud-confirmed</button>
+                <button data-tag="maya-undershot">maya-undershot</button>
+              </div>
+            </label>
+            <label>
+              <span>Rationale</span>
+              <textarea class="rationale-input" id="sam-rationale" rows="2" placeholder="Required if overriding Maya's revision"></textarea>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="btn-primary"   id="sam-send">Override &amp; send</button>
+            <button class="btn-secondary" id="sam-approve">Approve current</button>
+            <button class="btn-tertiary"  id="sam-reject">Send back to Maya</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="dividend-pane">
+        <div class="pane-header">
+          <h3>Escalation dividend</h3>
+          <span class="pane-sub">why things reach Sam</span>
+        </div>
+        <div class="pane-body">
+          <div class="dividend-empty" id="sam-dividend-empty">
+            No escalations yet.
+          </div>
+          <div class="dividend-chart" id="sam-dividend" hidden></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+</main>
+
+<!-- =========================================================
+     WIRE PANEL — docked, toggleable
+     ========================================================= -->
+<aside class="wire-panel" id="wire-panel" hidden>
+  <div class="wire-head">
+    <h4>Live wire <span id="wire-sub">JSON-RPC envelopes appended to the evidence chain</span></h4>
+    <div class="wire-meta">
+      <span>head: <strong id="wire-head-num">0</strong></span>
+      <button class="btn-ghost" id="wire-pause">Pause</button>
+      <button class="btn-ghost" id="wire-close">Close</button>
+    </div>
+  </div>
+  <div class="wire-body" id="wire-body"></div>
+</aside>
+
+<script src="/playground.js"></script>
+</body>
+</html>

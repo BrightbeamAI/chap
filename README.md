@@ -1,5 +1,19 @@
 # CHAP — The Collaborative Human-Agent Protocol
 
+> ### 🟧 Status: v0.1 preview
+>
+> This release is a **specification preview with working reference code**, not a
+> stable 1.0. Concretely:
+>
+> | Layer                    | What you'll find                                                                  |
+> |--------------------------|-----------------------------------------------------------------------------------|
+> | **Wire format & schemas**| Complete and stable for v0.1 — envelope, participant, task, workspace, evidence, routing all schema-validated. |
+> | **Profile specifications**| All eleven profiles are written ([`profiles/`](./profiles/)).                     |
+> | **Reference implementations** | Core + Review + the routing-aware playground are runnable. See `implementation_status` in [`schemas/profiles/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json) for the per-method state — **13 implemented, 44 spec-only, 2 reference-only** simplifications of the spec's task lifecycle. |
+> | **Conformance suite**    | Checklist and harness scaffolding present; canonical test vectors are placeholders pending v0.2. |
+>
+> Treat v0.1 as "design ready for review and prototypes." Wire-format changes in 0.x minor versions are possible — stability commitments begin at 1.0 per [`GOVERNANCE.md`](./GOVERNANCE.md). Feedback issues welcome.
+
 **CHAP is the open standard for multi-human, multi-agent collaboration.**
 It defines the wire format, methods, identity bindings, audit
 semantics, and operational primitives required to put humans,
@@ -17,10 +31,16 @@ CHAP is the third pillar of the open agent-protocol stack:
 CHAP is licensed CC-BY 4.0 (specification) and Apache 2.0 (code). It
 is implementable royalty-free, in any language, in any deployment.
 
-> **See it first.** [Open `demo/index.html`](./demo/index.html) for
-> an interactive walkthrough that tells CHAP's story in five minutes —
-> the problem, the analogy, the protocol, the override-as-data
-> dividend. Single self-contained HTML file; works offline.
+> **See it first — two ways:**
+>
+> - **Static walkthrough** ([`demo/index.html`](./demo/index.html)) — a
+>   single self-contained HTML file telling CHAP's story in five
+>   minutes. Works offline.
+> - **Runnable playground** ([`reference/playground/`](./reference/playground/))
+>   — two humans plus a real local LLM (Gemma3 via Ollama)
+>   collaborating over the actual protocol. Requires Node 20 and
+>   Ollama; the `@chap/coordinator` package is the unmodified protocol
+>   code.
 
 ---
 
@@ -82,8 +102,8 @@ CHAP is two layers, and you adopt them in sequence:
 └───────────────────────────────────────────────────────────────────┘
 ┌───────────────────────────────────────────────────────────────────┐
 │                            CORE                                    │
-│  workspace · participant · task · audit · 7 methods                │
-│  JSON-RPC 2.0 envelope · TLS · weekend-implementable               │
+│  workspace · participant · task · audit                            │
+│  JSON-RPC 2.0 envelope · TLS · small spec, weekend-implementable   │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
@@ -140,6 +160,11 @@ That's one CHAP message. The full walkthrough — joining, delegating
 a task, completing it, reading the audit log — is in
 [`examples/00-five-minute-start.md`](./examples/00-five-minute-start.md).
 
+For something more visceral, [`reference/playground/`](./reference/playground/)
+runs the same wire format with two humans collaborating with a local
+Gemma3 model — open two browser tabs and watch the protocol orchestrate
+work between them in real time.
+
 ---
 
 ## Reading paths
@@ -147,6 +172,7 @@ a task, completing it, reading the audit log — is in
 | Audience                                  | Read in this order                                                              |
 |-------------------------------------------|---------------------------------------------------------------------------------|
 | **Evaluating** whether CHAP fits           | This README → [`HANDBOOK.md`](./HANDBOOK.md) → [`FAQ.md`](./FAQ.md)              |
+| **Seeing it run**                          | [`demo/index.html`](./demo/index.html) (static) → [`reference/playground/`](./reference/playground/) (real LLM, two humans) |
 | **Implementing Core**                     | [`core/SPEC.md`](./core/SPEC.md) → [`reference/core/`](./reference/core/) → [`schemas/core/`](./schemas/core/) |
 | **Adding a profile**                      | [`profiles/PROFILES.md`](./profiles/PROFILES.md) → the specific profile spec    |
 | **Reviewing the design**                  | [`ARCHITECTURE.md`](./ARCHITECTURE.md) → [`SECURITY.md`](./SECURITY.md) → [`RELATIONSHIP-TO-OTHER-STANDARDS.md`](./RELATIONSHIP-TO-OTHER-STANDARDS.md) |
@@ -262,6 +288,7 @@ chap-protocol/
 │   ├── deliberation.md
 │   ├── modes.md
 │   ├── handoff.md
+│   ├── routing.md
 │   ├── control.md
 │   ├── security-signed.md
 │   ├── audit-scitt.md
@@ -275,8 +302,10 @@ chap-protocol/
 ├── RELATIONSHIP-TO-OTHER-STANDARDS.md     Standards mapping.
 ├── GOVERNANCE.md                          How the protocol evolves.
 ├── CONTRIBUTING.md                        How to contribute.
+├── CODE_OF_CONDUCT.md                     Contributor Covenant 2.1.
 ├── CHANGELOG.md                           Release notes.
 ├── LICENSE                                Apache 2.0 + CC-BY 4.0.
+├── .gitignore
 │
 ├── examples/                              Worked end-to-end scenarios.
 │   ├── 00-five-minute-start.md            Onramp.
@@ -306,7 +335,11 @@ chap-protocol/
 │
 ├── reference/                             Reference implementations.
 │   ├── core/                              Minimal Core (weekend-buildable).
-│   └── core-plus-review/                  Core + Review profile + override analyser.
+│   ├── core-plus-review/                  Core + Review profile + override analyser.
+│   └── playground/                        Runnable two-human + Gemma3 demo over real CHAP.
+│
+├── packages/                              Importable library packages.
+│   └── coordinator/                       @chap/coordinator — the protocol as a library.
 │
 ├── conformance/                           Conformance suite.
 │   ├── conformance-checklist.md
@@ -325,7 +358,7 @@ changes are welcome.
 
 - **Reporting an issue.** Use the issue tracker for spec ambiguities,
   schema bugs, or interoperability problems. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
-- **Proposing a change.** Substantive changes go through the HEP
+- **Proposing a change.** Substantive changes go through the CEP
   (CHAP Enhancement Proposal) process described in [`GOVERNANCE.md`](./GOVERNANCE.md).
 - **Implementing the protocol.** The reference implementations in
   [`reference/`](./reference/) are starting points. Run the
