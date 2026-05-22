@@ -26,6 +26,7 @@ Each row is a self-contained document.
 | [`deliberation`](./deliberation.md)                           | Multi-party voting with quorum, weights, vetoes.                   | Group decisions; release-gate boards.                         |
 | [`modes`](./modes.md)                                         | Shadow / Trial / Production task mode ladder.                      | Safely rolling out new agents.                                |
 | [`handoff`](./handoff.md)                                     | `handoff.propose`/`accept`/`decline` between participants.         | Shift changes; follow-the-sun coverage.                       |
+| [`routing`](./routing.md)                                     | `task.route`, `review.depth`, `escalate.auto` driven by `routing_hints`. | Runtime-factor-driven routing: cost, criticality, confidence. |
 | [`control`](./control.md)                                     | Pause, resume, snapshot, supersede, rollback.                      | Production operations; incident response.                     |
 
 Two integration documents complement the profiles:
@@ -72,6 +73,14 @@ external dependencies.
 `core` + `review` + `modes`. Agents draft; humans review or override;
 new agent versions roll out via shadow → trial → production.
 
+### High-stakes triage with cost-aware routing
+
+`core` + `review` + `modes` + `routing`. Same as above, plus the
+`routing/1.0` profile decides which agent (or human pool) handles
+each task based on criticality, deadline, and budget hints carried
+on the task. Review depth is decided per-artefact from measured
+confidence and cost.
+
 ### Regulated approval workflow
 
 `core` + `review` + `deliberation` + `identity-oidc` + `security-signed`
@@ -101,6 +110,7 @@ Most profiles are independent. Some build on others:
 | `deliberation`  | (Core)                                |
 | `modes`         | (Core)                                |
 | `handoff`       | (Core)                                |
+| `routing`       | (Core); composes with `review/1.0` (depth feeds review trigger) and `modes/1.0` (modes set upper bound on enforcement). |
 | `control`       | (Core); strongly recommended with `modes` for full effect. |
 | `security-signed` | (Core)                              |
 | `audit-scitt`   | `security-signed`                     |

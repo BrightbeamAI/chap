@@ -524,6 +524,56 @@ verification is the dominant cost.
 
 ---
 
+## 10a. Routing signals vs routing decisions
+
+A common pressure on protocols like CHAP is to encode business
+logic into the wire format: cost thresholds, criticality taxonomies,
+auto-escalation rules. We have resisted this, but we also can't
+ignore that real deployments route work based on these factors —
+otherwise every refund draft and every ad-copy draft gets the same
+review treatment, which is operationally absurd.
+
+The discipline CHAP follows: **carry the signals, don't interpret them.**
+
+Core defines two opaque `routing_hints` objects:
+
+- **`Task.routing_hints`** — `criticality`, `deadline`,
+  `max_cost_usd`, `risk_tier`. The *budget*: what the work is and
+  what it's allowed to cost.
+- **`Artefact.routing_hints`** — `confidence`, `model_id`,
+  `cost_consumed_usd`, `latency_ms`. The *measurement*: what was
+  actually produced, by what, at what cost.
+
+CHAP says nothing about what the values mean. `criticality: high`
+means whatever the operator's policy says it means. `confidence: 0.7`
+is calibrated only against the model that produced it. A `risk_tier`
+of `pci-cardholder` is opaque to the protocol.
+
+What CHAP guarantees is that the hints are signed into the evidence
+envelope hash. If a routing decision was made because confidence
+was 0.62 and criticality was high, the audit log preserves those
+exact values forever. The decision becomes deterministically
+auditable.
+
+The `routing/1.0` profile then defines the decisions: `task.route`
+picks an assignee, `review.depth` decides how thoroughly to review,
+`escalate.auto` evaluates rules. Each decision produces a
+`route_decision` artefact citing the hints it consulted. The
+*reasoning* becomes evidence, not just the conclusion.
+
+This split lets a Core-only deployment carry routing signals across
+hops without understanding them — the audit chain remains intact
+even when an intermediary node doesn't run the routing profile. And
+it lets the routing rules evolve independently of the protocol: a
+new policy version is just a new `policy_id` referenced from a
+decision artefact, not a CHAP version bump.
+
+The general principle generalises: **CHAP carries evidence, not
+behaviour**. Behaviour belongs to operators; the protocol's job is
+to make sure behaviour is observable.
+
+---
+
 ## 11. What CHAP is not
 
 To avoid scope creep:

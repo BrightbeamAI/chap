@@ -100,10 +100,42 @@ After that, in order of typical demand:
 
 1. `modes` — safe rollout.
 2. `identity-oidc` — verified human identity.
-3. `control` — operational control plane.
-4. `security-signed` — non-repudiation.
-5. `audit-scitt` — regulated audit.
-6. `deliberation`, `handoff`, `whisper`, `identity-vc` — workflow-specific.
+3. `routing` — cost/criticality-aware routing and review-depth decisions.
+4. `control` — operational control plane.
+5. `security-signed` — non-repudiation.
+6. `audit-scitt` — regulated audit.
+7. `deliberation`, `handoff`, `whisper`, `identity-vc` — workflow-specific.
+
+### How do I handle cost, criticality, or confidence in CHAP?
+
+Three things, and they're deliberately separated.
+
+**The signals** live in Core. Every task and every artefact carries
+an optional `routing_hints` object. Tasks declare what the work is
+and what it's allowed to cost (`criticality`, `deadline`,
+`max_cost_usd`, `risk_tier`). Artefacts declare what was produced
+and at what cost (`confidence`, `model_id`, `cost_consumed_usd`,
+`latency_ms`). CHAP signs these into the evidence chain like any
+other field but assigns them no semantics — confidence is
+model-specific, criticality is operator-defined.
+
+**The decisions** live in the optional `routing/1.0` profile.
+Three methods: `task.route` picks an assignee from candidates,
+`review.depth` decides whether to skip, spot-check, or fully review,
+and `escalate.auto` evaluates rules and auto-escalates when they
+fire. Each decision becomes a `route_decision` artefact citing the
+exact hints it consulted, so the audit log shows not just *what*
+happened but *why*.
+
+**The policies themselves** live outside CHAP. The protocol carries
+a `policy_id` that resolves under the workspace's
+`routing_policy_uri`; what's in that document is the operator's
+business. This keeps CHAP from becoming an opinionated policy
+engine while still making routing decisions auditable end-to-end.
+
+A workspace that wants cost-aware routing enables `core` + `review`
++ `modes` + `routing`. A workspace that doesn't need it still works
+fine without — the hints are optional everywhere.
 
 ### Do I need every profile to be useful?
 

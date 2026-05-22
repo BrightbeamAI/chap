@@ -126,6 +126,18 @@ a profile it does not pass.**
 - [ ] Group handoffs route to all members; first accepter wins.
 - [ ] Returns `-32050` … `-32052` for handoff-specific failures.
 
+### Profile: `routing/1.0`
+
+- [ ] Implements `task.route`, `review.depth`, `escalate.auto`.
+- [ ] Each method produces a `route_decision` artefact captured in the evidence chain.
+- [ ] `route_decision` artefacts record `decision_type`, `outcome`, `policy_id`, `hints_observed`, and `rationale`.
+- [ ] `task.route` selects only from the supplied `candidates` array.
+- [ ] `review.depth=spot_check` is accompanied by a `sampling_probability` in [0, 1].
+- [ ] `escalate.auto=true` is accompanied by a `to` URI and a `triggered_rule` object.
+- [ ] When `modes/1.0` is also active, routing decisions in `shadow` and `trial` modes are logged but not enforced; only `production` enforces them.
+- [ ] Returns `-32510` … `-32516` for routing-specific failures.
+- [ ] Core-only nodes forward `routing_hints` on tasks and artefacts unchanged.
+
 ### Profile: `control/1.0`
 
 - [ ] Implements `control.pause`, `control.resume`, `control.cancel`, `control.supersede`, `control.snapshot`, `control.rollback`.
@@ -207,7 +219,7 @@ following starter sets cover most cases:
 | Minimal      | `core/1.0` + `security-signed/1.0`                                                    |
 | Recommended  | `core/1.0` + `security-signed/1.0` + `review/1.0` + `modes/1.0` + `identity-oidc/1.0` |
 | Regulated    | Recommended + `audit-scitt/1.0` + `deliberation/1.0` + `identity-vc/1.0`              |
-| Full         | All ten profiles + Core                                                               |
+| Full         | All eleven profiles + Core                                                             |
 
 These are conventional names, not normative. An implementation
 attests to the specific profiles it implements; the set name is

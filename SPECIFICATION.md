@@ -598,6 +598,43 @@ The `review.rule` field defines the predicate for moving from
   `decide.reject` from a reviewer with `veto: true` ends the review
   immediately as rejected.
 
+### 8.4 Routing hints (optional)
+
+A Task MAY carry an optional `routing_hints` object that captures
+business-runtime signals: criticality tier, deadline, maximum cost,
+risk classification. CHAP defines the field shape and signs the
+values into the evidence envelope hash; it assigns the values no
+semantics.
+
+```json
+{
+  "routing_hints": {
+    "criticality": "high",
+    "deadline": "2026-05-17T17:00:00Z",
+    "max_cost_usd": 50.00,
+    "risk_tier": "financial-tier-2"
+  }
+}
+```
+
+Fields:
+
+| Field          | Type    | Constraint                                        |
+|----------------|---------|---------------------------------------------------|
+| `criticality`  | string  | one of `low`, `medium`, `high`, `critical`        |
+| `deadline`     | string  | RFC 3339 timestamp; when the work is needed       |
+| `max_cost_usd` | number  | non-negative                                      |
+| `risk_tier`    | string  | opaque to CHAP; org-specific                      |
+
+Additional operator-defined fields are permitted. CHAP signs whatever
+is present but interprets nothing — interpretation is the operator's
+responsibility, and the `routing/1.0` profile defines methods that
+consume the hints (`task.route`, `review.depth`, `escalate.auto`).
+
+A Core-only implementation MUST forward `routing_hints` unchanged
+when relaying messages. It MUST NOT discard hints it does not
+understand.
+
 ---
 
 ## 9. Artefacts
@@ -682,6 +719,48 @@ text; the tags are workspace-defined categorisations useful for
 analysing override patterns across time.
 
 [RFC 6902]: https://www.rfc-editor.org/rfc/rfc6902
+
+### 9.5 Routing hints on artefacts (optional)
+
+An Artefact MAY carry an optional `routing_hints` object that
+records production measurements: model confidence, model identifier,
+cost incurred, latency. These signals are consumed by the
+`routing/1.0` profile to drive review-depth and auto-escalation
+decisions; they are recorded in the evidence envelope hash even
+when the profile is not in use.
+
+```json
+{
+  "routing_hints": {
+    "confidence": 0.62,
+    "model_id": "careful-draft-v2:2026-05",
+    "cost_consumed_usd": 3.40,
+    "latency_ms": 2810
+  }
+}
+```
+
+Fields:
+
+| Field               | Type    | Constraint                                |
+|---------------------|---------|-------------------------------------------|
+| `confidence`        | number  | in [0, 1]; model-specific calibration     |
+| `model_id`          | string  | recommended whenever `confidence` is set  |
+| `cost_consumed_usd` | number  | non-negative                              |
+| `latency_ms`        | integer | non-negative                              |
+
+**Calibration caveat.** Two `confidence: 0.83` values from different
+models are not comparable without calibration data. CHAP makes no
+claim about cross-model comparability and recommends restricting
+routing rules that consult `confidence` to a single `model_id` or
+model family.
+
+### 9.6 Route-decision artefacts (informative)
+
+The `routing/1.0` profile defines an additional artefact kind,
+`route_decision`, recording the outcome of a routing method call
+(`task.route`, `review.depth`, or `escalate.auto`). See
+[`profiles/routing.md`](./profiles/routing.md) for the schema.
 
 ---
 
@@ -873,6 +952,21 @@ Every method has:
 | `handoff.propose`    | request      | no         | Propose transferring work to another participant. |
 | `handoff.accept`     | response     | no         | Accept a handoff.                             |
 | `handoff.decline`    | response     | no         | Decline a handoff.                            |
+
+### 12.7a `routing.*` (profile `routing/1.0`)
+
+| Method            | Type    | Privileged | Description                                       |
+|-------------------|---------|------------|---------------------------------------------------|
+| `task.route`      | request | no         | Pick an assignee from candidates given `routing_hints`. Produces a `route_decision` artefact. |
+| `review.depth`    | request | no         | Decide review depth (`skip` / `spot_check` / `full`). Produces a `route_decision` artefact. |
+| `escalate.auto`   | request | no         | Evaluate auto-escalation rules; if a rule fires, escalates to the rule's target. |
+
+These methods are only present when the workspace advertises
+`routing/1.0` in `workspace.describe.profiles`. They consume the
+optional `routing_hints` fields on Tasks (§8.4) and Artefacts (§9.5)
+and write decisions to the evidence chain via `route_decision`
+artefacts. The full profile is specified in
+[`profiles/routing.md`](./profiles/routing.md).
 
 ### 12.8 `notify.*`
 

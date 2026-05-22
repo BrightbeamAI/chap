@@ -77,7 +77,8 @@ CHAP is two layers, and you adopt them in sequence:
 │  (optional, layered, composable — pick what your workflow needs)   │
 │                                                                    │
 │  security-signed · audit-scitt · identity-oidc · identity-vc       │
-│  review · whisper · deliberation · modes · handoff · control       │
+│  review · whisper · deliberation · modes · routing · handoff       │
+│  control                                                           │
 └───────────────────────────────────────────────────────────────────┘
 ┌───────────────────────────────────────────────────────────────────┐
 │                            CORE                                    │

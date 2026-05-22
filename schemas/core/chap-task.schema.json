@@ -78,6 +78,32 @@
             "deadline": { "type": "string", "format": "date-time" }
           }
         },
+        "routing_hints": {
+          "type": "object",
+          "description": "Optional routing signals for the task. CHAP defines the field shape; semantics (thresholds, calibration, taxonomies) are operator-defined. Profile routing/1.0 defines methods that consume these hints. Fields are signed into the evidence envelope hash and queryable from the audit log.",
+          "properties": {
+            "criticality": {
+              "type": "string",
+              "enum": ["low", "medium", "high", "critical"],
+              "description": "Task risk tier. Coarse-grained; operator-interpreted."
+            },
+            "deadline": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When the work is needed by. Distinct from review.deadline which is when a review must be returned."
+            },
+            "max_cost_usd": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Budget ceiling for fulfilling the task. Operator-defined currency convention; USD by default."
+            },
+            "risk_tier": {
+              "type": "string",
+              "description": "Org-specific risk classification (e.g. 'pci-cardholder', 'gdpr-special', 'internal-only'). Opaque to protocol; carried for audit and routing."
+            }
+          },
+          "additionalProperties": true
+        },
         "artefacts": {
           "type": "array",
           "items": {
@@ -151,7 +177,34 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1,
-          "description": "Agents only. Self-reported confidence in the artefact content."
+          "description": "DEPRECATED in favour of routing_hints.confidence. Kept for backward compatibility within v0.x. Agents only; model-specific calibration applies."
+        },
+        "routing_hints": {
+          "type": "object",
+          "description": "Optional measurement signals from production. CHAP defines the field shape; semantics (calibration, cost models) are operator-defined. Profile routing/1.0 defines methods that consume these hints. Fields are signed into the evidence envelope hash.",
+          "properties": {
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Model's self-reported confidence in the artefact. Model-specific calibration; include model_id for consumers to interpret. CHAP makes no claim about cross-model comparability."
+            },
+            "model_id": {
+              "type": "string",
+              "description": "Identifier of the model or composite that produced the artefact. Used by consumers to look up calibration data. Recommended whenever confidence is present."
+            },
+            "cost_consumed_usd": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Actual cost incurred to produce this artefact. Operator-defined currency convention; USD by default."
+            },
+            "latency_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Wall-clock time to produce the artefact, in milliseconds."
+            }
+          },
+          "additionalProperties": true
         },
         "citations": {
           "type": "array",

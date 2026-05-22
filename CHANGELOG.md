@@ -11,7 +11,7 @@ Profiles version independently from Core. A profile version
 
 ## 1.0 — current
 
-The Collaborative Human-Agent Protocol at full surface: Core, ten profiles,
+The Collaborative Human-Agent Protocol at full surface: Core, eleven profiles,
 schemas, reference implementations, examples, conformance suite,
 and standards bindings.
 
@@ -44,6 +44,7 @@ and standards bindings.
 | [`deliberation/1.0`](./profiles/deliberation.md)       | `deliberate.open/comment/vote/close` with quorum, weighted, and veto rules. |
 | [`modes/1.0`](./profiles/modes.md)                     | Shadow → trial → production task mode ladder with workspace-level mode ceiling. |
 | [`handoff/1.0`](./profiles/handoff.md)                 | `handoff.propose/accept/decline`; group-routed handoffs with first-accept wins. |
+| [`routing/1.0`](./profiles/routing.md)                 | `task.route`, `review.depth`, `escalate.auto` driven by `routing_hints` on tasks/artefacts. Optional, composes with `review/1.0` and `modes/1.0`. |
 | [`control/1.0`](./profiles/control.md)                 | `control.pause/resume/cancel/supersede/snapshot/rollback`; append-only rollback semantics. |
 
 ### Integration patterns

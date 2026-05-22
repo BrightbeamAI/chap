@@ -258,6 +258,24 @@ rule. Opened by `review.request`; closed by `decide.*` operations.
 the workspace descriptor. Determines authority via the workspace policy's
 method-role matrix. Two roles are reserved: `coordinator` and `admin`.
 
+**Routing hints.** Optional `routing_hints` object on a Task or Artefact
+carrying runtime signals consumed by the `routing/1.0` profile. On a
+Task: `criticality`, `deadline`, `max_cost_usd`, `risk_tier` — the
+budget. On an Artefact: `confidence`, `model_id`, `cost_consumed_usd`,
+`latency_ms` — the measurement. CHAP defines the field shape and signs
+the values into the evidence envelope but assigns them no semantics;
+interpretation is the operator's.
+
+**Routing policy.** A document referenced via the workspace's
+`routing_policy_uri` that defines the rules consumed by the
+`routing/1.0` profile methods. Opaque to CHAP; the protocol carries
+a `policy_id` reference, not the policy itself.
+
+**Route decision.** An artefact of kind `route_decision` produced by
+each call to `task.route`, `review.depth`, or `escalate.auto`. Records
+the decision type, outcome, policy id, hints consulted, and rationale.
+Provides deterministic auditability of routing logic.
+
 ---
 
 ## S

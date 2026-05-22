@@ -75,6 +75,10 @@
         "handoff.accept":  { "namespace": "handoff", "type": "request", "summary": "Accept a handoff.", "required_scope": ["handoff"], "privileged": false },
         "handoff.decline": { "namespace": "handoff", "type": "request", "summary": "Decline a handoff.", "required_scope": ["handoff"], "privileged": false },
 
+        "task.route":     { "namespace": "task",     "type": "request", "summary": "Pick an assignee from candidates using routing hints.", "required_scope": ["task.route"],     "privileged": false, "since": "routing/1.0", "params_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/TaskRouteParams",    "result_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/TaskRouteResult" },
+        "review.depth":   { "namespace": "review",   "type": "request", "summary": "Decide review depth for an artefact: skip, spot_check, full.", "required_scope": ["review.depth"],  "privileged": false, "since": "routing/1.0", "params_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/ReviewDepthParams",  "result_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/ReviewDepthResult" },
+        "escalate.auto":  { "namespace": "escalate", "type": "request", "summary": "Evaluate auto-escalation rules against an artefact.", "required_scope": ["escalate.auto"], "privileged": false, "since": "routing/1.0", "params_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/EscalateAutoParams", "result_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/EscalateAutoResult" },
+
         "notify.message":  { "namespace": "notify", "type": "notification", "summary": "Generic free-text message.", "required_scope": [], "privileged": false },
         "notify.alert":    { "namespace": "notify", "type": "notification", "summary": "High-priority alert with severity.", "required_scope": [], "privileged": false },
 

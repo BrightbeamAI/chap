@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chap.dev/schemas/0.1/chap-routing.schema.json",
+  "title": "CHAP routing/1.0 profile",
+  "description": "Schemas for the routing/1.0 profile methods (task.route, review.depth, escalate.auto) and the route_decision artefact kind.",
+  "$defs": {
+    "TaskRouteParams": {
+      "type": "object",
+      "required": ["workspace", "task_id", "candidates", "ts"],
+      "properties": {
+        "workspace": {
+          "type": "string",
+          "pattern": "^wsp_[A-Za-z0-9_-]+$"
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^(human|agent|service|group):[^\\s]+$"
+          },
+          "description": "Eligible assignees the policy will choose from."
+        },
+        "ts": { "type": "string", "format": "date-time" },
+        "policy_id": {
+          "type": "string",
+          "description": "Optional override of the workspace's default routing policy."
+        }
+      }
+    },
+    "TaskRouteResult": {
+      "type": "object",
+      "required": ["selected", "decision_artefact", "rationale"],
+      "properties": {
+        "selected": {
+          "type": "string",
+          "pattern": "^(human|agent|service|group):[^\\s]+$",
+          "description": "MUST be one of the candidate URIs from the request."
+        },
+        "decision_artefact": {
+          "type": "string",
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "rationale": { "$ref": "#/$defs/RouteRationale" }
+      }
+    },
+    "ReviewDepthParams": {
+      "type": "object",
+      "required": ["workspace", "artefact_id", "task_id", "ts"],
+      "properties": {
+        "workspace": {
+          "type": "string",
+          "pattern": "^wsp_[A-Za-z0-9_-]+$"
+        },
+        "artefact_id": {
+          "type": "string",
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "ts": { "type": "string", "format": "date-time" },
+        "policy_id": { "type": "string" }
+      }
+    },
+    "ReviewDepthResult": {
+      "type": "object",
+      "required": ["depth", "decision_artefact", "rationale"],
+      "properties": {
+        "depth": {
+          "type": "string",
+          "enum": ["skip", "spot_check", "full", "escalated"]
+        },
+        "sampling_probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Required when depth=spot_check. Probability that any individual artefact is reviewed."
+        },
+        "decision_artefact": {
+          "type": "string",
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "rationale": { "$ref": "#/$defs/RouteRationale" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "depth": { "const": "spot_check" } } },
+          "then": { "required": ["sampling_probability"] }
+        }
+      ]
+    },
+    "EscalateAutoParams": {
+      "type": "object",
+      "required": ["workspace", "artefact_id", "task_id", "ts"],
+      "properties": {
+        "workspace": {
+          "type": "string",
+          "pattern": "^wsp_[A-Za-z0-9_-]+$"
+        },
+        "artefact_id": {
+          "type": "string",
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "task_id": {
+          "type": "string",
+          "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "ts": { "type": "string", "format": "date-time" }
+      }
+    },
+    "EscalateAutoResult": {
+      "type": "object",
+      "required": ["escalate", "decision_artefact"],
+      "properties": {
+        "escalate": { "type": "boolean" },
+        "to": {
+          "type": "string",
+          "pattern": "^(human|agent|service|group):[^\\s]+$",
+          "description": "Required when escalate=true. The escalation target."
+        },
+        "decision_artefact": {
+          "type": "string",
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "triggered_rule": {
+          "type": "object",
+          "description": "Required when escalate=true. The rule that fired.",
+          "required": ["rule_id", "summary"],
+          "properties": {
+            "rule_id":   { "type": "string" },
+            "summary":   { "type": "string" },
+            "hints_used": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "escalate": { "const": true } } },
+          "then": { "required": ["to", "triggered_rule"] }
+        }
+      ]
+    },
+    "RouteRationale": {
+      "type": "object",
+      "required": ["policy_id", "summary"],
+      "properties": {
+        "policy_id": {
+          "type": "string",
+          "description": "Identifier of the policy that produced this decision. Should resolve under the workspace's routing_policy_uri."
+        },
+        "summary": {
+          "type": "string",
+          "description": "Human-readable explanation of why this decision was made."
+        },
+        "hints_used": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Names of the routing_hints fields the policy consulted. e.g. ['criticality', 'confidence', 'max_cost_usd']."
+        },
+        "alternatives_considered": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["candidate", "reason_excluded"],
+            "properties": {
+              "candidate":       { "type": "string" },
+              "reason_excluded": { "type": "string" }
+            }
+          },
+          "description": "For task.route, the candidates that were not selected and why."
+        }
+      }
+    },
+    "RouteDecisionContent": {
+      "type": "object",
+      "description": "Content payload for an artefact of kind=route_decision.",
+      "required": ["decision_type", "outcome", "policy_id", "hints_observed", "rationale"],
+      "properties": {
+        "decision_type": {
+          "type": "string",
+          "enum": ["task.route", "review.depth", "escalate.auto"]
+        },
+        "outcome": {
+          "description": "The decision made. Type depends on decision_type: a URI for task.route, a depth tier for review.depth, a boolean for escalate.auto."
+        },
+        "policy_id": { "type": "string" },
+        "hints_observed": {
+          "type": "object",
+          "description": "The exact hint values consulted, captured for deterministic audit replay. Keys are field names from Task.routing_hints or Artefact.routing_hints.",
+          "additionalProperties": true
+        },
+        "rationale": { "type": "string" }
+      }
+    }
+  }
+}
