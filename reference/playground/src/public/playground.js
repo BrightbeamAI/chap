@@ -26,6 +26,14 @@ const state = {
   selectedTags: new Set(),
   wirePaused: false,
   wireEntries: [],             // accumulated audit entries for the wire panel
+
+  // v2 additions
+  mayaTourStep:      1,        // 1, 2, 3, or 0 (dismissed)
+  samTourStep:       1,
+  mayaTourDismissed: false,
+  samTourDismissed:  false,
+  lastChainLen:      0,        // for pulse detection
+  ollamaOk:          null,     // null | true | false
 };
 
 // ============================================================
@@ -43,6 +51,8 @@ function setRole(role) {
   $("picker").hidden    = !!role;
   $("view-maya").hidden = role !== "maya";
   $("view-sam").hidden  = role !== "sam";
+  $("statusbar").hidden = !role;
+  $("wire-strip").hidden = !role;
   $("nav-maya").classList.toggle("active", role === "maya");
   $("nav-sam").classList.toggle("active", role === "sam");
   if (role) {
@@ -50,6 +60,7 @@ function setRole(role) {
       ? "Maya · CHAP Playground"
       : "Sam · CHAP Playground";
     refreshWorkspace();
+    pollHealth();   // kick off the Ollama dot
   }
 }
 
@@ -92,6 +103,7 @@ async function rpc(method, params) {
 async function refreshWorkspace() {
   const ws = await fetch("/api/workspace").then((r) => r.json());
   state.workspace = ws;
+  updateStatusBar();
   renderForCurrentRole();
 }
 
@@ -472,6 +484,9 @@ async function sendOverride(role) {
     tags,
   });
 
+  // First successful override completes the tour
+  dismissTour(role);
+
   state.selectedTaskId = null;
   state.selectedDraft  = null;
   state.selectedTags   = new Set();
@@ -533,6 +548,8 @@ function renderDividend(role) {
 
   const emptyEl = $(role === "maya" ? "maya-dividend-empty" : "sam-dividend-empty");
   const chartEl = $(role === "maya" ? "maya-dividend" : "sam-dividend");
+  const progEl  = $(role === "maya" ? "maya-dividend-progress" : "sam-dividend-progress");
+  if (progEl) progEl.textContent = `${totalOverrides} / 2`;
   if (totalOverrides < 2) {
     emptyEl.hidden = false;
     chartEl.hidden = true;
@@ -554,29 +571,89 @@ function renderDividend(role) {
 }
 
 // ============================================================
-//   Wire panel
+//   Wire panel — chain-style with routing/override classification
 // ============================================================
+
+/** Classify a method name into one of: 'routing' | 'override' | 'default'. */
+function classifyMethod(method) {
+  if (!method) return "default";
+  if (method === "decide.override" || method === "decide.approve" ||
+      method === "decide.reject"   || method === "abstain.declare" ||
+      method === "escalate.raise"  || method === "escalate.auto") {
+    return "override";
+  }
+  if (method === "task.route" || method === "review.depth") return "routing";
+  return "default";
+}
+
+/** Short human summary line for a wire entry (one line under the method). */
+function summariseEnvelope(env) {
+  const p = env.params ?? {};
+  const m = env.method ?? "";
+  if (m === "task.create" && p.routing_hints?.criticality) {
+    return `criticality=${p.routing_hints.criticality}` +
+           (p.routing_hints.risk_tier ? ` · risk=${p.routing_hints.risk_tier}` : "");
+  }
+  if (m === "task.complete" && p.routing_hints) {
+    const c = p.routing_hints.confidence;
+    return c != null ? `confidence=${Number(c).toFixed(2)} · model=${p.routing_hints.model_id ?? "—"}` : "";
+  }
+  if (m === "decide.override") {
+    const tags = Array.isArray(p.tags) ? p.tags.join(", ") : "";
+    return tags ? `tags: ${tags}` : "";
+  }
+  if (m === "participant.join") return `${p.uri ?? ""} as ${p.type ?? "?"}`;
+  if (m === "workspace.create") return `${p.workspace_id ?? ""}`;
+  if (m === "escalate.raise")   return `→ ${p.to ?? ""}`;
+  if (m === "review.request" && Array.isArray(p.reviewers)) {
+    return `reviewers: ${p.reviewers.join(", ")}`;
+  }
+  return "";
+}
+
 function appendWireEntry(msg) {
   state.wireEntries.push(msg);
   if (state.wirePaused) return;
-  if ($("wire-panel").hidden) {
-    $("wire-head-num").textContent = String(msg.seq + 1);
-    return;
-  }
-  renderWireEntry(msg);
+
+  // Update the always-visible strip
+  updateWireStrip(msg);
+  // Update the head counter in the (possibly closed) panel
   $("wire-head-num").textContent = String(msg.seq + 1);
+  // Append into the open panel if it's expanded
+  if (!$("wire-panel").hidden) renderWireEntry(msg);
+}
+
+function updateWireStrip(msg) {
+  $("wire-strip-seq").textContent    = "#" + msg.seq;
+  $("wire-strip-method").textContent = msg.envelope.method ?? "?";
+  const pill = $("wire-strip-pill");
+  pill.classList.remove("pulse");
+  // force reflow so the animation can restart
+  void pill.offsetWidth;
+  pill.classList.add("pulse");
 }
 
 function renderWireEntry(msg) {
-  const entry = el("div", { class: "wire-entry",
-                            onclick: (e) => e.currentTarget.classList.toggle("expanded") },
+  const variant = classifyMethod(msg.envelope.method);
+  const classes = ["wire-entry"];
+  if (variant === "routing")  classes.push("is-routing");
+  if (variant === "override") classes.push("is-override");
+
+  const summary = summariseEnvelope(msg.envelope);
+
+  const entry = el("div", {
+      class: classes.join(" "),
+      onclick: (e) => e.currentTarget.classList.toggle("expanded"),
+    },
     el("div", { class: "wire-entry-head" },
       el("span", { class: "wire-seq" }, "#" + msg.seq),
       el("span", { class: "wire-method" }, msg.envelope.method ?? "?"),
-      el("span", { class: "wire-ts" }, msg.ts),
+      el("span", { class: "wire-ts" }, msg.ts ?? ""),
     ),
-    el("div", { class: "wire-body-detail" },
-      JSON.stringify(msg.envelope, null, 2)),
+    summary
+      ? el("div", { class: "wire-entry-summary" }, summary)
+      : null,
+    el("div", { class: "wire-body-detail" }, JSON.stringify(msg.envelope, null, 2)),
   );
   const body = $("wire-body");
   body.appendChild(entry);
@@ -587,6 +664,97 @@ function renderAllWireEntries() {
   const body = $("wire-body");
   body.innerHTML = "";
   for (const msg of state.wireEntries) renderWireEntry(msg);
+}
+
+// ============================================================
+//   Status bar — mode pill, chain length, queue size, Ollama dot
+// ============================================================
+function updateStatusBar() {
+  const ws = state.workspace;
+  if (!ws) return;
+
+  // Mode pill: workspace doesn't track mode directly in the demo so we
+  // surface "production" by default; in a real deployment this would
+  // read workspace.mode (per the modes/1.0 profile).
+  const modeEl = $("status-mode");
+  const mode = ws.mode ?? "production";
+  modeEl.textContent = mode;
+  modeEl.className = `status-value mode-pill mode-${mode}`;
+
+  // Chain length with pulse if it grew
+  const chainEl  = $("status-chain");
+  const pulseEl  = $("status-chain-pulse");
+  const newLen   = ws.evidence_head ?? 0;
+  chainEl.textContent = String(newLen);
+  if (newLen > state.lastChainLen && state.lastChainLen > 0) {
+    pulseEl.classList.remove("pulse-active");
+    void pulseEl.offsetWidth;
+    pulseEl.classList.add("pulse-active");
+  }
+  state.lastChainLen = newLen;
+
+  // In-queue count for the current role
+  const myUri = state.role === "maya" ? MAYA_URI :
+                state.role === "sam"  ? SAM_URI  : null;
+  if (myUri && Array.isArray(ws.tasks)) {
+    const inQueue = ws.tasks.filter((t) =>
+      t.state === "review_requested" &&
+      t.review?.requested_to?.includes(myUri)
+    ).length;
+    $("status-queue").textContent = String(inQueue);
+  }
+}
+
+async function pollHealth() {
+  try {
+    const r = await fetch("/api/health");
+    const data = await r.json();
+    state.ollamaOk = !!data.ollama?.ok;
+    const dot = $("status-ollama-dot");
+    const txt = $("status-ollama");
+    dot.classList.remove("status-dot-amber", "status-dot-green", "status-dot-red");
+    if (state.ollamaOk) {
+      dot.classList.add("status-dot-green");
+      txt.textContent = "connected";
+    } else {
+      dot.classList.add("status-dot-red");
+      txt.textContent = "not reachable";
+    }
+  } catch {
+    state.ollamaOk = false;
+    const dot = $("status-ollama-dot");
+    dot.classList.remove("status-dot-amber", "status-dot-green", "status-dot-red");
+    dot.classList.add("status-dot-red");
+    $("status-ollama").textContent = "unreachable";
+  }
+}
+setInterval(() => { if (state.role) pollHealth(); }, 10000);
+
+// ============================================================
+//   Tour bar — guided 3-step walkthrough per role
+// ============================================================
+function setTourStep(role, step) {
+  if (role === "maya") state.mayaTourStep = step;
+  else                 state.samTourStep  = step;
+  const bar = $(`${role}-tour`);
+  if (!bar) return;
+  if (step === 0) { bar.classList.add("hidden"); return; }
+  bar.classList.remove("hidden");
+  bar.dataset.step = String(step);
+  for (const dot of bar.querySelectorAll(".tour-dot")) {
+    const dotStep = Number(dot.dataset.step);
+    dot.classList.toggle("active", dotStep === step);
+    dot.classList.toggle("done",   dotStep <  step);
+  }
+  for (const t of bar.querySelectorAll(".tour-step-text")) {
+    t.hidden = Number(t.dataset.step) !== step;
+  }
+}
+
+function dismissTour(role) {
+  if (role === "maya") state.mayaTourDismissed = true;
+  else                 state.samTourDismissed  = true;
+  setTourStep(role, 0);
 }
 
 // ============================================================
@@ -601,11 +769,15 @@ async function init() {
     });
   }
 
-  // Wire panel controls
-  $("toggle-wire").addEventListener("click", () => {
-    const p = $("wire-panel");
-    p.hidden = !p.hidden;
-    if (!p.hidden) renderAllWireEntries();
+  // Wire panel: now opened from either the status-bar button or the
+  // bottom strip pill. Close button hides it; pause stays the same.
+  $("open-wire").addEventListener("click", () => {
+    $("wire-panel").hidden = false;
+    renderAllWireEntries();
+  });
+  $("wire-strip-pill").addEventListener("click", () => {
+    $("wire-panel").hidden = false;
+    renderAllWireEntries();
   });
   $("wire-close").addEventListener("click", () => { $("wire-panel").hidden = true; });
   $("wire-pause").addEventListener("click", (e) => {
@@ -620,8 +792,30 @@ async function init() {
     state.selectedTaskId = null;
     state.selectedDraft  = null;
     state.wireEntries = [];
+    state.lastChainLen = 0;
     $("wire-body").innerHTML = "";
+    $("wire-strip-seq").textContent = "—";
+    $("wire-strip-method").textContent = "—";
     refreshWorkspace();
+  });
+
+  // Tour: skip buttons
+  $("maya-tour-skip").addEventListener("click", () => dismissTour("maya"));
+  $("sam-tour-skip").addEventListener("click",  () => dismissTour("sam"));
+
+  // Tour: advance to step 2 when the user starts editing
+  $("maya-draft").addEventListener("input", () => {
+    if (!state.mayaTourDismissed && state.mayaTourStep === 1) setTourStep("maya", 2);
+  });
+  $("sam-draft").addEventListener("input", () => {
+    if (!state.samTourDismissed && state.samTourStep === 1) setTourStep("sam", 2);
+  });
+  // Tour: advance to step 3 when rationale gets typed
+  $("maya-rationale").addEventListener("input", () => {
+    if (!state.mayaTourDismissed && state.mayaTourStep === 2) setTourStep("maya", 3);
+  });
+  $("sam-rationale").addEventListener("input", () => {
+    if (!state.samTourDismissed && state.samTourStep === 2) setTourStep("sam", 3);
   });
 
   // Maya bindings

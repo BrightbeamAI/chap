@@ -441,3 +441,377 @@ button {
 .wire-ts { color: var(--grey-2); font-size: 10px; margin-left: auto; }
 .wire-body-detail { display: none; white-space: pre; color: var(--grey-3); padding-top: 6px; }
 .wire-entry.expanded .wire-body-detail { display: block; }
+
+/* ====================================================================
+   v2 IMPROVEMENTS — status bar, tour, chain view, strip, dividend prog.
+   ==================================================================== */
+
+/* -------- Status bar (under topbar, always visible in a role) ------ */
+.statusbar {
+  background: var(--warm);
+  border-bottom: 1px solid var(--line);
+  padding: 8px 18px;
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  font-size: 13px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.status-item {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--grey-2);
+  position: relative;
+}
+.status-item-action { padding-left: 4px; }
+.status-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+  color: var(--grey-3);
+}
+.status-value {
+  font-weight: 700;
+  color: var(--black);
+}
+.status-value-small { font-size: 12px; font-weight: 500; }
+.status-spacer { flex: 1; }
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.status-dot-amber { background: var(--amber); box-shadow: 0 0 0 2px rgba(255,153,0,0.18); }
+.status-dot-green { background: var(--green); box-shadow: 0 0 0 2px rgba(31,91,57,0.18); }
+.status-dot-red   { background: var(--ember); box-shadow: 0 0 0 2px rgba(234,71,0,0.18); }
+
+.mode-pill {
+  padding: 2px 9px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 800;
+  border-radius: 2px;
+}
+.mode-production { background: var(--green); color: var(--white); }
+.mode-trial      { background: var(--amber); color: var(--black); }
+.mode-shadow     { background: var(--grey-2); color: var(--white); }
+
+/* Pulse for "+1" when chain head grows */
+.status-pulse {
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: var(--ember);
+  opacity: 0;
+  margin-left: -4px;
+}
+.status-pulse.pulse-active {
+  animation: chain-pulse 0.9s ease-out;
+}
+@keyframes chain-pulse {
+  0%   { width: 4px; height: 4px; opacity: 1; }
+  100% { width: 20px; height: 20px; opacity: 0; }
+}
+
+.btn-tiny {
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+}
+
+/* -------- Guided tour bar (inside editors) ------------------------- */
+.tour-bar {
+  background: linear-gradient(90deg, rgba(234,71,0,0.06), rgba(255,153,0,0.06));
+  border: 1px solid rgba(234,71,0,0.25);
+  border-left: 3px solid var(--ember);
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--black);
+}
+.tour-bar.hidden { display: none; }
+.tour-step-indicator {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.tour-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(234,71,0,0.25);
+  transition: all .2s ease;
+}
+.tour-dot.active {
+  background: var(--ember);
+  width: 18px;
+  border-radius: 4px;
+}
+.tour-dot.done { background: var(--green); }
+.tour-text { flex: 1; line-height: 1.45; }
+.tour-text strong { font-weight: 700; }
+.tour-skip {
+  background: transparent;
+  border: none;
+  color: var(--grey-2);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 8px;
+  font-family: inherit;
+}
+.tour-skip:hover { color: var(--ember); }
+
+/* -------- Tag picker tooltips inherit from native title attr ------- */
+.tag-picker button[title] { cursor: help; }
+.tag-picker button:focus { outline: 2px solid var(--ember); }
+
+.meta-help {
+  font-weight: 400;
+  color: var(--grey-2);
+  font-size: 12px;
+}
+
+/* -------- Dividend "progress to chart" preview --------------------- */
+.dividend-empty p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.dividend-empty p strong { color: var(--black); }
+.dividend-empty-counter {
+  margin-top: 12px !important;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--grey-2);
+  font-family: ui-monospace, "SF Mono", monospace;
+}
+
+/* -------- Wire strip (collapsed) ----------------------------------- */
+.wire-strip {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+}
+.wire-strip-pill {
+  background: var(--black);
+  color: var(--white);
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 12px;
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  border-top: 2px solid var(--ember);
+  transition: background .12s ease;
+}
+.wire-strip-pill:hover { background: #2a2a2c; }
+.wire-strip-label {
+  color: var(--grey-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+.wire-strip-seq {
+  color: var(--ember);
+  font-weight: 900;
+}
+.wire-strip-method { color: var(--white); }
+.wire-strip-spacer { flex: 1; }
+.wire-strip-cta {
+  color: var(--grey-2);
+  font-size: 11px;
+}
+.wire-strip-pill.pulse {
+  animation: strip-pulse 0.6s ease-out;
+}
+@keyframes strip-pulse {
+  0%   { background: var(--ember); }
+  100% { background: var(--black); }
+}
+
+/* -------- Wire panel (expanded chain view) — overrides earlier rules */
+.wire-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 30vh;
+  background: var(--black);
+  color: var(--white);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  font-family: ui-monospace, "SF Mono", monospace;
+  border-top: 3px solid var(--ember);
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.3);
+}
+.wire-head {
+  padding: 14px 22px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid #333;
+  background: #1a1a1c;
+}
+.wire-head-left { flex: 1; }
+.wire-head h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--white);
+  font-family: Arial, sans-serif;
+}
+.wire-sub {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--grey-2);
+  margin-top: 2px;
+  letter-spacing: 0;
+}
+.wire-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.wire-chip {
+  background: #2a2a2c;
+  color: var(--grey-2);
+  padding: 4px 9px;
+  font-size: 11px;
+}
+.wire-chip strong { color: var(--ember); }
+.wire-legend {
+  display: flex;
+  gap: 11px;
+  font-size: 11px;
+  color: var(--grey-2);
+  font-family: Arial, sans-serif;
+}
+.wire-legend-item { display: flex; gap: 5px; align-items: center; }
+.wire-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.legend-default  { background: var(--grey-2); }
+.legend-routing  { background: var(--amber); }
+.legend-override { background: var(--ember); }
+
+.wire-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 22px;
+  background: #1a1a1c;
+}
+
+/* Restructured wire entry — chain visualisation */
+.wire-entry {
+  background: #232325;
+  border-left: 3px solid var(--grey-2);
+  padding: 11px 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  position: relative;
+  transition: border-left-color .12s ease;
+}
+.wire-entry::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  bottom: -8px;
+  width: 1px;
+  height: 8px;
+  background: #444;
+}
+.wire-entry:last-child::before { display: none; }
+.wire-entry:hover { background: #2a2a2c; }
+.wire-entry-head {
+  display: grid;
+  grid-template-columns: 50px 1fr auto;
+  gap: 14px;
+  align-items: baseline;
+}
+.wire-seq {
+  color: var(--ember);
+  font-weight: 900;
+  font-size: 13px;
+}
+.wire-method {
+  color: var(--white);
+  font-weight: 700;
+  font-size: 13px;
+}
+.wire-ts {
+  color: var(--grey-3);
+  font-size: 10px;
+}
+.wire-entry-summary {
+  color: var(--grey-2);
+  font-size: 11px;
+  margin-top: 4px;
+  padding-left: 64px;
+}
+.wire-entry-summary code {
+  background: rgba(255,153,0,0.12);
+  color: var(--amber);
+  padding: 1px 5px;
+  font-size: 11px;
+}
+.wire-body-detail {
+  display: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--grey-3);
+  padding: 10px 0 0 64px;
+  font-size: 11px;
+  border-top: 1px solid #333;
+  margin-top: 8px;
+}
+.wire-entry.expanded .wire-body-detail { display: block; }
+.wire-entry.expanded { background: #2a2a2c; }
+
+/* Variant: routing-decision-bearing envelopes */
+.wire-entry.is-routing { border-left-color: var(--amber); }
+.wire-entry.is-routing .wire-method::after {
+  content: '· routing';
+  font-size: 10px;
+  color: var(--amber);
+  margin-left: 8px;
+  font-weight: 500;
+}
+
+/* Variant: override / decide envelopes */
+.wire-entry.is-override { border-left-color: var(--ember); }
+.wire-entry.is-override .wire-method::after {
+  content: '· override';
+  font-size: 10px;
+  color: var(--ember);
+  margin-left: 8px;
+  font-weight: 500;
+}
+
+/* Chain hash badge (subtle, on hover) */
+.wire-hash {
+  display: none;
+  color: var(--grey-3);
+  font-size: 10px;
+  margin-top: 3px;
+  padding-left: 64px;
+  letter-spacing: 0.04em;
+}
+.wire-entry:hover .wire-hash { display: block; }

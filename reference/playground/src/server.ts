@@ -205,7 +205,15 @@ function jsonReply(res: ServerResponse, status: number, body: unknown): void {
 }
 
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+  let url: URL;
+  try {
+    url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+  } catch {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "malformed URL" }));
+    return;
+  }
   const pathname = url.pathname;
 
   // CORS preflight
