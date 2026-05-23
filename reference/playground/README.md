@@ -78,15 +78,23 @@ auto-escalate to Sam.
 
 ## What to try
 
+0. **First time? Take the guided walkthrough.** A "Take the guided
+   tour →" button on the role picker (and the "↻ Guided tour" button
+   in the status bar) runs a 90-second narrated walkthrough that
+   drives the protocol through one full ticket cycle, then a
+   high-criticality auto-escalation. The walkthrough fires real
+   envelopes against `/rpc` — you can open DevTools and watch them go.
 1. **Edit a draft in Maya's tab.** Watch the live diff update under
    the textarea. Add tags and a rationale. Hit **Override & send**.
 2. **Watch Sam's tab** — high-criticality items appear there
    automatically. Click one and see the lineage badge (bot →
    Maya → Sam).
-3. **Open the "Show the wire" panel** (top-right button). Every
-   envelope appended to the evidence chain shows up there in order
-   with its sequence number and method. Click any entry to expand
-   the JSON.
+3. **Open the protocol view** (the "Open protocol view" button in the
+   status bar, or click the strip at the bottom). Every envelope on
+   the chain shows up here with its sequence number, method, and a
+   one-line summary. Routing-decision envelopes are amber-bordered;
+   override envelopes are ember-bordered. Click any entry to expand
+   the full JSON.
 4. **Override two or more drafts.** A dividend chart appears
    showing your tag distribution — that's the override-as-data
    signal the protocol is designed to capture.

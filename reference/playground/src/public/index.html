@@ -48,6 +48,7 @@
   <div class="status-spacer"></div>
   <div class="status-item status-item-action">
     <button class="btn-ghost btn-tiny" id="open-wire" title="Show every envelope on the wire as it appears">Open protocol view</button>
+    <button class="btn-ghost btn-tiny" id="restart-walkthrough" title="Re-run the guided walkthrough" hidden>↻ Guided tour</button>
   </div>
 </div>
 
@@ -69,6 +70,16 @@
         Open <strong>one tab as Maya</strong> and a <strong>second tab as Sam</strong>
         to see live two-human collaboration over the protocol.
       </p>
+    </div>
+
+    <!-- Guided-tour offer: a third path for first-time visitors -->
+    <div class="picker-tour-offer">
+      <div class="picker-tour-text">
+        <strong>First time here?</strong>
+        Take a 90-second guided walkthrough — the protocol drives itself
+        through one full ticket and explains each step as it happens.
+      </div>
+      <button class="picker-tour-btn" id="start-walkthrough">Take the guided tour →</button>
     </div>
 
     <div class="picker-cards">
@@ -380,6 +391,38 @@
   </div>
   <div class="wire-body" id="wire-body"></div>
 </aside>
+
+<!-- =========================================================
+     WALKTHROUGH PANEL — the guided 90-second tour. Hidden by default.
+     Steps are fired from playground.js. The protocol is driven for real.
+     ========================================================= -->
+<aside class="walkthrough" id="walkthrough" hidden>
+  <div class="walkthrough-head">
+    <div class="walkthrough-progress">
+      <span class="walkthrough-step-num" id="walkthrough-step-num">1</span>
+      <span class="walkthrough-step-of">of 6</span>
+    </div>
+    <button class="walkthrough-close" id="walkthrough-close" title="Close the walkthrough">✕&nbsp;Close</button>
+  </div>
+
+  <div class="walkthrough-body">
+    <h3 class="walkthrough-title" id="walkthrough-title">Welcome to CHAP</h3>
+    <div class="walkthrough-text" id="walkthrough-text">…</div>
+  </div>
+
+  <div class="walkthrough-progress-bar">
+    <div class="walkthrough-progress-fill" id="walkthrough-progress-fill"></div>
+  </div>
+
+  <div class="walkthrough-footer">
+    <button class="walkthrough-end-link" id="walkthrough-end-link" title="Exit the guided tour at any time">End tour</button>
+    <span class="walkthrough-hint" id="walkthrough-hint"></span>
+    <button class="walkthrough-next" id="walkthrough-next">Start →</button>
+  </div>
+</aside>
+
+<!-- Glow highlight overlay — positioned absolutely over a target element -->
+<div class="glow-target" id="glow-target" hidden></div>
 
 <script src="/playground.js"></script>
 </body>
