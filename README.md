@@ -14,7 +14,7 @@ In CHAP, it lives in an envelope you can query, replay, and verify six months la
 ---
 
 <p align="center">
-  <img src="docs/img/hero-before-after.svg" alt="Same scenario, two stacks: without CHAP your audit trail is scattered across six tools; with CHAP it's a hash-linked chain you can query in one call." width="100%">
+  <img src="docs/img/hero-before-after.svg" alt="Same scenario, two stacks. Without CHAP: six tools holding fragments of one decision (OpenAI logs expired, Zendesk thread, Slack scrolled past, Linear comments, webhook tail, Notion runbook), 45 minutes across four UIs to answer 'what did the bot draft and why did we approve it?'. With CHAP: three hash-linked envelopes (task.create → artefact → decide.override), queryable tags, one audit.read call, 30 seconds." width="100%">
 </p>
 
 ---
@@ -29,7 +29,13 @@ That's the whole pitch.
 
 ## The 90-second tour
 
-A solo developer using Cursor to review pull requests. The bot flags a "warning" the developer disagrees with. Here is the whole exchange.
+A solo developer using Cursor to review pull requests. The bot flags a "warning" the developer disagrees with. Here is the whole exchange, end to end.
+
+<p align="center">
+  <img src="docs/img/hero.gif" alt="Six-frame walkthrough of a real CHAP Core+Review session: workspace setup, agent drafts a response, human overrides with diff + rationale + tags, audit replay shows the full prev_hash-linked chain, override analytics report shows tag distribution and points the next prompt revision at the right problem." width="100%">
+</p>
+
+And here is the code, every line of it.
 
 **1. Spin up a workspace.** Twelve lines, one binary, SQLite for storage:
 
@@ -80,7 +86,7 @@ await coord.dispatch({
 });
 ```
 
-**3. Two months in, analyse what you have been doing.** This is where the protocol starts to pay you back:
+**3. Two months in, analyse what you have been doing.** This is where the protocol pays you back:
 
 ```bash
 $ npx @chap/analyze-overrides wsp_pr_reviews
@@ -108,7 +114,7 @@ Your next prompt revision for Cursor is no longer a guess. It cites the pattern 
 The override envelope is the single most important shape in CHAP. Every field has a job:
 
 <p align="center">
-  <img src="docs/img/override-anatomy.svg" alt="Anatomy of an override envelope, with each field annotated." width="100%">
+  <img src="docs/img/override-anatomy.svg" alt="Anatomy of an override envelope, with each field annotated: task_id links to the PR review chain, from carries queryable identity, logical_id survives revision, intent_preserved separates refining from substituting overrides, diff is RFC 6902 JSON Patch, rationale is the 'why' alongside the 'what', tags are structured supervision data." width="100%">
 </p>
 
 The two fields most people miss on first read are `intent_preserved` and `tags`.
@@ -117,6 +123,27 @@ The two fields most people miss on first read are `intent_preserved` and `tags`.
 
 `tags` is the controlled vocabulary your team agrees on. Keep it small. Whatever you put there is the dimension you will aggregate on three months from now, when you are answering questions like *which prompts need work?* or *which paths is the bot getting consistently wrong?*
 
+## Install
+
+```bash
+npm install @chap/coordinator
+```
+
+That gets you Core plus the `review/1.0` profile, in-memory and SQLite backends, a CLI, and a two-participant playground. The TypeScript reference is in [`reference/`](./reference/); the protocol-as-a-library is [`packages/coordinator/`](./packages/coordinator/).
+
+Five-minute hands-on walkthrough: [`examples/00-five-minute-start.md`](./examples/00-five-minute-start.md).
+
+## What ships today
+
+CHAP 0.2 is a public draft. Concretely, this repo contains:
+
+- **The specification.** Core (seven methods, one envelope, one wire format) plus ten optional profiles. Combined into a single document at [`SPECIFICATION.md`](./SPECIFICATION.md), or read individually from [`core/SPEC.md`](./core/SPEC.md) and [`profiles/`](./profiles/).
+- **One reference implementation in TypeScript.** Core, the `review/1.0` profile, a coordinator, a CLI, an override analyser, and a runnable playground with two human browser sessions and a local LLM. A second interoperable implementation is the most consequential thing remaining before 1.0.
+- **A conformance harness.** 21 test vectors, signing/canonicalisation/chain checks, in-toto attestation output. Two conformance levels are claimable today (Minimal, Recommended); Full waits on the second implementation.
+- **Twelve worked scenarios.** [`IN_PRACTICE.md`](./IN_PRACTICE.md) walks through real cases from a solo developer with Cursor up to GMP-regulated fill-finish manufacturing.
+
+Breaking changes follow Semantic Versioning. Profile surfaces will move faster than Core. Production deployments needing strict stability should wait for 1.0. The longer status statement and the contribution path are in [`ABOUT.md`](./ABOUT.md).
+
 ## What you get when you adopt this
 
 - **An audit chain that survives key rotation, log expiry, and people leaving.** Every envelope links to the previous by content hash. One `audit.read` call returns the whole thing.
@@ -124,18 +151,10 @@ The two fields most people miss on first read are `intent_preserved` and `tags`.
 - **Signed, non-repudiable approvals when you need them.** Opt into `security-signed/1.0` for OIDC-bound signatures with a `signature_meaning` you define. Opt into `audit-scitt/1.0` for an external transparency-log anchor, verifiable without trusting your servers.
 - **Composability with what you have already built.** CHAP does not replace MCP or A2A. It sits next to them: your agent uses MCP for tools, A2A for other agents, and CHAP to record the shared work with humans.
 
-## Install
-
-```bash
-npm install @chap/coordinator
-```
-
-The TypeScript reference implementation includes a Core coordinator, the `review/1.0` profile, in-memory and SQLite backends, a CLI, and a playground for two-participant demos. Full source in [`reference/`](./reference/).
-
 ## Read this next
 
 - **[`IN_PRACTICE.md`](./IN_PRACTICE.md)**. Twelve real-world scenarios from solo dev to GMP-regulated manufacturing. The most useful next read.
-- **[`ABOUT.md`](./ABOUT.md)**. What is in this repo, how CHAP relates to MCP and A2A, the standards it reuses, current status, and how to contribute.
+- **[`ABOUT.md`](./ABOUT.md)**. What is in this repo, how CHAP relates to MCP and A2A, the standards it reuses, and how to contribute.
 - **[`core/SPEC.md`](./core/SPEC.md)**. The seven Core methods. The whole protocol surface fits on one screen.
 
 ---

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 620" font-family="Arial, Helvetica, sans-serif">
   <defs>
     <linearGradient id="bgChaos" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#fef3f2"/>
@@ -8,137 +8,150 @@
       <stop offset="0%" stop-color="#fff7ed"/>
       <stop offset="100%" stop-color="#fed7aa"/>
     </linearGradient>
-    <linearGradient id="emberFade" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#EA4700"/>
-      <stop offset="100%" stop-color="#FF9900"/>
-    </linearGradient>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/>
-    </marker>
     <marker id="arrowEmber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#EA4700"/>
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#c2410c"/>
     </marker>
     <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.08"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.10"/>
     </filter>
   </defs>
 
   <!-- Title -->
-  <text x="600" y="38" text-anchor="middle" font-size="22" font-weight="600" fill="#111827">
+  <text x="640" y="46" text-anchor="middle" font-size="28" font-weight="700" fill="#0f172a">
     Same scenario, two stacks
   </text>
-  <text x="600" y="62" text-anchor="middle" font-size="14" fill="#6b7280">
+  <text x="640" y="76" text-anchor="middle" font-size="17" font-weight="500" fill="#334155">
     a customer disputes a refund the bot decided last month
   </text>
 
-  <!-- LEFT: Without CHAP -->
-  <rect x="40" y="90" width="540" height="400" rx="14" fill="url(#bgChaos)" stroke="#fecaca" stroke-width="1"/>
-  <text x="310" y="120" text-anchor="middle" font-size="15" font-weight="700" fill="#991b1b" letter-spacing="1.2">
+  <!-- ================== LEFT: WITHOUT CHAP ================== -->
+  <rect x="40" y="108" width="580" height="478" rx="14" fill="url(#bgChaos)" stroke="#fecaca" stroke-width="1"/>
+  <text x="330" y="146" text-anchor="middle" font-size="17" font-weight="800" fill="#7f1d1d" letter-spacing="1.5">
     WITHOUT CHAP
   </text>
 
-  <!-- Without — log boxes scattered -->
+  <!-- Six scattered tiles -->
   <g filter="url(#softShadow)">
-    <rect x="70" y="145" width="135" height="58" rx="8" fill="#fff"/>
-    <text x="137" y="170" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">OpenAI logs</text>
-    <text x="137" y="190" text-anchor="middle" font-size="11" fill="#dc2626">expired after 30d</text>
+    <rect x="78" y="170" width="160" height="72" rx="9" fill="#fff"/>
+    <text x="158" y="200" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">OpenAI logs</text>
+    <text x="158" y="223" text-anchor="middle" font-size="13" font-weight="600" fill="#b91c1c">expired after 30 days</text>
   </g>
 
   <g filter="url(#softShadow)">
-    <rect x="220" y="145" width="135" height="58" rx="8" fill="#fff"/>
-    <text x="287" y="170" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">Zendesk thread</text>
-    <text x="287" y="190" text-anchor="middle" font-size="11" fill="#dc2626">final reply only</text>
+    <rect x="250" y="170" width="160" height="72" rx="9" fill="#fff"/>
+    <text x="330" y="200" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">Zendesk thread</text>
+    <text x="330" y="223" text-anchor="middle" font-size="13" font-weight="600" fill="#b91c1c">final reply only</text>
   </g>
 
   <g filter="url(#softShadow)">
-    <rect x="370" y="145" width="135" height="58" rx="8" fill="#fff"/>
-    <text x="437" y="170" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">Slack #support</text>
-    <text x="437" y="190" text-anchor="middle" font-size="11" fill="#dc2626">scrolled off</text>
+    <rect x="422" y="170" width="160" height="72" rx="9" fill="#fff"/>
+    <text x="502" y="200" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">Slack #support</text>
+    <text x="502" y="223" text-anchor="middle" font-size="13" font-weight="600" fill="#b91c1c">scrolled past</text>
   </g>
 
   <g filter="url(#softShadow)">
-    <rect x="70" y="225" width="135" height="58" rx="8" fill="#fff"/>
-    <text x="137" y="250" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">Linear comments</text>
-    <text x="137" y="270" text-anchor="middle" font-size="11" fill="#dc2626">no rationale</text>
+    <rect x="78" y="258" width="160" height="72" rx="9" fill="#fff"/>
+    <text x="158" y="288" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">Linear comments</text>
+    <text x="158" y="311" text-anchor="middle" font-size="13" font-weight="600" fill="#b91c1c">no rationale</text>
   </g>
 
   <g filter="url(#softShadow)">
-    <rect x="220" y="225" width="135" height="58" rx="8" fill="#fff"/>
-    <text x="287" y="250" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">webhook tail</text>
-    <text x="287" y="270" text-anchor="middle" font-size="11" fill="#dc2626">rotated keys</text>
+    <rect x="250" y="258" width="160" height="72" rx="9" fill="#fff"/>
+    <text x="330" y="288" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">webhook tail</text>
+    <text x="330" y="311" text-anchor="middle" font-size="13" font-weight="600" fill="#b91c1c">keys rotated</text>
   </g>
 
   <g filter="url(#softShadow)">
-    <rect x="370" y="225" width="135" height="58" rx="8" fill="#fff"/>
-    <text x="437" y="250" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">Your memory</text>
-    <text x="437" y="270" text-anchor="middle" font-size="11" fill="#dc2626">unreliable</text>
+    <rect x="422" y="258" width="160" height="72" rx="9" fill="#fff"/>
+    <text x="502" y="288" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">Notion runbook</text>
+    <text x="502" y="311" text-anchor="middle" font-size="13" font-weight="600" fill="#b91c1c">stale by Tuesday</text>
   </g>
 
-  <!-- Question mark scribble area -->
-  <text x="310" y="335" text-anchor="middle" font-size="13" fill="#374151" font-style="italic">
+  <!-- The unanswered questions -->
+  <text x="330" y="380" text-anchor="middle" font-size="16" font-weight="600" fill="#1f2937" font-style="italic">
     "What did the bot draft?
   </text>
-  <text x="310" y="354" text-anchor="middle" font-size="13" fill="#374151" font-style="italic">
+  <text x="330" y="402" text-anchor="middle" font-size="16" font-weight="600" fill="#1f2937" font-style="italic">
     Why did we approve it?"
   </text>
 
-  <!-- Time-to-answer -->
-  <rect x="105" y="385" width="410" height="78" rx="10" fill="#7f1d1d"/>
-  <text x="310" y="412" text-anchor="middle" font-size="13" font-weight="600" fill="#fecaca">TIME TO ANSWER</text>
-  <text x="310" y="445" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">~45 minutes</text>
+  <!-- Time-to-answer (left) -->
+  <rect x="110" y="436" width="440" height="118" rx="11" fill="#7f1d1d"/>
+  <text x="330" y="470" text-anchor="middle" font-size="16" font-weight="700" fill="#fef2f2" letter-spacing="1.5">TIME TO ANSWER</text>
+  <text x="330" y="518" text-anchor="middle" font-size="40" font-weight="800" fill="#fff">~45 minutes</text>
+  <text x="330" y="542" text-anchor="middle" font-size="13" font-weight="500" fill="#fecaca">across four UIs, half guesswork</text>
 
-  <!-- RIGHT: With CHAP -->
-  <rect x="620" y="90" width="540" height="400" rx="14" fill="url(#bgClean)" stroke="#fdba74" stroke-width="1"/>
-  <text x="890" y="120" text-anchor="middle" font-size="15" font-weight="700" fill="#9a3412" letter-spacing="1.2">
+  <!-- ================== RIGHT: WITH CHAP ================== -->
+  <rect x="660" y="108" width="580" height="478" rx="14" fill="url(#bgClean)" stroke="#fdba74" stroke-width="1"/>
+  <text x="950" y="146" text-anchor="middle" font-size="17" font-weight="800" fill="#7c2d12" letter-spacing="1.5">
     WITH CHAP
   </text>
 
-  <!-- Chain visualization -->
+  <!-- Three envelope cards -->
   <g filter="url(#softShadow)">
-    <rect x="650" y="155" width="115" height="80" rx="8" fill="#fff"/>
-    <text x="707" y="178" text-anchor="middle" font-size="11" font-weight="700" fill="#6b7280">task.create</text>
-    <line x1="660" y1="186" x2="754" y2="186" stroke="#fed7aa" stroke-width="1"/>
-    <text x="707" y="204" text-anchor="middle" font-size="10" fill="#374151">customer ticket</text>
-    <text x="707" y="220" text-anchor="middle" font-size="10" fill="#9ca3af">agent:triage</text>
+    <rect x="690" y="178" width="150" height="100" rx="9" fill="#fff"/>
+    <text x="765" y="204" text-anchor="middle" font-size="13" font-weight="800" fill="#1e293b" letter-spacing="0.5">task.create</text>
+    <line x1="704" y1="216" x2="826" y2="216" stroke="#fdba74" stroke-width="1.5"/>
+    <text x="765" y="240" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2937">customer ticket</text>
+    <text x="765" y="261" text-anchor="middle" font-size="12" font-weight="600" fill="#475569">agent:triage</text>
   </g>
 
-  <line x1="765" y1="195" x2="800" y2="195" stroke="#EA4700" stroke-width="2" marker-end="url(#arrowEmber)"/>
+  <line x1="844" y1="228" x2="871" y2="228" stroke="#c2410c" stroke-width="2.8" marker-end="url(#arrowEmber)"/>
 
   <g filter="url(#softShadow)">
-    <rect x="800" y="155" width="115" height="80" rx="8" fill="#fff"/>
-    <text x="857" y="178" text-anchor="middle" font-size="11" font-weight="700" fill="#6b7280">artefact</text>
-    <line x1="810" y1="186" x2="904" y2="186" stroke="#fed7aa" stroke-width="1"/>
-    <text x="857" y="204" text-anchor="middle" font-size="10" fill="#374151">draft reply</text>
-    <text x="857" y="220" text-anchor="middle" font-size="10" fill="#9ca3af">policy v3</text>
+    <rect x="875" y="178" width="150" height="100" rx="9" fill="#fff"/>
+    <text x="950" y="204" text-anchor="middle" font-size="13" font-weight="800" fill="#1e293b" letter-spacing="0.5">artefact</text>
+    <line x1="889" y1="216" x2="1011" y2="216" stroke="#fdba74" stroke-width="1.5"/>
+    <text x="950" y="240" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2937">draft reply</text>
+    <text x="950" y="261" text-anchor="middle" font-size="12" font-weight="600" fill="#475569">policy v3</text>
   </g>
 
-  <line x1="915" y1="195" x2="950" y2="195" stroke="#EA4700" stroke-width="2" marker-end="url(#arrowEmber)"/>
+  <line x1="1029" y1="228" x2="1056" y2="228" stroke="#c2410c" stroke-width="2.8" marker-end="url(#arrowEmber)"/>
 
   <g filter="url(#softShadow)">
-    <rect x="950" y="155" width="115" height="80" rx="8" fill="#fff"/>
-    <text x="1007" y="178" text-anchor="middle" font-size="11" font-weight="700" fill="#6b7280">decide.override</text>
-    <line x1="960" y1="186" x2="1054" y2="186" stroke="#fed7aa" stroke-width="1"/>
-    <text x="1007" y="204" text-anchor="middle" font-size="10" fill="#374151">+rationale</text>
-    <text x="1007" y="220" text-anchor="middle" font-size="10" fill="#9ca3af">human:you</text>
+    <rect x="1060" y="178" width="150" height="100" rx="9" fill="#fff"/>
+    <text x="1135" y="204" text-anchor="middle" font-size="12" font-weight="800" fill="#1e293b" letter-spacing="0.3">decide.override</text>
+    <line x1="1074" y1="216" x2="1196" y2="216" stroke="#fdba74" stroke-width="1.5"/>
+    <text x="1135" y="240" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2937">+ rationale</text>
+    <text x="1135" y="261" text-anchor="middle" font-size="12" font-weight="600" fill="#475569">human:you</text>
   </g>
 
-  <!-- prev_hash chain underline -->
-  <text x="715" y="252" font-size="9" fill="#9a3412" font-family="ui-monospace, monospace">prev_hash</text>
-  <text x="865" y="252" font-size="9" fill="#9a3412" font-family="ui-monospace, monospace">prev_hash</text>
-  <text x="1015" y="252" font-size="9" fill="#9a3412" font-family="ui-monospace, monospace">prev_hash</text>
-  <line x1="700" y1="258" x2="1064" y2="258" stroke="#fdba74" stroke-width="1" stroke-dasharray="3,3"/>
+  <!-- prev_hash chain -->
+  <text x="730" y="296" font-size="12" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">prev_hash</text>
+  <text x="915" y="296" font-size="12" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">prev_hash</text>
+  <text x="1100" y="296" font-size="12" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">prev_hash</text>
+  <line x1="765" y1="304" x2="1170" y2="304" stroke="#c2410c" stroke-width="1.4" stroke-dasharray="4,3"/>
 
-  <!-- The query -->
+  <!-- Tag chips -->
+  <text x="690" y="338" font-size="14" fill="#7c2d12" font-weight="700">Queryable structure:</text>
   <g>
-    <rect x="650" y="288" width="420" height="80" rx="8" fill="#1f2937"/>
-    <text x="666" y="312" font-family="ui-monospace, monospace" font-size="12" fill="#fed7aa">await chap.audit.read({</text>
-    <text x="666" y="330" font-family="ui-monospace, monospace" font-size="12" fill="#e5e7eb">  task_id: <tspan fill="#6ee7b7">"tsk_ticket_8821"</tspan></text>
-    <text x="666" y="348" font-family="ui-monospace, monospace" font-size="12" fill="#fed7aa">})</text>
-    <text x="666" y="362" font-family="ui-monospace, monospace" font-size="11" fill="#9ca3af">// → full chain, prev_hash verified</text>
+    <rect x="690" y="350" width="130" height="28" rx="14" fill="#fff7ed" stroke="#c2410c" stroke-width="1.2"/>
+    <text x="755" y="369" text-anchor="middle" font-size="12" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">false-positive</text>
+  </g>
+  <g>
+    <rect x="828" y="350" width="168" height="28" rx="14" fill="#fff7ed" stroke="#c2410c" stroke-width="1.2"/>
+    <text x="912" y="369" text-anchor="middle" font-size="12" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">framework-pattern</text>
+  </g>
+  <g>
+    <rect x="1004" y="350" width="96" height="28" rx="14" fill="#fff7ed" stroke="#c2410c" stroke-width="1.2"/>
+    <text x="1052" y="369" text-anchor="middle" font-size="12" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">policy-v3</text>
+  </g>
+  <g>
+    <rect x="1108" y="350" width="102" height="28" rx="14" fill="#fff7ed" stroke="#c2410c" stroke-width="1.2"/>
+    <text x="1159" y="369" text-anchor="middle" font-size="12" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">+ rationale</text>
   </g>
 
-  <!-- Time-to-answer -->
-  <rect x="685" y="385" width="410" height="78" rx="10" fill="#7c2d12"/>
-  <text x="890" y="412" text-anchor="middle" font-size="13" font-weight="600" fill="#fed7aa">TIME TO ANSWER</text>
-  <text x="890" y="445" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">30 seconds</text>
+  <!-- Audit code block -->
+  <g>
+    <rect x="690" y="396" width="520" height="98" rx="9" fill="#0f172a"/>
+    <text x="708" y="424" font-family="'Courier New', Courier, monospace" font-size="15" font-weight="700" fill="#fdba74">await chap.audit.read({</text>
+    <text x="708" y="448" font-family="'Courier New', Courier, monospace" font-size="15" font-weight="700" fill="#f1f5f9">  task_id: <tspan fill="#86efac">"tsk_ticket_8821"</tspan></text>
+    <text x="708" y="472" font-family="'Courier New', Courier, monospace" font-size="15" font-weight="700" fill="#fdba74">})</text>
+    <text x="708" y="488" font-family="'Courier New', Courier, monospace" font-size="12" font-weight="600" fill="#cbd5e1">// → full chain, prev_hash verified</text>
+  </g>
+
+  <!-- Time-to-answer (right) -->
+  <rect x="730" y="508" width="440" height="64" rx="9" fill="#7c2d12"/>
+  <text x="950" y="528" text-anchor="middle" font-size="13" font-weight="700" fill="#fff7ed" letter-spacing="1.5">TIME TO ANSWER</text>
+  <text x="950" y="560" text-anchor="middle" font-size="26" font-weight="800" fill="#fff">30 seconds</text>
 </svg>
