@@ -4,7 +4,7 @@
 
 Bind Participant identities to [W3C Verifiable Credentials 2.0](https://www.w3.org/TR/vc-data-model-2.0/).
 Use this profile when richer or cross-organisational identity claims
-are required than OIDC tokens conveniently express — regulated
+are required than OIDC tokens conveniently express, regulated
 professions, cross-org credentials, supply-chain attestations.
 
 CHAP introduces no identity protocol. This profile is the recommended
@@ -48,10 +48,10 @@ Client constructs a Verifiable Presentation containing one or more VCs,
        signed with K (proof of possession) plus the issuer's signatures
    │
    ▼
-Client → Coordinator: handshake — presents VP
+Client → Coordinator: handshake   presents VP
    │
    ▼
-Coordinator: verifies VP — issuer signatures, VC schema, holder binding
+Coordinator: verifies VP   issuer signatures, VC schema, holder binding
    │
    ▼
 Coordinator pins pub(K) as the participant's CHAP signing key
@@ -174,7 +174,7 @@ from the workspace.
 - **With `security-signed`:** the VP's `verificationMethod` binds
   the CHAP signing key.
 - **With `audit-scitt`:** SCITT statements can carry the holder's
-  DID as the issuer identifier — the audit chain remains valid
+  DID as the issuer identifier, the audit chain remains valid
   across organisational boundaries.
 - **With `identity-oidc`:** they coexist; pick the right one per
   participant based on the trust model.

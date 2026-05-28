@@ -2,8 +2,8 @@
 
 **Profile id:** `routing/1.0` · **Depends on:** Core · **Composes with:** `review/1.0`, `modes/1.0`
 
-Decide *how* a task gets handled — who picks it up, how deep the
-review is, when to auto-escalate — based on the runtime signals
+Decide *how* a task gets handled, who picks it up, how deep the
+review is, when to auto-escalate, based on the runtime signals
 already carried in `routing_hints` on tasks and artefacts.
 
 This profile adds three decision methods. It does not invent new
@@ -19,7 +19,7 @@ Core carries the signals. This profile interprets them.
 | Layer | Belongs in | Why |
 |-------|-----------|-----|
 | `criticality`, `deadline`, `max_cost_usd`, `risk_tier` on a task | Core (`Task.routing_hints`) | Any intermediary must forward and sign them. |
-| `confidence`, `model_id`, `cost_consumed_usd`, `latency_ms` on an artefact | Core (`Artefact.routing_hints`) | Same reason — they need to survive un-routing-aware nodes. |
+| `confidence`, `model_id`, `cost_consumed_usd`, `latency_ms` on an artefact | Core (`Artefact.routing_hints`) | Same reason, they need to survive un-routing-aware nodes. |
 | "If criticality is `high` and confidence < 0.7, escalate." | This profile | A policy. Not every workspace shares it. |
 | "Pick model A for criticality `low`, model B for `high`." | This profile | A routing rule. Operator-specific. |
 
@@ -97,9 +97,9 @@ After `task.route` succeeds, the Coordinator MUST update the task's
 
 | Code      | Meaning                                          |
 |-----------|--------------------------------------------------|
-| `-32510`  | `no_eligible_assignee` — no candidate satisfies the routing policy for this task's hints. |
-| `-32511`  | `routing_policy_violation` — the requested route violates workspace `routing_policy_uri`. |
-| `-32513`  | `candidates_empty` — `candidates` array was empty. |
+| `-32510`  | `no_eligible_assignee`: no candidate satisfies the routing policy for this task's hints. |
+| `-32511`  | `routing_policy_violation`: the requested route violates workspace `routing_policy_uri`. |
+| `-32513`  | `candidates_empty`: `candidates` array was empty. |
 
 ---
 
@@ -154,8 +154,8 @@ review is in use, the depth is informative only.
 
 | Code      | Meaning                                          |
 |-----------|--------------------------------------------------|
-| `-32514`  | `depth_not_applicable` — the artefact's kind is not subject to review (e.g. `route_decision`). |
-| `-32515`  | `policy_unreachable` — the routing-policy resource referenced is not loadable. |
+| `-32514`  | `depth_not_applicable`: the artefact's kind is not subject to review (e.g. `route_decision`). |
+| `-32515`  | `policy_unreachable`: the routing-policy resource referenced is not loadable. |
 
 ---
 
@@ -213,8 +213,8 @@ to `escalated`.
 
 | Code      | Meaning                                          |
 |-----------|--------------------------------------------------|
-| `-32512`  | `auto_escalation_triggered` — informational; emitted on a `decide.override` or `decide.reject` notification when an auto-rule also fired. |
-| `-32516`  | `escalation_target_unavailable` — the rule-selected target is not a workspace member or group. |
+| `-32512`  | `auto_escalation_triggered`: informational; emitted on a `decide.override` or `decide.reject` notification when an auto-rule also fired. |
+| `-32516`  | `escalation_target_unavailable`: the rule-selected target is not a workspace member or group. |
 
 ---
 

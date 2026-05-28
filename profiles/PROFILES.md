@@ -1,9 +1,9 @@
 # CHAP Profiles
 
 A **profile** is an optional, named, versioned extension to CHAP
-Core. Each profile adds a focused capability — message signing,
+Core. Each profile adds a focused capability, message signing,
 SCITT-backed audit, structured review, multi-party deliberation,
-etc. — without changing Core.
+etc., without changing Core.
 
 Profiles are designed so an implementation can pick exactly the set
 it needs, and a workspace's `workspace.describe` advertises which
@@ -31,8 +31,8 @@ Each row is a self-contained document.
 
 Two integration documents complement the profiles:
 
-- [`../integrations/CHAP-with-MCP.md`](../integrations/CHAP-with-MCP.md) — how to cite MCP tool calls inside CHAP artefacts.
-- [`../integrations/CHAP-with-A2A.md`](../integrations/CHAP-with-A2A.md) — how to bridge cross-organisation peers as `service:` participants.
+- [`../integrations/CHAP-with-MCP.md`](../integrations/CHAP-with-MCP.md), how to cite MCP tool calls inside CHAP artefacts.
+- [`../integrations/CHAP-with-A2A.md`](../integrations/CHAP-with-A2A.md), how to bridge cross-organisation peers as `service:` participants.
 
 ---
 
@@ -125,7 +125,7 @@ without affecting the others.
 ## 5. Versioning profiles
 
 Each profile versions independently. A workspace can announce
-`review/1.0` and `modes/0.2`. Profile versions follow the same
+`review/1.0` and `modes/1.0` (or `modes/2.0` once published). Profile versions follow the same
 semver rules as Core (see [`../GOVERNANCE.md`](../GOVERNANCE.md) §4).
 
 Within v0.x, profiles may include small breaking changes between
@@ -139,7 +139,7 @@ at the 1.0 release.
 If you have a workflow pattern not covered by an existing profile,
 the path to standardising it is:
 
-1. Write a CEP (CHAP Enhancement Proposal) — see [`../GOVERNANCE.md`](../GOVERNANCE.md) §3.2.
+1. Write a CEP (CHAP Enhancement Proposal), see [`../GOVERNANCE.md`](../GOVERNANCE.md) §3.2.
 2. Build a reference implementation alongside the proposal.
 3. Demonstrate at least one production use.
 4. Submit the profile spec as a PR to `profiles/<name>.md`.

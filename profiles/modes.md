@@ -22,8 +22,8 @@ enforcement.
 | `production` | Yes               | Per policy (may be sampled) | Steady-state operation. |
 
 A new agent version SHOULD spend time in `shadow` mode (typically
-1–4 weeks) before promotion to `trial`, and in `trial` (typically
-1–2 weeks) before `production`. Concrete promotion criteria are
+1-4 weeks) before promotion to `trial`, and in `trial` (typically
+1-2 weeks) before `production`. Concrete promotion criteria are
 deployment-specific; common ones are listed in §5.
 
 ---
@@ -79,7 +79,7 @@ primary input to promotion decisions.
 - The task runs to completion.
 - The output is delivered.
 - Review is mandatory regardless of any per-task `review.required`
-  field — `trial` mode forces review on.
+  field, `trial` mode forces review on.
 
 This is the "every output gets human eyes" mode. Override rate in
 trial mode is the most important signal for whether to promote.
@@ -127,7 +127,7 @@ Common criteria for moving from one mode to the next:
 | `trial` → `production`         | Override rate < threshold for N consecutive days. Abstention rate stable. |
 | `production` → `trial` (demote) | Incident or override-rate spike (see [`control.md`](./control.md)). |
 
-These are policy, not protocol. The protocol provides the data —
+These are policy, not protocol. The protocol provides the data.
 your governance picks the thresholds.
 
 ---

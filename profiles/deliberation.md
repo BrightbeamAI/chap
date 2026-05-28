@@ -4,7 +4,7 @@
 
 Multi-party voting with quorum, weights, and vetoes. Distinct from
 review (single-artefact approval) and whisper (single-person quick
-answer) — deliberation is "three of us need to agree on this."
+answer), deliberation is "three of us need to agree on this."
 
 ---
 

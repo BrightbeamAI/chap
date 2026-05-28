@@ -7,7 +7,7 @@ Core. This is the right profile for cross-trust-boundary deployments
 (humans across organisations, agents from multiple vendors,
 deployments subject to non-repudiation requirements).
 
-This profile does **not** define identity — pair it with
+This profile does **not** define identity, pair it with
 [`identity-oidc`](./identity-oidc.md) or
 [`identity-vc`](./identity-vc.md) to bind signing keys to
 real-world principals.
@@ -39,10 +39,10 @@ This profile is a thin wrapper over existing standards:
 
 | Concern          | Standard                                                  |
 |------------------|-----------------------------------------------------------|
-| Signature algorithm | [Ed25519 — RFC 8032](https://datatracker.ietf.org/doc/html/rfc8032) |
-| Canonical bytes  | [JCS — RFC 8785](https://datatracker.ietf.org/doc/html/rfc8785)  |
+| Signature algorithm | [Ed25519. RFC 8032](https://datatracker.ietf.org/doc/html/rfc8032) |
+| Canonical bytes  | [JCS. RFC 8785](https://datatracker.ietf.org/doc/html/rfc8785)  |
 | Signature tag    | `ed25519:<kid>:<base64-signature>` |
-| Key advertisement | [JSON Web Key — RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517) |
+| Key advertisement | [JSON Web Key. RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517) |
 
 ---
 
@@ -66,7 +66,7 @@ canonical = JCS( envelope with `sig` field removed )
 return Ed25519_verify( canonical, base64_decode(sig_b64), pubkey )
 ```
 
-The public key is looked up by `(from, kid, ts)` — the key that was
+The public key is looked up by `(from, kid, ts)`: the key that was
 valid for that participant at that timestamp. This makes historical
 verification work after key rotation.
 

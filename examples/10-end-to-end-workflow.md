@@ -1,4 +1,4 @@
-# Example 10 — End-to-end workflow
+# Example 10: End-to-end workflow
 
 **Scenario.** A single thread of customer support shows every primitive
 working together. A customer files a complex query. A triage agent
@@ -10,7 +10,7 @@ issues the credit via an **MCP** tool. The full thread is auditable
 end-to-end through one signed chain.
 
 This example does not introduce new primitives. It shows how the ones
-introduced in examples 1–9 compose into a real, realistic flow.
+introduced in examples 1-9 compose into a real, realistic flow.
 
 ---
 
@@ -32,7 +32,7 @@ The customer message:
 > "I've been a customer for 8 years. Today is the third time in two
 > months an order has arrived broken. I'd like a refund on this one
 > and frankly some acknowledgement that this isn't working for me."
-> — `[email protected]`, ticket `INC-48910`.
+>, `[email protected]`, ticket `INC-48910`.
 
 ---
 
@@ -53,7 +53,7 @@ knowledge-base.
 **(3) Agent calls MCP tools (order-lookup, customer-history) to gather
 context.** *(Outside CHAP; cited inside the artefact in step 6.)*
 
-**(4) Agent whispers Alice — needs disambiguation.**
+**(4) Agent whispers Alice, needs disambiguation.**
 *Method:* `whisper.ask` · *From:* `agent:triage-bot#v3.2` · *To:* `human:alice@example.org`
 
 > *"Customer's history shows two prior breakage incidents; both led
@@ -65,7 +65,7 @@ context.** *(Outside CHAP; cited inside the artefact in step 6.)*
 
 **(5) Alice answers.**
 *Method:* `whisper.answer` · *Answer:* `refund_per_request` · *Comment:*
-*"Eight years, three incidents — yes, honour the refund."*
+*"Eight years, three incidents, yes, honour the refund."*
 
 **(6) Agent completes the task with a draft artefact.**
 *Method:* `task.complete` · *Artefact:* `draft` with full text, three
@@ -73,13 +73,13 @@ MCP citations (order-lookup, customer-history, knowledge-base), confidence 0.87.
 
 The draft:
 
-> *"Hi — I'm very sorry for the trouble with your order. I can see
+> *"Hi. I'm very sorry for the trouble with your order. I can see
 > this is the third issue you've had this year, which isn't the
 > experience we want for you. I've initiated a full refund of £148
-> for order ORD-93021; you'll see it back on your card in 3–5
+> for order ORD-93021; you'll see it back on your card in 3-5
 > business days. We'll also waive the return shipping. Thank you for
 > being with us so long, and I hope we can make the next one
-> right. — Support team."*
+> right.. Support team."*
 
 **(7) Coordinator opens review.** *(Implicit from `review.required:
 true` on the original task.)*
@@ -188,7 +188,7 @@ The auditor runs:
   knowledge-base, customer-credits/issue × 1), each with the external
   audit URL and a verified hash match.
 - The full text of the draft, the override, the deliberation
-  decision, and the final response — addressable by artefact id.
+  decision, and the final response, addressable by artefact id.
 - A chain-verification result: every signature verified, every
   `prev_hash` matched, no replay or id reuse, no temporal-order
   violations.
@@ -204,7 +204,7 @@ spelunking to a single query.
 review primitive plugged into the deliberation primitive plugged into
 the second task. The MCP citations in the first agent's artefact and
 the credit agent's artefact share a single verification mechanism.
-The override didn't need a custom UI to be useful downstream — its
+The override didn't need a custom UI to be useful downstream, its
 diff and tags are queryable as data the moment it was signed.
 
 **What this isn't.** A claim that this exact flow is the right one

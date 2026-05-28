@@ -6,7 +6,7 @@ success.
 
 ## What it tests
 
-**Core (mandatory)** — 12 tests covering:
+**Core (mandatory)**: 12 tests covering:
 
 - Wire format: malformed JSON, non-JSON-RPC bodies, unknown methods.
 - The seven Core methods: `workspace.describe`, `participant.join`,
@@ -16,7 +16,7 @@ success.
 - Filter correctness: `audit.read` filters work.
 - Member enforcement: assigning to non-members fails.
 
-**Review profile (optional)** — 6 tests covering:
+**Review profile (optional)**: 6 tests covering:
 
 - `review.request` transitions task to `review_requested`.
 - `decide.override` applies the RFC 6902 JSON Patch and produces an
@@ -33,7 +33,7 @@ success.
 ```bash
 npm install
 
-# Test localhost (default — assumes a server on :8080)
+# Test localhost (default   assumes a server on :8080)
 npm test
 
 # Test a remote endpoint
@@ -78,7 +78,7 @@ and published as proof of conformance.
 
 ## What this does not cover
 
-The harness tests **wire-level conformance** — that an implementation
+The harness tests **wire-level conformance**: that an implementation
 correctly handles the protocol's required behaviours. It does not test:
 
 - Real-world workload performance.

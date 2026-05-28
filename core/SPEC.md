@@ -12,12 +12,12 @@ participant or coordinator. It defines:
 - No required cryptography. No required identity provider. No
   required external services.
 
-A Core-only implementation should fit in **300–500 lines of code**
+A Core-only implementation should fit in **300-500 lines of code**
 in a typical language. The reference implementation in
 [`../reference/core/`](../reference/core/) is approximately that size.
 
-For everything else — message signing, OIDC binding, structured
-review, multi-party deliberation, etc. — see the profile documents
+For everything else, message signing, OIDC binding, structured
+review, multi-party deliberation, etc., see the profile documents
 in [`../profiles/`](../profiles/).
 
 ---
@@ -90,7 +90,7 @@ For errors, the standard JSON-RPC error shape applies:
 ```
 
 Notifications (no response expected) use JSON-RPC's standard
-notification shape — same as a request, but with `id` omitted.
+notification shape, same as a request, but with `id` omitted.
 
 ### 2.2 Required CHAP fields inside `params`
 
@@ -142,9 +142,9 @@ for local development only.
 
 A Core implementation SHOULD authenticate requests via one of:
 
-- **Bearer token** (`Authorization: Bearer <opaque>`) — the
+- **Bearer token** (`Authorization: Bearer <opaque>`), the
   simplest option, suitable for trusted-network deployments.
-- **mTLS** — when running inside a service mesh.
+- **mTLS**: when running inside a service mesh.
 
 Both options leave the *binding* of credentials to Participant URIs
 to a deployment-specific mapping. Cryptographic per-message
@@ -194,8 +194,8 @@ A Task is a finite-state machine over these states:
 ```
 
 The three states are: `created`, `in_progress`, `completed` (with
-`declined` as a terminal alternative). Richer states — `review_requested`,
-`abstained`, `escalated`, `superseded`, `cancelled` — exist only
+`declined` as a terminal alternative). Richer states, `review_requested`,
+`abstained`, `escalated`, `superseded`, `cancelled`: exist only
 when the relevant profile is in use.
 
 ### 3.2 Audit log
@@ -397,7 +397,7 @@ Mark a task as completed and deliver its output.
     "task_id":   "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
     "output": {
       "subject": "Re: order ORD-91204 delivery delay",
-      "body":    "Hi — I checked the carrier tracking…"
+      "body":    "Hi   I checked the carrier tracking…"
     },
     "confidence": 0.91
   }
@@ -508,9 +508,9 @@ them in `workspace.describe`'s `profiles` field:
 {
   "profiles": [
     "core/1.0",
-    "review/0.1",
-    "security-signed/0.1",
-    "audit-scitt/0.1"
+    "review/1.0",
+    "security-signed/1.0",
+    "audit-scitt/1.0"
   ]
 }
 ```
@@ -545,8 +545,8 @@ To make the boundary explicit:
 | A2A cross-org delegation             | [`../integrations/CHAP-with-A2A.md`](../integrations/CHAP-with-A2A.md) |
 
 A workspace that needs none of these can operate at Core level
-indefinitely. Many real deployments — internal-team chatbots,
-solo-operator agent farms, structured-task queues — never need
+indefinitely. Many real deployments, internal-team chatbots,
+solo-operator agent farms, structured-task queues, never need
 more than Core.
 
 ---
@@ -574,7 +574,7 @@ A practical sequence:
    for the Core subset.
 
 That's a weekend. The reference implementation in
-[`../reference/core/`](../reference/core/) covers steps 1–7 in
+[`../reference/core/`](../reference/core/) covers steps 1-7 in
 about 300 lines of TypeScript.
 
 ---

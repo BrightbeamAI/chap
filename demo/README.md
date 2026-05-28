@@ -8,7 +8,7 @@ dependencies. Open it in any modern browser.
 
 The demo walks through six sections:
 
-1. **The story.** Maya's afternoon at TechCorp Support — 47 customer
+1. **The story.** Maya's afternoon at TechCorp Support, 47 customer
    responses drafted by an AI, waiting for review. The framing
    question: *what if every one of those edits became data?*
 
@@ -20,7 +20,7 @@ The demo walks through six sections:
    A2A for agents, CHAP for humans-with-agents. Plus the seven Core
    methods.
 
-4. **A workspace at work.** An interactive walkthrough — click through
+4. **A workspace at work.** An interactive walkthrough, click through
    six envelopes and watch the audit log build up, watch participants
    highlight as they exchange messages.
 
@@ -62,17 +62,17 @@ Use it for:
 - **Sharing with non-technical stakeholders** who need to understand
   why your team is adopting CHAP.
 - **Onboarding engineers** before they read [`core/SPEC.md`](../core/SPEC.md).
-- **Conference talks** — the sections can be walked through live as a
+- **Conference talks**: the sections can be walked through live as a
   visual story.
-- **As a portable artefact** — single HTML file, opens anywhere,
+- **As a portable artefact**: single HTML file, opens anywhere,
   works offline, easy to attach to an email or paste in a slide.
 
 For a working code demonstration of the same flow, see
-[`../reference/core-plus-review/`](../reference/core-plus-review/) —
+[`../reference/core-plus-review/`](../reference/core-plus-review/).
 which produces the actual audit log entries the demo visualises.
 
 ## Browser compatibility
 
 Tested in current Chrome, Safari, Firefox, and Edge. Uses no
 JavaScript features newer than ES2020. Uses no external resources
-(no CDN, no Google Fonts, no analytics) — it works fully offline.
+(no CDN, no Google Fonts, no analytics), it works fully offline.

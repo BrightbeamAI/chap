@@ -170,15 +170,15 @@ SCITT decides is what CHAP gets.
 
 - [IETF SCITT working group](https://datatracker.ietf.org/wg/scitt/about/)
 - [draft-ietf-scitt-architecture](https://datatracker.ietf.org/doc/draft-ietf-scitt-architecture/)
-- [RFC 9052 — CBOR Object Signing and Encryption (COSE)](https://datatracker.ietf.org/doc/html/rfc9052)
-- [RFC 8785 — JSON Canonicalization Scheme (JCS)](https://datatracker.ietf.org/doc/html/rfc8785)
+- [RFC 9052. CBOR Object Signing and Encryption (COSE)](https://datatracker.ietf.org/doc/html/rfc9052)
+- [RFC 8785. JSON Canonicalization Scheme (JCS)](https://datatracker.ietf.org/doc/html/rfc8785)
 
 ---
 
 ## 10. Composition notes
 
 - **Requires `security-signed`**: SCITT statements carry signatures
-  whose semantics need a defined key model — that's what
+  whose semantics need a defined key model, that's what
   `security-signed` provides.
 - **With `identity-oidc` / `identity-vc`:** SCITT statement
   signatures use whichever identity binding the workspace has

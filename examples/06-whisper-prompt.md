@@ -1,7 +1,7 @@
-# Example 06 — Whisper prompt
+# Example 06: Whisper prompt
 
 **Scenario.** Mid-task, an agent hits an ambiguity it cannot resolve
-on its own — a customer reply that could mean two different things.
+on its own, a customer reply that could mean two different things.
 Rather than guess or abstain, it sends a *whisper*: a quick,
 deadline-bound, interrupt-style question to a nominated human. The
 human answers in seconds. The agent finishes the task.
@@ -32,7 +32,7 @@ options:
 2. Reply asking for confirmation about both.
 3. Send a whisper to the on-duty human.
 
-The agent picks (3) — the whisper costs little and beats both other
+The agent picks (3), the whisper costs little and beats both other
 options.
 
 ---
@@ -65,7 +65,7 @@ options.
 }
 ```
 
-The Coordinator routes this with the **`whisper` channel** — typically
+The Coordinator routes this with the **`whisper` channel**: typically
 an interrupt-style notification in the human's client, distinct from
 normal review queues. The deadline starts ticking.
 

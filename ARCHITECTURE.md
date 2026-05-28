@@ -177,11 +177,11 @@ stateDiagram-v2
 
 **Things to note.**
 
-- `Declined` is terminal but **non-blocking** — the task can be reassigned
+- `Declined` is terminal but **non-blocking**: the task can be reassigned
   by a new `task.assign`. The new assignment produces a new task ID.
 - `Abstained` and `Escalated` are terminal **for this assignee** but
   trigger a new assignment to the escalation target.
-- `Superseded` is the protocol's "redo" — the superseded task remains in
+- `Superseded` is the protocol's "redo", the superseded task remains in
   the evidence chain, linked to its successor.
 
 ---
@@ -229,7 +229,7 @@ flowchart TB
 **Verification cost.** Replaying the entire chain is O(n) in entries and
 fully parallelisable past any checkpoint. In practice, verifiers replay
 only the segment of interest (typically a single task's worth of entries,
-~10–50) and trust the latest checkpoint for the rest.
+~10-50) and trust the latest checkpoint for the rest.
 
 ---
 
@@ -281,7 +281,7 @@ first-class evidence entry so promotion history is auditable.
 ## 6. Override capture
 
 Overrides are where the protocol earns its keep. A human who modifies
-an agent's draft produces a structured record — diff, rationale, tags —
+an agent's draft produces a structured record, diff, rationale, tags.
 that is immediately available for downstream learning.
 
 ```mermaid
@@ -529,7 +529,7 @@ verification is the dominant cost.
 A common pressure on protocols like CHAP is to encode business
 logic into the wire format: cost thresholds, criticality taxonomies,
 auto-escalation rules. We have resisted this, but we also can't
-ignore that real deployments route work based on these factors —
+ignore that real deployments route work based on these factors.
 otherwise every refund draft and every ad-copy draft gets the same
 review treatment, which is operationally absurd.
 
@@ -537,10 +537,10 @@ The discipline CHAP follows: **carry the signals, don't interpret them.**
 
 Core defines two opaque `routing_hints` objects:
 
-- **`Task.routing_hints`** — `criticality`, `deadline`,
+- **`Task.routing_hints`**: `criticality`, `deadline`,
   `max_cost_usd`, `risk_tier`. The *budget*: what the work is and
   what it's allowed to cost.
-- **`Artefact.routing_hints`** — `confidence`, `model_id`,
+- **`Artefact.routing_hints`**: `confidence`, `model_id`,
   `cost_consumed_usd`, `latency_ms`. The *measurement*: what was
   actually produced, by what, at what cost.
 
@@ -562,7 +562,7 @@ picks an assignee, `review.depth` decides how thoroughly to review,
 *reasoning* becomes evidence, not just the conclusion.
 
 This split lets a Core-only deployment carry routing signals across
-hops without understanding them — the audit chain remains intact
+hops without understanding them, the audit chain remains intact
 even when an intermediary node doesn't run the routing profile. And
 it lets the routing rules evolve independently of the protocol: a
 new policy version is just a new `policy_id` referenced from a

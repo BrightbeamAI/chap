@@ -1,4 +1,4 @@
-# Collaborative Human-Agent Protocol (CHAP) — Specification
+# Collaborative Human-Agent Protocol (CHAP): Specification
 
 **Audience:** Implementers · **Format:** Combined Core + Profiles reference
 
@@ -6,16 +6,16 @@
 
 > ### Orientation
 >
-> This document is the **combined reference** — Core and every
+> This document is the **combined reference**: Core and every
 > profile in a single document, cross-referenced and ready for
 > implementers who want one place to look up every detail.
 >
 > For most newcomers, the right entry points are:
 >
-> - **[README](./README.md)** — overview and reading paths.
-> - **[Handbook](./HANDBOOK.md)** — practical operator's manual.
-> - **[`core/SPEC.md`](./core/SPEC.md)** — minimal Core specification (weekend-implementable).
-> - **[`profiles/PROFILES.md`](./profiles/PROFILES.md)** — profile catalogue.
+> - **[README](./README.md)**: overview and reading paths.
+> - **[Handbook](./HANDBOOK.md)**: practical operator's manual.
+> - **[`core/SPEC.md`](./core/SPEC.md)**: minimal Core specification (weekend-implementable).
+> - **[`profiles/PROFILES.md`](./profiles/PROFILES.md)**: profile catalogue.
 >
 > This document compiles all of the above. It is normative for the
 > protocol as a whole; the individual Core and profile documents are
@@ -130,8 +130,8 @@ CHAP also deliberately leaves the following to deployments and profiles:
   domain-specific scheme is the deploying organisation's choice or a
   profile's contribution.
 - **A temporal model beyond `produced_at` and chain monotonicity.**
-  Domains that require richer time semantics — separating subject
-  time from statement time, or carrying validity windows — should
+  Domains that require richer time semantics, separating subject
+  time from statement time, or carrying validity windows, should
   layer those into the artefact `content` shape or define them in a
   profile.
 - **A confidence calibration.** `routing_hints.confidence` is a
@@ -165,7 +165,7 @@ This section defines terms used normatively throughout the document. See
 - **Task.** A unit of work proposed, accepted, performed, and resolved
   inside a workspace. Tasks have a lifecycle and produce artefacts.
 - **Artefact.** A typed payload produced by a Participant in the
-  course of a task — a draft, a decision, an override, a citation set,
+  course of a task, a draft, a decision, an override, a citation set,
   a structured record.
 - **Override.** An artefact that records a human's modification of an
   agent's output, including the diff, rationale, and applicable tags.
@@ -254,13 +254,13 @@ Field-by-field:
 
 CHAP uses a JSON-RPC-2.0-inspired but not identical three-type model:
 
-- **`request`** — solicits a response. Carries `method` and `params`.
+- **`request`**: solicits a response. Carries `method` and `params`.
   The Coordinator MAY answer requests directly (e.g. for routing or
   policy queries) but typically forwards to the addressed Participant,
   which replies with a `response` whose `id` echoes the request's `id`.
-- **`response`** — answers a previous `request`. Carries `result` on
+- **`response`**: answers a previous `request`. Carries `result` on
   success or `error` on failure. The `id` MUST match the request's `id`.
-- **`notification`** — fire-and-forget. Carries `method` and `params`.
+- **`notification`**: fire-and-forget. Carries `method` and `params`.
   No response is expected. Used for status updates, progress reports,
   and pub-sub events.
 
@@ -336,7 +336,7 @@ Signing procedure:
 
 Verification reverses the procedure. The verifier MUST look up the
 public key for the claimed `from` Participant *as of the message's
-`ts`* — keys may have rotated since.
+`ts`*, keys may have rotated since.
 
 ### 5.3 Key formats
 
@@ -464,9 +464,9 @@ their evidence chain is sealed. `archived` workspaces are read-only.
 Roles are workspace-local strings. The protocol defines two
 **reserved** role names:
 
-- **`coordinator`** — exactly one Participant per workspace, of
+- **`coordinator`**: exactly one Participant per workspace, of
   type `service`. Holds routing and mode-enforcement authority.
-- **`admin`** — one or more Participants, of type `human` or
+- **`admin`**: one or more Participants, of type `human` or
   `service`. May invite, evict, set mode, and rotate Coordinator
   responsibilities.
 
@@ -529,7 +529,7 @@ conforming to [`schemas/chap-participant.schema.json`](./schemas/core/chap-parti
 ### 7.2 Capability profile
 
 The `capabilities` block describes what the Participant is good at
-and at what rate. This is **descriptive, not prescriptive** — the
+and at what rate. This is **descriptive, not prescriptive**: the
 Coordinator uses it for routing hints and load shaping; the
 Participant's own authority is unchanged by claiming any particular
 capability.
@@ -629,12 +629,12 @@ A Task conforms to [`schemas/chap-task.schema.json`](./schemas/core/chap-task.sc
 The `review.rule` field defines the predicate for moving from
 `review_requested` to `completed`:
 
-- `any_one_approves` — first `decide.approve` wins.
-- `all_approve` — every named reviewer must approve.
-- `quorum:<n>` — `n` approvals required.
-- `weighted_vote:<threshold>` — weighted approvals summing to
+- `any_one_approves`: first `decide.approve` wins.
+- `all_approve`: every named reviewer must approve.
+- `quorum:<n>`: `n` approvals required.
+- `weighted_vote:<threshold>`: weighted approvals summing to
   threshold (weights in workspace policy).
-- `weighted_vote_with_veto:<threshold>` — as above, but any
+- `weighted_vote_with_veto:<threshold>`: as above, but any
   `decide.reject` from a reviewer with `veto: true` ends the review
   immediately as rejected.
 
@@ -667,7 +667,7 @@ Fields:
 | `risk_tier`    | string  | opaque to CHAP; org-specific                      |
 
 Additional operator-defined fields are permitted. CHAP signs whatever
-is present but interprets nothing — interpretation is the operator's
+is present but interprets nothing, interpretation is the operator's
 responsibility, and the `routing/1.0` profile defines methods that
 consume the hints (`task.route`, `review.depth`, `escalate.auto`).
 
@@ -681,7 +681,7 @@ understand.
 
 ### 9.1 Purpose
 
-An Artefact is a typed payload produced inside a workspace — a draft
+An Artefact is a typed payload produced inside a workspace, a draft
 to be reviewed, a final decision, an override record, a structured
 extraction, a citation set. Artefacts are first-class evidence: their
 existence and content are recorded in the chain.
@@ -699,7 +699,7 @@ existence and content are recorded in the chain.
   "logical_id": "lgl_01HZ9YX1A2B3C4D5E6F7G8H9J0",
   "instance_id": "art_01HZ9YX1A2B3C4D5E6F7G8H9J0",
   "content": {
-    "text": "Hello — thank you for reaching out about order #...",
+    "text": "Hello   thank you for reaching out about order #...",
     "tone": "apologetic",
     "compensation_offered": null
   },
@@ -725,7 +725,7 @@ CHAP distinguishes three identity concepts on an artefact:
 - **`id`** (required) is a globally unique handle for this particular
   artefact record. Each new artefact gets a fresh `id`.
 - **`logical_id`** (OPTIONAL) names the *thing the artefact is about*
-  — the durable handle that survives revision. Two artefacts that
+ , the durable handle that survives revision. Two artefacts that
   share a `logical_id` are two versions of the same underlying item:
   the same draft response, the same policy statement, the same
   recommendation. Producers SHOULD assign a `logical_id` on first
@@ -741,11 +741,11 @@ These fields exist so that revision, supersession, and override can
 be distinguished in the chain. Without them, a deployment can track
 *which artefact replaced which* (via `based_on` and `control.supersede`)
 but cannot answer *"is this the same item I approved last week, or a
-different item with the same shape?"* — a question that arises in any
+different item with the same shape?"*, a question that arises in any
 domain that does versioned work.
 
-CHAP itself reads only `id`. Higher layers — analytics, dashboards,
-external indexes — can use `logical_id` and `instance_id` to project
+CHAP itself reads only `id`. Higher layers, analytics, dashboards,
+external indexes, can use `logical_id` and `instance_id` to project
 the chain into a version graph.
 
 ### 9.3 Standard artefact kinds
@@ -779,7 +779,7 @@ An `override` artefact MUST carry:
   "diff": [
     { "op": "replace", "path": "/content/text",
       "from": "We're sorry for the delay…",
-      "to":   "I'm sorry for the delay — I've also waived shipping on your next order." }
+      "to":   "I'm sorry for the delay   I've also waived shipping on your next order." }
   ],
   "rationale": "Compensation offered to retain customer per policy CSAT-3.",
   "tags": ["tone-adjustment", "compensation-offered"],
@@ -795,8 +795,8 @@ analysing override patterns across time.
 When the override's `based_on` target carries a `logical_id`, the
 override SHOULD carry the same `logical_id` and SHOULD set
 `intent_preserved` to indicate whether the override changes the
-underlying intent (`false` — this is a different decision) or
-refines its expression (`true` — same decision, better delivery).
+underlying intent (`false`: this is a different decision) or
+refines its expression (`true`: same decision, better delivery).
 The field is informational; CHAP does not constrain semantics. It
 exists because *"the human edited the agent's draft"* and *"the human
 replaced the agent's draft with a different decision"* are
@@ -922,12 +922,12 @@ redaction* is permanent.
 
 Every workspace and every task carries a mode:
 
-- **`shadow`** — Output is produced but does not reach external
+- **`shadow`**: Output is produced but does not reach external
   effects. Used for offline evaluation, regression testing, and
   pre-deployment review of agent changes.
-- **`trial`** — Output reaches a limited audience (specified
+- **`trial`**: Output reaches a limited audience (specified
   observers or a percentage of traffic) and is still gated for review.
-- **`production`** — Output reaches its intended audience with full
+- **`production`**: Output reaches its intended audience with full
   effect.
 
 ### 11.2 Promotion
@@ -1185,16 +1185,16 @@ contains exactly one envelope. The subprotocol identifier is
 carrying the OIDC ID token or service credential.
 
 > The v0.2 reference implementations use plain HTTP POST; a
-> WebSocket reference binding is planned for v0.2.
+> WebSocket reference binding is planned for a future revision.
 
 ### 14.3 HTTP+SSE binding (RECOMMENDED)
 
 Two endpoints:
 
-- **`POST /chap`** — single-envelope submission. Returns the
+- **`POST /chap`**: single-envelope submission. Returns the
   Coordinator's acknowledgement (a `response` envelope) in the
   HTTP response body.
-- **`GET /chap/events`** — Server-Sent Events stream of envelopes
+- **`GET /chap/events`**: Server-Sent Events stream of envelopes
   addressed to the authenticated participant. Each event's `data:`
   field is a single envelope. Events use the `id:` field for the
   envelope's `id`.
@@ -1208,8 +1208,8 @@ implements this binding (POST and SSE, with `/rpc` instead of
 A degraded mode for clients that cannot maintain a persistent
 connection:
 
-- **`POST /chap`** — submission (as above).
-- **`GET /chap/inbox?since=<cursor>`** — return all envelopes
+- **`POST /chap`**: submission (as above).
+- **`GET /chap/inbox?since=<cursor>`**: return all envelopes
   addressed to the authenticated participant since the cursor.
 
 Polling intervals SHOULD NOT exceed 5 seconds in production.
@@ -1327,7 +1327,7 @@ partition MUST either (a) run a single logical Coordinator with HA
 replication that preserves chain linearity, or (b) operate the
 peer-to-peer topology in §3 with each peer maintaining its own chain
 and using `audit.read` to cross-verify on heal. Detection of fork is
-automatic — the divergent `prev_hash` values do not link — but
+automatic (the divergent `prev_hash` values do not link) but
 resolution is operational. Deployments SHOULD anchor chain heads to
 an external transparency log via `audit-scitt/1.0` to make fork
 detection independent of the Coordinators themselves.
@@ -1472,9 +1472,9 @@ provide canonical input/output pairs for signing, canonicalisation,
 and evidence chaining that every implementation MUST reproduce
 exactly; the harness in
 [`conformance/harness/`](./conformance/harness/) provides the
-runnable substrate. A full interoperability test suite — covering
+runnable substrate. A full interoperability test suite, covering
 end-to-end method exchange between two implementations under both
-Coordinator-mediated and peer topologies — is planned alongside the
+Coordinator-mediated and peer topologies, is planned alongside the
 Full conformance level.
 
 ---
@@ -1495,7 +1495,7 @@ Registrations will be filed when the specification reaches Last Call.
 
 ---
 
-## Appendix A — Normative references
+## Appendix A: Normative references
 
 - [RFC 2119] Key words for use in RFCs.
 - [RFC 8174] Ambiguity of uppercase vs lowercase in RFC 2119 key words.
@@ -1507,9 +1507,9 @@ Registrations will be filed when the specification reaches Last Call.
 - [RFC 9449] OAuth 2.0 Demonstrating Proof of Possession (DPoP).
 - [ULID Specification](https://github.com/ulid/spec).
 
-## Appendix B — Informative references
+## Appendix B: Informative references
 
-- Model Context Protocol — https://modelcontextprotocol.io
-- Agent-to-Agent (A2A) Protocol — https://a2a.dev
-- OpenID Connect Core 1.0 — https://openid.net/specs/openid-connect-core-1_0.html
-- SPIFFE — https://spiffe.io
+- Model Context Protocol, https://modelcontextprotocol.io
+- Agent-to-Agent (A2A) Protocol, https://a2a.dev
+- OpenID Connect Core 1.0, https://openid.net/specs/openid-connect-core-1_0.html
+- SPIFFE, https://spiffe.io

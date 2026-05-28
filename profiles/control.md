@@ -126,7 +126,7 @@ is created with `supersedes` linkage.
 Every `control.*` method is privileged. Implementations SHOULD
 require step-up authentication (recent `auth_time`) via the
 `identity-oidc` profile. Without `identity-oidc`, the requirement
-reduces to "the caller has the admin role" — protocol-level
+reduces to "the caller has the admin role", protocol-level
 enforcement is left to the deployment.
 
 ---

@@ -53,7 +53,7 @@ clustered service. Every message flows through the Coordinator, which:
 - Optionally co-signs to attest acceptance.
 
 This topology is the easiest to operate and the most common in
-production. The Coordinator is a critical-path component — see §3 on
+production. The Coordinator is a critical-path component, see §3 on
 high availability.
 
 ### 2.2 Peer-to-peer (advanced)
@@ -77,7 +77,7 @@ it originates and receives.
 Trade-offs:
 
 - No single point of failure.
-- Eventual consistency on chain ordering — peers may briefly disagree
+- Eventual consistency on chain ordering, peers may briefly disagree
   on the head before gossip converges.
 - Policy enforcement becomes a distributed problem.
 
@@ -143,7 +143,7 @@ Required properties:
 - **Standby readers.** Non-leader instances can serve `workspace.describe`,
   `audit.read`, and other read-only methods.
 - **Failover budget.** A workspace becomes write-unavailable during
-  leader election. Typical recovery: 1–5 seconds with etcd / Raft
+  leader election. Typical recovery: 1-5 seconds with etcd / Raft
   leases.
 
 ---
@@ -217,7 +217,7 @@ fetch from cold storage on demand for older audit queries.
 | Transport         | Latency  | Throughput | Best for                                  |
 |-------------------|----------|------------|-------------------------------------------|
 | WebSocket         | Low      | Medium     | Interactive humans, agents over the public internet. |
-| HTTP + SSE        | Low–medium | Medium   | Firewall-friendly fallback for WebSocket. |
+| HTTP + SSE        | Low-medium | Medium   | Firewall-friendly fallback for WebSocket. |
 | HTTP poll         | High     | Low        | Restricted-network agents.                |
 | NATS / JetStream  | Low      | High       | Intra-mesh agent meshes.                  |
 | Kafka             | Medium   | Very high  | High-volume server-to-server flows.       |
@@ -349,7 +349,7 @@ Alerting rules worth having:
 
 - Signature-verify failures > 0.1% sustained: misconfiguration or attack.
 - Override rate spike vs. 7-day baseline (per agent): regression alarm.
-- Step-up requirements declining sharply: policy regression — investigate.
+- Step-up requirements declining sharply: policy regression, investigate.
 - Chain-append latency p99 above SLO: storage problem.
 - Whisper lapse rate above target: coverage gap.
 
@@ -362,7 +362,7 @@ Three classes of key, three management strategies:
 | Class                | Lifetime         | Custody             | Rotation                         |
 |----------------------|------------------|---------------------|----------------------------------|
 | Human ephemeral      | One session      | Client device       | Each login.                      |
-| Agent / service      | Days–weeks       | Workload identity   | Scheduled; `participant.rotate_key`. |
+| Agent / service      | Days-weeks       | Workload identity   | Scheduled; `participant.rotate_key`. |
 | Coordinator          | Months           | HSM or KMS          | Quarterly; admin operation.      |
 
 Coordinator keys are the most sensitive (they co-sign acceptances).
@@ -435,5 +435,5 @@ A minimum operational runbook for a CHAP deployment covers:
 | Identity (service)      | SPIFFE preferred; mTLS / OAuth client creds otherwise. |
 | Coordinator key custody | HSM or KMS.                                            |
 
-Start simple — a single coordinator pair with Postgres is sufficient
+Start simple, a single coordinator pair with Postgres is sufficient
 for most teams. Scale horizontally only when measured load demands it.

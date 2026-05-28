@@ -1,4 +1,4 @@
-# Example 09 — Pause, resume, snapshot, rollback
+# Example 09: Pause, resume, snapshot, rollback
 
 **Scenario.** A new version of the triage bot has been deployed to a
 support workspace. Within 20 minutes, the override-analyser flags an
@@ -15,7 +15,7 @@ This example shows the **`control.*`** namespace end-to-end:
 - `control.rollback` reverting workspace state to a snapshot.
 - `control.resume` returning to normal operation.
 
-All control operations are **privileged** — they require step-up
+All control operations are **privileged**: they require step-up
 authentication, are recorded as first-class evidence entries, and are
 subject to the workspace policy's allow-list.
 
@@ -73,7 +73,7 @@ The on-call operator, Jordan, recently re-authenticated. He sends:
 ```
 
 `scope` can be `task`, `participant`, or `workspace`. Here, Jordan
-pauses only the agent — the rest of the workspace (humans handling
+pauses only the agent, the rest of the workspace (humans handling
 their own queue, other agents) keeps running.
 
 The Coordinator's response:
@@ -224,8 +224,8 @@ agent v3.2 for the time being. He uses `control.rollback`:
 chain. The chain is append-only by design. What rollback does is
 write a new "rollback to snapshot X" evidence entry, then write new
 entries that restore the snapshot's described state going forward.
-The whole history — what happened during the bad window, the pause,
-the snapshot, the supersession, the rollback — remains visible.
+The whole history, what happened during the bad window, the pause,
+the snapshot, the supersession, the rollback, remains visible.
 
 The Coordinator's response:
 
@@ -300,7 +300,7 @@ incident timeline is the chain.
 
 ## What this gives you
 
-- **A safe pause primitive** — the Coordinator stops accepting new
+- **A safe pause primitive**: the Coordinator stops accepting new
   work without affecting in-flight tasks.
 - **Snapshots as first-class artefacts** that can be referenced by
   later operations.

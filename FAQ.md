@@ -45,7 +45,7 @@ where humans and agents collaborate, CHAP is the answer.
 
 ### Why not just use a workflow engine like Temporal or Airflow?
 
-A workflow engine handles **how** work happens — retries, durability,
+A workflow engine handles **how** work happens, retries, durability,
 fan-out, scheduling. CHAP handles **what** the work is and **who**
 did each step. They're complementary: a Temporal workflow can use
 CHAP envelopes to record its human-touchpoints; the audit log is
@@ -57,11 +57,11 @@ The three protocols form a stack:
 
 ```
    ┌─────────────────────────────────────┐
-   │  CHAP — humans + agents collaborate  │
+   │  CHAP   humans + agents collaborate  │
    ├─────────────────────────────────────┤
-   │  A2A — agents talk to agents        │
+   │  A2A   agents talk to agents        │
    ├─────────────────────────────────────┤
-   │  MCP — agents talk to tools         │
+   │  MCP   agents talk to tools         │
    └─────────────────────────────────────┘
 ```
 
@@ -76,7 +76,7 @@ peers, all auditable through the CHAP layer.
 ### How long does it take to implement CHAP?
 
 - **CHAP Core**, in any language with basic JSON tooling: a weekend.
-  ~300–500 LOC. The reference at [`reference/core/`](./reference/core/)
+  ~300-500 LOC. The reference at [`reference/core/`](./reference/core/)
   is ~400 lines of TypeScript.
 - **CHAP Core + `review` profile**: another day. ~150 LOC of additional
   state-machine and method handlers.
@@ -91,7 +91,7 @@ Yes. Implementing all 7 Core methods plus the wire format and audit
 log makes you Core-conformant at the **Minimal** level (§17). File
 an in-toto attestation listing exactly which methods you implement.
 A **Full** conformance claim is not yet possible under the 0.2
-revision — it requires a second interoperable implementation and an
+revision, it requires a second interoperable implementation and an
 exhaustive interop test suite that the spec does not yet have.
 Implementations that exceed Recommended are welcome to list the
 additional methods in their attestation; promotion to Full opens
@@ -104,13 +104,13 @@ override-as-data dividend lives.
 
 After that, in order of typical demand:
 
-1. `modes` — safe rollout.
-2. `identity-oidc` — verified human identity.
-3. `routing` — cost/criticality-aware routing and review-depth decisions.
-4. `control` — operational control plane.
-5. `security-signed` — non-repudiation.
-6. `audit-scitt` — regulated audit.
-7. `deliberation`, `handoff`, `whisper`, `identity-vc` — workflow-specific.
+1. `modes`: safe rollout.
+2. `identity-oidc`: verified human identity.
+3. `routing`: cost/criticality-aware routing and review-depth decisions.
+4. `control`: operational control plane.
+5. `security-signed`: non-repudiation.
+6. `audit-scitt`: regulated audit.
+7. `deliberation`, `handoff`, `whisper`, `identity-vc`: workflow-specific.
 
 ### How do I handle cost, criticality, or confidence in CHAP?
 
@@ -122,7 +122,7 @@ and what it's allowed to cost (`criticality`, `deadline`,
 `max_cost_usd`, `risk_tier`). Artefacts declare what was produced
 and at what cost (`confidence`, `model_id`, `cost_consumed_usd`,
 `latency_ms`). CHAP signs these into the evidence chain like any
-other field but assigns them no semantics — confidence is
+other field but assigns them no semantics, confidence is
 model-specific, criticality is operator-defined.
 
 **The decisions** live in the optional `routing/1.0` profile.
@@ -141,7 +141,7 @@ engine while still making routing decisions auditable end-to-end.
 
 A workspace that wants cost-aware routing enables `core` + `review`
 + `modes` + `routing`. A workspace that doesn't need it still works
-fine without — the hints are optional everywhere.
+fine without, the hints are optional everywhere.
 
 ### Do I need every profile to be useful?
 
@@ -245,7 +245,7 @@ typically uses `core` + `review` + `identity-oidc` (or
   abstentions, escalations).
 - Step-up auth for privileged operations.
 
-Specific regulatory fits — SOX, HIPAA, GDPR, FDA QSR, EU AI Act —
+Specific regulatory fits. SOX, HIPAA, GDPR, FDA QSR, EU AI Act.
 depend on your deployment's controls; the protocol provides the
 hooks.
 
@@ -264,7 +264,7 @@ not provided.
 
 Deployment policy. Typical:
 
-- Operational workspaces: 1–2 years.
+- Operational workspaces: 1-2 years.
 - Compliance-relevant: 7 years.
 - Healthcare-regulated: 10+ years.
 
@@ -364,7 +364,7 @@ ports to Go, Python, Rust, Java, and C# are straightforward.
 
 No. Core works fine with in-memory state for testing, and the
 reference implementation uses Maps. For production, swap to any
-durable store — Postgres, SQLite, S3 + manifest, whatever fits.
+durable store. Postgres, SQLite, S3 + manifest, whatever fits.
 The protocol has no opinion.
 
 ### How do I handle high throughput?

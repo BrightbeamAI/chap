@@ -42,15 +42,15 @@ don't share state.
 identified by a URI:
 
 ```
-human:[email protected]        — a person
-agent:triage-bot#v3.2              — a specific agent version
-service:[email protected]   — a service or component
-group:on-call@example.org          — a named group of participants
-workspace:wsp_release-decisions    — a workspace acting as a peer
+human:[email protected]   a person
+agent:triage-bot#v3.2   a specific agent version
+service:[email protected]   a service or component
+group:on-call@example.org   a named group of participants
+workspace:wsp_release-decisions   a workspace acting as a peer
 ```
 
 **Methods.** The verbs participants exchange. Core is seven methods
-that all implementations support. Profiles add more — `review.request`,
+that all implementations support. Profiles add more, `review.request`,
 `decide.override`, `abstain.declare`, and so on.
 
 Underneath everything is an **audit log**: every accepted envelope
@@ -68,7 +68,7 @@ If you remember three things:
 ## 2. Roles and responsibilities
 
 CHAP recognises five role categories. The protocol itself doesn't
-enforce them — your workspace policy does — but the categories are
+enforce them (your workspace policy does) but the categories are
 consistent across implementations.
 
 | Role        | Typical work                                              |
@@ -152,7 +152,7 @@ shadow/trial/production ladder is how you avoid surprises.
 
 **If quick interrupt-style disambiguation is common** → add `whisper`.
 Use it for "should I cancel this order or confirm with the
-customer?" — closed-set, time-bound, with a default if no one
+customer?", closed-set, time-bound, with a default if no one
 answers.
 
 **If multiple humans must agree** → add `deliberation`. Quorum,
@@ -198,7 +198,7 @@ than tribal knowledge. The standard sequence:
 shadow → trial → production
 ```
 
-### 5.1 Shadow (1–4 weeks)
+### 5.1 Shadow (1-4 weeks)
 
 The new agent processes real traffic, but its output is **not
 delivered** to the end recipient. Output goes only to a shadow
@@ -211,9 +211,9 @@ Promotion criteria (typical):
   state transitions).
 - Throughput meets the SLA.
 
-### 5.2 Trial (1–2 weeks)
+### 5.2 Trial (1-2 weeks)
 
-The agent's output **is** delivered to the recipient — but **every
+The agent's output **is** delivered to the recipient, but **every
 output is reviewed**. The reviewer can approve, reject, or override.
 
 The override rate is the primary input to the promote-to-production
@@ -232,8 +232,8 @@ target (e.g. 10%) for two consecutive weeks.
 ### 5.3 Production
 
 Review becomes per-policy: random sampling, risk-triggered, or none.
-The override-capture infrastructure stays on — you still want the
-learning signal — but it covers a fraction of traffic.
+The override-capture infrastructure stays on, you still want the
+learning signal, but it covers a fraction of traffic.
 
 ### 5.4 Demoting
 
@@ -256,7 +256,7 @@ An override carries four fields:
 
 | Field         | Meaning                                                  |
 |---------------|----------------------------------------------------------|
-| `diff`        | RFC 6902 JSON Patch — the exact edit.                    |
+| `diff`        | RFC 6902 JSON Patch, the exact edit.                    |
 | `rationale`   | Free-text explanation of why.                            |
 | `tags`        | Categorical labels (`tone-softened`, `severity-downgraded`, `factual-fix`). |
 | `policy_refs` | References to the guideline(s) the override implements.  |
@@ -337,8 +337,8 @@ participant categories.
 
 ### 7.3 Step-up auth
 
-Privileged operations — anything in the `control` profile, plus
-mode promotion and policy changes — require step-up authentication.
+Privileged operations, anything in the `control` profile, plus
+mode promotion and policy changes, require step-up authentication.
 The pattern:
 
 ```
@@ -394,7 +394,7 @@ Retention is deployment policy, not protocol. Common settings:
 
 | Workspace kind             | Typical retention      |
 |----------------------------|-----------------------|
-| Operational (support, ops) | 1–2 years             |
+| Operational (support, ops) | 1-2 years             |
 | Compliance-relevant        | 7 years               |
 | Healthcare-regulated       | 10+ years per jurisdiction |
 | Federal-finance            | Per regulation        |
@@ -423,7 +423,7 @@ mechanism.
 ### 8.4 Auditor access
 
 An Auditor reads the log, never writes to it. With the `audit-scitt`
-profile, Auditors verify SCITT receipts offline — they don't need
+profile, Auditors verify SCITT receipts offline, they don't need
 the Coordinator's cooperation to confirm an entry is genuine.
 
 ---
@@ -536,7 +536,7 @@ it for the symptomatic methods.
 ### 11.4 Roll back if appropriate
 
 If a misconfiguration is the cause, `control.rollback` restores the
-named snapshot — appending, never truncating, the audit log.
+named snapshot, appending, never truncating, the audit log.
 
 ### 11.5 Reactivate
 
@@ -560,7 +560,7 @@ operations resumed.
 
 ## 12. Common patterns
 
-### 12.1 Drafter–Reviewer
+### 12.1 Drafter-Reviewer
 
 The classic. An agent drafts; a human approves or overrides.
 
@@ -570,7 +570,7 @@ human creates task → agent drafts → review.request → human decides → don
 
 Use `review` + (optionally) `modes`. See [`examples/03-review-and-approve.md`](./examples/03-review-and-approve.md).
 
-### 12.2 Drafter–Reviewer–Approver
+### 12.2 Drafter-Reviewer-Approver
 
 Two-step approval for higher-stakes decisions.
 

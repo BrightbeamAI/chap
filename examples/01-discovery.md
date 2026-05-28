@@ -1,4 +1,4 @@
-# Example 01 — Discovery
+# Example 01: Discovery
 
 **Scenario.** A new agent comes online and joins a customer-support triage
 workspace. Before it can accept work, it announces itself, and an admin
@@ -6,9 +6,9 @@ fetches its descriptor to verify its capabilities and signing key.
 
 This example shows the three discovery operations:
 
-1. `participant.announce` — an agent advertises itself.
-2. `workspace.describe` — fetching the workspace state.
-3. `participant.describe` — fetching a specific Participant's descriptor.
+1. `participant.announce`: an agent advertises itself.
+2. `workspace.describe`: fetching the workspace state.
+3. `participant.describe`: fetching a specific Participant's descriptor.
 
 All messages are signed; signatures are abbreviated for readability.
 

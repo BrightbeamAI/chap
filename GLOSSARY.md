@@ -10,7 +10,7 @@ document, and the worked examples. Terms used normatively in the spec carry a
 
 **A2A.** [Agent-to-Agent Protocol](https://a2a.dev). An open protocol for
 agent communication across organisational boundaries. CHAP composes with A2A
-via a bridge service participant — see
+via a bridge service participant, see
 [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
 **Abstention.** A Participant's recorded decision *not* to decide. Used when
@@ -26,7 +26,7 @@ transparency log) used to provide tamper-evidence beyond the Coordinator's
 own signature.
 
 **Artefact.** [normative] A typed payload produced by a Participant inside a
-Task — a draft, a decision, an override, a citation set, a structured record.
+Task (a draft, a decision, an override, a citation set, a structured record).
 See §9 of the specification.
 
 **Assignee.** The Participant a Task is assigned to.
@@ -42,7 +42,7 @@ CHAP uses `auth_time` to enforce step-up windows for privileged operations.
 ## C
 
 **Capability profile.** [normative] A Participant's self-reported set of
-abilities — supported task kinds, supported modes, latency, concurrency.
+abilities, supported task kinds, supported modes, latency, concurrency.
 Descriptive, not prescriptive: it informs routing but does not grant
 authority.
 
@@ -53,8 +53,8 @@ producing a full artefact.
 **Checkpoint.** A Coordinator-signed evidence entry asserting the chain
 head and length at a point in time. Default interval: every 1000 entries.
 
-**Citation.** A reference inside an artefact to an external source —
-typically an MCP tool invocation or an A2A correlation — with hashes of the
+**Citation.** A reference inside an artefact to an external source.
+typically an MCP tool invocation or an A2A correlation, with hashes of the
 input and output for integrity verification.
 
 **Coordinator.** [normative] The service participant that mediates a
@@ -205,7 +205,7 @@ revision, override, or supersession. CHAP itself reads only `id`;
 
 **MCP.** [Model Context Protocol](https://modelcontextprotocol.io). The
 agent-to-tool protocol. CHAP composes with MCP by citing tool invocations
-inside its evidence chain — see
+inside its evidence chain, see
 [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md).
 
 **Message.** [normative] A single CHAP envelope. Becomes exactly one
@@ -244,7 +244,7 @@ by `decide.override`.
 ## P
 
 **Participant.** [normative] Any entity that can send or receive CHAP
-messages — human, agent, service, group, or workspace. See §7 of the
+messages, human, agent, service, group, or workspace. See §7 of the
 specification.
 
 **Participant URI.** [normative] A URI identifying a Participant. Schemes:
@@ -285,9 +285,9 @@ method-role matrix. Two roles are reserved: `coordinator` and `admin`.
 
 **Routing hints.** Optional `routing_hints` object on a Task or Artefact
 carrying runtime signals consumed by the `routing/1.0` profile. On a
-Task: `criticality`, `deadline`, `max_cost_usd`, `risk_tier` — the
+Task: `criticality`, `deadline`, `max_cost_usd`, `risk_tier`: the
 budget. On an Artefact: `confidence`, `model_id`, `cost_consumed_usd`,
-`latency_ms` — the measurement. CHAP defines the field shape and signs
+`latency_ms`: the measurement. CHAP defines the field shape and signs
 the values into the evidence envelope but assigns them no semantics;
 interpretation is the operator's.
 
@@ -371,7 +371,7 @@ Typically an auditor, a regulator, or a downstream learning system.
 ## W
 
 **Whisper.** A short, deadline-bound, interrupt-style question sent
-mid-task — typically from an agent to a human, asking for a quick
+mid-task, typically from an agent to a human, asking for a quick
 disambiguation. Triggered by `whisper.ask`; answered by
 `whisper.answer`. May carry a `default_if_lapsed` value.
 

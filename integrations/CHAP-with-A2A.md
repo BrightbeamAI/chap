@@ -7,7 +7,7 @@ disjoint concerns:
 | Concern                                                     | Protocol |
 |-------------------------------------------------------------|----------|
 | Two agents talking across organisational boundaries         | A2A      |
-| The shared room — humans and agents collaborating inside one organisation | CHAP      |
+| The shared room, humans and agents collaborating inside one organisation | CHAP      |
 
 The composition pattern is **bridge service**, not federation. Inside
 each organisation's CHAP workspace, a single Participant of type
@@ -41,7 +41,7 @@ A request to "delegate this task to a peer at another organisation":
    `service:bridge@example.org`.
 2. The bridge accepts it, translates it into an A2A request, and
    sends it over A2A to the peer organisation.
-3. The peer organisation does whatever it does — internally, that
+3. The peer organisation does whatever it does, internally, that
    workspace handles the request via its own CHAP flow.
 4. The peer returns an A2A response. The local bridge ingests it,
    produces a CHAP artefact citing the A2A correlation, and emits
@@ -207,7 +207,7 @@ flight:
       "task": "tsk_01HZBF1R0K3X8M2V4N6P8R0TCB",
       "content": {
         "translation_uri": "https://example.org/docs/quarterly-report.ko.pdf",
-        "translator_attestation": "Partner A — translation team",
+        "translator_attestation": "Partner A   translation team",
         "quality_score": 4.6
       },
       "citations": [

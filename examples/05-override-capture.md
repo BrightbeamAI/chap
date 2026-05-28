@@ -1,10 +1,10 @@
-# Example 05 — Override capture
+# Example 05: Override capture
 
 **Scenario.** A code-review agent has drafted PR review comments. A
 senior engineer reviewing the bot's output agrees with most of it but
 softens the tone on one comment and adds a compensating-control note
 to another. The protocol captures her edits as a structured override
-artefact — diff, rationale, tags — so the bot can learn from the
+artefact (diff, rationale, tags) so the bot can learn from the
 correction without anyone having to write a custom UI hook.
 
 This example shows:
@@ -95,7 +95,7 @@ new branch is exercised by an existing integration test.
           "op": "replace",
           "path": "/comments/1/text",
           "from": "This function is doing too many things. Split it before it grows further.",
-          "to":   "Consider splitting this function — it's handling routing, validation, and dispatch, and a smaller decomposition would make the retry logic easier to test. Not blocking for this PR."
+          "to":   "Consider splitting this function   it's handling routing, validation, and dispatch, and a smaller decomposition would make the retry logic easier to test. Not blocking for this PR."
         },
         {
           "op": "replace",
@@ -107,7 +107,7 @@ new branch is exercised by an existing integration test.
           "op": "replace",
           "path": "/comments/2/text",
           "from": "No test for the new retry branch added in this PR. Coverage will regress.",
-          "to":   "The new retry branch is exercised by `integration_test.go::TestRetryWithBackoff` — confirmed by inspection. Coverage report misses cross-file flow. OK to merge."
+          "to":   "The new retry branch is exercised by `integration_test.go::TestRetryWithBackoff`   confirmed by inspection. Coverage report misses cross-file flow. OK to merge."
         },
         {
           "op": "replace",
@@ -122,7 +122,7 @@ new branch is exercised by an existing integration test.
           "to":   "comment"
         }
       ],
-      "rationale": "Nil-pointer comment is correct and well-targeted. Tone on the splitting comment was over-strong for a non-blocking suggestion. The 'missing test' was a false positive — there is integration coverage; the bot's lint tool doesn't see across files.",
+      "rationale": "Nil-pointer comment is correct and well-targeted. Tone on the splitting comment was over-strong for a non-blocking suggestion. The 'missing test' was a false positive   there is integration coverage; the bot's lint tool doesn't see across files.",
       "tags": [
         "tone-softened",
         "severity-downgraded",
@@ -154,7 +154,7 @@ The Coordinator validates and produces the override artefact:
     "logical_id": "lgl_01HZB4M5K3X8M2V4N6P8R0T7A",
     "intent_preserved": true,
     "diff": [ /* five patch ops as above */ ],
-    "rationale": "Nil-pointer comment is correct and well-targeted. Tone on the splitting comment was over-strong for a non-blocking suggestion. The 'missing test' was a false positive — there is integration coverage; the bot's lint tool doesn't see across files.",
+    "rationale": "Nil-pointer comment is correct and well-targeted. Tone on the splitting comment was over-strong for a non-blocking suggestion. The 'missing test' was a false positive   there is integration coverage; the bot's lint tool doesn't see across files.",
     "tags": ["tone-softened", "severity-downgraded", "false-positive-corrected", "cross-file-coverage"],
     "policy_refs": ["code-review-tone-guidelines-v2"]
   },
@@ -162,8 +162,8 @@ The Coordinator validates and produces the override artefact:
 }
 ```
 
-The override carries the same `logical_id` as the original draft —
-they are two versions of the same code-review artefact — and
+The override carries the same `logical_id` as the original draft.
+they are two versions of the same code-review artefact, and
 `intent_preserved: true` because the reviewer kept the agent's
 overall judgement (review the PR, comment on these three issues)
 while refining tone and correcting one false positive. A reviewer
@@ -255,7 +255,7 @@ review flow.
 ## What this gives you
 
 - **Structured diffs** instead of "the human changed something."
-- **Rationale and tags** carried by the protocol — not buried in a
+- **Rationale and tags** carried by the protocol, not buried in a
   UI's free-text field that's hard to reach later.
 - **Aggregate override analytics** as a first-class operation.
   Improving the agent stops being a tribal-knowledge exercise.

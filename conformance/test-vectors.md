@@ -12,8 +12,8 @@ The vectors cover three operations:
 3. **Evidence-chain linkage** of a genesis entry plus three entries.
 
 If an implementation matches all three, its cryptographic core is
-conformant. (The conformance ladder — Minimal, Recommended, and the
-planned Full level — is described in
+conformant. (The conformance ladder. Minimal, Recommended, and the
+planned Full level, is described in
 [SPECIFICATION.md §17](../SPECIFICATION.md#17-conformance) and the
 profile-selection checklist is in
 [`conformance-checklist.md`](./conformance-checklist.md).)
@@ -101,7 +101,7 @@ differs but the bytes look almost right, check (in order):
 - Key ordering at every nesting level (especially `evidence` and `params`).
 - Whitespace: there must be none.
 - Number representation: `0.42` (not `0.420`, not `42e-2`).
-- The presence of `evidence.sig` — it must be **absent** during canonicalisation.
+- The presence of `evidence.sig`: it must be **absent** during canonicalisation.
 
 ---
 
@@ -117,7 +117,7 @@ prev_hash(N+1) = sha256( envelope_hash(N) || sig(N) )
 ```
 
 Below is a four-entry chain (genesis plus three) with placeholder
-canonical envelopes for entries 1–3. The hashes are derived
+canonical envelopes for entries 1-3. The hashes are derived
 deterministically; any implementation that chains correctly will
 produce the same `prev_hash` for each entry.
 
@@ -219,7 +219,7 @@ they do, your hashing and linkage rules are correct.
 ## 5. What these vectors do NOT cover
 
 These vectors check the cryptographic and structural primitives.
-They do not — and cannot — check:
+They do not (and cannot) check:
 
 - That an implementation enforces method-role authorisation.
 - That an implementation handles step-up authentication correctly.

@@ -5,7 +5,7 @@
 The `review` profile adds the workflow most teams want when humans
 oversee agent output: **request review**, **approve / reject /
 override**, **abstain**, **escalate**. This is CHAP's highest-value
-profile — it's where the structured-override learning data lives.
+profile, it's where the structured-override learning data lives.
 
 If you implement only one profile beyond Core, implement this one.
 
@@ -111,7 +111,7 @@ If `request_revision` is true, the task transitions back to
 `in_progress` rather than terminal `rejected`, giving the assignee
 a chance to revise.
 
-### 3.3 `decide.override` — the differentiator
+### 3.3 `decide.override`: the differentiator
 
 The most valuable method in CHAP. The reviewer approves a *modified*
 version of the draft, carrying a structured diff, rationale, and
@@ -134,7 +134,7 @@ tags. This is what turns human edits into learning data.
         "op": "replace",
         "path": "/comments/1/text",
         "from": "This function is doing too many things…",
-        "to":   "Consider splitting this function — not blocking for this PR."
+        "to":   "Consider splitting this function   not blocking for this PR."
       },
       {
         "op": "replace",
@@ -157,7 +157,7 @@ returns `-32602` with the error path.
 
 When the based-on artefact carries a `logical_id`, the override
 SHOULD carry the same `logical_id` and SHOULD set `intent_preserved`
-— `true` if the override refines the *expression* of the same
+, `true` if the override refines the *expression* of the same
 underlying decision (as in the example above, where tone was
 softened but the underlying review remains "approve with comments"),
 `false` if the override substitutes a different decision (e.g. an
@@ -168,9 +168,9 @@ draft with a different decision"* are operationally different events
 that produce identical envelope structures without it.
 
 The resulting override is recorded as a typed audit entry. Any
-downstream analytics — "which tags appear most often?", "which
+downstream analytics, "which tags appear most often?", "which
 agent has the highest override rate?", "which guidelines are most
-frequently cited?" — falls out of querying the audit log.
+frequently cited?", falls out of querying the audit log.
 
 ### 3.4 `abstain.declare`
 
@@ -196,11 +196,11 @@ work is wrong) or staying silent (which is invisible).
 
 Standardised categories (extensible):
 
-- `out_of_authority` — exceeds my limit / role
-- `out_of_scope` — outside my competence
+- `out_of_authority`: exceeds my limit / role
+- `out_of_scope`: outside my competence
 - `conflict_of_interest`
 - `insufficient_context`
-- `other` — free-text in `reason`
+- `other`: free-text in `reason`
 
 Abstention rates are a primary signal for tuning agent/role
 boundaries. They're queryable as audit data.
@@ -234,7 +234,7 @@ references the original, preserving the audit linkage.
 
 ---
 
-## 4. Override-as-data — the unique value
+## 4. Override-as-data: the unique value
 
 Because every override carries a typed diff + rationale + tags, the
 audit log becomes a structured tuning dataset for free. A weekly
@@ -252,7 +252,7 @@ aggregation:
 ```
 
 …produces a tally like "67 overrides last week, 41 tagged
-`tone-softened`, 16 tagged `false-positive-corrected` — by agent
+`tone-softened`, 16 tagged `false-positive-corrected`: by agent
 version." That data didn't exist in the world before someone
 captured it; the protocol makes capturing it the default.
 
@@ -287,6 +287,6 @@ Full end-to-end walk-through in [`../examples/05-override-capture.md`](../exampl
   invoke a goodwill credit beyond their authority, the workflow can
   spawn a deliberation rather than a simple escalation.
 - **With MCP citations:** override patterns can be correlated with
-  the MCP tools the original draft used — "drafts that called the
+  the MCP tools the original draft used, "drafts that called the
   knowledge-base tool have a higher override rate; tune the
   knowledge-base agent first."

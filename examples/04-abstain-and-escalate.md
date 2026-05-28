@@ -1,4 +1,4 @@
-# Example 04 — Abstain and escalate
+# Example 04: Abstain and escalate
 
 **Scenario.** A junior reviewer is asked to approve a refund decision
 that exceeds her authorisation limit. She abstains explicitly rather
@@ -42,7 +42,7 @@ A draft refund of £450 has been produced and assigned for review:
 ```
 
 Alice's authorisation limit is £200. She *could* reject, but the
-correct outcome is probably approval — just not by her.
+correct outcome is probably approval, just not by her.
 
 ---
 
@@ -188,8 +188,8 @@ strictly better than producing a low-confidence guess: the abstention
 is a typed signal that downstream systems can use to route, learn from,
 and report on. The agent gets credit for knowing what it doesn't know.
 
-The Coordinator follows the same escalation path — to the multilingual
-support group rather than a specific human — and the work continues.
+The Coordinator follows the same escalation path, to the multilingual
+support group rather than a specific human, and the work continues.
 
 ---
 
@@ -220,14 +220,14 @@ Because abstentions are first-class evidence entries, an auditor can ask:
 }
 ```
 
-The result tabulates abstentions per Participant and category — a
+The result tabulates abstentions per Participant and category, a
 direct measure of where the workspace's competence boundaries lie.
 
 ---
 
 ## What this gives you
 
-- **An explicit "I should not decide this" signal** — better than
+- **An explicit "I should not decide this" signal**: better than
   a bad approval, better than an unanswered queue item.
 - **A reasoned escalation** with the original draft preserved.
 - **Auditable confidence boundaries.** Abstention rates by category

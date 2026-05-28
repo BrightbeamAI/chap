@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <filter id="ds" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+    <marker id="aR" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="aRe" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#EA4700"/>
+    </marker>
+  </defs>
+
+  <text x="600" y="40" text-anchor="middle" font-size="22" font-weight="600" fill="#111827">Anatomy of an override</text>
+  <text x="600" y="64" text-anchor="middle" font-size="14" fill="#6b7280">every field is structured for query, not just storage</text>
+
+  <g filter="url(#ds)">
+    <rect x="60" y="100" width="640" height="580" rx="12" fill="#0f172a"/>
+  </g>
+
+  <g font-family="'SF Mono', Menlo, Consolas, ui-monospace, monospace" font-size="14">
+    <text x="84" y="135" fill="#e5e7eb">{</text>
+    <text x="100" y="160" fill="#e5e7eb"><tspan fill="#fed7aa">"method"</tspan>: <tspan fill="#86efac">"decide.override"</tspan>,</text>
+    <text x="100" y="185" fill="#e5e7eb"><tspan fill="#fed7aa">"params"</tspan>: {</text>
+    <text x="124" y="218" fill="#e5e7eb"><tspan fill="#fed7aa">"task_id"</tspan>:          <tspan fill="#86efac">"tsk_pr_482"</tspan>,</text>
+    <text x="124" y="248" fill="#e5e7eb"><tspan fill="#fed7aa">"from"</tspan>:             <tspan fill="#86efac">"human:alice@acme.com"</tspan>,</text>
+    <text x="124" y="278" fill="#e5e7eb"><tspan fill="#fed7aa">"logical_id"</tspan>:       <tspan fill="#86efac">"lgl_pr_482_review"</tspan>,</text>
+    <text x="124" y="308" fill="#e5e7eb"><tspan fill="#fed7aa">"intent_preserved"</tspan>: <tspan fill="#fca5a5">true</tspan>,</text>
+    <text x="124" y="350" fill="#e5e7eb"><tspan fill="#fed7aa">"diff"</tspan>: [</text>
+    <text x="148" y="375" fill="#e5e7eb">{ <tspan fill="#fed7aa">"op"</tspan>: <tspan fill="#86efac">"replace"</tspan>,</text>
+    <text x="168" y="398" fill="#e5e7eb"><tspan fill="#fed7aa">"path"</tspan>: <tspan fill="#86efac">"/comments/0/severity"</tspan>,</text>
+    <text x="168" y="421" fill="#e5e7eb"><tspan fill="#fed7aa">"from"</tspan>: <tspan fill="#86efac">"warning"</tspan>,</text>
+    <text x="168" y="444" fill="#e5e7eb"><tspan fill="#fed7aa">"to"</tspan>:   <tspan fill="#86efac">"info"</tspan> }</text>
+    <text x="124" y="467" fill="#e5e7eb">],</text>
+    <text x="124" y="505" fill="#e5e7eb"><tspan fill="#fed7aa">"rationale"</tspan>:</text>
+    <text x="148" y="528" fill="#86efac">"False positive: handlers conform</text>
+    <text x="148" y="551" fill="#86efac"> to a framework signature."<tspan fill="#e5e7eb">,</tspan></text>
+    <text x="124" y="591" fill="#e5e7eb"><tspan fill="#fed7aa">"tags"</tspan>: [<tspan fill="#86efac">"false-positive"</tspan>,</text>
+    <text x="155" y="614" fill="#86efac">"framework-pattern-misread"<tspan fill="#e5e7eb">]</tspan></text>
+    <text x="100" y="640" fill="#e5e7eb">}</text>
+    <text x="84" y="664" fill="#e5e7eb">}</text>
+  </g>
+
+  <g font-size="13" fill="#374151">
+    <line x1="700" y1="214" x2="740" y2="214" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#aR)"/>
+    <text x="752" y="210" font-weight="600">Links to a PR review chain</text>
+    <text x="752" y="226" fill="#6b7280" font-size="11">replay any point in time, audit any decision</text>
+
+    <line x1="700" y1="244" x2="740" y2="244" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#aR)"/>
+    <text x="752" y="240" font-weight="600">Named, queryable identity</text>
+    <text x="752" y="256" fill="#6b7280" font-size="11">OIDC-bindable; pairs with security-signed/1.0</text>
+
+    <line x1="700" y1="274" x2="740" y2="274" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#aR)"/>
+    <text x="752" y="270" font-weight="600">Survives revision</text>
+    <text x="752" y="286" fill="#6b7280" font-size="11">"the same review, edited again" stays the same id</text>
+
+    <line x1="700" y1="304" x2="740" y2="304" stroke="#EA4700" stroke-width="1.5" marker-end="url(#aRe)"/>
+    <text x="752" y="300" font-weight="700" fill="#9a3412">Refining vs substituting</text>
+    <text x="752" y="316" fill="#6b7280" font-size="11">two failure modes; different fixes; query separately</text>
+
+    <line x1="700" y1="375" x2="740" y2="375" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#aR)"/>
+    <text x="752" y="371" font-weight="600">RFC 6902 JSON Patch</text>
+    <text x="752" y="387" fill="#6b7280" font-size="11">applies cleanly, reversible, no custom format</text>
+
+    <line x1="700" y1="528" x2="740" y2="528" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#aR)"/>
+    <text x="752" y="524" font-weight="600">"Why", alongside "what"</text>
+    <text x="752" y="540" fill="#6b7280" font-size="11">searchable; trains the next prompt revision</text>
+
+    <line x1="700" y1="591" x2="740" y2="591" stroke="#EA4700" stroke-width="1.5" marker-end="url(#aRe)"/>
+    <text x="752" y="587" font-weight="700" fill="#9a3412">Structured supervision data</text>
+    <text x="752" y="603" fill="#6b7280" font-size="11">aggregate over time; tune the agent's prompts</text>
+  </g>
+
+  <text x="600" y="704" text-anchor="middle" font-size="12" fill="#6b7280" font-style="italic">
+    Optional: identity profiles add signatures; audit-scitt/1.0 anchors the whole chain to a transparency log.
+  </text>
+</svg>

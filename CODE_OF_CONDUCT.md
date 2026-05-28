@@ -56,9 +56,11 @@ when an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behaviour may be
-reported to the community leaders responsible for enforcement at
-**conduct@chap.dev**. All complaints will be reviewed and investigated
-promptly and fairly.
+reported to the community leaders responsible for enforcement. Until a
+dedicated reporting address is published, please raise a confidential issue
+to the repository maintainers via GitHub, or contact the maintainer named in
+the repository's `MAINTAINERS` file. All complaints will be reviewed and
+investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of
 the reporter of any incident.

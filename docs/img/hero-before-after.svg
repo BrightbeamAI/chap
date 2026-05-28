@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">
+  <defs>
+    <linearGradient id="bgChaos" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fef3f2"/>
+      <stop offset="100%" stop-color="#fee4e2"/>
+    </linearGradient>
+    <linearGradient id="bgClean" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="100%" stop-color="#fed7aa"/>
+    </linearGradient>
+    <linearGradient id="emberFade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#EA4700"/>
+      <stop offset="100%" stop-color="#FF9900"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrowEmber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#EA4700"/>
+    </marker>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="600" y="38" text-anchor="middle" font-size="22" font-weight="600" fill="#111827">
+    Same scenario, two stacks
+  </text>
+  <text x="600" y="62" text-anchor="middle" font-size="14" fill="#6b7280">
+    a customer disputes a refund the bot decided last month
+  </text>
+
+  <!-- LEFT: Without CHAP -->
+  <rect x="40" y="90" width="540" height="400" rx="14" fill="url(#bgChaos)" stroke="#fecaca" stroke-width="1"/>
+  <text x="310" y="120" text-anchor="middle" font-size="15" font-weight="700" fill="#991b1b" letter-spacing="1.2">
+    WITHOUT CHAP
+  </text>
+
+  <!-- Without — log boxes scattered -->
+  <g filter="url(#softShadow)">
+    <rect x="70" y="145" width="135" height="58" rx="8" fill="#fff"/>
+    <text x="137" y="170" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">OpenAI logs</text>
+    <text x="137" y="190" text-anchor="middle" font-size="11" fill="#dc2626">expired after 30d</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="220" y="145" width="135" height="58" rx="8" fill="#fff"/>
+    <text x="287" y="170" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">Zendesk thread</text>
+    <text x="287" y="190" text-anchor="middle" font-size="11" fill="#dc2626">final reply only</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="370" y="145" width="135" height="58" rx="8" fill="#fff"/>
+    <text x="437" y="170" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">Slack #support</text>
+    <text x="437" y="190" text-anchor="middle" font-size="11" fill="#dc2626">scrolled off</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="70" y="225" width="135" height="58" rx="8" fill="#fff"/>
+    <text x="137" y="250" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">Linear comments</text>
+    <text x="137" y="270" text-anchor="middle" font-size="11" fill="#dc2626">no rationale</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="220" y="225" width="135" height="58" rx="8" fill="#fff"/>
+    <text x="287" y="250" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">webhook tail</text>
+    <text x="287" y="270" text-anchor="middle" font-size="11" fill="#dc2626">rotated keys</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="370" y="225" width="135" height="58" rx="8" fill="#fff"/>
+    <text x="437" y="250" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">Your memory</text>
+    <text x="437" y="270" text-anchor="middle" font-size="11" fill="#dc2626">unreliable</text>
+  </g>
+
+  <!-- Question mark scribble area -->
+  <text x="310" y="335" text-anchor="middle" font-size="13" fill="#374151" font-style="italic">
+    "What did the bot draft?
+  </text>
+  <text x="310" y="354" text-anchor="middle" font-size="13" fill="#374151" font-style="italic">
+    Why did we approve it?"
+  </text>
+
+  <!-- Time-to-answer -->
+  <rect x="105" y="385" width="410" height="78" rx="10" fill="#7f1d1d"/>
+  <text x="310" y="412" text-anchor="middle" font-size="13" font-weight="600" fill="#fecaca">TIME TO ANSWER</text>
+  <text x="310" y="445" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">~45 minutes</text>
+
+  <!-- RIGHT: With CHAP -->
+  <rect x="620" y="90" width="540" height="400" rx="14" fill="url(#bgClean)" stroke="#fdba74" stroke-width="1"/>
+  <text x="890" y="120" text-anchor="middle" font-size="15" font-weight="700" fill="#9a3412" letter-spacing="1.2">
+    WITH CHAP
+  </text>
+
+  <!-- Chain visualization -->
+  <g filter="url(#softShadow)">
+    <rect x="650" y="155" width="115" height="80" rx="8" fill="#fff"/>
+    <text x="707" y="178" text-anchor="middle" font-size="11" font-weight="700" fill="#6b7280">task.create</text>
+    <line x1="660" y1="186" x2="754" y2="186" stroke="#fed7aa" stroke-width="1"/>
+    <text x="707" y="204" text-anchor="middle" font-size="10" fill="#374151">customer ticket</text>
+    <text x="707" y="220" text-anchor="middle" font-size="10" fill="#9ca3af">agent:triage</text>
+  </g>
+
+  <line x1="765" y1="195" x2="800" y2="195" stroke="#EA4700" stroke-width="2" marker-end="url(#arrowEmber)"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="800" y="155" width="115" height="80" rx="8" fill="#fff"/>
+    <text x="857" y="178" text-anchor="middle" font-size="11" font-weight="700" fill="#6b7280">artefact</text>
+    <line x1="810" y1="186" x2="904" y2="186" stroke="#fed7aa" stroke-width="1"/>
+    <text x="857" y="204" text-anchor="middle" font-size="10" fill="#374151">draft reply</text>
+    <text x="857" y="220" text-anchor="middle" font-size="10" fill="#9ca3af">policy v3</text>
+  </g>
+
+  <line x1="915" y1="195" x2="950" y2="195" stroke="#EA4700" stroke-width="2" marker-end="url(#arrowEmber)"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="950" y="155" width="115" height="80" rx="8" fill="#fff"/>
+    <text x="1007" y="178" text-anchor="middle" font-size="11" font-weight="700" fill="#6b7280">decide.override</text>
+    <line x1="960" y1="186" x2="1054" y2="186" stroke="#fed7aa" stroke-width="1"/>
+    <text x="1007" y="204" text-anchor="middle" font-size="10" fill="#374151">+rationale</text>
+    <text x="1007" y="220" text-anchor="middle" font-size="10" fill="#9ca3af">human:you</text>
+  </g>
+
+  <!-- prev_hash chain underline -->
+  <text x="715" y="252" font-size="9" fill="#9a3412" font-family="ui-monospace, monospace">prev_hash</text>
+  <text x="865" y="252" font-size="9" fill="#9a3412" font-family="ui-monospace, monospace">prev_hash</text>
+  <text x="1015" y="252" font-size="9" fill="#9a3412" font-family="ui-monospace, monospace">prev_hash</text>
+  <line x1="700" y1="258" x2="1064" y2="258" stroke="#fdba74" stroke-width="1" stroke-dasharray="3,3"/>
+
+  <!-- The query -->
+  <g>
+    <rect x="650" y="288" width="420" height="80" rx="8" fill="#1f2937"/>
+    <text x="666" y="312" font-family="ui-monospace, monospace" font-size="12" fill="#fed7aa">await chap.audit.read({</text>
+    <text x="666" y="330" font-family="ui-monospace, monospace" font-size="12" fill="#e5e7eb">  task_id: <tspan fill="#6ee7b7">"tsk_ticket_8821"</tspan></text>
+    <text x="666" y="348" font-family="ui-monospace, monospace" font-size="12" fill="#fed7aa">})</text>
+    <text x="666" y="362" font-family="ui-monospace, monospace" font-size="11" fill="#9ca3af">// → full chain, prev_hash verified</text>
+  </g>
+
+  <!-- Time-to-answer -->
+  <rect x="685" y="385" width="410" height="78" rx="10" fill="#7c2d12"/>
+  <text x="890" y="412" text-anchor="middle" font-size="13" font-weight="600" fill="#fed7aa">TIME TO ANSWER</text>
+  <text x="890" y="445" text-anchor="middle" font-size="26" font-weight="700" fill="#fff">30 seconds</text>
+</svg>

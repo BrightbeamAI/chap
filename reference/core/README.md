@@ -1,4 +1,4 @@
-# CHAP Core Reference — Weekend Build
+# CHAP Core Reference: Weekend Build
 
 This is the minimal reference implementation of [CHAP Core](../../core/SPEC.md).
 It implements all 7 Core methods, an in-memory state model, and the JSON-RPC 2.0
@@ -117,16 +117,16 @@ through its profile when (and only when) you actually need it.
 If you're implementing CHAP Core in a different language, follow the
 sequence in [`core/SPEC.md §9`](../../core/SPEC.md#9-implementing-core-in-a-weekend):
 
-1. **Hour 1** — HTTP POST `/chap`, JSON-RPC 2.0 parse + dispatch.
-2. **Hour 2** — `workspace.describe`, in-memory workspace state.
-3. **Hour 3** — `participant.join`, `participant.leave`.
-4. **Hour 4** — `task.create`, `task.update`, `task.complete` with state machine.
-5. **Hour 5** — `audit.read` with filters.
-6. **Hour 6** — JSON-RPC error codes (-32700, -32600, -32601, -32602, -32603).
-7. **Hour 7** — Demo client end-to-end.
-8. **Hour 8** — Conformance vectors ([../../conformance/test-vectors.md](../../conformance/test-vectors.md)).
+1. **Hour 1**: HTTP POST `/chap`, JSON-RPC 2.0 parse + dispatch.
+2. **Hour 2**: `workspace.describe`, in-memory workspace state.
+3. **Hour 3**: `participant.join`, `participant.leave`.
+4. **Hour 4**: `task.create`, `task.update`, `task.complete` with state machine.
+5. **Hour 5**: `audit.read` with filters.
+6. **Hour 6**: JSON-RPC error codes (-32700, -32600, -32601, -32602, -32603).
+7. **Hour 7**: Demo client end-to-end.
+8. **Hour 8**: Conformance vectors ([../../conformance/test-vectors.md](../../conformance/test-vectors.md)).
 
-This TypeScript reference covers hours 1–7. Hour 8 is shared with every
+This TypeScript reference covers hours 1-7. Hour 8 is shared with every
 Core implementation.
 
 ---
@@ -145,6 +145,6 @@ Three things to change before deploying this code anywhere real:
    approve agent output.
 
 The Core + Review reference at [`../core-plus-review/`](../core-plus-review/)
-shows what adding one profile looks like — about a hundred more lines
+shows what adding one profile looks like, about a hundred more lines
 plus an override-analysis tool. Use it as the next step after Core,
 not the starting point.

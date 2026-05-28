@@ -2,7 +2,7 @@
 
 Thank you for considering a contribution to the Collaborative Human-Agent Protocol. CHAP is
 intended to be an **open, vendor-neutral standard**. Contributions of any size
-are welcome — typo fixes, clarifying examples, new test vectors, new transport
+are welcome, typo fixes, clarifying examples, new test vectors, new transport
 bindings, and substantive proposals for the next draft.
 
 This document describes how to propose changes and what kinds of changes are
@@ -19,7 +19,7 @@ in scope.
 | New transport binding             | RFC-style proposal (see below)                         |
 | New method or namespace           | RFC-style proposal (see below)                         |
 | Breaking change to envelope or identity | RFC-style proposal + working-group review          |
-| Security-sensitive change         | See [SECURITY.md](./SECURITY.md) — do not open public issue |
+| Security-sensitive change         | See [SECURITY.md](./SECURITY.md), do not open public issue |
 | New conformance test vector       | Pull request directly                                  |
 | New integration document          | Pull request directly                                  |
 
@@ -74,7 +74,7 @@ Specification prose:
 - **RFC 2119 terms** (MUST, SHOULD, MAY, MUST NOT, SHOULD NOT) in
   normative sections only. Avoid them in tutorials and explanatory
   material.
-- **Active voice.** "The Coordinator verifies the signature" — not
+- **Active voice.** "The Coordinator verifies the signature", not
   "the signature is verified by the Coordinator."
 - **Concrete over abstract.** Show a wire example whenever you
   introduce a new field or method.

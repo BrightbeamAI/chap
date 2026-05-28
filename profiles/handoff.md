@@ -2,7 +2,7 @@
 
 **Profile id:** `handoff/1.0` · **Depends on:** Core
 
-Transfer in-progress work between participants — shift changes,
+Transfer in-progress work between participants, shift changes,
 escalations, follow-the-sun coverage, graceful re-routing when a
 human goes offline.
 

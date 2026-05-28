@@ -96,11 +96,11 @@ Any contributor may file an issue describing a problem, ambiguity,
 or feature request. Issues are triaged weekly by an Editor and
 labelled:
 
-- `clarification` — needs spec text refinement; no semantic change.
-- `bug` — spec says something that doesn't work in practice.
-- `enhancement-proposal` — substantive addition; needs a CEP.
+- `clarification`: needs spec text refinement; no semantic change.
+- `bug`: spec says something that doesn't work in practice.
+- `enhancement-proposal`: substantive addition; needs a CEP.
 
-### 3.2 CEP — CHAP Enhancement Proposal
+### 3.2 CEP: CHAP Enhancement Proposal
 
 A CEP is a structured document proposing a substantive change. It
 contains:

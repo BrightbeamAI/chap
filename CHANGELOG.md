@@ -9,7 +9,7 @@ Profiles version independently from Core. A profile version
 
 ---
 
-## 0.2.1 — pre-release editorial pass
+## 0.2.1: pre-release editorial pass
 
 Editorial revision of 0.2 after an external two-lens review. No
 breaking changes; additions are backward-compatible and optional.
@@ -32,7 +32,7 @@ breaking changes; additions are backward-compatible and optional.
   inside Security considerations covering replay, downgrade,
   capability confusion across profiles, key rotation, evidence-chain
   forking under partition, compromised Coordinator, and identity
-  confusion — each named with the protocol-level countermeasure and
+  confusion, each named with the protocol-level countermeasure and
   the deployment-level mitigation where the protocol cannot defend
   alone. An explicit out-of-scope list closes the section.
 - **Maturity statement** at the top of SPECIFICATION.md and in the
@@ -88,7 +88,7 @@ index that hashes `(workspace, task, kind, …)` to a synthetic
 
 ---
 
-## 0.2 — current
+## 0.2: current
 
 The Collaborative Human-Agent Protocol at full surface: Core, eleven profiles,
 schemas, reference implementations, examples, conformance suite,
@@ -157,7 +157,7 @@ and standards bindings.
 ### Demo
 
 - [`demo/index.html`](./demo/index.html): a single-file interactive
-  HTML walkthrough. Tells CHAP's story in five minutes — problem
+  HTML walkthrough. Tells CHAP's story in five minutes, problem
   framing, the track-changes analogy, the protocol stack, an
   interactive workspace simulation, the override-as-data dividend,
   and the profile picker. Self-contained, works offline.

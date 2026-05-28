@@ -1,10 +1,10 @@
-# Example 03 — Review and approve (happy path)
+# Example 03: Review and approve (happy path)
 
 **Scenario.** Continuing from [`02-task-delegation.md`](./02-task-delegation.md):
 the agent has produced a draft response for ticket INC-48219. Alice
 reviews it, finds it good, and approves. The Coordinator unifies the
-CHAP and MCP evidence so the full chain — what Alice approved, plus
-which tools were called to produce it — is one signed audit trail.
+CHAP and MCP evidence so the full chain, what Alice approved, plus
+which tools were called to produce it, is one signed audit trail.
 
 This example shows:
 
@@ -175,9 +175,9 @@ reply to INC-48219?" They issue:
 }
 ```
 
-The Coordinator returns the full chain segment for this task — eight
+The Coordinator returns the full chain segment for this task, eight
 entries from `task.assign` to the `decide.approve` decision artefact
-— **plus** the resolved citations (the MCP server's audit-log entries
+, **plus** the resolved citations (the MCP server's audit-log entries
 that match the recorded hashes):
 
 ```json
@@ -234,7 +234,7 @@ perform this side-channel check leave the field unset.)
 
 ## What this gives you
 
-- **A complete approval record** — Alice's identity, the artefact
+- **A complete approval record**: Alice's identity, the artefact
   she approved, when, with what comment.
 - **A decision artefact** that downstream systems can use as a first-
   class object (e.g. for SLA reporting or compliance dashboards).

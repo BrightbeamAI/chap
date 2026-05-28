@@ -1,4 +1,4 @@
-# Example 02 — Task delegation
+# Example 02: Task delegation
 
 **Scenario.** A customer-support agent (human) has a stack of incoming
 tickets and delegates drafting the response for a non-urgent refund query
@@ -39,7 +39,7 @@ This example shows:
       "delegator": "human:alice@example.org",
       "input": {
         "ticket_id": "INC-48219",
-        "customer_message": "Hi — my order #ORD-91204 hasn't arrived after 10 days. Tracking just shows 'in transit'. Please advise.",
+        "customer_message": "Hi   my order #ORD-91204 hasn't arrived after 10 days. Tracking just shows 'in transit'. Please advise.",
         "customer_email": "[email protected]",
         "language": "en",
         "intent_hint": "delivery_delay"
@@ -66,7 +66,7 @@ This example shows:
 The Coordinator validates: Alice has the `task.delegate` scope; the
 agent has declared `task.accept`; the task mode (`production`) does not
 exceed the workspace ceiling; the permitted tools are a subset of the
-workspace's `permitted_mcp_servers`. All clear — it routes to the agent.
+workspace's `permitted_mcp_servers`. All clear, it routes to the agent.
 
 ---
 
@@ -159,7 +159,7 @@ along the way:
       "task": "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
       "content": {
         "subject": "Re: order ORD-91204 delivery delay",
-        "body": "Hi, thanks for reaching out about order #ORD-91204.\n\nI checked the carrier tracking — the parcel left our regional sorting facility on May 12 and is currently with the local carrier in your area. The carrier shows a delivery attempt scheduled for tomorrow, May 18. If it doesn't arrive by end of day, please reply to this email and I'll open a missing-parcel investigation right away.\n\nApologies for the delay,\nSupport team",
+        "body": "Hi, thanks for reaching out about order #ORD-91204.\n\nI checked the carrier tracking   the parcel left our regional sorting facility on May 12 and is currently with the local carrier in your area. The carrier shows a delivery attempt scheduled for tomorrow, May 18. If it doesn't arrive by end of day, please reply to this email and I'll open a missing-parcel investigation right away.\n\nApologies for the delay,\nSupport team",
         "tone": "apologetic",
         "next_action_if_unresolved": "open_investigation"
       },
@@ -196,7 +196,7 @@ moves on to review (see [`03-review-and-approve.md`](./03-review-and-approve.md)
 
 ## 2.5 Reverse direction: agent delegates to human
 
-Sometimes an agent encounters a case it shouldn't handle alone — say, a
+Sometimes an agent encounters a case it shouldn't handle alone, say, a
 warranty exception on a non-standard product. It opens a follow-up
 task addressed to a human specialist:
 
@@ -249,7 +249,7 @@ what.
 After this exchange:
 
 - **A delegated task with a deadline and bounded tool budget.**
-- **A completed artefact with citation hashes** — anyone can later
+- **A completed artefact with citation hashes**: anyone can later
   fetch the MCP server's audit log and confirm the recorded
   input/output hashes match.
 - **Five evidence entries** (assign, accept, start, progress,

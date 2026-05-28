@@ -39,7 +39,7 @@ IdP authenticates user (password, MFA, …)
 IdP → Client: ID token containing cnf.jwk = pub(K), auth_time = T0
    │
    ▼
-Client → Coordinator: handshake — presents ID token
+Client → Coordinator: handshake   presents ID token
    │
    ▼
 Coordinator: verifies ID token; extracts cnf.jwk; pins as participant key
@@ -177,9 +177,9 @@ with the now-discarded key.
 ## 9. References
 
 - [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
-- [RFC 7800 — Proof-of-Possession Key Semantics for JWTs](https://datatracker.ietf.org/doc/html/rfc7800)
-- [RFC 9449 — OAuth 2.0 Demonstrating Proof-of-Possession (DPoP)](https://datatracker.ietf.org/doc/html/rfc9449)
-- [SPIFFE](https://spiffe.io) — for service-to-service identity
+- [RFC 7800. Proof-of-Possession Key Semantics for JWTs](https://datatracker.ietf.org/doc/html/rfc7800)
+- [RFC 9449. OAuth 2.0 Demonstrating Proof-of-Possession (DPoP)](https://datatracker.ietf.org/doc/html/rfc9449)
+- [SPIFFE](https://spiffe.io), for service-to-service identity
 
 ---
 

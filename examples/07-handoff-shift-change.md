@@ -1,4 +1,4 @@
-# Example 07 — Shift-change handoff
+# Example 07: Shift-change handoff
 
 **Scenario.** An incident-response workspace is staffed around the
 clock. A senior responder, Daniel, is wrapping up his shift at 17:00
@@ -25,9 +25,9 @@ the sun" coverage, and graceful re-routing when a human goes offline.
 Daniel has three tasks in `in_progress`:
 
 ```
-tsk_…A1  — Investigating elevated error rates in checkout service (45m in)
-tsk_…A2  — Drafting incident comms for status page (10m in, awaiting legal review)
-tsk_…A3  — Coordinating with vendor on third-party API outage (1h in)
+tsk_…A1   Investigating elevated error rates in checkout service (45m in)
+tsk_…A2   Drafting incident comms for status page (10m in, awaiting legal review)
+tsk_…A3   Coordinating with vendor on third-party API outage (1h in)
 ```
 
 He proposes a single handoff covering all three:
@@ -63,7 +63,7 @@ He proposes a single handoff covering all three:
       {
         "task_id": "tsk_01HZB8P7K3X8M2V4N6P8R0T9A3",
         "title": "Third-party API outage coordination",
-        "status_summary": "Vendor confirmed at 16:30 — ETA for restoration 18:00 local. We are degrading gracefully; affected feature is exports. No customer-facing alarms.",
+        "status_summary": "Vendor confirmed at 16:30   ETA for restoration 18:00 local. We are degrading gracefully; affected feature is exports. No customer-facing alarms.",
         "next_action": "Sit on it. If vendor misses 18:00, send the prepared user-comms message in art_01HZB8P7K3X8M2V4N6P8R0T9A4.",
         "blockers": ["vendor restoration"],
         "watchlist": ["vendor-api-status-page"]

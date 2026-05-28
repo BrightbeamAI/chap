@@ -135,7 +135,7 @@ A verifier replays the chain from the workspace's genesis entry and checks:
    long-lived key.
 
 For deployments that need stronger guarantees against Coordinator
-compromise, the chain head MAY be anchored externally — e.g. periodic
+compromise, the chain head MAY be anchored externally, e.g. periodic
 publication to a transparency log or an internal append-only store with
 separate access controls.
 
@@ -164,9 +164,11 @@ reference implementation, or in a deployed CHAP system you operate, please
 follow **coordinated disclosure**:
 
 1. **Do not** open a public issue.
-2. Send a report to the security contact for the deployment in question,
-   or — for issues in this specification itself — to the address listed in
-   the repository's `SECURITY-CONTACT` file or the project's website.
+2. For issues in a deployed CHAP system you operate, contact the security
+   contact for that deployment. For issues in this specification or the
+   reference implementation, use GitHub's private vulnerability reporting
+   (`Security` tab in the repository), or contact the maintainer named in
+   the repository's `MAINTAINERS` file.
 3. Include enough detail to reproduce: affected version, message sequence,
    environment, and expected vs. actual behaviour.
 4. Allow at least 90 days for a fix before disclosure, or coordinate a

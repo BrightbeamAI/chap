@@ -10,7 +10,7 @@ If you'd rather watch the same flow run as a scripted client, see
 
 ---
 
-## Step 0 — start the server
+## Step 0: start the server
 
 ```bash
 cd reference/core
@@ -28,7 +28,7 @@ Leave it running. In another terminal:
 
 ---
 
-## Step 1 — alice joins
+## Step 1: alice joins
 
 ```bash
 curl -s -X POST http://localhost:8080/chap \
@@ -61,7 +61,7 @@ Response:
 
 ---
 
-## Step 2 — the agent joins
+## Step 2: the agent joins
 
 ```bash
 curl -s -X POST http://localhost:8080/chap \
@@ -85,7 +85,7 @@ curl -s -X POST http://localhost:8080/chap \
 
 ---
 
-## Step 3 — see who's in the room
+## Step 3: see who's in the room
 
 ```bash
 curl -s -X POST http://localhost:8080/chap \
@@ -107,7 +107,7 @@ You'll see both members, the workspace state, and `profiles: ["core/0.2"]`.
 
 ---
 
-## Step 4 — alice delegates a task to the bot
+## Step 4: alice delegates a task to the bot
 
 ```bash
 curl -s -X POST http://localhost:8080/chap \
@@ -140,7 +140,7 @@ echo $TASK
 
 ---
 
-## Step 5 — the bot starts work
+## Step 5: the bot starts work
 
 ```bash
 curl -s -X POST http://localhost:8080/chap \
@@ -163,7 +163,7 @@ curl -s -X POST http://localhost:8080/chap \
 
 ---
 
-## Step 6 — the bot delivers
+## Step 6: the bot delivers
 
 ```bash
 curl -s -X POST http://localhost:8080/chap \
@@ -189,7 +189,7 @@ curl -s -X POST http://localhost:8080/chap \
 
 ---
 
-## Step 7 — read the audit log
+## Step 7: read the audit log
 
 ```bash
 curl -s -X POST http://localhost:8080/chap \
@@ -208,7 +208,7 @@ curl -s -X POST http://localhost:8080/chap \
   }' | jq '.result.entries | length, map(.envelope.method)'
 ```
 
-You get back the full ordered list of envelopes — every join, every
+You get back the full ordered list of envelopes, every join, every
 task transition, every progress note. The audit log is the source
 of truth.
 
@@ -229,7 +229,7 @@ You exercised every one of CHAP Core's 7 methods:
 | `participant.leave`   | (Skipped here; called by the demo client.) |
 
 That's it. **No crypto. No identity provider. No external services.**
-This is a real, useful deployment shape — internal team chatbot,
+This is a real, useful deployment shape, internal team chatbot,
 solo-operator agent farm, structured-task queue.
 
 ---

@@ -1,10 +1,10 @@
-# Example 08 — Multi-human deliberation
+# Example 08: Multi-human deliberation
 
 **Scenario.** Three engineers must decide together whether to ship a
 hotfix that closes a low-severity bug at the cost of a small risk of
 new behaviour in a high-traffic code path. Engineering lead, security,
 and product weigh in. The decision rule is **weighted vote with
-veto** — security can block, engineering and product carry weight.
+veto**, security can block, engineering and product carry weight.
 The thread runs over the protocol from open to close.
 
 This example shows:
@@ -95,7 +95,7 @@ they do not vote and do not affect the outcome.
 {
   "params": {
     "deliberation_id": "del_01HZBC9P8K3X8M2V4N6P8R0TAB",
-    "text": "Quiet window doesn't include explicit-allow-list hotfixes — bug #1187 was on the pre-approved list when we filed it last week."
+    "text": "Quiet window doesn't include explicit-allow-list hotfixes   bug #1187 was on the pre-approved list when we filed it last week."
   },
   "from": "human:lee-eng-lead@example.org"
 }
@@ -281,7 +281,7 @@ and the reason on the record.
 
 | Rule                                       | When to use                                     |
 |--------------------------------------------|-------------------------------------------------|
-| `any_one_approves`                         | Routine, low-stakes — first ack wins.           |
+| `any_one_approves`                         | Routine, low-stakes, first ack wins.           |
 | `all_approve`                              | Small, cross-functional decisions.              |
 | `quorum:n`                                 | Boards or committees needing minimum attendance.|
 | `weighted_vote:threshold`                  | When some voices weigh more (seniority, accountability). |
@@ -291,7 +291,7 @@ and the reason on the record.
 
 ## What this gives you
 
-- **A multi-human decision** captured as a typed object — question,
+- **A multi-human decision** captured as a typed object, question,
   rule, weights, comments, votes, outcome, reasons.
 - **Audit-ready reasoning.** Why a hotfix shipped (or didn't) is
   permanent and queryable.

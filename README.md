@@ -1,382 +1,143 @@
-# CHAP — The Collaborative Human-Agent Protocol
+<div align="center">
 
-**CHAP is an open standard for multi-human, multi-agent collaboration.**
-It defines the wire format, methods, identity bindings, audit
-semantics, and operational primitives required to put humans,
-agents, and services in a shared workspace and have them produce
-verifiable, structured, auditable work together.
+# Collaborative Human-Agent Protocol (CHAP)
 
-> **Status: Draft (0.2).** Stable enough for experimentation and
-> early pilots; not yet sufficient for a normative conformance claim.
-> One reference implementation; the two-interoperable-implementations
-> bar typical of standards-track promotion has not yet been met.
-> Breaking changes follow Semantic Versioning. Profile surfaces will
-> evolve faster than Core. Deployments needing strict stability
-> guarantees should wait for 1.0. See [Maturity in
-> SPECIFICATION.md](./SPECIFICATION.md#status-of-this-document).
+**The protocol for humans and agents doing real work together.**
 
-CHAP is the third pillar of the open agent-protocol stack:
+When a bot drafts something and a human edits it, where does that edit live?
+In CHAP, it lives in an envelope you can query, replay, and verify six months later.
 
-| Protocol  | Owns                                          |
-|-----------|-----------------------------------------------|
-| [MCP](https://modelcontextprotocol.io)  | Agents talking to **tools**.        |
-| [A2A](https://a2a.dev)                  | Agents talking to **agents**.       |
-| **CHAP**                                 | Humans, agents, and services talking **together** in a shared, auditable workspace. |
+[Install](#install) · [The 90-second tour](#the-90-second-tour) · [Twelve scenarios](./IN_PRACTICE.md) · [About this repo](./ABOUT.md)
 
-CHAP is licensed CC-BY 4.0 (specification) and Apache 2.0 (code). It
-is implementable royalty-free, in any language, in any deployment.
-
-> **See it first — two ways:**
->
-> - **Static walkthrough** ([`demo/index.html`](./demo/index.html)) — a
->   single self-contained HTML file telling CHAP's story in five
->   minutes. Works offline.
-> - **Runnable playground** ([`reference/playground/`](./reference/playground/))
->   — two humans plus a real local LLM (Gemma3 via Ollama)
->   collaborating over the actual protocol. Requires Node 20 and
->   Ollama; the `@chap/coordinator` package is the unmodified protocol
->   code.
+</div>
 
 ---
 
-## Table of contents
-
-1. [What CHAP gives you](#what-chap-gives-you)
-2. [Core + Profiles](#core--profiles)
-3. [5-minute start](#5-minute-start)
-4. [Reading paths](#reading-paths)
-5. [Composition with MCP and A2A](#composition-with-mcp-and-a2a)
-6. [What CHAP is not](#what-chap-is-not)
-7. [Standards reused](#standards-reused)
-8. [Conformance and adoption](#conformance-and-adoption)
-9. [Repository layout](#repository-layout)
-10. [Getting involved](#getting-involved)
+<p align="center">
+  <img src="docs/img/hero-before-after.svg" alt="Same scenario, two stacks: without CHAP your audit trail is scattered across six tools; with CHAP it's a hash-linked chain you can query in one call." width="100%">
+</p>
 
 ---
 
-## What CHAP gives you
+## Why CHAP exists
 
-For teams shipping any system where humans and agents share work:
+You have agents doing real work. Drafting code reviews, triaging tickets, suggesting settlements, reviewing contracts. A human approves, edits, or rejects each one. Right now, that decision lives in your application code, your chat threads, your ticket comments, and your head. When something goes wrong six weeks later, reconstructing what happened costs you forty-five minutes and is half guesswork.
 
-- **A common wire format.** Every message — task delegation, review
-  request, override, abstention, handoff — has a defined shape, so
-  tools, dashboards, and audits work across implementations.
-- **Structured override capture.** Every human edit to an agent's
-  output carries a typed diff, rationale, and tags. Your audit log
-  becomes a tuning dataset as a side effect of normal work.
-- **Typed abstention.** "I shouldn't decide this" is a first-class
-  signal, not silence. Abstention rates tune the boundary between
-  what an agent or role handles and what gets escalated.
-- **A mode promotion ladder.** New agents move from `shadow` to
-  `trial` to `production` through protocol-enforced gates.
-- **Portable, verifiable audit.** Every accepted envelope is
-  preserved. With the [`audit-scitt`](./profiles/audit-scitt.md)
-  profile, audits are cryptographically verifiable offline by any
-  third party.
-- **Verified identity that you didn't have to invent.** The
-  identity profiles bind to OIDC or W3C Verifiable Credentials —
-  no bespoke identity layer.
-- **Clean composition with the rest of the agent stack.** MCP tool
-  calls are *cited* inside CHAP artefacts; A2A peers appear as
-  bridge participants. No re-implementation of either protocol.
+CHAP gives you one place to put those decisions and one shape to put them in. The agent's draft is an artefact. The human's edit is a structured override with a diff, a rationale, and tags you control. The whole thing chains together by content hash. You query the chain instead of grepping logs across four UIs.
 
----
+That's the whole pitch.
 
-## Core + Profiles
+## The 90-second tour
 
-CHAP is two layers, and you adopt them in sequence:
+A solo developer using Cursor to review pull requests. The bot flags a "warning" the developer disagrees with. Here is the whole exchange.
 
-```
-┌───────────────────────────────────────────────────────────────────┐
-│                          PROFILES                                  │
-│  (optional, layered, composable — pick what your workflow needs)   │
-│                                                                    │
-│  security-signed · audit-scitt · identity-oidc · identity-vc       │
-│  review · whisper · deliberation · modes · routing · handoff       │
-│  control                                                           │
-└───────────────────────────────────────────────────────────────────┘
-┌───────────────────────────────────────────────────────────────────┐
-│                            CORE                                    │
-│  workspace · participant · task · audit                            │
-│  JSON-RPC 2.0 envelope · TLS · small spec, weekend-implementable   │
-└───────────────────────────────────────────────────────────────────┘
+**1. Spin up a workspace.** Twelve lines, one binary, SQLite for storage:
+
+```ts
+import { Coordinator } from "@chap/coordinator";
+
+const coord = new Coordinator({ storage: "sqlite:./chap.db" });
+
+await coord.dispatch({
+  jsonrpc: "2.0", id: "1",
+  method: "workspace.create",
+  params: {
+    workspace_id: "wsp_pr_reviews",
+    profiles: ["core/1.0", "review/1.0"]
+  }
+});
+
+await coord.dispatch({
+  jsonrpc: "2.0", id: "2",
+  method: "participant.join",
+  params: { workspace_id: "wsp_pr_reviews", uri: "human:me@local" }
+});
 ```
 
-**Core is enough on its own.** A Core deployment is a real,
-useful, conformant CHAP deployment. Add profiles only when their
-specific capability is needed.
+**2. The bot drafts, you override.** Wire your existing Cursor integration to emit envelopes:
 
-The most common adoption path:
+```ts
+// The bot's review is an artefact attached to a task.
+await coord.dispatch({
+  jsonrpc: "2.0", id: "3",
+  method: "task.create",
+  params: { workspace_id: "wsp_pr_reviews", artefact: cursorReview }
+});
 
-1. **Core** for the shared workspace and the audit log.
-2. **`review`** so humans can approve, reject, or override agent
-   output — and so override-as-learning-signal becomes free.
-3. **`modes`** for safe rollout of new agents.
-4. **`identity-oidc`** when you need verified human identity beyond
-   bearer tokens.
-5. **`security-signed`** + **`audit-scitt`** when you need
-   cryptographic non-repudiation.
+// You disagree with one comment. Override it.
+await coord.dispatch({
+  jsonrpc: "2.0", id: "4",
+  method: "decide.override",
+  params: {
+    task_id: "tsk_pr_482",
+    from: "human:me@local",
+    intent_preserved: true,
+    diff: [{ op: "replace", path: "/comments/0/severity",
+             from: "warning", to: "info" }],
+    rationale: "False positive. Framework convention, not a bug.",
+    tags: ["false-positive", "framework-pattern-misread"]
+  }
+});
+```
 
-Each profile is independent. You pay for what you use.
-
----
-
-## 5-minute start
+**3. Two months in, analyse what you have been doing.** This is where the protocol starts to pay you back:
 
 ```bash
-git clone <repo>
-cd chap-protocol/reference/core
-npm install
-npm run start:demo
+$ npx @chap/analyze-overrides wsp_pr_reviews
+
+Override Learning Report
+========================
+Total overrides: 47
+
+By tag:
+  false-positive             ████████████████  31  (66%)
+  framework-pattern-misread  ███████████       22  (47%)
+  cosmetic-pref              ████              8   (17%)
+
+Top file paths:
+  src/handlers/                                    18 overrides
+  src/components/                                  9  overrides
 ```
 
-In another terminal:
+Your next prompt revision for Cursor is no longer a guess. It cites the pattern by name.
+
+---
+
+## The override envelope, in detail
+
+The override envelope is the single most important shape in CHAP. Every field has a job:
+
+<p align="center">
+  <img src="docs/img/override-anatomy.svg" alt="Anatomy of an override envelope, with each field annotated." width="100%">
+</p>
+
+The two fields most people miss on first read are `intent_preserved` and `tags`.
+
+`intent_preserved` distinguishes a *refining* override (the human agreed with the agent's decision but rewrote how it was expressed) from a *substituting* override (the human reached a different decision). These are two different failure modes and they want different fixes. A high refining rate around one policy clause means the agent's retrieval is off; a high substituting rate on the same clause means the policy itself is ambiguous, or the agent's task context is wrong.
+
+`tags` is the controlled vocabulary your team agrees on. Keep it small. Whatever you put there is the dimension you will aggregate on three months from now, when you are answering questions like *which prompts need work?* or *which paths is the bot getting consistently wrong?*
+
+## What you get when you adopt this
+
+- **An audit chain that survives key rotation, log expiry, and people leaving.** Every envelope links to the previous by content hash. One `audit.read` call returns the whole thing.
+- **Structured supervision data as a side effect of normal work.** No separate annotation pipeline. The overrides you are already making become a dataset you would otherwise have to commission.
+- **Signed, non-repudiable approvals when you need them.** Opt into `security-signed/1.0` for OIDC-bound signatures with a `signature_meaning` you define. Opt into `audit-scitt/1.0` for an external transparency-log anchor, verifiable without trusting your servers.
+- **Composability with what you have already built.** CHAP does not replace MCP or A2A. It sits next to them: your agent uses MCP for tools, A2A for other agents, and CHAP to record the shared work with humans.
+
+## Install
 
 ```bash
-curl -sS -X POST http://localhost:8080/chap \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": "1",
-    "method": "participant.join",
-    "params": {
-      "workspace":    "wsp_demo",
-      "from":         "human:alice@example.org",
-      "to":           "service:coordinator@example.org",
-      "ts":           "2026-05-17T09:00:00Z",
-      "type":         "human",
-      "display_name": "Alice",
-      "role":         "reviewer"
-    }
-  }'
+npm install @chap/coordinator
 ```
 
-That's one CHAP message. The full walkthrough — joining, delegating
-a task, completing it, reading the audit log — is in
-[`examples/00-five-minute-start.md`](./examples/00-five-minute-start.md).
+The TypeScript reference implementation includes a Core coordinator, the `review/1.0` profile, in-memory and SQLite backends, a CLI, and a playground for two-participant demos. Full source in [`reference/`](./reference/).
 
-For something more visceral, [`reference/playground/`](./reference/playground/)
-runs the same wire format with two humans collaborating with a local
-Gemma3 model — open two browser tabs and watch the protocol orchestrate
-work between them in real time.
+## Read this next
 
----
-
-## Reading paths
-
-| Audience                                  | Read in this order                                                              |
-|-------------------------------------------|---------------------------------------------------------------------------------|
-| **Evaluating** whether CHAP fits           | This README → [`HANDBOOK.md`](./HANDBOOK.md) → [`FAQ.md`](./FAQ.md)              |
-| **Seeing it run**                          | [`demo/index.html`](./demo/index.html) (static) → [`reference/playground/`](./reference/playground/) (real LLM, two humans) |
-| **Implementing Core**                     | [`core/SPEC.md`](./core/SPEC.md) → [`reference/core/`](./reference/core/) → [`schemas/core/`](./schemas/core/) |
-| **Adding a profile**                      | [`profiles/PROFILES.md`](./profiles/PROFILES.md) → the specific profile spec    |
-| **Reviewing the design**                  | [`ARCHITECTURE.md`](./ARCHITECTURE.md) → [`SECURITY.md`](./SECURITY.md) → [`RELATIONSHIP-TO-OTHER-STANDARDS.md`](./RELATIONSHIP-TO-OTHER-STANDARDS.md) |
-| **Operating in production**               | [`HANDBOOK.md`](./HANDBOOK.md) → [`integrations/CHAP-deployment-patterns.md`](./integrations/CHAP-deployment-patterns.md) |
-| **Composing with MCP or A2A**             | [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md) · [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md) |
-| **Verifying conformance**                 | [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md) · [`conformance/test-vectors.md`](./conformance/test-vectors.md) |
-| **Looking up a term**                     | [`GLOSSARY.md`](./GLOSSARY.md)                                                  |
-| **Contributing**                          | [`CONTRIBUTING.md`](./CONTRIBUTING.md) → [`GOVERNANCE.md`](./GOVERNANCE.md)     |
-
-For a single end-to-end document combining Core and every profile
-into one cross-referenced reference, see [`SPECIFICATION.md`](./SPECIFICATION.md).
+- **[`IN_PRACTICE.md`](./IN_PRACTICE.md)**. Twelve real-world scenarios from solo dev to GMP-regulated manufacturing. The most useful next read.
+- **[`ABOUT.md`](./ABOUT.md)**. What is in this repo, how CHAP relates to MCP and A2A, the standards it reuses, current status, and how to contribute.
+- **[`core/SPEC.md`](./core/SPEC.md)**. The seven Core methods. The whole protocol surface fits on one screen.
 
 ---
 
-## Composition with MCP and A2A
-
-CHAP, MCP, and A2A are designed to compose without conflict.
-
-**MCP tool calls inside CHAP work.** When an agent in a CHAP workspace
-invokes an MCP tool to do its job, the call is recorded as a
-`citation` inside the agent's CHAP artefact, with input and output
-hashes providing a cryptographic boundary. The CHAP audit log
-references — but does not duplicate — the MCP transcript. See
-[`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md).
-
-**A2A peers as bridge participants.** When work crosses an
-organisational boundary, the remote A2A peer is represented inside
-the CHAP workspace as a `service:bridge…` participant. The bridge
-participant signs CHAP envelopes on behalf of the remote peer;
-the A2A traffic itself does not cross the CHAP wire. See
-[`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
-
----
-
-## What CHAP is not
-
-To save you time:
-
-- **Not a framework for building agents.** Use LangGraph, AutoGen,
-  CrewAI, or your own. CHAP is the wire between them and the humans.
-- **Not a workflow engine.** Use Temporal, Airflow, or Argo for
-  durable workflow execution. CHAP records what happened.
-- **Not a new identity protocol.** CHAP reuses OIDC, OAuth 2.0, and
-  W3C Verifiable Credentials.
-- **Not a new transparency log.** CHAP's `audit-scitt` profile uses
-  IETF SCITT.
-- **Not a new RPC.** CHAP envelopes are JSON-RPC 2.0.
-- **Not vendor-locked.** Multi-implementation by construction;
-  Apache 2.0 + CC-BY 4.0 throughout.
-
-CHAP also deliberately does **not** define:
-
-- **A claim or evidence taxonomy.** Whether artefacts carry typed
-  claims (Evidence / Inference / Assumption …), arguments, or
-  domain-specific schemes is for deployments and profiles.
-- **A temporal model beyond `produced_at`.** Validity windows,
-  effectivity intervals, and subject-time-versus-statement-time
-  semantics belong in the artefact content shape or in a profile.
-- **Confidence calibration.** `routing_hints.confidence` is what
-  the model said; CHAP does not interpret it.
-- **What evidence is sufficient for any regulator.** CHAP produces a
-  verifiable record; sufficiency under any specific audit or
-  conformity regime is the deploying organisation's determination.
-
-CHAP **is** the small set of common verbs that every team rebuilds
-in their own app layer when they put humans and agents on the same
-work — delegate, accept, decline, complete, review, approve,
-override, abstain, escalate, whisper, hand off, pause, resume.
-Standardising those verbs gives you interoperable tools, portable
-audits, and learning data that wasn't structured before.
-
----
-
-## Standards reused
-
-CHAP defers to existing standards wherever they exist. The full
-mapping is in [`RELATIONSHIP-TO-OTHER-STANDARDS.md`](./RELATIONSHIP-TO-OTHER-STANDARDS.md).
-Highlights:
-
-| Need                       | Standard                                          |
-|----------------------------|---------------------------------------------------|
-| Envelope                   | JSON-RPC 2.0                                      |
-| Canonical bytes            | RFC 8785 (JCS)                                    |
-| Override diff              | RFC 6902 (JSON Patch)                             |
-| Human identity             | OIDC + `cnf.jwk` (RFC 7800) or DPoP (RFC 9449)    |
-| Richer identity            | W3C Verifiable Credentials 2.0                    |
-| Service identity           | SPIFFE / SPIRE                                    |
-| Transparency log           | IETF SCITT (COSE, RFC 9052)                       |
-| Federation                 | ActivityPub (optional binding)                    |
-| Provisioning               | SCIM 2.0 (optional binding)                       |
-| Conformance attestations   | in-toto                                           |
-
-The only protocol-level things CHAP introduces are the methods and
-the override-with-rationale shape. Everything else is composition.
-
----
-
-## Conformance and adoption
-
-An implementation is **CHAP-conformant** if it implements every
-Core method and conforms to the wire format. Profile conformance
-is declared separately, one attestation per profile. See
-[`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md).
-
-Conformance levels in 0.2 are **Minimal** and **Recommended**. A
-**Full** level — requiring two interoperable implementations and an
-exhaustive interop test suite — is planned and not yet claimable.
-The expected base conformance for production deployments is
-**Core + `review` + `modes`**.
-
-Conformance attestations are published as
-[in-toto attestations](https://github.com/in-toto/attestation) and
-linked from the implementation registry.
-
----
-
-## Repository layout
-
-```
-chap-protocol/
-├── README.md                              You are here.
-├── HANDBOOK.md                            Practical guide to running CHAP.
-├── FAQ.md                                 Common questions.
-│
-├── core/
-│   └── SPEC.md                            Core specification.
-├── profiles/
-│   ├── PROFILES.md                        Profile catalogue.
-│   ├── review.md
-│   ├── whisper.md
-│   ├── deliberation.md
-│   ├── modes.md
-│   ├── handoff.md
-│   ├── routing.md
-│   ├── control.md
-│   ├── security-signed.md
-│   ├── audit-scitt.md
-│   ├── identity-oidc.md
-│   └── identity-vc.md
-│
-├── SPECIFICATION.md                       Single-document combined reference.
-├── ARCHITECTURE.md                        Design rationale.
-├── SECURITY.md                            Threat model and security policy.
-├── GLOSSARY.md                            Term reference.
-├── RELATIONSHIP-TO-OTHER-STANDARDS.md     Standards mapping.
-├── GOVERNANCE.md                          How the protocol evolves.
-├── CONTRIBUTING.md                        How to contribute.
-├── CODE_OF_CONDUCT.md                     Contributor Covenant 2.1.
-├── CHANGELOG.md                           Release notes.
-├── LICENSE                                Apache 2.0 + CC-BY 4.0.
-├── .gitignore
-│
-├── examples/                              Worked end-to-end scenarios.
-│   ├── 00-five-minute-start.md            Onramp.
-│   ├── 01-discovery.md
-│   ├── 02-task-delegation.md
-│   ├── 03-review-and-approve.md
-│   ├── 04-abstain-and-escalate.md
-│   ├── 05-override-capture.md
-│   ├── 06-whisper-prompt.md
-│   ├── 07-handoff-shift-change.md
-│   ├── 08-multi-human-deliberation.md
-│   ├── 09-pause-resume-rollback.md
-│   └── 10-end-to-end-workflow.md
-│
-├── demo/                                  Interactive HTML demo.
-│   └── index.html                         Single-file walkthrough.
-│
-├── integrations/                          Composition with adjacent standards.
-│   ├── CHAP-with-MCP.md
-│   ├── CHAP-with-A2A.md
-│   ├── CHAP-with-OIDC-OAuth2.md
-│   └── CHAP-deployment-patterns.md
-│
-├── schemas/                               JSON Schema definitions.
-│   ├── core/
-│   └── profiles/
-│
-├── reference/                             Reference implementations.
-│   ├── core/                              Minimal Core (weekend-buildable).
-│   ├── core-plus-review/                  Core + Review profile + override analyser.
-│   └── playground/                        Runnable two-human + Gemma3 demo over real CHAP.
-│
-├── packages/                              Importable library packages.
-│   └── coordinator/                       @chap/coordinator — the protocol as a library.
-│
-├── conformance/                           Conformance suite.
-│   ├── conformance-checklist.md
-│   ├── test-vectors.md
-│   └── harness/                           Runnable test harness with in-toto attestation.
-│
-└── diagrams/                              Mermaid source for spec figures.
-```
-
----
-
-## Getting involved
-
-CHAP is developed in the open. Issues, discussions, and proposed
-changes are welcome.
-
-- **Reporting an issue.** Use the issue tracker for spec ambiguities,
-  schema bugs, or interoperability problems. See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
-- **Proposing a change.** Substantive changes go through the CEP
-  (CHAP Enhancement Proposal) process described in [`GOVERNANCE.md`](./GOVERNANCE.md).
-- **Implementing the protocol.** The reference implementations in
-  [`reference/`](./reference/) are starting points. Run the
-  conformance suite to validate your implementation.
-- **Security disclosures.** Coordinated disclosure procedure in
-  [`SECURITY.md`](./SECURITY.md).
-
-License: [Apache 2.0](./LICENSE) (code) · CC-BY 4.0 (specification).
+CC-BY 4.0 (specification) · Apache 2.0 (code) · Royalty-free, any language, any deployment.

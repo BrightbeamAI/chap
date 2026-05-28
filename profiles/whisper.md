@@ -96,7 +96,7 @@ emit a notification recording the lapse and the applied default:
 ```
 
 The asker proceeds with the default. A lapsed whisper is itself
-audit data — "this human was unreachable for this decision" is now
+audit data, "this human was unreachable for this decision" is now
 queryable.
 
 ---

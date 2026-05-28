@@ -3,7 +3,7 @@
 This document specifies how CHAP integrates with OpenID Connect (OIDC) and
 OAuth 2.0 for identity, authentication, and authorisation.
 
-CHAP itself is **identity-provider-agnostic** — it requires only that each
+CHAP itself is **identity-provider-agnostic**: it requires only that each
 Participant have a signing key whose public half is discoverable inside
 the workspace. OIDC and OAuth 2.0 are the recommended way to bind those
 keys to real-world identities, particularly for humans.
@@ -231,7 +231,7 @@ preference:
 ### 5.1 SPIFFE
 
 In a service-mesh deployment with SPIFFE, each workload has an SVID
-(SPIFFE Verifiable Identity Document) — typically an X.509 cert with
+(SPIFFE Verifiable Identity Document), typically an X.509 cert with
 the workload's SPIFFE ID as a SAN. The CHAP signing key is bound to
 the SPIFFE ID via the workload identity infrastructure; the agent's
 descriptor lists its current key and rotates as SPIFFE rotates.
@@ -328,7 +328,7 @@ recorded offline notice, depending on implementation).
 ## 9. PII and audit
 
 OIDC tokens may contain PII (email, name). CHAP's evidence chain
-**does not** store the ID token itself — it stores the participant
+**does not** store the ID token itself, it stores the participant
 URI (the abstract identifier), the public key, and the signature.
 A separate access-controlled log can correlate URI to identity for
 operational purposes, but the audit chain in isolation reveals only
@@ -348,6 +348,6 @@ data-minimisation requirements.
 | How do privileged ops require fresh auth?                       | OIDC `auth_time` + step-up window.           |
 | How are agents and services authenticated?                      | SPIFFE, mTLS, or OAuth 2.0 client credentials. |
 | How are scope and role composed?                                | OIDC scope → workspace role → method-role matrix. |
-| What's in the chain — PII or URIs?                              | URIs and keys; PII is correlated separately. |
+| What's in the chain. PII or URIs?                              | URIs and keys; PII is correlated separately. |
 | How is rotation handled?                                        | `participant.rotate_key`, signed by old key. |
 | What if the key is compromised?                                 | `participant.revoke_key`, signed by an admin.|

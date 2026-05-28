@@ -3,7 +3,7 @@
 A draft protocol that doesn't engage with the standards it overlaps
 will be (rightly) dismissed as reinvention. This document maps every
 CHAP concept to its nearest existing standard and states whether CHAP
-reuses, profiles, or diverges from it — and why.
+reuses, profiles, or diverges from it, and why.
 
 If you're reviewing CHAP's design, **read this document first**.
 Many concerns about "you should just use X" are answered here.
@@ -59,7 +59,7 @@ by their position in the envelope.
 **Why JSON-RPC** and not, say, gRPC or a custom format? JSON-RPC is
 trivial to implement in any language, terse on the wire, well-known
 to operators, and what MCP already uses. Compatibility with MCP's
-envelope shape means tooling — debuggers, proxies, gateways — can be
+envelope shape means tooling (debuggers, proxies, gateways) can be
 shared.
 
 A CHAP envelope from any conformant implementation passes a generic
@@ -96,7 +96,7 @@ Why JSON Patch and not a custom diff format? Universal tooling, every
 language has a library, every implementation can apply or invert the
 patch deterministically.
 
-The CHAP innovation isn't the diff itself — it's the **rationale +
+The CHAP innovation isn't the diff itself, it's the **rationale +
 tags + policy_refs** carried alongside the diff. Those three fields
 turn an opaque edit into structured learning data.
 
@@ -125,9 +125,9 @@ doesn't natively support `cnf.jwk`.
 
 ### 5.2 `identity-vc` (recommended for richer claims)
 
-When stronger or richer identity is needed — for example, a human's
+When stronger or richer identity is needed, for example, a human's
 attested clinical-credentialing role, a regulatory licence number, or
-a cross-organisation credential — the human's identity is a
+a cross-organisation credential, the human's identity is a
 [W3C Verifiable Credential 2.0](https://www.w3.org/TR/vc-data-model-2.0/)
 presented during the participant handshake.
 
@@ -171,7 +171,7 @@ is a SCITT transparency log.** Specifically:
   log root; CHAP doesn't define a parallel verification path.
 
 For Core-only deployments that don't need cryptographic audit, the
-log can be a plain database table — no SCITT involvement, no
+log can be a plain database table, no SCITT involvement, no
 crypto. The profile is opt-in.
 
 See [`profiles/audit-scitt.md`](./profiles/audit-scitt.md).
@@ -203,7 +203,7 @@ Cross-organisation workspace-to-workspace federation is currently
 specified via the A2A-bridge pattern (§7). For deployments where
 the workspaces themselves are first-class federation peers (think
 "my org's CHAP workspace can subscribe to your org's CHAP workspace's
-events"), the planned `federation-activitypub` profile (v0.2 draft)
+events"), the planned `federation-activitypub` profile (post-v0.2)
 maps:
 
 | CHAP concept       | ActivityPub concept |
@@ -237,9 +237,9 @@ manually via direct workspace admin operations.
 
 CHAP is transport-agnostic. The recommended bindings are:
 
-- **WebSocket** — for interactive clients (humans, GUIs).
-- **HTTP + SSE** — for firewall-friendly fallback.
-- **MQTT / NATS / Kafka** — for high-throughput server-to-server flows.
+- **WebSocket**: for interactive clients (humans, GUIs).
+- **HTTP + SSE**: for firewall-friendly fallback.
+- **MQTT / NATS / Kafka**: for high-throughput server-to-server flows.
 
 Each binding is a thin adapter; the wire format (JSON-RPC 2.0 +
 CHAP fields) is identical across them. Existing standards-based
@@ -293,22 +293,22 @@ discover and verify CHAP conformance claims.
 
 Stripped of the reused standards, CHAP introduces:
 
-1. **A specific set of human-agent verbs** — `task.create`,
+1. **A specific set of human-agent verbs**: `task.create`,
    `task.update`, `task.complete`, `review.request`,
    `decide.approve`, `decide.reject`, `decide.override`,
    `abstain.declare`, `escalate.raise`, `whisper.ask`,
    `whisper.answer`, `handoff.propose`, `handoff.accept`,
    `deliberate.open/comment/vote/close`. None of these exist
    anywhere as standardised methods.
-2. **The structured-override shape** — diff + rationale + tags +
+2. **The structured-override shape**: diff + rationale + tags +
    policy_refs, attached to a base artefact, queryable as data.
    This is the single most novel piece.
-3. **The mode promotion ladder** — shadow → trial → production as
+3. **The mode promotion ladder**: shadow → trial → production as
    a typed property of tasks and workspaces, enforced at the
    protocol layer.
-4. **Typed abstention** — `abstain.declare` as a positive signal
+4. **Typed abstention**: `abstain.declare` as a positive signal
    distinct from rejection or silence.
-5. **The whisper primitive** — a deadline-bound interrupt question
+5. **The whisper primitive**: a deadline-bound interrupt question
    with a defined default-if-lapsed, distinct from review.
 
 These are CHAP's actual contribution to the protocol ecosystem.

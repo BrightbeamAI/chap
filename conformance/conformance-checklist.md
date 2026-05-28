@@ -204,7 +204,7 @@ A published attestation is an in-toto Statement:
 
 This format integrates with standard supply-chain tooling (Sigstore,
 Rekor, in-toto verifiers). Implementations are NOT required to host
-their own infrastructure for attestations — publishing the JSON
+their own infrastructure for attestations, publishing the JSON
 above to any reachable URL is sufficient.
 
 ---

@@ -21,7 +21,7 @@ boundary.
 
 Inside a CHAP workspace, an agent participant may call MCP tools to
 gather information or perform side-effects. The MCP traffic does not
-cross the CHAP wire — it goes directly from the agent to the MCP server,
+cross the CHAP wire, it goes directly from the agent to the MCP server,
 authenticated and audited by MCP's own mechanisms.
 
 What enters CHAP is the **result of the tool call as it influenced the
@@ -81,7 +81,7 @@ Field semantics:
 
 The hashes (not the bodies) are what enter the CHAP evidence chain. An
 auditor who also has access to the MCP server's call log can confirm
-that the recorded hashes match the logged bodies — closing the audit
+that the recorded hashes match the logged bodies, closing the audit
 loop without requiring CHAP to store sensitive tool inputs/outputs.
 
 ---
@@ -141,7 +141,7 @@ output_hash = sha256( JCS( tool_call.result    ) )
 ```
 
 For tools that return binary content, JCS the wrapping JSON (which
-contains a base64 encoding of the binary) — do not hash the raw bytes
+contains a base64 encoding of the binary), do not hash the raw bytes
 directly. The wrapping JSON is what the MCP wire format produces and
 what the MCP audit log preserves.
 
