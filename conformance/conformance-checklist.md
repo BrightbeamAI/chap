@@ -214,13 +214,16 @@ above to any reachable URL is sufficient.
 For deployments looking for a sensible profile combination, the
 following starter sets cover most cases:
 
-| Set name     | Profiles                                                                              |
-|--------------|---------------------------------------------------------------------------------------|
-| Minimal      | `core/1.0` + `security-signed/1.0`                                                    |
-| Recommended  | `core/1.0` + `security-signed/1.0` + `review/1.0` + `modes/1.0` + `identity-oidc/1.0` |
-| Regulated    | Recommended + `audit-scitt/1.0` + `deliberation/1.0` + `identity-vc/1.0`              |
-| Full         | All eleven profiles + Core                                                             |
+| Set name        | Profiles                                                                              |
+|-----------------|---------------------------------------------------------------------------------------|
+| Minimal-signed  | `core/1.0` + `security-signed/1.0`                                                    |
+| Recommended     | `core/1.0` + `security-signed/1.0` + `review/1.0` + `modes/1.0` + `identity-oidc/1.0` |
+| Regulated       | Recommended + `audit-scitt/1.0` + `deliberation/1.0` + `identity-vc/1.0`              |
+| Comprehensive   | All eleven profiles + Core                                                             |
 
-These are conventional names, not normative. An implementation
+These are conventional names, not normative levels. An implementation
 attests to the specific profiles it implements; the set name is
-shorthand.
+shorthand. Note that the §17 conformance ladder
+(*Minimal* / *Recommended* / *Full-planned*) is distinct from this
+table: §17 names what level the implementation reaches; the table
+above is a packaging convention for profile selection.

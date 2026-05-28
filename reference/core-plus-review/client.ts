@@ -14,6 +14,13 @@ const ALICE  = "human:alice@example.org";
 const BOT    = "agent:triage-bot";
 const COORD  = "service:coordinator@example.org";
 
+// CHAP 0.2.1 — durable handle for "the response to ticket INC-48219".
+// Same id flows from the agent's first draft through the human's override
+// so downstream analytics can see they're two versions of the same
+// underlying item, not two separate items. See SPEC §9.2.1.
+// Format: lgl_ + 26 chars of Crockford-base32 (same shape as ULIDs).
+const RESPONSE_LOGICAL_ID = "lgl_01HZSPPRT0RESPND4821942KB5";
+
 let nextId = 0;
 async function call(method: string, params: Record<string, unknown>): Promise<any> {
   const env = { jsonrpc: "2.0", id: `c${++nextId}`, method, params };
@@ -92,6 +99,15 @@ async function main(): Promise<void> {
     workspace: WS, from: ALICE, to: COORD, ts: ts(),
     task_id,
     based_on_artefact: draft,
+    // CHAP 0.2.1 — Alice introduces a logical_id for "the response to
+    // INC-48219" and signals that the underlying intent (respond to
+    // the customer, give them transit info) is preserved — she refined
+    // the tone, not the decision. In a production deployment the agent
+    // would typically assign logical_id when it produces the first
+    // draft, and Alice's override would reuse that same id; either
+    // path is conformant. See SPEC §9.2.1, §9.4.
+    logical_id:       RESPONSE_LOGICAL_ID,
+    intent_preserved: true,
     diff: [
       {
         op:    "replace",

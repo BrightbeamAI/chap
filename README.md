@@ -1,24 +1,19 @@
 # CHAP — The Collaborative Human-Agent Protocol
 
-> ### 🟧 Status: v0.1 preview
->
-> This release is a **specification preview with working reference code**, not a
-> stable 1.0. Concretely:
->
-> | Layer                    | What you'll find                                                                  |
-> |--------------------------|-----------------------------------------------------------------------------------|
-> | **Wire format & schemas**| Complete and stable for v0.1 — envelope, participant, task, workspace, evidence, routing all schema-validated. |
-> | **Profile specifications**| All eleven profiles are written ([`profiles/`](./profiles/)).                     |
-> | **Reference implementations** | Core + Review + the routing-aware playground are runnable. See `implementation_status` in [`schemas/profiles/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json) for the per-method state — **13 implemented, 44 spec-only, 2 reference-only** simplifications of the spec's task lifecycle. |
-> | **Conformance suite**    | Checklist and harness scaffolding present; canonical test vectors are placeholders pending v0.2. |
->
-> Treat v0.1 as "design ready for review and prototypes." Wire-format changes in 0.x minor versions are possible — stability commitments begin at 1.0 per [`GOVERNANCE.md`](./GOVERNANCE.md). Feedback issues welcome.
-
-**CHAP is the open standard for multi-human, multi-agent collaboration.**
+**CHAP is an open standard for multi-human, multi-agent collaboration.**
 It defines the wire format, methods, identity bindings, audit
 semantics, and operational primitives required to put humans,
 agents, and services in a shared workspace and have them produce
 verifiable, structured, auditable work together.
+
+> **Status: Draft (0.2).** Stable enough for experimentation and
+> early pilots; not yet sufficient for a normative conformance claim.
+> One reference implementation; the two-interoperable-implementations
+> bar typical of standards-track promotion has not yet been met.
+> Breaking changes follow Semantic Versioning. Profile surfaces will
+> evolve faster than Core. Deployments needing strict stability
+> guarantees should wait for 1.0. See [Maturity in
+> SPECIFICATION.md](./SPECIFICATION.md#status-of-this-document).
 
 CHAP is the third pillar of the open agent-protocol stack:
 
@@ -223,6 +218,20 @@ To save you time:
 - **Not vendor-locked.** Multi-implementation by construction;
   Apache 2.0 + CC-BY 4.0 throughout.
 
+CHAP also deliberately does **not** define:
+
+- **A claim or evidence taxonomy.** Whether artefacts carry typed
+  claims (Evidence / Inference / Assumption …), arguments, or
+  domain-specific schemes is for deployments and profiles.
+- **A temporal model beyond `produced_at`.** Validity windows,
+  effectivity intervals, and subject-time-versus-statement-time
+  semantics belong in the artefact content shape or in a profile.
+- **Confidence calibration.** `routing_hints.confidence` is what
+  the model said; CHAP does not interpret it.
+- **What evidence is sufficient for any regulator.** CHAP produces a
+  verifiable record; sufficiency under any specific audit or
+  conformity regime is the deploying organisation's determination.
+
 CHAP **is** the small set of common verbs that every team rebuilds
 in their own app layer when they put humans and agents on the same
 work — delegate, accept, decline, complete, review, approve,
@@ -263,11 +272,15 @@ Core method and conforms to the wire format. Profile conformance
 is declared separately, one attestation per profile. See
 [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md).
 
+Conformance levels in 0.2 are **Minimal** and **Recommended**. A
+**Full** level — requiring two interoperable implementations and an
+exhaustive interop test suite — is planned and not yet claimable.
+The expected base conformance for production deployments is
+**Core + `review` + `modes`**.
+
 Conformance attestations are published as
 [in-toto attestations](https://github.com/in-toto/attestation) and
-linked from the implementation registry. The expected base
-conformance — the level most production deployments will claim —
-is **Core + `review` + `modes`**.
+linked from the implementation registry.
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://chap.dev/schemas/0.1/chap-envelope.schema.json",
+  "$id": "https://chap.dev/schemas/0.2/chap-envelope.schema.json",
   "title": "CHAP Envelope",
   "description": "The envelope wrapping every Collaborative Human-Agent Protocol message.",
   "type": "object",
@@ -10,7 +10,7 @@
       "type": "string",
       "description": "Wire version of the protocol (SemVer).",
       "pattern": "^\\d+\\.\\d+(\\.\\d+)?(-[A-Za-z0-9.-]+)?$",
-      "examples": ["0.1", "0.1.0", "0.1.0-draft"]
+      "examples": ["0.2", "0.2.0", "0.2.0-draft"]
     },
     "id": {
       "type": "string",

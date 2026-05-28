@@ -487,6 +487,15 @@ async function sendOverride(role) {
     diff:         ops,
     rationale,
     tags,
+    // CHAP 0.2.1 — surface the new artefact-identity fields. The
+    // playground uses the task id as the durable logical handle (one
+    // logical artefact per task) and defaults intent_preserved to true
+    // because the UI is set up for tone/severity tone-tweak overrides,
+    // not decision substitution. A production reviewer UI would offer
+    // a toggle for "refining" vs "replacing the decision". See SPEC
+    // §9.2.1 and §9.4.
+    logical_id:       `lgl_${task.id.replace(/^tsk_/, "")}`,
+    intent_preserved: true,
   });
 
   // First successful override completes the tour

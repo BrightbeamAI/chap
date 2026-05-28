@@ -41,7 +41,7 @@ options.
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZB7N6K3X8M2V4N6P8R0T8A",
   "ts": "2026-05-17T14:22:01.014Z",
   "workspace": "wsp_support_triage",
@@ -77,7 +77,7 @@ Alice taps the response within 12 seconds:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZB7N6K3X8M2V4N6P8R0T8C",
   "ts": "2026-05-17T14:22:13.224Z",
   "workspace": "wsp_support_triage",
@@ -107,7 +107,7 @@ T+60s the Coordinator would emit:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZB7N6K3X8M2V4N6P8R0T8D",
   "ts": "2026-05-17T14:23:01.014Z",
   "workspace": "wsp_support_triage",

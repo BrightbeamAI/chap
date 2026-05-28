@@ -127,6 +127,8 @@ tags. This is what turns human edits into learning data.
     "ts":                  "2026-05-17T13:51:32Z",
     "task_id":             "tsk_…",
     "based_on_artefact":   { "...": "the original draft" },
+    "logical_id":          "lgl_01HZ9YX1A2B3C4D5E6F7G8H9J0",
+    "intent_preserved":    true,
     "diff": [
       {
         "op": "replace",
@@ -152,6 +154,18 @@ The `diff` MUST be a valid [RFC 6902 JSON Patch](https://datatracker.ietf.org/do
 document. The Coordinator MUST be able to apply the patch to the
 based-on artefact deterministically; if patch application fails, it
 returns `-32602` with the error path.
+
+When the based-on artefact carries a `logical_id`, the override
+SHOULD carry the same `logical_id` and SHOULD set `intent_preserved`
+— `true` if the override refines the *expression* of the same
+underlying decision (as in the example above, where tone was
+softened but the underlying review remains "approve with comments"),
+`false` if the override substitutes a different decision (e.g. an
+"approve" overridden to a "reject"). The field is informational;
+CHAP does not constrain semantics. It exists because *"the human
+edited the agent's draft"* and *"the human replaced the agent's
+draft with a different decision"* are operationally different events
+that produce identical envelope structures without it.
 
 The resulting override is recorded as a typed audit entry. Any
 downstream analytics — "which tags appear most often?", "which

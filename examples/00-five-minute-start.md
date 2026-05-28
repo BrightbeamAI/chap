@@ -103,7 +103,7 @@ curl -s -X POST http://localhost:8080/chap \
   }' | jq
 ```
 
-You'll see both members, the workspace state, and `profiles: ["core/0.1"]`.
+You'll see both members, the workspace state, and `profiles: ["core/0.2"]`.
 
 ---
 

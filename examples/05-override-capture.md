@@ -78,7 +78,7 @@ new branch is exercised by an existing integration test.
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZB4M5K3X8M2V4N6P8R0T7D",
   "ts": "2026-05-17T13:51:32.090Z",
   "workspace": "wsp_code_review",
@@ -148,8 +148,11 @@ The Coordinator validates and produces the override artefact:
   "produced_at": "2026-05-17T13:51:32.090Z",
   "task": "tsk_01HZB4M5K3X8M2V4N6P8R0T7B",
   "based_on": "art_01HZB4M5K3X8M2V4N6P8R0T7A",
+  "logical_id": "lgl_01HZB4M5K3X8M2V4N6P8R0T7A",
   "content": {
     "based_on": "art_01HZB4M5K3X8M2V4N6P8R0T7A",
+    "logical_id": "lgl_01HZB4M5K3X8M2V4N6P8R0T7A",
+    "intent_preserved": true,
     "diff": [ /* five patch ops as above */ ],
     "rationale": "Nil-pointer comment is correct and well-targeted. Tone on the splitting comment was over-strong for a non-blocking suggestion. The 'missing test' was a false positive — there is integration coverage; the bot's lint tool doesn't see across files.",
     "tags": ["tone-softened", "severity-downgraded", "false-positive-corrected", "cross-file-coverage"],
@@ -159,11 +162,21 @@ The Coordinator validates and produces the override artefact:
 }
 ```
 
+The override carries the same `logical_id` as the original draft —
+they are two versions of the same code-review artefact — and
+`intent_preserved: true` because the reviewer kept the agent's
+overall judgement (review the PR, comment on these three issues)
+while refining tone and correcting one false positive. A reviewer
+who had instead replaced the agent's "approve with comments" with
+"request changes" would set `intent_preserved: false`. Both fields
+are optional; they're useful when downstream analytics want to
+distinguish *refined-by-human* from *replaced-by-human*.
+
 The task is `completed`. The Coordinator notifies the agent:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZB4M5K3X8M2V4N6P8R0T7F",
   "ts": "2026-05-17T13:51:32.180Z",
   "workspace": "wsp_code_review",
@@ -189,7 +202,7 @@ patterns:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZC1AAAAAAAAAAAAAAAAAAA1",
   "ts": "2026-05-24T08:00:00.000Z",
   "workspace": "wsp_code_review",

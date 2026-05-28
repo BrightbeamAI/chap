@@ -81,6 +81,17 @@ export interface OverrideArtefact {
   tags:              string[];
   policy_refs:       string[];
   ts:                string;
+  // CHAP 0.2.1 — optional artefact-identity fields (SPEC §9.2.1, §9.4).
+  // logical_id: durable handle for the thing the artefact is about,
+  //             shared across revisions/overrides/supersessions.
+  // instance_id: stable handle for this specific version; when present,
+  //              must equal content_hash or be derived from it.
+  // intent_preserved: when based_on carries a logical_id, true means
+  //                   the override refines the same underlying decision;
+  //                   false means a different decision substituted.
+  logical_id?:       string;
+  instance_id?:      string;
+  intent_preserved?: boolean;
 }
 
 export interface RouteDecisionArtefact {

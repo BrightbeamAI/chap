@@ -34,7 +34,7 @@ He proposes a single handoff covering all three:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBA8O7K3X8M2V4N6P8R0T9A",
   "ts": "2026-05-17T16:50:14.001Z",
   "workspace": "wsp_incident_response",
@@ -91,7 +91,7 @@ here for brevity), and accepts:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBA8O7K3X8M2V4N6P8R0T9B",
   "ts": "2026-05-17T16:54:02.221Z",
   "workspace": "wsp_incident_response",
@@ -118,7 +118,7 @@ notification to every interested participant:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBA8O7K3X8M2V4N6P8R0T9C",
   "ts": "2026-05-17T16:54:02.305Z",
   "workspace": "wsp_incident_response",
@@ -160,7 +160,7 @@ different recipient or escalates:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBA8O7K3X8M2V4N6P8R0T9D",
   "ts": "2026-05-17T16:53:30.000Z",
   "workspace": "wsp_incident_response",

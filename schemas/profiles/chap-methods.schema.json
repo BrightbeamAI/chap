@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://chap.dev/schemas/0.1/chap-methods.schema.json",
+  "$id": "https://chap.dev/schemas/0.2/chap-methods.schema.json",
   "title": "CHAP Method Catalogue",
-  "description": "Authoritative catalogue of methods defined by CHAP v0.1 across Core and the profile suite. Every method declares `since` (the layer that introduces it — `core/1.0` or `<profile>/<version>`) and `implementation_status` (`implemented` if present in at least one v0.1 reference implementation under `reference/`, otherwise `spec-only`). Note: the v0.1 reference implementations use simplified `task.create` + `task.update` calls in place of the full `task.assign / accept / decline / start / progress` lifecycle described in SPECIFICATION.md §12.3; the catalogue records both — the spec methods are the canonical surface, the *_create/update variants are reference-only simplifications.",
+  "description": "Authoritative catalogue of methods defined by CHAP v0.2 across Core and the profile suite. Every method declares `since` (the layer that introduces it — `core/1.0` or `<profile>/<version>`) and `implementation_status` (`implemented` if present in at least one v0.2 reference implementation under `reference/`, otherwise `spec-only`). Note: the v0.2 reference implementations use simplified `task.create` + `task.update` calls in place of the full `task.assign / accept / decline / start / progress` lifecycle described in SPECIFICATION.md §12.3; the catalogue records both — the spec methods are the canonical surface, the *_create/update variants are reference-only simplifications.",
   "type": "object",
   "required": ["version", "methods"],
   "properties": {
-    "version": { "const": "0.1" },
+    "version": { "const": "0.2" },
     "methods": {
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/MethodSpec" }
@@ -30,7 +30,7 @@
         "implementation_status": {
           "type": "string",
           "enum": ["implemented", "spec-only", "reference-only"],
-          "description": "`implemented`: documented in spec AND present in at least one v0.1 reference. `spec-only`: in spec but not yet implemented. `reference-only`: v0.1 reference simplification not in the canonical spec method set."
+          "description": "`implemented`: documented in spec AND present in at least one v0.2 reference. `spec-only`: in spec but not yet implemented. `reference-only`: v0.2 reference simplification not in the canonical spec method set."
         },
         "params_schema": { "type": "string", "format": "uri" },
         "result_schema": { "type": "string", "format": "uri" }
@@ -39,7 +39,7 @@
   },
   "examples": [
     {
-      "version": "0.1",
+      "version": "0.2",
       "methods": {
         "workspace.create":       { "namespace": "workspace",   "type": "request",      "summary": "Create a new workspace.",                              "required_scope": ["workspace.admin"], "privileged": true,  "since": "core/1.0",     "implementation_status": "implemented" },
         "workspace.describe":     { "namespace": "workspace",   "type": "request",      "summary": "Return the workspace descriptor.",                     "required_scope": [],                  "privileged": false, "since": "core/1.0",     "implementation_status": "implemented" },
@@ -68,7 +68,7 @@
         "task.describe":          { "namespace": "task",        "type": "request",      "summary": "Return a task's current state.",                        "required_scope": [],                "privileged": false, "since": "core/1.0",    "implementation_status": "spec-only"     },
         "task.create":            { "namespace": "task",        "type": "request",      "summary": "Create a task and dispatch it (reference simplification: combines task.assign + task.accept).", "required_scope": ["task.delegate"], "privileged": false, "since": "core/1.0", "implementation_status": "reference-only" },
         "task.update":            { "namespace": "task",        "type": "request",      "summary": "Transition a task's state (reference simplification: covers task.start, task.progress, and other transitions).", "required_scope": [], "privileged": false, "since": "core/1.0", "implementation_status": "reference-only" },
-        "task.route":             { "namespace": "task",        "type": "request",      "summary": "Pick an assignee from candidates using routing hints.", "required_scope": ["task.route"],    "privileged": false, "since": "routing/1.0", "implementation_status": "spec-only",  "params_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/TaskRouteParams",   "result_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/TaskRouteResult" },
+        "task.route":             { "namespace": "task",        "type": "request",      "summary": "Pick an assignee from candidates using routing hints.", "required_scope": ["task.route"],    "privileged": false, "since": "routing/1.0", "implementation_status": "spec-only",  "params_schema": "https://chap.dev/schemas/0.2/chap-routing.schema.json#/$defs/TaskRouteParams",   "result_schema": "https://chap.dev/schemas/0.2/chap-routing.schema.json#/$defs/TaskRouteResult" },
 
         "audit.read":             { "namespace": "audit",       "type": "request",      "summary": "Read a range of evidence entries.",                    "required_scope": ["audit.read"],   "privileged": false, "since": "core/1.0", "implementation_status": "implemented" },
         "audit.verify":           { "namespace": "audit",       "type": "request",      "summary": "Verify the chain over a range.",                       "required_scope": ["audit.read"],   "privileged": false, "since": "core/1.0", "implementation_status": "spec-only"   },
@@ -78,14 +78,14 @@
 
         "review.request":         { "namespace": "review",      "type": "request",      "summary": "Ask reviewers to evaluate an artefact.",               "required_scope": ["review.request"], "privileged": false, "since": "review/1.0",  "implementation_status": "implemented" },
         "review.acknowledge":     { "namespace": "review",      "type": "notification", "summary": "Reviewer signals they have begun review.",             "required_scope": [],                 "privileged": false, "since": "review/1.0",  "implementation_status": "spec-only"   },
-        "review.depth":           { "namespace": "review",      "type": "request",      "summary": "Decide review depth for an artefact.",                 "required_scope": ["review.depth"],   "privileged": false, "since": "routing/1.0", "implementation_status": "spec-only",  "params_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/ReviewDepthParams", "result_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/ReviewDepthResult" },
+        "review.depth":           { "namespace": "review",      "type": "request",      "summary": "Decide review depth for an artefact.",                 "required_scope": ["review.depth"],   "privileged": false, "since": "routing/1.0", "implementation_status": "spec-only",  "params_schema": "https://chap.dev/schemas/0.2/chap-routing.schema.json#/$defs/ReviewDepthParams", "result_schema": "https://chap.dev/schemas/0.2/chap-routing.schema.json#/$defs/ReviewDepthResult" },
 
         "decide.approve":         { "namespace": "decide",      "type": "request", "summary": "Approve a draft as-is.",                                          "required_scope": ["decide"], "privileged": false, "since": "review/1.0", "implementation_status": "implemented" },
         "decide.reject":          { "namespace": "decide",      "type": "request", "summary": "Reject a draft with a reason.",                                   "required_scope": ["decide"], "privileged": false, "since": "review/1.0", "implementation_status": "implemented" },
         "decide.override":        { "namespace": "decide",      "type": "request", "summary": "Approve a modified version; produces an override artefact.",      "required_scope": ["decide"], "privileged": false, "since": "review/1.0", "implementation_status": "implemented" },
         "abstain.declare":        { "namespace": "abstain",     "type": "request", "summary": "Decline to decide; flags for escalation.",                        "required_scope": ["decide"], "privileged": false, "since": "review/1.0", "implementation_status": "implemented" },
         "escalate.raise":         { "namespace": "escalate",    "type": "request", "summary": "Hand a task up the chain with context.",                          "required_scope": ["decide"], "privileged": false, "since": "review/1.0", "implementation_status": "implemented" },
-        "escalate.auto":          { "namespace": "escalate",    "type": "request", "summary": "Evaluate auto-escalation rules against an artefact.",            "required_scope": ["escalate.auto"], "privileged": false, "since": "routing/1.0", "implementation_status": "spec-only",   "params_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/EscalateAutoParams", "result_schema": "https://chap.dev/schemas/0.1/chap-routing.schema.json#/$defs/EscalateAutoResult" },
+        "escalate.auto":          { "namespace": "escalate",    "type": "request", "summary": "Evaluate auto-escalation rules against an artefact.",            "required_scope": ["escalate.auto"], "privileged": false, "since": "routing/1.0", "implementation_status": "spec-only",   "params_schema": "https://chap.dev/schemas/0.2/chap-routing.schema.json#/$defs/EscalateAutoParams", "result_schema": "https://chap.dev/schemas/0.2/chap-routing.schema.json#/$defs/EscalateAutoResult" },
 
         "whisper.ask":            { "namespace": "whisper",     "type": "request", "summary": "Quick deadline-bound interrupt question.", "required_scope": ["whisper.ask"],    "privileged": false, "since": "whisper/1.0", "implementation_status": "spec-only" },
         "whisper.answer":         { "namespace": "whisper",     "type": "request", "summary": "Answer a whisper.",                        "required_scope": ["whisper.answer"], "privileged": false, "since": "whisper/1.0", "implementation_status": "spec-only" },

@@ -552,6 +552,13 @@ export class Coordinator {
       tags:              Array.isArray(p.tags) ? p.tags : [],
       policy_refs:       Array.isArray(p.policy_refs) ? p.policy_refs : [],
       ts:                now(),
+      // CHAP 0.2.1 — pass through optional identity/intent fields if
+      // the client sent them. Coordinator does not synthesise them;
+      // clients that want version-graph projection should emit
+      // logical_id (matching based_on's, if known) and intent_preserved.
+      ...(typeof p.logical_id       === "string"  ? { logical_id:       p.logical_id       } : {}),
+      ...(typeof p.instance_id      === "string"  ? { instance_id:      p.instance_id      } : {}),
+      ...(typeof p.intent_preserved === "boolean" ? { intent_preserved: p.intent_preserved } : {}),
     };
     ws.overrides.set(artefact.id, artefact);
 

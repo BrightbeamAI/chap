@@ -9,7 +9,86 @@ Profiles version independently from Core. A profile version
 
 ---
 
-## 1.0 — current
+## 0.2.1 — pre-release editorial pass
+
+Editorial revision of 0.2 after an external two-lens review. No
+breaking changes; additions are backward-compatible and optional.
+
+### Added
+
+- **Artefact identity fields (§9.2.1).** Optional `logical_id` and
+  `instance_id` on the artefact descriptor. `logical_id` is the
+  durable handle for the *thing the artefact is about* across
+  revisions; `instance_id` is a stable handle for a specific version
+  (and, when present, MUST be tied to `content_hash`). CHAP itself
+  reads only `id`; the new fields enable version-graph projection in
+  consumer tools and analytics.
+- **`intent_preserved` on overrides and supersessions (§9.4).**
+  Optional boolean distinguishing "the human refined the expression
+  of the same decision" from "the human substituted a different
+  decision". Informational; CHAP does not constrain semantics. Same
+  convention applies to `control.supersede`.
+- **Threat-model subsection (§15.4).** New normative subsection
+  inside Security considerations covering replay, downgrade,
+  capability confusion across profiles, key rotation, evidence-chain
+  forking under partition, compromised Coordinator, and identity
+  confusion — each named with the protocol-level countermeasure and
+  the deployment-level mitigation where the protocol cannot defend
+  alone. An explicit out-of-scope list closes the section.
+- **Maturity statement** at the top of SPECIFICATION.md and in the
+  README, naming 0.2 as a public Draft with one reference
+  implementation and noting that the two-interoperable-implementations
+  bar typical of standards-track promotion has not yet been met.
+- **Expanded Non-goals (§1.3).** Five additional bullets clarifying
+  what CHAP deliberately leaves to deployments and profiles: claim
+  taxonomies, temporal models beyond `produced_at`, confidence
+  calibration, regulatory-sufficiency determinations, and semantic
+  relations between artefacts beyond `based_on`/supersession.
+
+### Changed
+
+- **§17 Conformance reworked.** *Full* is now marked **planned**, not
+  claimable in this revision: it requires a second interoperable
+  implementation and an exhaustive interop test suite that the
+  current draft does not yet have. Implementations may continue to
+  attest at Minimal or Recommended. Self-attestation rules tightened
+  to require honesty about implemented-vs-declared methods.
+- **`review/1.0` profile.** `decide.override` example now includes
+  `logical_id` and `intent_preserved`, with prose explaining when
+  each SHOULD be set.
+- **`chap-task.schema.json`.** Artefact gains optional `logical_id`
+  (`lgl_…` pattern) and `instance_id`. OverrideContent gains optional
+  `logical_id` and `intent_preserved`.
+- **GLOSSARY.** Added `logical_id`, `instance_id`, `intent_preserved`
+  as normative entries.
+- **Reference implementations updated.** The `@chap/coordinator`
+  package and the `core-plus-review` server now persist the new
+  optional fields on override artefacts when clients emit them
+  (pass-through; no synthesis). The `core-plus-review` demo client
+  emits both fields; the playground UI emits both fields with
+  `intent_preserved: true` as the default for tone-adjustment
+  overrides. The `analyze-overrides` analytics tool now reports a
+  refined-vs-replaced breakdown when clients supply
+  `intent_preserved`. Smoke tests cover both new-client and
+  legacy-client paths.
+
+### Removed
+
+- Nothing. All changes are additive.
+
+### Migration notes
+
+No code changes are required for existing 0.2 implementations. The
+new fields are optional; existing artefacts continue to validate.
+Implementations that wish to surface version-graph semantics or
+intent-distinction analytics SHOULD start emitting `logical_id` on
+first artefact creation; legacy artefacts can be retrofitted by an
+index that hashes `(workspace, task, kind, …)` to a synthetic
+`logical_id`.
+
+---
+
+## 0.2 — current
 
 The Collaborative Human-Agent Protocol at full surface: Core, eleven profiles,
 schemas, reference implementations, examples, conformance suite,

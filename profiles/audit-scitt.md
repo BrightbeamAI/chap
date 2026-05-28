@@ -80,7 +80,7 @@ COSE_Sign1 {
       sub: <workspace id>
       iat: <unix ts>
     }
-    content-type: "application/chap+json;version=0.1"
+    content-type: "application/chap+json;version=0.2"
   }
   payload: <JCS canonicalisation of the CHAP envelope>
   signature: <Ed25519 signature over the protected headers + payload>

@@ -34,6 +34,21 @@ and only when, they appear in all capitals.
 [RFC 2119]: https://www.rfc-editor.org/rfc/rfc2119
 [RFC 8174]: https://www.rfc-editor.org/rfc/rfc8174
 
+**Maturity.** CHAP 0.2 is a public **Draft**. The protocol surface,
+schemas, and reference implementations are stable enough for
+experimentation and early production pilots; they are not yet
+sufficient for a normative conformance claim. Specifically: the
+specification has one reference implementation (the `@chap/coordinator`
+package in this repository), not the two interoperable implementations
+typical of a standards-track promotion; an empirical interoperability
+test suite covering all defined methods is published as a draft (see
+[`conformance/`](./conformance/)) but is not exhaustive. Breaking
+changes to the wire format will follow Semantic Versioning, but the
+profile surface should be expected to evolve faster than Core.
+Production deployments are welcome and encouraged to feed back
+findings; deployments requiring stability guarantees beyond
+"reasonable best effort under SemVer" should wait for 1.0.
+
 ---
 
 ## Table of contents
@@ -107,6 +122,31 @@ CHAP is not:
   artefact references and external content storage.
 - A business-process notation. Mechanism, not policy.
 
+CHAP also deliberately leaves the following to deployments and profiles:
+
+- **A claim or evidence taxonomy.** CHAP carries an artefact's
+  `content` and `citations` opaquely. Whether claims are typed as
+  Evidence/Inference/Assumption, as Premise/Conclusion, or as some
+  domain-specific scheme is the deploying organisation's choice or a
+  profile's contribution.
+- **A temporal model beyond `produced_at` and chain monotonicity.**
+  Domains that require richer time semantics — separating subject
+  time from statement time, or carrying validity windows — should
+  layer those into the artefact `content` shape or define them in a
+  profile.
+- **A confidence calibration.** `routing_hints.confidence` is a
+  model-reported number. CHAP makes no claim about cross-model
+  comparability or about what any particular value implies for
+  routing.
+- **What evidence is sufficient for any regulatory regime.** CHAP
+  produces a verifiable record of who decided what, when, and on the
+  basis of which inputs. Whether that record meets a particular
+  audit, conformity assessment, or accountability standard is for
+  the deploying organisation and its regulators to determine.
+- **Semantic relations between artefacts beyond `based_on` and
+  supersession.** Richer graphs (causation, mitigation, verification)
+  belong in domain layers above CHAP.
+
 ---
 
 ## 2. Terminology
@@ -177,7 +217,7 @@ Every CHAP message is a JSON object conforming to
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2A",
   "ts": "2026-05-17T09:14:22.184Z",
   "workspace": "wsp_support_triage",
@@ -656,6 +696,8 @@ existence and content are recorded in the chain.
   "produced_at": "2026-05-17T09:14:55.901Z",
   "task": "tsk_01HZ9YWQ7K3X8M2V4N6P8R0T3B",
   "schema": "https://schemas.example.org/draft-response.v1.json",
+  "logical_id": "lgl_01HZ9YX1A2B3C4D5E6F7G8H9J0",
+  "instance_id": "art_01HZ9YX1A2B3C4D5E6F7G8H9J0",
   "content": {
     "text": "Hello — thank you for reaching out about order #...",
     "tone": "apologetic",
@@ -675,6 +717,36 @@ existence and content are recorded in the chain.
   "content_hash": "sha256:7f8e9d0c…"
 }
 ```
+
+#### 9.2.1 Artefact identity: `id`, `logical_id`, `instance_id`
+
+CHAP distinguishes three identity concepts on an artefact:
+
+- **`id`** (required) is a globally unique handle for this particular
+  artefact record. Each new artefact gets a fresh `id`.
+- **`logical_id`** (OPTIONAL) names the *thing the artefact is about*
+  — the durable handle that survives revision. Two artefacts that
+  share a `logical_id` are two versions of the same underlying item:
+  the same draft response, the same policy statement, the same
+  recommendation. Producers SHOULD assign a `logical_id` on first
+  creation and reuse it on every subsequent revision.
+- **`instance_id`** (OPTIONAL) is a stable handle for the specific
+  *version*. When present, an `instance_id` MUST equal the artefact's
+  `content_hash` or be a function of it; this lets consumers detect
+  whether two artefacts with the same `logical_id` are byte-identical.
+  Implementations that do not need a separate instance handle MAY
+  set `instance_id` equal to `id`.
+
+These fields exist so that revision, supersession, and override can
+be distinguished in the chain. Without them, a deployment can track
+*which artefact replaced which* (via `based_on` and `control.supersede`)
+but cannot answer *"is this the same item I approved last week, or a
+different item with the same shape?"* — a question that arises in any
+domain that does versioned work.
+
+CHAP itself reads only `id`. Higher layers — analytics, dashboards,
+external indexes — can use `logical_id` and `instance_id` to project
+the chain into a version graph.
 
 ### 9.3 Standard artefact kinds
 
@@ -702,6 +774,8 @@ An `override` artefact MUST carry:
 {
   "kind": "override",
   "based_on": "art_01HZ9YX1…",
+  "logical_id": "lgl_01HZ9YX1A2B3C4D5E6F7G8H9J0",
+  "intent_preserved": true,
   "diff": [
     { "op": "replace", "path": "/content/text",
       "from": "We're sorry for the delay…",
@@ -717,6 +791,21 @@ The diff format is JSON Patch ([RFC 6902]) with an additional `from`
 field on `replace` operations for context. The rationale is free
 text; the tags are workspace-defined categorisations useful for
 analysing override patterns across time.
+
+When the override's `based_on` target carries a `logical_id`, the
+override SHOULD carry the same `logical_id` and SHOULD set
+`intent_preserved` to indicate whether the override changes the
+underlying intent (`false` — this is a different decision) or
+refines its expression (`true` — same decision, better delivery).
+The field is informational; CHAP does not constrain semantics. It
+exists because *"the human edited the agent's draft"* and *"the human
+replaced the agent's draft with a different decision"* are
+operationally different events that produce identical envelope
+structures without it.
+
+The same convention applies to `control.supersede`: when superseding
+an artefact that carries a `logical_id`, the replacement SHOULD carry
+the same `logical_id` and set `intent_preserved` accordingly.
 
 [RFC 6902]: https://www.rfc-editor.org/rfc/rfc6902
 
@@ -1095,7 +1184,7 @@ contains exactly one envelope. The subprotocol identifier is
 `chap.v1`. Initial connection requires an `Authorization` header
 carrying the OIDC ID token or service credential.
 
-> The v0.1 reference implementations use plain HTTP POST; a
+> The v0.2 reference implementations use plain HTTP POST; a
 > WebSocket reference binding is planned for v0.2.
 
 ### 14.3 HTTP+SSE binding (RECOMMENDED)
@@ -1184,6 +1273,93 @@ Sensitive content SHOULD be:
 A confidentiality extension defining per-field encryption is under
 discussion for the next draft.
 
+### 15.4 Threat model
+
+This section identifies adversaries CHAP defends against, adversaries
+it does not, and the protocol-level countermeasures behind each
+defended class. The full operational threat model is in
+[SECURITY.md](./SECURITY.md).
+
+**Replay.** An adversary captures a previously-valid envelope and
+re-injects it into the chain.  *Countermeasures:* envelope `id` is a
+ULID (Crockford-base32; 26 chars) which conformant Coordinators MUST
+reject on second observation (error code `-32701 id_reused`); `ts`
+MUST be monotonically non-decreasing per `from`; `prev_hash` MUST
+match the current chain head, so any replay against a chain that has
+since advanced is detected at acceptance.
+
+**Downgrade.** An adversary forces capability negotiation in
+`workspace.describe` to advertise fewer profiles than both peers
+support, hoping to suppress a defensive profile (e.g.
+`security-signed/1.0` or `audit-scitt/1.0`).  *Countermeasures:* the
+workspace descriptor is itself an artefact in the evidence chain;
+its advertised profile list is signed and cannot be retrospectively
+narrowed. Deployments concerned about downgrade SHOULD treat the
+profile set as policy: any participant whose `participant.join`
+declares a lower profile set than the workspace's mandatory minimum
+MUST be refused. The `modes/1.0` profile, combined with workspace
+policy, lets an operator pin a floor.
+
+**Capability confusion across profiles.** Two profiles define methods
+with similar names but different security properties (for example,
+`decide.override` in `review/1.0` versus a hypothetical
+`decide.override` in a forked profile). *Countermeasures:* methods
+are namespaced (`namespace.verb`) and the profile that owns a
+namespace is declared in the workspace descriptor; Coordinators MUST
+reject a method call whose namespace's owning profile is not in the
+workspace's advertised set.
+
+**Key rotation.** A participant rotates a signing key mid-chain.
+*Countermeasures:* `identity-oidc/1.0` and `identity-vc/1.0` define
+key rotation as an explicit `participant.update` event signed by the
+old key, naming the new key. Verifiers walking the chain MUST treat
+the post-rotation entries as signed by the new key only after the
+rotation event itself has been verified by the old key. A rotation
+event MUST NOT retroactively re-sign earlier entries.
+
+**Evidence-chain forking under partition.** Two Coordinators serving
+the same workspace under a network partition each accept envelopes
+into their local chain head; on partition heal the chains have
+diverged. *Countermeasures:* CHAP's evidence chain is per-workspace
+and per-Coordinator; the protocol does not provide a Byzantine fault
+tolerant consensus layer. Deployments that require continuity through
+partition MUST either (a) run a single logical Coordinator with HA
+replication that preserves chain linearity, or (b) operate the
+peer-to-peer topology in §3 with each peer maintaining its own chain
+and using `audit.read` to cross-verify on heal. Detection of fork is
+automatic — the divergent `prev_hash` values do not link — but
+resolution is operational. Deployments SHOULD anchor chain heads to
+an external transparency log via `audit-scitt/1.0` to make fork
+detection independent of the Coordinators themselves.
+
+**Compromised Coordinator.** An adversary controls a Coordinator and
+attempts to forge entries, suppress entries, or rewrite history.
+*Countermeasures:* signatures are made by the originating
+participant, not by the Coordinator, so the Coordinator cannot
+forge new participant content; suppression of a delivered envelope
+is detectable because the affected participant retains a record of
+emission; rewriting history breaks `prev_hash` linkage and, where
+deployed, breaks the SCITT receipt's witnessed root. A Coordinator
+that is the sole signer of receipts can equivocate; deployments
+defending against this MUST use `audit-scitt/1.0` with an externally
+operated transparency service whose witnesses are not under the same
+administrative control as the Coordinator.
+
+**Identity confusion.** A participant adopts a Participant URI that
+resembles another's. *Countermeasures:* Participant URIs in
+`human:`, `agent:`, `service:` namespaces MUST be bound to a verified
+identity (OIDC subject claim or VC subject DID) before being
+admitted to a workspace via `participant.join`. The binding is
+recorded in the participant descriptor and signed.
+
+**Out of scope.** CHAP does not defend against: a Participant who
+chooses to lie within the schema (a human who clicks Approve having
+not read the artefact; an agent that hallucinates a citation); the
+content of artefacts (the protocol carries opaque content; semantic
+integrity is the deploying application's concern); side-channel
+inference on `routing_hints` or other metadata; denial-of-service at
+the transport layer (handled by the underlying transport's controls).
+
 ---
 
 ## 16. Composition with MCP and A2A
@@ -1230,7 +1406,12 @@ See [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
 ### 17.1 Levels
 
-CHAP defines three conformance levels:
+CHAP defines two implementable conformance levels in the current
+draft (Minimal, Recommended) and one planned level (Full). An
+implementation MAY claim a level only against the method set it has
+actually implemented and exercised against the test vectors in
+[`conformance/test-vectors.md`](./conformance/test-vectors.md); a
+claim against a method declared but not implemented is non-conformant.
 
 #### Minimal
 
@@ -1257,29 +1438,44 @@ A **recommended** implementation additionally:
 - Implements MCP composition (§16.1).
 - Publishes a method-role policy document.
 
-#### Full
+#### Full (planned)
 
-A **full** implementation additionally:
-
-- Implements all methods in the catalogue.
-- Implements A2A composition (§16.2).
-- Implements external evidence anchoring.
-- Passes the published interop test suite (when available).
+A **full** level is reserved for a future revision of this
+specification. Reaching Full requires: implementation of all methods
+in the catalogue including the profile-defined methods marked
+*specified* in the v0.2 method index; A2A composition (§16.2);
+external evidence anchoring via `audit-scitt/1.0`; and successful
+execution of the published interop test suite against a second,
+independent implementation. CHAP 0.2 does not currently have a
+second interoperable implementation, so no implementation can
+correctly claim the Full level under this revision. Implementations
+already meeting the technical requirements above are welcome to
+publish a Recommended attestation and a list of additional methods
+implemented; promotion to Full will be opened once the interop
+substrate is in place.
 
 ### 17.2 Self-attestation
 
 Implementations MAY self-attest a conformance level by publishing a
 conformance statement listing the implemented methods, transports,
 and protections. See [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md)
-for the template.
+for the template. The attestation MUST be honest about which methods
+are implemented versus declared; consumers SHOULD treat a method
+named in the catalogue but not in the attestation as unavailable in
+that implementation.
 
 ### 17.3 Interop testing
 
-A formal interop test suite is planned for the next draft. In the
-interim, the test vectors in
+A formal interop test suite is in draft. The test vectors in
 [`conformance/test-vectors.md`](./conformance/test-vectors.md)
 provide canonical input/output pairs for signing, canonicalisation,
-and evidence chaining that every implementation MUST reproduce.
+and evidence chaining that every implementation MUST reproduce
+exactly; the harness in
+[`conformance/harness/`](./conformance/harness/) provides the
+runnable substrate. A full interoperability test suite — covering
+end-to-end method exchange between two implementations under both
+Coordinator-mediated and peer topologies — is planned alongside the
+Full conformance level.
 
 ---
 

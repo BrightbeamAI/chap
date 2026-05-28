@@ -70,6 +70,17 @@ interface OverrideArtefact {
   tags:              string[];
   policy_refs:       string[];
   ts:                string;
+  // CHAP 0.2.1 — optional artefact-identity fields (SPEC §9.2.1, §9.4).
+  // logical_id: durable handle for the thing the artefact is about,
+  //             shared across revisions/overrides/supersessions.
+  // instance_id: stable handle for this specific version; when present,
+  //              must equal content_hash or be derived from it.
+  // intent_preserved: when based_on carries a logical_id, true means
+  //                   the override refines the same underlying decision;
+  //                   false means a different decision substituted.
+  logical_id?:       string;
+  instance_id?:      string;
+  intent_preserved?: boolean;
 }
 
 interface Task {
@@ -451,6 +462,14 @@ const handlers: Record<string, Handler> = {
       tags:              (p.tags as string[]) ?? [],
       policy_refs:       (p.policy_refs as string[]) ?? [],
       ts:                new Date().toISOString(),
+      // CHAP 0.2.1 — pass through optional identity / intent fields if present.
+      // The reference does not synthesise these; clients that want
+      // version-graph projection should send them, in which case the
+      // override should carry the same logical_id as the based_on
+      // artefact and set intent_preserved explicitly.
+      ...(p.logical_id       !== undefined ? { logical_id:       p.logical_id       as string  } : {}),
+      ...(p.instance_id      !== undefined ? { instance_id:      p.instance_id      as string  } : {}),
+      ...(p.intent_preserved !== undefined ? { intent_preserved: p.intent_preserved as boolean } : {}),
     };
     ws.overrides.set(artefactId, override);
 

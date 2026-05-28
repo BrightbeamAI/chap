@@ -150,6 +150,19 @@ envelope plus its signature.
 **`id`.** [normative] The ULID identifying a message. Globally unique;
 re-use is rejected with error `-32701`.
 
+**`instance_id`.** [normative] Optional artefact-descriptor field
+identifying the specific version of an artefact. When present, MUST
+equal the artefact's `content_hash` or be deterministically derived
+from it. Lets consumers detect byte-identical revisions across the
+chain. See §9.2.1.
+
+**`intent_preserved`.** [normative] Optional boolean on an override
+or supersession artefact. `true` indicates the new artefact refines
+the expression of the same underlying intent (same decision, better
+delivery); `false` indicates a different decision substituted for
+the original. Informational; CHAP does not constrain semantics.
+See §9.4.
+
 ---
 
 ## J
@@ -173,6 +186,18 @@ Participant's descriptor.
 
 **`kid`.** Key ID. Identifies a specific key within a JWKS. May appear as
 a hint in the `evidence.sig` value.
+
+---
+
+## L
+
+**`logical_id`.** [normative] Optional artefact-descriptor field
+identifying the durable thing the artefact is about. Two artefacts
+that share a `logical_id` are two versions of the same underlying
+item. Producers SHOULD assign on first creation and reuse on every
+revision, override, or supersession. CHAP itself reads only `id`;
+`logical_id` is for higher-layer version-graph projection. See
+§9.2.1.
 
 ---
 

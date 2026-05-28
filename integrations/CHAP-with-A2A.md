@@ -99,7 +99,7 @@ returns as a CHAP artefact.
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBF1R0K3X8M2V4N6P8R0TCA",
   "ts": "2026-05-17T16:45:00.000Z",
   "workspace": "wsp_translation_intake",
@@ -143,7 +143,7 @@ returns as a CHAP artefact.
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBF1R0K3X8M2V4N6P8R0TCC",
   "ts": "2026-05-17T16:45:00.412Z",
   "workspace": "wsp_translation_intake",
@@ -189,7 +189,7 @@ flight:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBG2S1K3X8M2V4N6P8R0TCE",
   "ts": "2026-05-17T18:32:14.001Z",
   "workspace": "wsp_translation_intake",

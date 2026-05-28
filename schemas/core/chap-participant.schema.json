@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://chap.dev/schemas/0.1/chap-participant.schema.json",
+  "$id": "https://chap.dev/schemas/0.2/chap-participant.schema.json",
   "title": "CHAP Participant Descriptor",
   "description": "Descriptor for a Participant in a CHAP workspace.",
   "type": "object",

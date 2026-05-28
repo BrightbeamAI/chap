@@ -12,8 +12,11 @@ The vectors cover three operations:
 3. **Evidence-chain linkage** of a genesis entry plus three entries.
 
 If an implementation matches all three, its cryptographic core is
-conformant. (The full conformance levels — minimal, recommended, full
-— are covered by [`conformance-checklist.md`](./conformance-checklist.md).)
+conformant. (The conformance ladder — Minimal, Recommended, and the
+planned Full level — is described in
+[SPECIFICATION.md §17](../SPECIFICATION.md#17-conformance) and the
+profile-selection checklist is in
+[`conformance-checklist.md`](./conformance-checklist.md).)
 
 ---
 
@@ -66,7 +69,7 @@ representation. The CHAP rules:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2A",
   "ts": "2026-05-17T09:00:00.000Z",
   "workspace": "wsp_test",
@@ -82,7 +85,7 @@ representation. The CHAP rules:
 ### Expected canonical form (exact bytes)
 
 ```
-{"evidence":{"prev_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000"},"from":"human:[email protected]","chap":"0.1","id":"01HZ9YWQ7K3X8M2V4N6P8R0T2A","method":"participant.heartbeat","params":{"load":0.42,"status":"ready"},"to":"service:[email protected]","ts":"2026-05-17T09:00:00.000Z","type":"notification","workspace":"wsp_test"}
+{"evidence":{"prev_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000"},"from":"human:[email protected]","chap": "0.2","id":"01HZ9YWQ7K3X8M2V4N6P8R0T2A","method":"participant.heartbeat","params":{"load":0.42,"status":"ready"},"to":"service:[email protected]","ts":"2026-05-17T09:00:00.000Z","type":"notification","workspace":"wsp_test"}
 ```
 
 ### Expected SHA-256 of the canonical bytes

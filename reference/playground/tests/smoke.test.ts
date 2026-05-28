@@ -120,6 +120,9 @@ test("decide.override applies the patch and writes an override artefact", async 
       diff: [{ op: "replace", path: "/body", value: "Maya's revised version." }],
       rationale: "Tone too apologetic for a routine in-transit query.",
       tags: ["tone-softened"],
+      // CHAP 0.2.1 — optional identity / intent fields.
+      logical_id:       "lgl_01HZSPPRT0RESPND4821942KB5",
+      intent_preserved: true,
     },
   });
   assert.ok(!overrideResp.error, `override should succeed, got: ${JSON.stringify(overrideResp.error)}`);
@@ -133,6 +136,33 @@ test("decide.override applies the patch and writes an override artefact", async 
   assert.equal(overrides.length, 1);
   assert.deepEqual(overrides[0].tags, ["tone-softened"]);
   assert.equal(overrides[0].reviewer, MAYA);
+
+  // CHAP 0.2.1 — verify the new optional fields round-trip.
+  assert.equal(overrides[0].logical_id,       "lgl_01HZSPPRT0RESPND4821942KB5");
+  assert.equal(overrides[0].intent_preserved, true);
+});
+
+test("decide.override without identity fields still works (backward compat)", async () => {
+  const coord = setupCoordinator();
+  const ticket = getTicket("INC-48219")!;
+  const taskId = await processTicket(coord, WS, ticket, MAYA, { drafter: mockDrafter(0.9) });
+
+  const overrideResp = coord.dispatch({
+    jsonrpc: "2.0", id: "ov-2", method: "decide.override",
+    params: {
+      workspace_id: WS, task_id: taskId, from: MAYA,
+      diff: [{ op: "replace", path: "/body", value: "Legacy client output." }],
+      rationale: "Pre-0.2.1 client; no identity fields.",
+      tags: [],
+    },
+  });
+  assert.ok(!overrideResp.error, `override should succeed, got: ${JSON.stringify(overrideResp.error)}`);
+
+  const ws = coord.getWorkspace(WS)!;
+  const overrides = Array.from(ws.overrides.values()).filter((o) => o.task_id === taskId);
+  assert.equal(overrides.length, 1);
+  assert.equal(overrides[0].logical_id,       undefined);
+  assert.equal(overrides[0].intent_preserved, undefined);
 });
 
 test("audit chain has expected length and ordering", async () => {

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://chap.dev/schemas/0.1/chap-task.schema.json",
+  "$id": "https://chap.dev/schemas/0.2/chap-task.schema.json",
   "title": "CHAP Task / Artefact / Override",
   "description": "Schemas for the Task, Artefact, and Override primitives.",
   "$defs": {
@@ -160,6 +160,15 @@
           "description": "For override and decision artefacts, the artefact id this one refers to.",
           "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
         },
+        "logical_id": {
+          "type": "string",
+          "description": "Optional. Stable identifier for the thing the artefact is about — durable across revisions. Two artefacts that share a logical_id are two versions of the same underlying item. Producers SHOULD assign on first creation and reuse on every revision, override or supersession. CHAP itself reads only `id`; logical_id is for higher-layer version-graph projection.",
+          "pattern": "^lgl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "instance_id": {
+          "type": "string",
+          "description": "Optional. Stable identifier for this particular version. If present, MUST equal the artefact's content_hash or be deterministically derived from it, so consumers can detect byte-identical revisions across the chain. Implementations that do not need a separate instance handle MAY omit this or set it equal to `id`."
+        },
         "content": {
           "description": "Inline content. Implementations MAY substitute a URI reference for large content."
         },
@@ -246,6 +255,15 @@
         "rationale": {
           "type": "string",
           "description": "Free-text justification for the override."
+        },
+        "intent_preserved": {
+          "type": "boolean",
+          "description": "Optional. If the based_on artefact carries a logical_id, set to true when the override refines the expression of the underlying intent (same decision, better delivery) and false when the override substitutes a different decision. Informational; CHAP does not constrain semantics. The override SHOULD carry the same logical_id as its based_on target."
+        },
+        "logical_id": {
+          "type": "string",
+          "description": "Optional. SHOULD equal the logical_id of the based_on artefact when that artefact carries one. Lets consumers project overrides onto a version graph keyed by logical_id.",
+          "pattern": "^lgl_[0-9A-HJKMNP-TV-Z]{26}$"
         },
         "tags": {
           "type": "array",

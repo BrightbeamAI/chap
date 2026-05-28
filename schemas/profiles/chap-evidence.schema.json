@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://chap.dev/schemas/0.1/chap-evidence.schema.json",
+  "$id": "https://chap.dev/schemas/0.2/chap-evidence.schema.json",
   "title": "CHAP Evidence Entry",
   "description": "An entry in a workspace's append-only evidence chain.",
   "type": "object",

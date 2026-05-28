@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://chap.dev/schemas/0.1/chap-routing.schema.json",
+  "$id": "https://chap.dev/schemas/0.2/chap-routing.schema.json",
   "title": "CHAP routing/1.0 profile",
   "description": "Schemas for the routing/1.0 profile methods (task.route, review.depth, escalate.auto) and the route_decision artefact kind.",
   "$defs": {

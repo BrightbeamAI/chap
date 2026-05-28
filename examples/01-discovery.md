@@ -21,7 +21,7 @@ client credential, and sends a notification:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2A",
   "ts": "2026-05-17T09:00:00.012Z",
   "workspace": "wsp_support_triage",
@@ -82,7 +82,7 @@ The admin's client sends:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2B",
   "ts": "2026-05-17T09:00:05.412Z",
   "workspace": "wsp_support_triage",
@@ -102,7 +102,7 @@ The Coordinator returns the descriptor:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2C",
   "ts": "2026-05-17T09:00:05.418Z",
   "workspace": "wsp_support_triage",
@@ -152,7 +152,7 @@ To verify the agent's claimed capabilities and key:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2D",
   "ts": "2026-05-17T09:00:08.221Z",
   "workspace": "wsp_support_triage",
@@ -173,7 +173,7 @@ operational metadata it has gathered (last heartbeat, current load):
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2E",
   "ts": "2026-05-17T09:00:08.228Z",
   "workspace": "wsp_support_triage",

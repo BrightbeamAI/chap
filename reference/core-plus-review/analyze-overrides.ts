@@ -23,6 +23,11 @@ interface OverrideParams {
   policy_refs?: string[];
   diff?:        { op: string; path: string }[];
   based_on_artefact?: any;
+  // CHAP 0.2.1 — optional artefact-identity / intent fields.
+  // Present when the client emitted them; otherwise undefined.
+  logical_id?:       string;
+  instance_id?:      string;
+  intent_preserved?: boolean;
 }
 
 async function call(method: string, params: Record<string, unknown>): Promise<any> {
@@ -127,6 +132,26 @@ async function main(): Promise<void> {
     const pathMax = pathsSorted[0][1];
     for (const [path, count] of pathsSorted) {
       console.log(`│  ${path.padEnd(35)} ${bar(count, pathMax, 12)} ${count}`);
+    }
+    console.log(`└${"─".repeat(58)}┘`);
+  }
+
+  // -------- Intent-preserved breakdown (CHAP 0.2.1) --------
+  // When clients emit intent_preserved, we can separate "human
+  // refined the agent's expression of the same decision" from
+  // "human substituted a different decision". This is the
+  // distinction the protocol surfaces; see SPEC §9.4.
+  const intentTagged   = entries.filter(e => e.intent_preserved !== undefined);
+  if (intentTagged.length > 0) {
+    const refined   = intentTagged.filter(e => e.intent_preserved === true ).length;
+    const replaced  = intentTagged.filter(e => e.intent_preserved === false).length;
+    const untagged  = total - intentTagged.length;
+
+    console.log(`\n┌─ Override intent ${"─".repeat(41)}┐`);
+    console.log(`│  refined  (same decision, better delivery)  ${bar(refined,  intentTagged.length, 14)} ${refined}  (${pct(refined,  total)})`);
+    console.log(`│  replaced (different decision substituted)  ${bar(replaced, intentTagged.length, 14)} ${replaced}  (${pct(replaced, total)})`);
+    if (untagged > 0) {
+      console.log(`│  untagged (client did not emit field)       ${" ".repeat(16)} ${untagged}  (${pct(untagged, total)})`);
     }
     console.log(`└${"─".repeat(58)}┘`);
   }

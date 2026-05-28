@@ -88,8 +88,14 @@ peers, all auditable through the CHAP layer.
 ### Can I implement Core and call myself CHAP-compliant?
 
 Yes. Implementing all 7 Core methods plus the wire format and audit
-log makes you Core-conformant. You file an in-toto attestation
-saying so; you don't need anyone's permission.
+log makes you Core-conformant at the **Minimal** level (§17). File
+an in-toto attestation listing exactly which methods you implement.
+A **Full** conformance claim is not yet possible under the 0.2
+revision — it requires a second interoperable implementation and an
+exhaustive interop test suite that the spec does not yet have.
+Implementations that exceed Recommended are welcome to list the
+additional methods in their attestation; promotion to Full opens
+once the interop substrate is in place.
 
 ### Which profiles are "must have"?
 

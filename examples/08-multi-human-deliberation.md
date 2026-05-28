@@ -27,7 +27,7 @@ The engineering lead opens the deliberation:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBC9P8K3X8M2V4N6P8R0TAA",
   "ts": "2026-05-17T15:10:01.001Z",
   "workspace": "wsp_release_decisions",
@@ -75,7 +75,7 @@ they do not vote and do not affect the outcome.
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBC9P8K3X8M2V4N6P8R0TAC",
   "ts": "2026-05-17T15:12:42.108Z",
   "workspace": "wsp_release_decisions",
@@ -121,7 +121,7 @@ fail silently; a vote cannot).
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBC9P8K3X8M2V4N6P8R0TAD",
   "ts": "2026-05-17T15:18:01.011Z",
   "workspace": "wsp_release_decisions",
@@ -175,7 +175,7 @@ closes the thread. The Coordinator computes the outcome:
 
 ```json
 {
-  "chap": "0.1",
+  "chap": "0.2",
   "id": "01HZBC9P8K3X8M2V4N6P8R0TAE",
   "ts": "2026-05-17T15:19:00.000Z",
   "workspace": "wsp_release_decisions",
