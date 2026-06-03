@@ -1,6 +1,6 @@
 # About this repository
 
-This document is the reference companion to the [README](./README.md). If the README is where you decide whether CHAP is for you, this is where you go once you've decided yes and want the full picture: what's in the repo, how the protocol relates to the rest of the agent stack, which standards it reuses, and how it evolves.
+This document is the reference companion to the [README](./README.md). README is where you decide whether CHAP is for you and ABOUT tells you what's in the repo, how the protocol relates to the rest of the agent stack, which standards it reuses, and how it evolves.
 
 ## Contents
 
