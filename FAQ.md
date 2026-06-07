@@ -69,6 +69,27 @@ You can adopt any one alone. They become more useful together: an
 agent in a CHAP workspace can use MCP for tools and A2A for remote
 peers, all auditable through the CHAP layer.
 
+### What is actually novel about CHAP? Aren't attestation and audit logs already solved?
+
+Standardised attestation already exists. SCITT, in-toto, and C2PA all provide
+signed-statement substrates with verifiable receipts. CHAP does not reinvent
+that layer; it profiles SCITT as the recommended audit anchor and reuses the
+attestation mechanics underneath.
+
+The contribution is the *vocabulary of collaboration events being attested*.
+Before CHAP, every team that put humans and agents on the same work invented
+its own shape for "the human overrode the agent's draft", "the human asked the
+agent to clarify what it meant", "the senior reviewer escalated this above a
+threshold", "the night-shift lead handed this queue to the morning shift with
+context". Those shapes lived in application code and ad-hoc tool stacks, so
+they were not portable, not auditable consistently, and not learnable from
+across deployments. CHAP defines the wire-level vocabulary: override-with-diff-and-rationale,
+abstain-with-reason, handoff-with-context, whisper-with-typed-options, mode
+promotion under documented evidence, deliberation under quorum rules. The
+audit story is the easiest to demonstrate, which is why it leads in most
+introductions, but the deeper contribution is the collaboration vocabulary that
+the audit happens to record.
+
 ---
 
 ## Adoption
@@ -149,6 +170,20 @@ No. A Core-only deployment with manual human review off-protocol is
 useful. A Core + `review` deployment is significantly more useful.
 Profiles are additive; you don't pay for what you don't use.
 
+### Does CHAP guarantee that human feedback actually reaches the next model?
+
+No. CHAP makes the signal *portable and structured*: every override carries a
+diff, a rationale, and tags. What anyone does with that signal (prompt revision,
+fine-tuning corpus, retrieval re-grounding, none of the above) is a separate
+engineering concern.
+
+A team that ignores the data still has the data. A team that uses it has it in
+a shape that is actually useful, indexed by tag and reviewer, with the original
+artefact citeable and the chain replayable. CHAP does not close the loop; it
+makes the loop possible to close, which is meaningfully less than closing it
+but also meaningfully more than the status quo where the loop is impossible to
+close because the signal was never captured in the first place.
+
 ### Is CHAP versioned?
 
 The wire format and methods are stable. Each profile carries its
@@ -163,6 +198,64 @@ Yes. Profiles are independent of Core; Core's wire format is
 backward-compatible. A profile change that breaks an existing
 profile implementation requires that profile's major-version bump,
 documented in [`CHANGELOG.md`](./CHANGELOG.md).
+
+---
+
+## Cultural and organisational fit
+
+### Will a permanent record of overrides feel like surveillance to my team?
+
+It can, and this is worth taking seriously. The same data that helps an honest
+team learn from its mistakes can be weaponised by a low-trust organisation
+against its own people. We have seen this in practice: "overrides by reviewer"
+reads very differently to a senior engineer than to a junior one, and reads
+differently again to someone who has been quietly working around tools they do
+not trust. The protocol surfaces patterns; visibility cuts both ways.
+
+CHAP does not choose what is aggregated, what is shown to whom, or what is done
+with the patterns that surface. Those are deployment decisions and they are
+consequential. A team that aggregates *overrides-by-reviewer* and uses it for
+performance management will hurt itself. A team that aggregates
+*overrides-by-tag-and-path* and uses it to improve the agent will help itself.
+Same data, different governance, very different culture.
+
+The honest framing: if a team is not ready for that visibility, for reasons
+that may be entirely legitimate, including concerns about job design or
+autonomy, then CHAP is probably not the right thing to introduce yet. The
+trust conversation comes first; the protocol comes after. Aggregations that
+look at the *agent's* behaviour are usually safe; aggregations that look at
+*individual humans* should be governed by the same controls you would apply to
+any other personal performance data, and probably with the same consent and
+notification practices. The
+[Handbook](./HANDBOOK.md) covers this under deployment patterns and
+anti-patterns.
+
+### Isn't this overkill for a small team or a single-tool project?
+
+Possibly. A five-person team building a one-off RAG system for one client,
+with no trust boundaries to cross and no compliance obligations to a third
+party, can probably get away with logs and conversations. The Core-only path
+exists for exactly this case; the entire `reference/core/` implementation is
+around 400 lines of TypeScript, weekend-buildable.
+
+The same five-person team six months later, when their client asks them to
+demonstrate "AI governance" for the client's own customers, will be
+retrofitting something CHAP-shaped. The judgement call is when the tax of
+structure starts paying for itself. Some signals that it is time:
+
+- You are crossing an organisational boundary, customer, regulator, partner.
+- You have more than one human who needs to know what the agent decided last week.
+- You are running more than one version of an agent and want to know which version
+  produced which output.
+- You are accumulating compliance debt that will need to be paid back if you
+  ever need to demonstrate AI governance to anyone external.
+- You want to learn from override patterns rather than guess at them.
+
+If none of these apply, Core-only or even no CHAP at all is fine. If one or
+more apply, the structure starts paying for itself faster than retrofit would.
+The twelve worked scenarios in [`IN_PRACTICE.md`](./IN_PRACTICE.md) span solo
+developer through GMP-regulated manufacturing precisely so the reader can
+locate their own situation.
 
 ---
 
