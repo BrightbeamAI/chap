@@ -7,7 +7,7 @@
 When a bot drafts something and a human edits it, where does that edit live?
 In CHAP, it lives in an envelope you can query, replay, and verify six months later.
 
-[Install](#install) · [The 90-second tour](#the-90-second-tour) · [Twelve scenarios](./IN_PRACTICE.md) · [About this repo](./ABOUT.md)
+[Install](#install) · [The 90-second tour](#the-90-second-tour) · [Twelve scenarios](./IN_PRACTICE.md) · [About this repo](./ABOUT.md) · [Paper](https://arxiv.org/abs/2606.09751)
 
 </div>
 
@@ -156,6 +156,23 @@ Breaking changes follow Semantic Versioning. Profile surfaces will move faster t
 - **[`IN_PRACTICE.md`](./IN_PRACTICE.md)**. Twelve real-world scenarios from solo dev to GMP-regulated manufacturing. The most useful next read.
 - **[`ABOUT.md`](./ABOUT.md)**. What is in this repo, how CHAP relates to MCP and A2A, the standards it reuses, and how to contribute.
 - **[`core/SPEC.md`](./core/SPEC.md)**. The seven Core methods. The whole protocol surface fits on one screen.
+- **[Technical report on arXiv](https://arxiv.org/abs/2606.09751)**. The full paper. Architecture, design rationale, profile semantics, threat model, and a worked appendix with the twelve scenarios as JSON traces. For readers who want the protocol grounded in its design choices.
+
+## Cite
+
+If you reference CHAP in academic or technical work, please cite the technical report:
+
+```bibtex
+@techreport{chap2026,
+  author      = {Shahid, Arsalan and Suttie, Gordon and Black, Philip},
+  title       = {Collaborative Human-Agent Protocol (CHAP): An open protocol for auditable, structured multi-human and multi-agent collaboration},
+  institution = {Brightbeam AI},
+  year        = {2026},
+  type        = {Technical Report},
+  number      = {arXiv:2606.09751},
+  url         = {https://arxiv.org/abs/2606.09751}
+}
+```
 
 ---
 
