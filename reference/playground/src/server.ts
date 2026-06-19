@@ -27,7 +27,7 @@ import {
   type Envelope,
   rpcError,
 } from "@chap/coordinator";
-import { makeDefaultPolicy } from "@chap/coordinator";
+import { makePlaygroundPolicies } from "./policies.js";
 
 import { makeFileStateStore } from "./state-store.js";
 import {
@@ -52,7 +52,7 @@ const DATA_DIR      = path.join(__dirname, "..", "data");
 // ============================================================
 
 const coord = new Coordinator({
-  policy: makeDefaultPolicy(SAM_URI),
+  ...makePlaygroundPolicies(SAM_URI),
   onAutoEscalate: (task, to) => {
     console.log(`[routing] auto-escalated task ${task.id} to ${to}`);
   },
@@ -115,7 +115,7 @@ async function bootstrap(): Promise<void> {
   coord.dispatch({
     jsonrpc: "2.0", id: "boot-1", method: "workspace.create",
     params: {
-      workspace_id: WORKSPACE_ID,
+      workspace: WORKSPACE_ID,
       profiles: ["core/1.0", "review/1.0", "routing/1.0"],
     },
   });
@@ -123,15 +123,15 @@ async function bootstrap(): Promise<void> {
   // Join the three participants.
   coord.dispatch({
     jsonrpc: "2.0", id: "boot-2", method: "participant.join",
-    params: { workspace_id: WORKSPACE_ID, uri: MAYA_URI, type: "human", role: "front-line", display_name: "Maya" },
+    params: { workspace: WORKSPACE_ID, from: MAYA_URI, type: "human", role: "front-line", display_name: "Maya" },
   });
   coord.dispatch({
     jsonrpc: "2.0", id: "boot-3", method: "participant.join",
-    params: { workspace_id: WORKSPACE_ID, uri: SAM_URI, type: "human", role: "senior", display_name: "Sam" },
+    params: { workspace: WORKSPACE_ID, from: SAM_URI, type: "human", role: "senior", display_name: "Sam" },
   });
   coord.dispatch({
     jsonrpc: "2.0", id: "boot-4", method: "participant.join",
-    params: { workspace_id: WORKSPACE_ID, uri: BOT_URI, type: "agent", role: "drafter", display_name: "Triage Bot" },
+    params: { workspace: WORKSPACE_ID, from: BOT_URI, type: "agent", role: "drafter", display_name: "Triage Bot" },
   });
 
   // Kick off the bot processing every ticket. This runs in the
@@ -242,7 +242,7 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // JSON-RPC endpoint — the real CHAP wire
+  // JSON-RPC endpoint. the real CHAP wire
   if (req.method === "POST" && pathname === "/rpc") {
     let env: Envelope;
     try {

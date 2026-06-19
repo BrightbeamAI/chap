@@ -226,7 +226,7 @@ def register_routing(coord: "Coordinator") -> None:
         artefact = RouteDecisionArtefact(
             id=art_id,
             decision_type="escalate.auto",
-            outcome="escalated" if escalate else "no_escalation",
+            outcome={"escalate": True, "to": to} if escalate else {"escalate": False},
             produced_by="service:coordinator",
             produced_at=coord.now_iso(),
             task=task.id,

@@ -1,5 +1,5 @@
 /**
- * Ollama agent — participates in the CHAP workspace as
+ * Ollama agent. participates in the CHAP workspace as
  * `agent:triage-bot@local`. Drafts responses to support tickets
  * using a local Gemma3 model via Ollama's HTTP API.
  *
@@ -17,14 +17,14 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "gemma3:4b";
 export const BOT_URI = "agent:triage-bot@local";
 
 const DRAFT_PROMPT = `You are a customer-support drafter for an
-online retailer. You are NOT the final responder — a human will review
+online retailer. You are NOT the final responder. a human will review
 your draft. Read the ticket and produce a short response.
 
 Return ONLY a JSON object on a single line, no commentary, no
 markdown fences, in this exact shape:
 {"body":"<your response, 1-3 sentences>","tone":"warm_professional|apologetic|formal","severity":"low|medium|high|critical","self_confidence":<number 0..1>}
 
-Keep "body" brief. Tone should match the situation — don't apologise
+Keep "body" brief. Tone should match the situation. don't apologise
 for routine requests; be empathetic for serious ones. Self_confidence
 should reflect how sure you are this draft is correct: 0.9 for routine
 requests where you're sure, 0.5 if you had to guess about policy or
@@ -135,10 +135,10 @@ export async function processTicket(
   const createEnv: Envelope = {
     jsonrpc: "2.0", id: `ev-${Date.now()}-1`, method: "task.create",
     params: {
-      workspace_id: workspaceId,
+      workspace: workspaceId,
+      from:         "service:coord@local",
       kind:         "draft_response",
       assignee:     BOT_URI,
-      delegator:    "service:coord@local",
       input: {
         ticket_id: ticket.id,
         subject:   ticket.subject,
@@ -149,12 +149,15 @@ export async function processTicket(
     },
   };
   const createRes = coord.dispatch(createEnv);
+  if (!createRes.result) {
+    throw new Error(`task.create failed: ${JSON.stringify(createRes.error)}`);
+  }
   const taskId = (createRes.result as { task_id: string }).task_id;
 
   // 2. Bot reports in_progress.
   coord.dispatch({
     jsonrpc: "2.0", id: `ev-${Date.now()}-2`, method: "task.update",
-    params: { workspace_id: workspaceId, task_id: taskId, from: BOT_URI, state: "in_progress" },
+    params: { workspace: workspaceId, task_id: taskId, from: BOT_URI, state: "in_progress" },
   });
 
   // 3. Draft via Ollama.
@@ -164,14 +167,14 @@ export async function processTicket(
   const artefactHints: ArtefactRoutingHints = {
     confidence:       draft.self_confidence,
     model_id:         OLLAMA_MODEL,
-    cost_consumed_usd: 0,           // local model — no API cost
+    cost_consumed_usd: 0,           // local model. no API cost
     latency_ms:       draft.latency_ms,
   };
 
   coord.dispatch({
     jsonrpc: "2.0", id: `ev-${Date.now()}-3`, method: "task.complete",
     params: {
-      workspace_id:     workspaceId,
+      workspace:     workspaceId,
       task_id:          taskId,
       from:             BOT_URI,
       output: {
@@ -181,9 +184,66 @@ export async function processTicket(
       },
       confidence:       draft.self_confidence,
       routing_hints:    artefactHints,
-      review_requested: true,
-      reviewers:        [reviewer],
-      rule:             "any_one_approves",
+    },
+  });
+
+  // 5. Routing decisions. The library's routing/1.0 handlers produce
+  // route_decision artefacts and inform the reviewer set; the agent
+  // assembles the final review.request envelope from their results.
+  // (Older library versions folded this into task.complete; the
+  // spec-correct shape is explicit method calls.)
+  //
+  // First, fold the artefact's confidence onto the task's hints so
+  // review.depth and escalate.auto can see it. The task carries the
+  // task's own hints; the per-artefact hints (confidence, etc.) are
+  // passed in alongside.
+  const taskHintsForRouting: Record<string, unknown> = {
+    ...(ticket.routing_hints as Record<string, unknown>),
+    confidence: draft.self_confidence,
+  };
+  // Stash the merged hints onto the task so the routing handlers
+  // (which read from the task) see them. This is a small convenience
+  // of the in-process Coordinator; over the wire, the agent would
+  // pass artefact_routing_hints in the call.
+  {
+    const ws = coord.getWorkspace(workspaceId);
+    const t = ws?.tasks.get(taskId);
+    if (t) t.routing_hints = taskHintsForRouting as never;
+  }
+
+  coord.dispatch({
+    jsonrpc: "2.0", id: `ev-${Date.now()}-4`, method: "review.depth",
+    params: { workspace: workspaceId, task_id: taskId, from: BOT_URI },
+  });
+
+  const escRes = coord.dispatch({
+    jsonrpc: "2.0", id: `ev-${Date.now()}-5`, method: "escalate.auto",
+    params: { workspace: workspaceId, task_id: taskId, from: BOT_URI },
+  });
+  const escalated = !!(escRes.result as { escalate?: boolean } | undefined)?.escalate;
+  const escalateTo = (escRes.result as { to?: string } | undefined)?.to;
+
+  // 6. Assemble the reviewer set. Maya is the default reviewer; if
+  // routing escalated, add the senior pool (Sam) too.
+  const reviewers: string[] = [reviewer];
+  if (escalated && escalateTo && !reviewers.includes(escalateTo)) {
+    reviewers.push(escalateTo);
+  }
+
+  // 7. Open the review.
+  coord.dispatch({
+    jsonrpc: "2.0", id: `ev-${Date.now()}-6`, method: "review.request",
+    params: {
+      workspace: workspaceId,
+      task_id:   taskId,
+      from:      BOT_URI,
+      to:        reviewers,
+      rule:      "any_one_approves",
+      artefact: {
+        body:     draft.body,
+        tone:     draft.tone,
+        severity: draft.severity,
+      },
     },
   });
 

@@ -2,6 +2,9 @@
  * @chap/coordinator/jsonrpc
  *
  * Error codes (JSON-RPC standard + CHAP private range) and helpers.
+ *
+ * Error code allocations come directly from each profile spec. See
+ * profiles/*.md for the authoritative definitions.
  */
 
 export const E = {
@@ -18,14 +21,63 @@ export const E = {
   PATCH_FAILED:   -32012,
   REVIEW_LAPSED:  -32013,
 
-  // routing/1.0 profile (signals carried, decisions optional)
-  NO_ELIGIBLE_ASSIGNEE:     -32510,
-  ROUTING_POLICY_VIOLATION: -32511,
-  AUTO_ESCALATION_TRIGGERED: -32512,
-  CANDIDATES_EMPTY:         -32513,
-  DEPTH_NOT_APPLICABLE:     -32514,
-  POLICY_UNREACHABLE:       -32515,
-  ESCALATION_TARGET_UNAVAILABLE: -32516,
+  // whisper/1.0 profile (profiles/whisper.md S6)
+  WHISPER_ALREADY_ANSWERED:    -32020,
+  WHISPER_LAPSED:              -32021,
+  WHISPER_OPTION_NOT_IN_SET:   -32022,
+
+  // deliberation/1.0 profile (profiles/deliberation.md S5)
+  DELIB_VOTER_NOT_IN_LIST: -32030,
+  DELIB_ALREADY_VOTED:     -32031,
+  DELIB_CLOSED_OR_LAPSED:  -32032,
+  DELIB_UNKNOWN_RULE:      -32033,
+
+  // modes/1.0 profile (profiles/modes.md S6)
+  MODE_CEILING_EXCEEDED:   -32040,
+  MODE_STEP_UP_REQUIRED:   -32041,
+
+  // handoff/1.0 profile (profiles/handoff.md S6)
+  HANDOFF_TASKS_NOT_ASSIGNED_TO_PROPOSER: -32050,
+  HANDOFF_ALREADY_RESOLVED:               -32051,
+  HANDOFF_RECIPIENT_NOT_MEMBER:           -32052,
+
+  // control/1.0 profile (profiles/control.md S6)
+  CONTROL_STEP_UP_REQUIRED:    -32060,
+  CONTROL_NOT_AUTHORISED:      -32061,
+  CONTROL_SNAPSHOT_NOT_FOUND:  -32062,
+  CONTROL_WORKSPACE_PAUSED:    -32063,
+
+  // security-signed/1.0 profile (profiles/security-signed.md S7)
+  SIG_VERIFY_FAILED:         -32070,
+  SIG_KEY_NOT_FOUND:         -32071,
+  SIG_KEY_REVOKED:           -32072,
+  SIG_ROTATION_KEY_MISMATCH: -32073,
+
+  // audit-scitt/1.0 profile (profiles/audit-scitt.md S8)
+  SCITT_UNREACHABLE:        -32080,
+  SCITT_STATEMENT_REJECTED: -32081,
+  SCITT_RECEIPT_INVALID:    -32082,
+
+  // identity-oidc/1.0 profile (profiles/identity-oidc.md S8)
+  OIDC_STEP_UP_REQUIRED: -32402,
+  OIDC_TOKEN_INVALID:    -32403,
+  OIDC_CNF_MISMATCH:     -32404,
+  OIDC_SCOPE_MISSING:    -32405,
+
+  // identity-vc/1.0 profile (profiles/identity-vc.md S8)
+  VC_VP_INVALID:             -32410,
+  VC_HOLDER_BINDING_INVALID: -32411,
+  VC_CREDENTIAL_REVOKED:     -32412,
+  VC_SCHEMA_UNKNOWN:         -32413,
+
+  // routing/1.0 profile (profiles/routing.md S3-S5)
+  ROUTING_NO_ELIGIBLE_ASSIGNEE:   -32510,
+  ROUTING_POLICY_VIOLATION:       -32511,
+  ROUTING_AUTO_ESCALATION_TRIGGERED: -32512,
+  ROUTING_CANDIDATES_EMPTY:       -32513,
+  ROUTING_DEPTH_NOT_APPLICABLE:   -32514,
+  ROUTING_POLICY_UNREACHABLE:     -32515,
+  ROUTING_ESC_TARGET_UNAVAILABLE: -32516,
 } as const;
 
 export function rpcError(code: number, message: string, data?: unknown) {

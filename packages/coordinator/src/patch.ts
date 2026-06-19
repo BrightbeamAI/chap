@@ -51,7 +51,20 @@ export function applyJsonPatch(doc: unknown, ops: JsonPatchOp[]): unknown {
 
     switch (op.op) {
       case "add":
+        parent[lastKey] = op.value;
+        break;
       case "replace":
+        // RFC 6902 §4.3: target location MUST exist for replace.
+        if (Array.isArray(parent)) {
+          const idx = lastKey as number;
+          if (idx < 0 || idx >= parent.length) {
+            throw new Error(`Path not found for replace: ${op.path}`);
+          }
+        } else {
+          if (!(lastKey in (parent as Record<string, unknown>))) {
+            throw new Error(`Path not found for replace: ${op.path}`);
+          }
+        }
         parent[lastKey] = op.value;
         break;
       case "remove":

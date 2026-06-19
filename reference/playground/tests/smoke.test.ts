@@ -15,7 +15,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { Coordinator, makeDefaultPolicy } from "@chap/coordinator";
+import { Coordinator } from "@chap/coordinator";
+import { makePlaygroundPolicies } from "../src/policies.js";
 import { processTicket } from "../src/ollama-agent.js";
 import { TICKETS, getTicket } from "../src/tickets.js";
 
@@ -25,15 +26,15 @@ const MAYA = "human:maya@local";
 const SAM  = "human:sam@local";
 
 function setupCoordinator(): Coordinator {
-  const coord = new Coordinator({ policy: makeDefaultPolicy(SAM) });
+  const coord = new Coordinator({ ...makePlaygroundPolicies(SAM) });
 
   coord.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create",
-    params: { workspace_id: WS, profiles: ["core/1.0", "review/1.0", "routing/1.0"] } });
+    params: { workspace: WS, profiles: ["core/1.0", "review/1.0", "routing/1.0"] } });
   for (const [uri, type, role] of [
     [BOT, "agent", "drafter"], [MAYA, "human", "front-line"], [SAM, "human", "senior"],
   ] as const) {
     coord.dispatch({ jsonrpc: "2.0", id: `j-${uri}`, method: "participant.join",
-      params: { workspace_id: WS, uri, type, role } });
+      params: { workspace: WS, from: uri, type, role } });
   }
   return coord;
 }
@@ -63,7 +64,7 @@ test("low-criticality ticket: review queued to Maya, no auto-escalation", async 
     "low criticality + high confidence should NOT add Sam");
 
   // route_decision artefacts: one for review.depth, one for escalate.auto (no escalate)
-  const decisions = Array.from(ws.route_decisions.values()).filter((a) => a.task_id === taskId);
+  const decisions = Array.from(ws.route_decisions.values()).filter((a) => a.task === taskId);
   assert.equal(decisions.length, 2, "should have depth + escalate.auto decisions");
 
   const depth = decisions.find((d) => d.decision_type === "review.depth")!;
@@ -88,7 +89,7 @@ test("critical-tier ticket: auto-escalates to Sam", async () => {
   assert.ok(task.review!.requested_to.includes(MAYA), "Maya should still be a reviewer");
   assert.ok(task.review!.requested_to.includes(SAM),  "Sam should be added on critical");
 
-  const decisions = Array.from(ws.route_decisions.values()).filter((a) => a.task_id === taskId);
+  const decisions = Array.from(ws.route_decisions.values()).filter((a) => a.task === taskId);
   const esc = decisions.find((d) => d.decision_type === "escalate.auto")!;
   const outcome = esc.outcome as { escalate: boolean; to: string };
   assert.equal(outcome.escalate, true);
@@ -116,11 +117,11 @@ test("decide.override applies the patch and writes an override artefact", async 
   const overrideResp = coord.dispatch({
     jsonrpc: "2.0", id: "ov-1", method: "decide.override",
     params: {
-      workspace_id: WS, task_id: taskId, from: MAYA,
+      workspace: WS, task_id: taskId, from: MAYA,
       diff: [{ op: "replace", path: "/body", value: "Maya's revised version." }],
       rationale: "Tone too apologetic for a routine in-transit query.",
       tags: ["tone-softened"],
-      // CHAP 0.2.1 — optional identity / intent fields.
+      // CHAP 0.2.1. optional identity / intent fields.
       logical_id:       "lgl_01HZSPPRT0RESPND4821942KB5",
       intent_preserved: true,
     },
@@ -137,7 +138,7 @@ test("decide.override applies the patch and writes an override artefact", async 
   assert.deepEqual(overrides[0].tags, ["tone-softened"]);
   assert.equal(overrides[0].reviewer, MAYA);
 
-  // CHAP 0.2.1 — verify the new optional fields round-trip.
+  // CHAP 0.2.1. verify the new optional fields round-trip.
   assert.equal(overrides[0].logical_id,       "lgl_01HZSPPRT0RESPND4821942KB5");
   assert.equal(overrides[0].intent_preserved, true);
 });
@@ -150,7 +151,7 @@ test("decide.override without identity fields still works (backward compat)", as
   const overrideResp = coord.dispatch({
     jsonrpc: "2.0", id: "ov-2", method: "decide.override",
     params: {
-      workspace_id: WS, task_id: taskId, from: MAYA,
+      workspace: WS, task_id: taskId, from: MAYA,
       diff: [{ op: "replace", path: "/body", value: "Legacy client output." }],
       rationale: "Pre-0.2.1 client; no identity fields.",
       tags: [],
@@ -172,7 +173,7 @@ test("audit chain has expected length and ordering", async () => {
 
   coord.dispatch({
     jsonrpc: "2.0", id: "ap-1", method: "decide.approve",
-    params: { workspace_id: WS, task_id: taskId, from: MAYA },
+    params: { workspace: WS, task_id: taskId, from: MAYA },
   });
 
   const ws = coord.getWorkspace(WS)!;
@@ -181,11 +182,13 @@ test("audit chain has expected length and ordering", async () => {
   //   3 participant.join (bot, Maya, Sam)
   //   1 task.create
   //   1 task.update (in_progress)
-  //   1 task.complete (also fires routing decisions, but those are
-  //                    written to route_decisions map, not the audit)
+  //   1 task.complete
+  //   1 review.depth      (routing/1.0 decision, recorded in audit)
+  //   1 escalate.auto     (routing/1.0 decision, recorded in audit)
+  //   1 review.request
   //   1 decide.approve
-  // Total: 8
-  assert.equal(ws.audit.length, 8, `expected 8 audit entries, got ${ws.audit.length}`);
+  // Total: 11
+  assert.equal(ws.audit.length, 11, `expected 11 audit entries, got ${ws.audit.length}`);
 
   // Methods in order
   const methods = ws.audit.map((e) => e.envelope.method);
@@ -197,6 +200,9 @@ test("audit chain has expected length and ordering", async () => {
     "task.create",
     "task.update",
     "task.complete",
+    "review.depth",
+    "escalate.auto",
+    "review.request",
     "decide.approve",
   ]);
 });

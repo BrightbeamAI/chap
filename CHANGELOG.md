@@ -9,7 +9,97 @@ incremented under the same rules.
 
 ---
 
-## 0.2.1: Python reference implementation
+## 0.2.2: TypeScript reference expanded to cover every profile
+
+The TypeScript reference at `packages/coordinator/` is brought up to
+parity with the Python reference: both now cover Core plus every
+profile, 39 method handlers each.
+
+### Added
+
+- **TypeScript profile coverage.** `packages/coordinator/src/profiles/`
+  now ships handler modules for `whisper/1.0`, `deliberation/1.0`,
+  `handoff/1.0`, `control/1.0`, `routing/1.0`, `security-signed/1.0`,
+  and `audit-scitt/1.0`. Plus `modes/1.0` enforcement (trial-mode
+  forces review, mode-ceiling check at task.create) and
+  `identity-oidc/1.0` + `identity-vc/1.0` binding hooks at
+  `participant.join`. **39 method handlers in total**, matching the
+  Python reference and the spec inventory exactly.
+- **Supporting modules.** `canonical.ts` (JCS), `crypto.ts` (Ed25519
+  via Node built-ins), `ids.ts` (deterministic-friendly ULIDs), and
+  `policy.ts` (the legacy `makeDefaultPolicy` factory preserved as a
+  partial-options helper).
+- **62 tests** under `packages/coordinator/tests/` covering Core,
+  every profile, signed-envelope verification, OIDC and VC binding,
+  cross-language conformance vectors (JCS, Ed25519, chain link), and
+  an end-to-end composition test exercising every method handler in
+  one workspace sequence.
+- **`getWorkspace`, `snapshot`, and `restore`** methods on the
+  Coordinator class for persistence integrations.
+
+### Changed (potentially breaking)
+
+- **Wire field rename: `workspace_id` -> `workspace`.** The previous
+  TypeScript library used `params.workspace_id` while the spec, the
+  conformance harness, the test vectors, the standalone reference
+  servers, and the Python reference all use `params.workspace`. The
+  TypeScript library now uses `workspace`. Consumers of
+  `@chap/coordinator` who relied on `workspace_id` must update their
+  call sites. The playground at `reference/playground/` is updated
+  accordingly.
+- **`participant.join` field rename: `uri` -> `from`.** Same reason.
+  The spec uses `from` to identify the joining participant.
+- **`policy: makeDefaultPolicy(...)` -> `...makeDefaultPolicy(...)`.**
+  The single `policy` slot is replaced by three separate hooks
+  (`routingPolicy`, `reviewDepthPolicy`, `escalationPolicy`) on
+  `CoordinatorOptions`. The `makeDefaultPolicy` factory now returns
+  a partial-options object spread into the constructor argument.
+- **`patch.ts` aligned to RFC 6902.** A `replace` operation against
+  a non-existent path now throws, where previously it silently
+  behaved like `add`. This matches the Python implementation and is
+  what cross-language interop requires.
+
+### Spec fidelity
+
+Same audit pass as 0.2.1, applied to the TypeScript implementation:
+top-level `sig` field for security-signed/1.0; `answer_option` for
+whisper; `vote`/`comment` for deliberation; multi-task `tasks` for
+handoff with single-recipient `to` (URI or `group:`); `scope`
+parameter on control.pause/resume; snapshot as artefact; supersede
+creates the successor; route_decision artefact per routing decision;
+`cnf.jwk` / VP holder-key pinning on join.
+
+### Cross-language interop verified
+
+Both reference implementations pass the existing conformance harness
+(`conformance/harness/`) on the same JSON-RPC 2.0 wire:
+
+- TypeScript standalone server (`reference/core-plus-review/`): 21/21
+- TypeScript library server (built from `packages/coordinator/`): 21/21
+- Python server (`reference/python/`): 21/21
+
+The harness currently covers Core and `review/1.0`; expanding it to
+cover the other nine profiles is the next item on the road to a
+normative Full conformance claim.
+
+### Playground updated
+
+The `reference/playground/` smoke tests are updated for the spec-correct
+flow: the agent now calls `review.depth` and `escalate.auto` explicitly
+after `task.complete`, assembles the reviewer set from the escalation
+outcome, and opens the review via `review.request`. All seven
+playground smoke tests pass. A new `reference/playground/src/policies.ts`
+module supplies the playground-specific routing policy used to
+demonstrate the routing/1.0 profile end-to-end.
+
+The artefact's `outcome` field for `escalate.auto` is now a structured
+`{ escalate, to? }` object rather than the bare strings `"escalated"` /
+`"no_escalation"`; the wire response shape (in the JSON-RPC `result`)
+is unchanged. The Python and TypeScript references are both updated.
+
+---
+
+
 
 A second reference implementation, in Python, lands as a backward-compatible
 addition. No protocol changes; no wire-format changes; no spec changes that
