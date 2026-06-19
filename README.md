@@ -78,8 +78,7 @@ await coord.dispatch({
     task_id: "tsk_pr_482",
     from: "human:me@local",
     intent_preserved: true,
-    diff: [{ op: "replace", path: "/comments/0/severity",
-             from: "warning", to: "info" }],
+    diff: [{ op: "replace", path: "/comments/0/severity", value: "info" }],
     rationale: "False positive. Framework convention, not a bug.",
     tags: ["false-positive", "framework-pattern-misread"]
   }
@@ -125,11 +124,19 @@ The two fields most people miss on first read are `intent_preserved` and `tags`.
 
 ## Install
 
+**TypeScript / Node:**
+
 ```bash
 npm install @chap/coordinator
 ```
 
-That gets you Core plus the `review/1.0` profile, in-memory and SQLite backends, a CLI, and a two-participant playground. The TypeScript reference is in [`reference/`](./reference/); the protocol-as-a-library is [`packages/coordinator/`](./packages/coordinator/).
+**Python:**
+
+```bash
+pip install chap-coordinator
+```
+
+Either path gets you Core plus the `review/1.0` profile and a runnable reference. The TypeScript reference is in [`reference/`](./reference/); the Python reference is in [`reference/python/`](./reference/python/). The TypeScript library lives at [`packages/coordinator/`](./packages/coordinator/); the Python library at [`packages/coordinator-py/`](./packages/coordinator-py/).
 
 Five-minute hands-on walkthrough: [`examples/00-five-minute-start.md`](./examples/00-five-minute-start.md).
 
@@ -138,8 +145,8 @@ Five-minute hands-on walkthrough: [`examples/00-five-minute-start.md`](./example
 CHAP 0.2 is a public draft. Concretely, this repo contains:
 
 - **The specification.** Core (seven methods, one envelope, one wire format) plus ten optional profiles. Combined into a single document at [`SPECIFICATION.md`](./SPECIFICATION.md), or read individually from [`core/SPEC.md`](./core/SPEC.md) and [`profiles/`](./profiles/).
-- **One reference implementation in TypeScript.** Core, the `review/1.0` profile, a coordinator, a CLI, an override analyser, and a runnable playground with two human browser sessions and a local LLM. A second interoperable implementation is the most consequential thing remaining before 1.0.
-- **A conformance harness.** 21 test vectors, signing/canonicalisation/chain checks, in-toto attestation output. Two conformance levels are claimable today (Minimal, Recommended); Full waits on the second implementation.
+- **Two reference implementations.** A TypeScript reference in [`packages/coordinator/`](./packages/coordinator/) and [`reference/`](./reference/) covering Core, the `review/1.0` profile, and a runnable playground with two human browser sessions and a local LLM. A Python reference in [`packages/coordinator-py/`](./packages/coordinator-py/) and [`reference/python/`](./reference/python/) covering **Core plus every profile, 39 method handlers in total**. Either can run the conformance harness.
+- **A conformance harness.** 21 test vectors, signing/canonicalisation/chain checks, in-toto attestation output. Two conformance levels are claimable today (Minimal, Recommended); Full waits on broader interop testing across the two implementations.
 - **Twelve worked scenarios.** [`IN_PRACTICE.md`](./IN_PRACTICE.md) walks through real cases from a solo developer with Cursor up to GMP-regulated fill-finish manufacturing.
 
 Breaking changes follow Semantic Versioning. Profile surfaces will move faster than Core. Production deployments needing strict stability should wait for 1.0. The longer status statement and the contribution path are in [`ABOUT.md`](./ABOUT.md).

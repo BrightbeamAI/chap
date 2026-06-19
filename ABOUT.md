@@ -104,9 +104,9 @@ CHAP **is** the small set of common verbs that every team rebuilds in their own 
 
 CHAP is a working draft (0.2). Concretely:
 
-- One reference implementation (TypeScript). The two-interoperable-implementations bar typical of standards-track promotion has not yet been met.
-- Stable enough for experimentation and early pilots.
-- Not yet sufficient for a normative conformance claim.
+- Two reference implementations: TypeScript (Core and `review/1.0`) and Python (Core and every profile, 39 method handlers in total). The two-interoperable-implementations bar typical of standards-track promotion is partially met; cross-language interop testing under the conformance harness is the next step toward 1.0.
+- Stable enough for experimentation, pilots, and early production deployments that need every profile.
+- Not yet sufficient for a normative conformance claim under a Full level.
 - Breaking changes follow Semantic Versioning.
 - Profile surfaces evolve faster than Core. Core is more stable; profile API surface should be expected to change.
 - Deployments needing strict stability guarantees should wait for 1.0.
@@ -117,7 +117,7 @@ The full Status statement is in [`SPECIFICATION.md`](./SPECIFICATION.md#status-o
 
 An implementation is **CHAP-conformant** if it implements every Core method and conforms to the wire format. Profile conformance is declared separately, one attestation per profile.
 
-Conformance levels in 0.2 are **Minimal** and **Recommended**. A **Full** level (two interoperable implementations and an exhaustive interop test suite) is planned and not yet claimable. The expected base conformance for production deployments is **Core + `review/1.0` + `modes/1.0`**.
+Conformance levels in 0.2 are **Minimal** and **Recommended**. A **Full** level (interop testing across two implementations and an exhaustive test suite) is in progress: the TypeScript reference covers Core + `review/1.0`, the Python reference covers Core + every profile (39 method handlers), and the existing harness at `conformance/harness/` can be pointed at either via the same JSON-RPC 2.0 wire. The expected base conformance for production deployments is **Core + `review/1.0` + `modes/1.0`**; the Python reference adds profile coverage when a deployment needs more.
 
 Conformance attestations are published as [in-toto attestations](https://github.com/in-toto/attestation) and linked from the implementation registry. See [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md) and [`conformance/test-vectors.md`](./conformance/test-vectors.md).
 
@@ -127,8 +127,9 @@ Conformance attestations are published as [in-toto attestations](https://github.
 |-------------------------------------------|---------------------------------------------------------------------------------|
 | Evaluating whether CHAP fits             | [`README.md`](./README.md) → [`IN_PRACTICE.md`](./IN_PRACTICE.md) → [`HANDBOOK.md`](./HANDBOOK.md) → [`FAQ.md`](./FAQ.md) |
 | Looking for your use case                | [`IN_PRACTICE.md`](./IN_PRACTICE.md): twelve worked scenarios |
-| Seeing it run                            | [`demo/index.html`](./demo/index.html) (static, offline) → [`reference/playground/`](./reference/playground/) (real local LLM, two humans) |
-| Implementing Core                        | [`core/SPEC.md`](./core/SPEC.md) → [`reference/core/`](./reference/core/) → [`schemas/core/`](./schemas/core/) |
+| Seeing it run                            | [`demo/index.html`](./demo/index.html) (static, offline) → [`reference/playground/`](./reference/playground/) (TypeScript, two humans + local LLM) → [`reference/python/`](./reference/python/) (Python; every profile) |
+| Implementing Core in TypeScript          | [`core/SPEC.md`](./core/SPEC.md) → [`reference/core/`](./reference/core/) → [`schemas/core/`](./schemas/core/) |
+| Implementing in Python                   | [`core/SPEC.md`](./core/SPEC.md) → [`packages/coordinator-py/`](./packages/coordinator-py/) → [`reference/python/`](./reference/python/) |
 | Adding a profile                         | [`profiles/PROFILES.md`](./profiles/PROFILES.md) → the specific profile spec |
 | Reviewing the design                     | [`ARCHITECTURE.md`](./ARCHITECTURE.md) → [`SECURITY.md`](./SECURITY.md) → [`RELATIONSHIP-TO-OTHER-STANDARDS.md`](./RELATIONSHIP-TO-OTHER-STANDARDS.md) |
 | Operating in production                  | [`HANDBOOK.md`](./HANDBOOK.md) → [`integrations/CHAP-deployment-patterns.md`](./integrations/CHAP-deployment-patterns.md) |
@@ -185,13 +186,15 @@ chap-protocol/
 │   ├── core/                            Envelope, workspace, participant, task.
 │   └── profiles/                        Per-profile schemas.
 │
-├── reference/                           Reference implementations (TypeScript).
-│   ├── core/                            Minimal Core, weekend-buildable.
-│   ├── core-plus-review/                Core + review/1.0 + override analyser.
-│   └── playground/                      Runnable two-human + local LLM demo.
+├── reference/                           Reference implementations.
+│   ├── core/                            TypeScript: minimal Core, weekend-buildable.
+│   ├── core-plus-review/                TypeScript: Core + review/1.0 + override analyser.
+│   ├── playground/                      TypeScript: runnable two-human + local LLM demo.
+│   └── python/                          Python: HTTP server + demo client + analytics.
 │
 ├── packages/
-│   └── coordinator/                     @chap/coordinator: the protocol as a library.
+│   ├── coordinator/                     @chap/coordinator (TypeScript): protocol as a library.
+│   └── coordinator-py/                  chap-coordinator (Python): Core + every profile.
 │
 ├── conformance/                         Test suite for implementers.
 │   ├── conformance-checklist.md

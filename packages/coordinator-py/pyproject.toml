@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chap-coordinator"
+version = "0.2.0"
+description = "Python reference implementation of the Collaborative Human-Agent Protocol (CHAP)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Brightbeam AI", email = "oss@brightbeam.ai" },
+]
+keywords = ["chap", "agent", "protocol", "audit", "json-rpc", "human-ai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+# Core has zero runtime dependencies. The cryptography extras below are
+# only required for the security-signed/1.0 profile.
+dependencies = []
+
+[project.optional-dependencies]
+crypto = ["cryptography>=42"]
+dev = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "cryptography>=42",
+]
+
+[project.urls]
+Homepage = "https://github.com/BrightbeamAI/chap"
+Repository = "https://github.com/BrightbeamAI/chap"
+Specification = "https://github.com/BrightbeamAI/chap/blob/main/SPECIFICATION.md"
+Paper = "https://arxiv.org/abs/2506.09751"
+
+[tool.setuptools.packages.find]
+include = ["chap_coordinator*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
