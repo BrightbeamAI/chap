@@ -1,0 +1,22 @@
+{
+  "name": "@chap/mcp-server-ts",
+  "version": "0.2.3",
+  "description": "Reference MCP server that wraps a CHAP Coordinator. Run via stdio for Claude Desktop, Cursor, or any MCP client.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "tsx server.ts"
+  },
+  "dependencies": {
+    "@chap/coordinator":     "file:../../packages/coordinator",
+    "@chap/coordinator-mcp": "file:../../packages/coordinator-mcp",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx":         "^4.7.0",
+    "typescript":  "^5.3.0"
+  },
+  "engines": { "node": ">=18" }
+}

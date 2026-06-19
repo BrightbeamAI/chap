@@ -9,7 +9,98 @@ incremented under the same rules.
 
 ---
 
-## 0.2.2: TypeScript reference expanded to cover every profile
+## 0.2.3: MCP server transport
+
+A CHAP Coordinator can now present itself as an MCP server. Point
+Claude Desktop, Cursor, Claude Code, or any other MCP client at it
+and drive a CHAP workspace from natural language. Spec target: MCP
+**2025-11-25** (current stable).
+
+This is a backward-compatible addition. No wire-format changes; no
+breaking changes to existing 0.2.2 consumers.
+
+### Added
+
+- **TypeScript MCP adapter.** New package `packages/coordinator-mcp/`
+  (`@chap/coordinator-mcp`) wrapping a `Coordinator` as an MCP server.
+  Built on the official `@modelcontextprotocol/sdk`. Entry point
+  `makeChapMcpServer(coord, options)` returns an `Server` ready to
+  attach to any MCP transport (stdio, Streamable HTTP).
+- **Python MCP adapter.** New module
+  `chap_coordinator.transports.mcp_server`, installable via
+  `pip install chap-coordinator[mcp]`. Built on the official `mcp`
+  SDK. Entry point `make_chap_mcp_server(coord, name=..., version=...)`.
+- **39 CHAP methods exposed as MCP tools**, named with a `chap.`
+  prefix (e.g. `chap.workspace.create`, `chap.decide.override`,
+  `chap.deliberate.open`). Each tool's `inputSchema` is the JSON
+  Schema for the corresponding method's params; tool descriptions
+  are tuned for LLM consumption.
+- **Reference stdio servers** at `reference/mcp-server-ts/` and
+  `reference/mcp-server-py/`. Both wrap a Coordinator with every
+  profile enabled and serve it over stdio for direct MCP-client
+  consumption.
+- **Five-minute walkthrough** at
+  `examples/drive-chap-from-claude-desktop.md` showing how to wire
+  the reference server into Claude Desktop and drive a workspace
+  through natural language.
+- **`Coordinator.get_workspace(workspace_id)`** convenience method on
+  the Python reference (already present on TypeScript), aligning the
+  two implementations' surfaces.
+
+### Tests
+
+- TypeScript: **8 integration tests** in `packages/coordinator-mcp/tests/`
+  use the official MCP SDK's `InMemoryTransport.createLinkedPair()` to
+  drive a wrapped Coordinator end-to-end, exercising every major
+  profile (Core, review, routing, deliberation, audit chain).
+- Python: **7 integration tests** in
+  `packages/coordinator-py/tests/test_mcp_integration.py` mirror the
+  TypeScript suite one-for-one using
+  `mcp.shared.memory.create_connected_server_and_client_session`.
+  Both suites pass.
+- Both reference servers verified to handle the MCP `initialize`
+  handshake and advertise all 39 tools via `tools/list`.
+
+### Design notes
+
+- **One Coordinator, one MCP server.** Multi-workspace is handled
+  inside the Coordinator (workspaces are addressable by id); the MCP
+  layer is stateless and routes every tool call through
+  `coord.dispatch()`.
+- **Single-sourced schemas.** Tool inputs are described by JSON
+  Schemas (not Zod / Pydantic) and passed straight to the Coordinator
+  without re-validation at the MCP layer. The Coordinator's own
+  dispatch validates params and returns spec-correct JSON-RPC error
+  codes, which the adapter surfaces as MCP tool errors.
+- **Composition with the citation pattern.** The existing
+  `integrations/CHAP-with-MCP.md` documents how a CHAP audit log can
+  cite MCP tool calls made *inside* a workspace. The new transport
+  layer adds the other direction: an external MCP client driving the
+  workspace. Both patterns use the same MCP wire format underneath.
+- **Auth deferred.** The adapter ships unauthenticated; MCP's OAuth
+  2.1 auth model is implemented by the Streamable HTTP transport,
+  layered at the HTTP boundary rather than inside the adapter. Real
+  deployments add auth there.
+
+### What's not in 0.2.3
+
+These follow in subsequent releases:
+
+- **A2A server transport** (CHAP-as-A2A-agent). The protocol
+  alignment is there (A2A's task lifecycle maps almost 1:1 onto
+  CHAP's) but the adapter and tests are deferred.
+- **MCP-wrap inward helper.** A small utility that takes an MCP
+  tool-call result and emits a corresponding CHAP `task.create` +
+  `task.complete` pair for audit-log provenance. The pattern is
+  fully documented in `integrations/CHAP-with-MCP.md`; the library
+  helper is convenience.
+- **A2A bridge participant.** Same story for A2A.
+- **Streaming / SSE.** Synchronous request/response works; streaming
+  notifications can come later if there's demand.
+
+---
+
+
 
 The TypeScript reference at `packages/coordinator/` is brought up to
 parity with the Python reference: both now cover Core plus every

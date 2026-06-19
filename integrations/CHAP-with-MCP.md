@@ -314,3 +314,90 @@ workspace policy.
 
 For the wire-level details, see [`SPECIFICATION.md`](../SPECIFICATION.md)
 §16.1.
+
+---
+
+## 10. Code
+
+The patterns above describe the **semantic** integration: how an MCP
+tool call shows up in a CHAP audit trail. CHAP 0.2.3 also ships a
+**transport** integration that goes in the other direction: a CHAP
+Coordinator can present itself **as** an MCP server, so any MCP
+client (Claude Desktop, Cursor, Claude Code, the rest) can drive a
+CHAP workspace from natural language.
+
+### What ships
+
+- `packages/coordinator-mcp/`. TypeScript adapter. Wrap a `Coordinator`
+  with `makeChapMcpServer(coord, options)` and pass the result to any
+  MCP transport.
+- `chap_coordinator.transports.mcp_server`. Python adapter (installable
+  via `pip install chap-coordinator[mcp]`). Same shape:
+  `make_chap_mcp_server(coord, name=..., version=...)`.
+- `reference/mcp-server-ts/` and `reference/mcp-server-py/`. Runnable
+  stdio servers you can point an MCP client at directly.
+
+Spec target: MCP **2025-11-25**.
+
+### What gets exposed
+
+All 39 CHAP methods become MCP tools, named with a `chap.` prefix to
+avoid collisions with other servers a client might have loaded:
+
+```
+chap.workspace.create
+chap.participant.join
+chap.task.create
+chap.task.update
+chap.task.complete
+chap.review.request
+chap.decide.approve
+chap.decide.reject
+chap.decide.override
+chap.abstain.declare
+chap.escalate.raise
+chap.whisper.ask
+chap.whisper.answer
+chap.deliberate.open
+chap.deliberate.comment
+chap.deliberate.vote
+chap.deliberate.close
+chap.handoff.propose
+chap.handoff.accept
+chap.handoff.decline
+chap.control.pause
+chap.control.resume
+chap.control.cancel
+chap.control.snapshot
+chap.control.rollback
+chap.control.supersede
+chap.control.set_mode_ceiling
+chap.task.route
+chap.review.depth
+chap.escalate.auto
+chap.participant.rotate_key
+chap.participant.revoke_key
+chap.audit.read
+chap.audit.submit_to_scitt
+chap.audit.verify_receipt
+chap.audit.verify_chain
+chap.workspace.describe
+chap.workspace.set_profiles
+chap.participant.leave
+```
+
+Each tool's `inputSchema` is the JSON Schema for the corresponding
+method's params. CHAP-level errors surface as MCP tool errors with
+the JSON-RPC error code preserved in the response body.
+
+### Quickstart: drive a CHAP Coordinator from Claude Desktop
+
+See [`examples/drive-chap-from-claude-desktop.md`](../examples/drive-chap-from-claude-desktop.md).
+
+### Composition
+
+The two integrations stack. An MCP client can drive a CHAP workspace
+via `coordinator-mcp` (this section), and the CHAP workspace can in
+turn cite **other** MCP tool calls in its audit trail via the
+citation pattern described in §2 above. Same MCP underneath, two
+different roles for it.

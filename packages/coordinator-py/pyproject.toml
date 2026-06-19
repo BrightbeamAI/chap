@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chap-coordinator"
-version = "0.2.0"
+version = "0.2.3"
 description = "Python reference implementation of the Collaborative Human-Agent Protocol (CHAP)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,10 +31,13 @@ dependencies = []
 
 [project.optional-dependencies]
 crypto = ["cryptography>=42"]
+mcp = ["mcp>=1.28"]
 dev = [
     "pytest>=7",
+    "pytest-asyncio>=0.21",
     "pytest-cov>=4",
     "cryptography>=42",
+    "mcp>=1.28",
 ]
 
 [project.urls]
@@ -49,3 +52,4 @@ include = ["chap_coordinator*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+asyncio_mode = "auto"

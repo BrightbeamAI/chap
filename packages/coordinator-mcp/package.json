@@ -1,0 +1,28 @@
+{
+  "name": "@chap/coordinator-mcp",
+  "version": "0.2.3",
+  "description": "MCP server adapter for CHAP Coordinator: expose CHAP methods as MCP tools.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".":          "./src/index.ts",
+    "./schemas":  "./src/schemas.ts",
+    "./tools":    "./src/tools.ts"
+  },
+  "scripts": {
+    "test":      "tsx --test tests/*.test.ts",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@chap/coordinator":         "file:../coordinator",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx":         "^4.7.0",
+    "typescript":  "^5.3.0"
+  },
+  "private": true,
+  "engines": { "node": ">=18" }
+}

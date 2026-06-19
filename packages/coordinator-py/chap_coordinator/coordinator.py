@@ -191,6 +191,10 @@ class Coordinator:
     def add_audit_listener(self, fn: AuditListener) -> None:
         self._audit_listeners.append(fn)
 
+    def get_workspace(self, workspace_id: str) -> Workspace | None:
+        """Convenience: get a workspace by id, or ``None``."""
+        return self.workspaces.get(workspace_id)
+
     # -- public dispatch -----------------------------------------------
 
     def dispatch(self, envelope: dict) -> dict:

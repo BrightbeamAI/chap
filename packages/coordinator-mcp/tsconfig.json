@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict":         true,
+    "noEmit":         true,
+    "module":         "esnext",
+    "moduleResolution": "bundler",
+    "target":         "es2022",
+    "esModuleInterop": true,
+    "skipLibCheck":   true,
+    "allowImportingTsExtensions": true,
+    "types":          ["node"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}
