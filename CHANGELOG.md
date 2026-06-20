@@ -9,7 +9,127 @@ incremented under the same rules.
 
 ---
 
-## 0.2.3: MCP server transport
+## 0.2.4: A2A server transport + inward wrap helpers
+
+The third leg of the transport story. CHAP 0.2.3 made a Coordinator
+addressable as an MCP server. 0.2.4 makes it addressable as an
+[A2A](https://a2a-protocol.org) agent as well, and adds small library
+helpers for the **inward** direction (wrapping an MCP tool call or
+A2A exchange as a CHAP audit entry).
+
+This is a backward-compatible addition. No wire-format changes; no
+breaking changes to 0.2.3 consumers.
+
+### Added
+
+- **TypeScript A2A adapter.** New package `packages/coordinator-a2a/`
+  (`@chap/coordinator-a2a`). Built on the official `@a2a-js/sdk`
+  (A2A spec **0.3.0**). Entry points:
+  `makeChapAgentCard({ baseUrl, ... })` → Agent Card with 39 skills,
+  one per CHAP method, all named `chap.<method>`.
+  `makeChapAgentExecutor(coord, options?)` → an `AgentExecutor`
+  implementation ready to attach to a `DefaultRequestHandler`.
+  `dispatchA2aMessage(coord, message)` → direct-call helper for tests
+  and for embedding the adapter inside a larger A2A server.
+- **Python A2A adapter.** New module
+  `chap_coordinator.transports.a2a_server`. Built on the official
+  `a2a-sdk` (A2A spec **1.0**). Same shape as the TypeScript adapter:
+  `make_chap_agent_card(base_url=...)`, `make_chap_agent_executor(coord)`,
+  `dispatch_a2a_message(coord, message)`.
+- **Reference A2A servers.** `reference/a2a-server-ts/` (Express) and
+  `reference/a2a-server-py/` (FastAPI + Uvicorn). Both verified
+  end-to-end: agent card serves 39 skills, `message/send` round-trips
+  through the wrapped Coordinator.
+- **Inward wrap helpers** in both languages:
+  - `wrapMcpToolCall(coord, workspace, options)` + `wrap_mcp_tool_call(...)`
+    emit `task.create` + `task.update` + `task.complete` for a
+    completed MCP tool call, attaching a citation with input/output
+    hashes per the pattern in `integrations/CHAP-with-MCP.md` §2.
+  - `wrapA2aMessageExchange(coord, workspace, options)` +
+    `wrap_a2a_message_exchange(...)` do the equivalent for the
+    bridge-participant pattern in `integrations/CHAP-with-A2A.md` §3.
+  - `contentHash(value)` / `content_hash(value)` returns
+    `sha256:<hex>` of the JCS canonicalisation of any JSON value, so
+    audit trails that cite events by hash can be compared against
+    independently-canonicalised copies.
+- **`integrations/CHAP-with-A2A.md` §8 "Code"** documents the
+  transport adapters, the spec-version asymmetry, and the wrap
+  helpers. **`integrations/CHAP-with-MCP.md`** gets a parallel
+  "Wrap helper for inward citations" subsection.
+- **`examples/drive-chap-from-an-a2a-orchestrator.md`** walkthrough,
+  the A2A counterpart of the Claude Desktop walkthrough shipped
+  in 0.2.3.
+
+### Spec version asymmetry, called out
+
+The two A2A SDKs are at different points of the spec evolution:
+
+- `a2a-sdk` 1.x (Python) implements **A2A 1.0** with PascalCase
+  JSON-RPC methods (`SendMessage`). The reference Python server
+  enables `enable_v0_3_compat=True` so the slash form
+  (`message/send`) continues to work.
+- `@a2a-js/sdk` 0.3.x (TypeScript) implements **A2A 0.3.0** with the
+  slash form. Spec v1.0 support is on the SDK roadmap.
+
+The CHAP adapter layer is identical across both languages; the
+asymmetry is a property of the SDK ecosystem. Agent Cards advertise
+the spec version each implementation targets, so client discovery
+works correctly.
+
+### Tests
+
+- TypeScript A2A adapter: **14 integration tests** in
+  `packages/coordinator-a2a/tests/` (Agent Card shape, skill
+  filtering, dispatch via data part, dispatch via metadata, error
+  surfacing, full workflow including override, deliberation flow,
+  cancellation).
+- Python A2A adapter: **10 integration tests** in
+  `packages/coordinator-py/tests/test_a2a_integration.py`. Same
+  scope as the TypeScript suite.
+- Wrap helpers: **10 tests each** in TypeScript
+  (`packages/coordinator/tests/wrap.test.ts`) and Python
+  (`packages/coordinator-py/tests/test_wrap_helpers.py`).
+- Both reference servers smoke-tested end-to-end against `curl`
+  with a real HTTP round-trip.
+
+Total test counts after 0.2.4: TS 100 (72 library + 8 MCP + 14 A2A +
+7 playground), Python 90 (63 library + 7 MCP + 10 A2A + 10 wrap).
+
+### Design notes
+
+- **One adapter shape per protocol.** The MCP and A2A adapters use
+  the same `chap.<method>` naming for tools / skills. Callers
+  fluent in one are fluent in the other; documentation,
+  diagnostics, and operator mental models port across.
+- **Pure-data sharing.** The A2A adapter reuses `TOOL_NAMES`,
+  `method_for_tool`, and `TOOL_DESCRIPTIONS` from the MCP package
+  (which are pure data, no MCP SDK import). This single-sources the
+  CHAP method list across both transports without forcing an MCP
+  SDK runtime dependency on A2A consumers.
+- **No state in the adapters.** Each adapter holds at most a tiny
+  set of cancelled task ids. All real state lives in the
+  Coordinator.
+- **Auth deferred.** Both A2A SDKs implement their security model
+  at the HTTP transport. Production deployments add OAuth 2.1, mTLS,
+  or API-key gating there.
+
+### What's not in 0.2.4
+
+- **Streaming / SSE** for either MCP or A2A. Synchronous
+  request/response is sufficient to demonstrate the integration;
+  streaming can land in a later release once interop testing
+  warrants it.
+- **A2A push notifications** and the gRPC transport. Both are
+  optional in the spec and not implemented yet.
+- **Streamable HTTP transport for MCP.** Stdio is enough for the
+  current reference; HTTP can come with whatever auth story your
+  deployment requires.
+- **A2A 1.0 support in the TypeScript adapter.** Awaits the
+  `@a2a-js/sdk` upstream upgrade.
+
+---
+
+
 
 A CHAP Coordinator can now present itself as an MCP server. Point
 Claude Desktop, Cursor, Claude Code, or any other MCP client at it

@@ -18,11 +18,31 @@ TypeScript project:
 cd packages/coordinator
 npm pack
 # In your project
-npm install /path/to/chap-coordinator-0.2.2.tgz
+npm install /path/to/chap-coordinator-0.2.4.tgz
 ```
 
 Node 18+ required. Zero external runtime dependencies; uses Node's
 built-in `crypto` for Ed25519 and JCS.
+
+## Companion packages
+
+The `@chap/coordinator` package is the protocol core. Two transport
+adapters ship alongside it for embedding a Coordinator in MCP and
+A2A ecosystems:
+
+- [`@chap/coordinator-mcp`](../coordinator-mcp/) wraps a Coordinator
+  as an MCP server. Every CHAP method becomes an MCP tool named
+  `chap.<method>`. Reference stdio server at
+  `reference/mcp-server-ts/`. Spec target: MCP 2025-11-25.
+- [`@chap/coordinator-a2a`](../coordinator-a2a/) wraps a Coordinator
+  as an A2A agent. Every CHAP method becomes an `AgentSkill` on the
+  Agent Card. Reference Express server at `reference/a2a-server-ts/`.
+  Spec target: A2A 0.3.0.
+
+Inward citation helpers (`wrapMcpToolCall`, `wrapA2aMessageExchange`,
+`contentHash`) are exported from `@chap/coordinator` directly. They
+take a completed external event and emit the matching CHAP audit
+entries with input/output hashes.
 
 ## Quick start
 
@@ -227,17 +247,19 @@ statements so the caller can submit out-of-band.
 npm test
 ```
 
-62 tests as of this release, covering Core, every profile, JCS and
+72 tests as of this release, covering Core, every profile, JCS and
 Ed25519 conformance vectors, signed-envelope verification, OIDC/VC
-binding, and an end-to-end composition test exercising every method
-handler in one workspace.
+binding, the inward wrap helpers, and an end-to-end composition test
+exercising every method handler in one workspace.
 
 ## Spec fidelity
 
 This implementation was reviewed against every profile spec under
 `profiles/` and aligned with the documented field names, error codes,
 and response shapes. The full audit notes are in the parent repo's
-[`CHANGELOG.md`](../../CHANGELOG.md) under 0.2.2.
+[`CHANGELOG.md`](../../CHANGELOG.md), with the 0.2.2 entry covering
+the original TypeScript expansion and 0.2.3 / 0.2.4 covering the MCP
+and A2A transport additions.
 
 ## License
 

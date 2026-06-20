@@ -1,6 +1,6 @@
 {
   "name": "@chap/coordinator",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "description": "CHAP Coordinator library: the protocol code as an importable module. Covers Core plus every profile.",
   "license": "Apache-2.0",
   "type": "module",

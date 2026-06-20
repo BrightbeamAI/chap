@@ -426,6 +426,22 @@ this customer reply." The Coordinator returns:
 
 One query, one chain, three protocols.
 
+### 8.1 Inward composition: MCP-clients and A2A-orchestrators driving CHAP
+
+The diagram above shows CHAP citing MCP tool calls and bridging to
+A2A peers, which is the **outward** composition direction. The
+**inward** direction is symmetric: the Coordinator can present
+itself as an MCP server or A2A agent, with every CHAP method exposed
+as a discrete tool or skill. Then an MCP client (Claude Desktop,
+Cursor, Claude Code) or an A2A orchestrator (Azure AI Foundry,
+Amazon Bedrock AgentCore, Google ADK) can drive the workspace
+without writing any CHAP-specific code.
+
+Both directions stack. The CHAP-as-MCP-server adapter is at
+`packages/coordinator-mcp/`, the CHAP-as-A2A-agent adapter at
+`packages/coordinator-a2a/`. Runnable reference servers ship for
+each in `reference/mcp-server-{ts,py}/` and `reference/a2a-server-{ts,py}/`.
+
 ---
 
 ## 9. Deployment topologies

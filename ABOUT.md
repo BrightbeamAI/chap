@@ -61,6 +61,8 @@ CHAP is the third pillar of the open agent-protocol stack. It composes with MCP 
 
 **A2A peers as bridge participants.** When work crosses an organisational boundary, the remote A2A peer is represented inside the CHAP workspace as a `service:bridge…` participant. The bridge participant signs CHAP envelopes on behalf of the remote peer; the A2A traffic itself does not cross the CHAP wire. See [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
+**CHAP-as-MCP-server and CHAP-as-A2A-agent.** A Coordinator can present itself as an MCP server or an A2A agent, with every CHAP method exposed as a tool or skill. Claude Desktop, Cursor, Claude Code, or any A2A-aware orchestrator can then drive a workspace directly. The transport adapter packages are [`packages/coordinator-mcp/`](./packages/coordinator-mcp/) and [`packages/coordinator-a2a/`](./packages/coordinator-a2a/); the runnable reference servers are under [`reference/mcp-server-{ts,py}/`](./reference/) and [`reference/a2a-server-{ts,py}/`](./reference/). Library helpers for the inward citation pattern (`wrapMcpToolCall`, `wrapA2aMessageExchange`) ship with the Coordinator package itself.
+
 ## Standards CHAP reuses
 
 CHAP defers to existing standards wherever they exist. The only protocol-level things it introduces are its seven Core methods, the override envelope shape, and the profile binding model. Everything else is composition.
@@ -190,11 +192,17 @@ chap-protocol/
 │   ├── core/                            TypeScript: minimal Core, weekend-buildable.
 │   ├── core-plus-review/                TypeScript: Core + review/1.0 + override analyser.
 │   ├── playground/                      TypeScript: runnable two-human + local LLM demo.
-│   └── python/                          Python: HTTP server + demo client + analytics.
+│   ├── python/                          Python: HTTP server + demo client + analytics.
+│   ├── mcp-server-ts/                   MCP stdio server (TS) wrapping a Coordinator.
+│   ├── mcp-server-py/                   MCP stdio server (Python) wrapping a Coordinator.
+│   ├── a2a-server-ts/                   A2A HTTP server (TS, Express).
+│   └── a2a-server-py/                   A2A HTTP server (Python, FastAPI).
 │
 ├── packages/
 │   ├── coordinator/                     @chap/coordinator (TypeScript): protocol as a library.
-│   └── coordinator-py/                  chap-coordinator (Python): Core + every profile.
+│   ├── coordinator-py/                  chap-coordinator (Python): Core + every profile.
+│   ├── coordinator-mcp/                 @chap/coordinator-mcp: MCP transport adapter.
+│   └── coordinator-a2a/                 @chap/coordinator-a2a: A2A transport adapter.
 │
 ├── conformance/                         Test suite for implementers.
 │   ├── conformance-checklist.md

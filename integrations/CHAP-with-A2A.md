@@ -294,3 +294,96 @@ A conformant Coordinator that hosts a bridge SHOULD:
 
 For the wire-level details, see [`SPECIFICATION.md`](../SPECIFICATION.md)
 §16.2.
+
+---
+
+## 8. Code
+
+The patterns above describe the **semantic** integration: how an A2A
+exchange shows up in a CHAP audit trail. CHAP 0.2.4 ships a
+**transport** integration that goes the other way too: a CHAP
+Coordinator can present itself **as** an A2A agent, so any
+A2A-aware orchestrator (Azure AI Foundry, Amazon Bedrock AgentCore,
+Google ADK, custom multi-agent systems) can register it by URL,
+discover its skills, and delegate work to it.
+
+### What ships
+
+- `packages/coordinator-a2a/`. TypeScript adapter (`@chap/coordinator-a2a`).
+  Built on the official `@a2a-js/sdk` (A2A spec **0.3.0**).
+- `chap_coordinator.transports.a2a_server`. Python adapter, installable
+  via `pip install chap-coordinator[a2a]`. Built on the official
+  `a2a-sdk` (A2A spec **1.0**).
+- `reference/a2a-server-ts/` and `reference/a2a-server-py/`. Runnable
+  HTTP servers using each language's idiomatic web framework
+  (Express, FastAPI).
+- Inward wrap helpers in both languages (`wrap_a2a_message_exchange`,
+  `wrapA2aMessageExchange`) implement the bridge-participant pattern
+  in §3 as a library utility.
+
+### Spec version asymmetry
+
+The two SDKs are at different points of the A2A spec evolution:
+
+- Python `a2a-sdk` 1.x implements **A2A 1.0** with PascalCase JSON-RPC
+  method names (`SendMessage`, `GetTask`). The reference Python
+  server enables `enable_v0_3_compat=True` so it accepts the older
+  `message/send` slash form as well.
+- TypeScript `@a2a-js/sdk` 0.3.x implements **A2A 0.3.0** with the
+  slash form (`message/send`). Spec v1.0 support is on the SDK
+  roadmap.
+
+The CHAP adapter layer is identical across both; the asymmetry is a
+property of the SDK ecosystem we depend on. The Agent Cards
+advertise the protocol version each adapter targets, so client
+discovery works correctly in both cases.
+
+### What gets exposed
+
+Every CHAP method appears as an `AgentSkill` on the Agent Card with
+id `chap.<method>`. The skill names match the MCP adapter's tool
+names, so callers fluent in one are fluent in the other:
+
+```
+chap.workspace.create        chap.review.request
+chap.workspace.describe      chap.decide.approve
+chap.participant.join        chap.decide.reject
+chap.task.create             chap.decide.override
+...
+```
+
+(All 39 methods listed in `CHAP-with-MCP.md` §10.)
+
+A2A messages carry the CHAP params in a `DataPart`. The skill id
+identifies which CHAP method to dispatch, looked up in this order:
+`message.metadata.skill` first, then `part.data.skill` on the first
+data part. Either is acceptable; orchestrators typically populate
+the metadata path.
+
+### Quickstart
+
+Start either reference server, then point an A2A client at its
+agent-card URL:
+
+```bash
+# TypeScript
+tsx reference/a2a-server-ts/server.ts --port 9090
+# Python
+python3 reference/a2a-server-py/server.py --port 9090
+```
+
+```bash
+curl http://localhost:9090/.well-known/agent-card.json
+```
+
+A worked walkthrough using a real orchestrator is at
+[`examples/drive-chap-from-an-a2a-orchestrator.md`](../examples/drive-chap-from-an-a2a-orchestrator.md).
+
+### Composition
+
+The transport adapter and the bridge-participant pattern are
+complementary, not exclusive. An orchestrator can drive a CHAP
+workspace via the adapter (this section), and that workspace can in
+turn cite A2A exchanges it makes with *other* peers via the
+citation pattern in §2 above. Same A2A wire format underneath, two
+different roles for it.

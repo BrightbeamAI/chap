@@ -1,22 +1,23 @@
 {
-  "name": "@chap/coordinator-mcp",
+  "name": "@chap/coordinator-a2a",
   "version": "0.2.4",
-  "description": "MCP server adapter for CHAP Coordinator: expose CHAP methods as MCP tools.",
+  "description": "A2A server adapter for CHAP Coordinator: expose CHAP methods as A2A skills.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
-    ".":          "./src/index.ts",
-    "./schemas":  "./src/schemas.ts",
-    "./tools":    "./src/tools.ts"
+    ".":         "./src/index.ts",
+    "./card":    "./src/card.ts",
+    "./executor": "./src/executor.ts"
   },
   "scripts": {
     "test":      "tsx --test tests/*.test.ts",
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@chap/coordinator":         "file:../coordinator",
-    "@modelcontextprotocol/sdk": "^1.29.0"
+    "@chap/coordinator":     "file:../coordinator",
+    "@chap/coordinator-mcp": "file:../coordinator-mcp",
+    "@a2a-js/sdk":           "^0.3.13"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

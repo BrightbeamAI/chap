@@ -22,8 +22,8 @@ Many concerns about "you should just use X" are answered here.
 | Identity for services        | **SPIFFE / SPIRE**                               | Recommended deployment pattern. |
 | Audit / transparency log     | **draft-ietf-scitt-architecture**                | Reuses via `audit-scitt` profile. |
 | Audit signature format       | **COSE (RFC 9052) + SCITT receipts**             | Reuses via `audit-scitt` profile. |
-| Tool calls inside artefacts  | **MCP**                                          | Composed (cited). |
-| Cross-org peer delegation    | **A2A**                                          | Composed (bridge participant). |
+| Tool calls inside artefacts  | **MCP**                                          | Composed (cited outward; also exposed inward via `coordinator-mcp` adapter). |
+| Cross-org peer delegation    | **A2A**                                          | Composed (bridge participant outward; also exposed inward via `coordinator-a2a` adapter). |
 | Federation between workspaces | **ActivityPub** (Actors, Inbox/Outbox)          | Optional binding (`federation-activitypub` profile, draft). |
 | Participant lifecycle (provision/deprovision) | **SCIM 2.0**                  | Optional binding for human provisioning. |
 | Transport                    | **WebSocket · HTTP+SSE · MQTT · NATS · Kafka**   | Transport-agnostic; bind to whichever. |
@@ -180,8 +180,15 @@ See [`profiles/audit-scitt.md`](./profiles/audit-scitt.md).
 
 ## 7. Composition with MCP and A2A
 
-CHAP doesn't re-implement either MCP or A2A. Composition is by
-**citation**, not encapsulation:
+CHAP composes with MCP and A2A in **two directions**: by citation
+(outward) and by transport adapter (inward).
+
+### 7.1 By citation (outward)
+
+The original composition pattern. An MCP tool call or A2A exchange
+that happens during CHAP work is recorded inside the workspace as
+structured evidence, without bringing the external traffic onto the
+CHAP wire:
 
 - An MCP tool call called by an agent during CHAP work becomes a
   `citation` of kind `mcp_tool_invocation` inside the agent's CHAP
@@ -192,8 +199,41 @@ CHAP doesn't re-implement either MCP or A2A. Composition is by
   Participant; the A2A traffic does not cross the CHAP wire. See
   [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
+Library helpers `wrapMcpToolCall` / `wrap_mcp_tool_call` and
+`wrapA2aMessageExchange` / `wrap_a2a_message_exchange` make the
+citation a one-liner from either reference implementation.
+
+### 7.2 By transport adapter (inward)
+
+A CHAP Coordinator can also present itself **as** an MCP server or
+an A2A agent, with every CHAP method exposed as a tool or skill.
+This lets existing MCP clients and A2A orchestrators drive a CHAP
+workspace without any CHAP-specific code:
+
+- `@chap/coordinator-mcp` (TypeScript) and
+  `chap_coordinator.transports.mcp_server` (Python) target MCP
+  **2025-11-25**. All 39 CHAP methods become MCP tools named
+  `chap.<method>`. Reference stdio servers ship in
+  `reference/mcp-server-{ts,py}/`.
+- `@chap/coordinator-a2a` (TypeScript) and
+  `chap_coordinator.transports.a2a_server` (Python) expose the
+  Coordinator as an A2A agent. Same 39 methods become discrete
+  `AgentSkill` entries. The TypeScript SDK targets A2A **0.3.0**
+  and the Python SDK targets A2A **1.0**; the adapter layer is
+  identical across both. Reference HTTP servers ship in
+  `reference/a2a-server-{ts,py}/`.
+
+### 7.3 Composition stacks
+
+The two directions stack. A workspace can be driven over MCP from
+Claude Desktop while its agents call other MCP servers for tools
+and cite those calls; the same workspace can be exposed as an A2A
+agent to an Azure orchestrator while bridging to A2A peers
+externally. Same wire formats, different roles per protocol.
+
 The MCP and A2A protocols evolve on their own timelines; CHAP's
-citation pattern is forward-compatible with their major versions.
+adapter layer pins specific spec versions and is forward-compatible
+with their major versions.
 
 ---
 

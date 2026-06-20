@@ -1400,6 +1400,24 @@ workspace while delegating cross-system communication to A2A.
 
 See [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
+### 16.3 CHAP as MCP server / A2A agent
+
+Sections 16.1 and 16.2 describe the **outward** composition: a CHAP
+workspace cites external MCP or A2A events. The composition also
+runs **inward**: a CHAP Coordinator MAY present itself as an MCP
+server or an A2A agent, with every CHAP method exposed as a tool
+(MCP) or skill (A2A). MCP clients or A2A orchestrators then drive
+the workspace directly.
+
+Inward composition is a transport binding, not a wire-format change.
+A Coordinator that does and does not expose an inward MCP or A2A
+interface produces byte-identical audit chains for the same envelope
+sequence. The inward adapter packaged in this repository targets
+MCP **2025-11-25**, A2A **0.3.0** (via the TypeScript SDK), and A2A
+**1.0** (via the Python SDK). See the implementation notes in
+[`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md) §10
+and [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md) §8.
+
 ---
 
 ## 17. Conformance

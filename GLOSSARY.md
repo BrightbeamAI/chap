@@ -10,7 +10,9 @@ document, and the worked examples. Terms used normatively in the spec carry a
 
 **A2A.** [Agent-to-Agent Protocol](https://a2a.dev). An open protocol for
 agent communication across organisational boundaries. CHAP composes with A2A
-via a bridge service participant, see
+in two directions: outbound via a bridge service participant, and inbound
+by exposing a Coordinator *as* an A2A agent with every CHAP method as a
+skill on its Agent Card. See
 [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md).
 
 **Abstention.** A Participant's recorded decision *not* to decide. Used when
@@ -204,8 +206,10 @@ revision, override, or supersession. CHAP itself reads only `id`;
 ## M
 
 **MCP.** [Model Context Protocol](https://modelcontextprotocol.io). The
-agent-to-tool protocol. CHAP composes with MCP by citing tool invocations
-inside its evidence chain, see
+agent-to-tool protocol. CHAP composes with MCP in two directions: by
+*citing* tool invocations inside its evidence chain (outward), and by
+exposing a Coordinator *as* an MCP server with every CHAP method as
+a tool (inward). See
 [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md).
 
 **Message.** [normative] A single CHAP envelope. Becomes exactly one

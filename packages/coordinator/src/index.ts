@@ -45,3 +45,14 @@ export {
 export type { Jwk as CryptoJwk } from "./crypto.js";
 export { IdFactory } from "./ids.js";
 export { makeDefaultPolicy } from "./policy.js";
+
+export {
+  wrapMcpToolCall,
+  wrapA2aMessageExchange,
+} from "./transports/wrap.js";
+export type {
+  WrapMcpToolCallOptions,
+  WrapA2aExchangeOptions,
+  WrapResult,
+  WrapA2aResult,
+} from "./transports/wrap.js";

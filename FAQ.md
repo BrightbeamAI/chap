@@ -10,8 +10,10 @@ covers most operational topics in depth.
 
 ### Is CHAP a competitor to MCP or A2A?
 
-No. CHAP is designed to compose with both:
+No. CHAP is designed to compose with both, in two complementary
+directions:
 
+**Outward (CHAP cites external events):**
 - **MCP** lets an agent talk to tools. When a CHAP-resident agent
   calls an MCP tool to do its work, the call is *cited* inside the
   agent's CHAP artefact, with input/output hashes providing
@@ -21,6 +23,19 @@ No. CHAP is designed to compose with both:
   external A2A peer, the peer is represented as a `service:bridge…`
   participant inside the workspace. A2A traffic stays on the A2A
   wire; the bridge mediates.
+
+**Inward (CHAP exposes itself as an MCP server or A2A agent):**
+- A CHAP Coordinator can present itself as an **MCP server** with
+  every CHAP method as a tool. Claude Desktop, Cursor, Claude Code,
+  or any MCP client can then drive a CHAP workspace from natural
+  language. Reference servers ship in
+  [`reference/mcp-server-ts/`](./reference/mcp-server-ts/) and
+  [`reference/mcp-server-py/`](./reference/mcp-server-py/).
+- The same Coordinator can present itself as an **A2A agent** with
+  every CHAP method as an `AgentSkill`. Any A2A-aware orchestrator
+  can register it by URL and delegate work. Reference servers ship
+  in [`reference/a2a-server-ts/`](./reference/a2a-server-ts/) and
+  [`reference/a2a-server-py/`](./reference/a2a-server-py/).
 
 The three protocols own different layers of the same stack. See
 [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md) and
@@ -388,15 +403,31 @@ collaboration parts.
 
 ### What if I'm already using MCP?
 
-You keep using it. CHAP citations inside artefacts reference MCP
-tool calls with input/output hashes; the MCP traffic stays on the
-MCP wire. Nothing needs to change about your MCP setup.
+You keep using it. Two ways CHAP and MCP can compose:
+
+- **MCP-as-tool transport, CHAP-as-governance.** Your agents keep
+  calling MCP tools as before; CHAP citations inside artefacts
+  reference those tool calls with input/output hashes. The MCP
+  traffic stays on the MCP wire. Nothing changes about your existing
+  MCP setup. The library helper `wrapMcpToolCall` /
+  `wrap_mcp_tool_call` makes recording these citations a one-liner.
+- **CHAP-as-MCP-server.** A Coordinator can expose itself as an MCP
+  server. Then your existing MCP clients (Claude Desktop, Cursor,
+  Claude Code) can drive a CHAP workspace alongside whatever other
+  MCP servers they already use.
 
 ### What about A2A?
 
-Same answer. A2A peers appear inside CHAP workspaces as
-`service:bridge…` participants. The bridge mediates; A2A traffic
-stays on the A2A wire.
+Same story, symmetrically:
+
+- **A2A peer bridged into a workspace.** A2A peers appear inside
+  CHAP workspaces as `service:bridge…` participants. The bridge
+  mediates; A2A traffic stays on the A2A wire.
+  `wrapA2aMessageExchange` / `wrap_a2a_message_exchange` records
+  the citation.
+- **CHAP-as-A2A-agent.** A Coordinator can present itself as an
+  A2A agent. Other A2A orchestrators register it by URL and
+  delegate work to it.
 
 ### Can I use CHAP without MCP or A2A?
 

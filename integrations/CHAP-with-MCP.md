@@ -401,3 +401,54 @@ via `coordinator-mcp` (this section), and the CHAP workspace can in
 turn cite **other** MCP tool calls in its audit trail via the
 citation pattern described in §2 above. Same MCP underneath, two
 different roles for it.
+
+### Wrap helper for inward citations
+
+CHAP 0.2.4 also ships a small library utility that codifies the
+inward citation pattern from §2:
+
+- TypeScript: `wrapMcpToolCall(coord, workspace, options)` from
+  `@chap/coordinator`. Pure data; no MCP SDK runtime cost.
+- Python: `wrap_mcp_tool_call(coord, workspace, caller=..., tool=..., args=..., result=...)`
+  from `chap_coordinator.transports.wrap`.
+
+Both emit a `task.create` + `task.update` + `task.complete` triple
+into the workspace's audit log, with the result artefact carrying a
+`citations[]` entry holding the MCP server name, tool name, and SHA-256
+hashes of the canonicalised inputs and outputs. The helper returns the
+new task id and both hashes so downstream callers can cite the
+wrapped event directly.
+
+```typescript
+import { Coordinator, wrapMcpToolCall } from "@chap/coordinator";
+
+const { task_id, input_hash, output_hash } = wrapMcpToolCall(
+  coord, "wsp_support_eu",
+  {
+    caller: "agent:drafter",
+    server: "github",
+    tool: "github.create_issue",
+    args: { title: "bug", body: "..." },
+    result: { issue_url: "https://github.com/example/repo/issues/42" },
+    confidence: 0.95,
+  },
+);
+```
+
+```python
+from chap_coordinator.transports.wrap import wrap_mcp_tool_call
+
+res = wrap_mcp_tool_call(
+    coord, "wsp_support_eu",
+    caller="agent:drafter",
+    server="github",
+    tool="github.create_issue",
+    args={"title": "bug", "body": "..."},
+    result={"issue_url": "https://github.com/example/repo/issues/42"},
+    confidence=0.95,
+)
+```
+
+The helper exists so the citation shape stays consistent across
+deployments. Hand-rolled equivalents are fine; the convenience is
+single-sourcing the input/output canonicalisation and hash format.

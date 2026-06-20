@@ -18,6 +18,38 @@ binding hook:
 pip install "chap-coordinator[crypto]"
 ```
 
+For the MCP server transport (drive a Coordinator from any MCP client):
+
+```bash
+pip install "chap-coordinator[mcp]"
+```
+
+For the A2A server transport (expose a Coordinator as an A2A agent):
+
+```bash
+pip install "chap-coordinator[a2a]"
+```
+
+## Companion modules
+
+The base package is the protocol core. Two transport adapters ship in
+the same wheel under optional extras:
+
+- `chap_coordinator.transports.mcp_server` wraps a Coordinator as an
+  MCP server. Every CHAP method becomes an MCP tool named
+  `chap.<method>`. Reference stdio server at
+  `reference/mcp-server-py/`. Spec target: MCP 2025-11-25.
+- `chap_coordinator.transports.a2a_server` wraps a Coordinator as an
+  A2A agent. Every CHAP method becomes an `AgentSkill` on the
+  Agent Card. Reference FastAPI server at `reference/a2a-server-py/`.
+  Spec target: A2A 1.0 (with v0.3 compatibility).
+
+Inward citation helpers (`wrap_mcp_tool_call`,
+`wrap_a2a_message_exchange`, `content_hash`) live in
+`chap_coordinator.transports.wrap`. They take a completed external
+event and emit the matching CHAP audit entries with input/output
+hashes.
+
 ## Quick start
 
 ```python
@@ -202,14 +234,17 @@ pip install -e ".[dev]"
 pytest
 ```
 
-63 tests as of this release.
+90 tests as of this release: 63 core library, 7 MCP integration,
+10 A2A integration, 10 wrap-helper.
 
 ## Spec fidelity
 
 This implementation was reviewed against every profile spec under
 `profiles/` and aligned with the documented field names, error codes,
-and response shapes. The audit notes are in the parent repo's
-[`CHANGELOG.md`](../../CHANGELOG.md) under 0.2.1.
+and response shapes. The full audit notes are in the parent repo's
+[`CHANGELOG.md`](../../CHANGELOG.md), with the 0.2.1 entry covering
+the original Python implementation and 0.2.3 / 0.2.4 covering the
+MCP and A2A transport additions.
 
 ## License
 
