@@ -1,0 +1,34 @@
+# One-command CHAP playground.
+#
+# Usage:
+#   docker compose up
+#   open http://localhost:8080
+#
+# The playground runs in CHAP_NO_LLM mode by default: it serves
+# deterministic mock drafts that exercise the full review/override/audit
+# flow without requiring a model download. Two browser tabs at the URL
+# above demonstrate two humans collaborating on the same workspace.
+#
+# Optional: real LLM drafts via local Ollama.
+#   1. Install Ollama on the host: https://ollama.com
+#   2. ollama pull gemma3:4b
+#   3. CHAP_NO_LLM=0 OLLAMA_URL=http://host.docker.internal:11434 docker compose up
+
+services:
+  playground:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # SECURITY: playground has no authentication. Bound to 127.0.0.1
+    # so it is reachable only from the host, never from the network.
+    # If you really want to expose it on a LAN, replace with "8080:8080"
+    # and add a reverse proxy with auth in front.
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      CHAP_NO_LLM: "${CHAP_NO_LLM:-1}"
+      OLLAMA_URL:  "${OLLAMA_URL:-http://localhost:11434}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-gemma3:4b}"
+    # On Linux hosts, uncomment to reach the host's Ollama at host.docker.internal:
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"

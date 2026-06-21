@@ -31,6 +31,18 @@ export type {
   EscalationPolicyFn,
 } from "./coordinator.js";
 
+export { call, makeApi, CoordinatorError } from "./api.js";
+export type { CoordinatorApi } from "./api.js";
+export type {
+  MethodName,
+  MethodParams,
+  MethodResult,
+  MethodTable,
+} from "./methods.js";
+
+export { MemoryStore } from "./storage/store.js";
+export type { Store, WorkspaceRecord } from "./storage/store.js";
+
 export * from "./types.js";
 export * from "./jsonrpc.js";
 export * from "./patch.js";

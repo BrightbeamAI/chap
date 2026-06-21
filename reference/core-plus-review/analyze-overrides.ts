@@ -6,13 +6,32 @@
  * concrete. Run after the demo client (or your real workspace).
  *
  * Usage:
- *   tsx analyze-overrides.ts                          # default workspace
- *   tsx analyze-overrides.ts wsp_my_workspace         # named workspace
+ *   # HTTP mode (default; coordinator runs as a server)
+ *   tsx analyze-overrides.ts                              # default workspace
+ *   tsx analyze-overrides.ts wsp_my_workspace             # named workspace
  *   CHAP_URL=http://prod.example.org/chap tsx analyze-overrides.ts wsp_prod
+ *
+ *   # SQLite mode (no server needed; reads the SqliteStore directly)
+ *   tsx analyze-overrides.ts --db ./chap.db wsp_my_workspace
  */
 
+// ---- arg parsing ---------------------------------------------------
+
+const argv = process.argv.slice(2);
+let DB_PATH: string | undefined;
+const positional: string[] = [];
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === "--db" && argv[i + 1]) {
+    DB_PATH = argv[++i];
+  } else if (argv[i].startsWith("--db=")) {
+    DB_PATH = argv[i].slice(5);
+  } else {
+    positional.push(argv[i]);
+  }
+}
+
 const CHAP = process.env.CHAP_URL ?? "http://localhost:8080/chap";
-const WS  = process.argv[2] ?? "wsp_support_triage";
+const WS   = positional[0] ?? "wsp_support_triage";
 
 interface OverrideParams {
   from:         string;
@@ -30,6 +49,8 @@ interface OverrideParams {
   intent_preserved?: boolean;
 }
 
+// ---- transport: HTTP or SqliteStore --------------------------------
+
 async function call(method: string, params: Record<string, unknown>): Promise<any> {
   const res = await fetch(CHAP, {
     method:  "POST",
@@ -39,6 +60,19 @@ async function call(method: string, params: Record<string, unknown>): Promise<an
   const body = await res.json() as { result?: any; error?: any };
   if (body.error) throw new Error(`${body.error.code}: ${body.error.message}`);
   return body.result;
+}
+
+async function loadAuditFromSqlite(dbPath: string, workspace: string): Promise<any> {
+  // Lazy-import only when the --db flag is used so the HTTP path
+  // doesn't pull better-sqlite3 into the dependency tree.
+  const { SqliteStore } = await import("@chap/coordinator/storage/sqlite");
+  const store = new SqliteStore(dbPath);
+  const records = store.load();
+  const r = records.find(r => r.id === workspace);
+  store.close?.();
+  if (!r) throw new Error(`Workspace ${workspace} not found in ${dbPath}`);
+  const data = r.data as { audit?: any[] };
+  return { entries: data.audit ?? [] };
 }
 
 function bar(value: number, max: number, width = 24): string {
@@ -52,12 +86,18 @@ function pct(value: number, total: number): string {
 
 async function main(): Promise<void> {
   // Fetch all overrides
-  const audit = await call("audit.read", {
-    workspace: WS,
-    filter: { method: "decide.override" },
-  });
+  const audit = DB_PATH
+    ? await loadAuditFromSqlite(DB_PATH, WS)
+    : await call("audit.read", {
+        workspace: WS,
+        filter: { method: "decide.override" },
+      });
 
-  const entries: OverrideParams[] = audit.entries.map((e: any) => e.envelope.params);
+  const allEntries = audit.entries ?? [];
+  const overrideEnvelopes = DB_PATH
+    ? allEntries.filter((e: any) => e.envelope?.method === "decide.override")
+    : allEntries; // HTTP path already filtered server-side
+  const entries: OverrideParams[] = overrideEnvelopes.map((e: any) => e.envelope.params);
   const total = entries.length;
 
   console.log("\n" + "═".repeat(60));

@@ -10,6 +10,38 @@ in scope.
 
 ---
 
+## Local development
+
+The repository is an npm workspace. After cloning:
+
+```bash
+# Install everything (TS workspace + Python packages).
+npm install
+pip install -e packages/coordinator-py
+pip install -e packages/chap-langgraph
+
+# Build the TS packages in dependency order (required before typecheck
+# in any downstream package, because each package's exports map points
+# at dist/).
+npm run build
+
+# Then any of these from the repo root:
+npm test                                     # all TS test suites
+npm run typecheck                            # all TS packages
+npm run check:schemas                        # method-catalogue drift
+python3 -m pytest packages/coordinator-py/   # Python reference
+python3 -m pytest packages/chap-langgraph/   # langgraph bridge
+```
+
+Why the build step matters: each TypeScript package publishes from
+`dist/` (not `src/`), so the local file: deps between workspace
+packages need the upstream `dist/` to exist. `npm run build` from
+the repo root builds them in the right order. The same `prepublishOnly`
+script runs the full chain (schemas check, typecheck, tests, build)
+before publishing.
+
+---
+
 ## 1. Ways to contribute
 
 | Kind                              | Process                                                |

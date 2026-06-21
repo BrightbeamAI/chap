@@ -53,6 +53,9 @@ Paper = "https://arxiv.org/abs/2506.09751"
 [tool.setuptools.packages.find]
 include = ["chap_coordinator*"]
 
+[tool.setuptools.package-data]
+"chap_coordinator" = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

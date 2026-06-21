@@ -121,7 +121,7 @@ An implementation is **CHAP-conformant** if it implements every Core method and 
 
 Conformance levels in 0.2 are **Minimal** and **Recommended**. A **Full** level (interop testing across two implementations and an exhaustive test suite) is partially in place: the TypeScript reference at [`packages/coordinator/`](./packages/coordinator/) and the Python reference at [`packages/coordinator-py/`](./packages/coordinator-py/) both cover Core plus every profile (39 method handlers), and both pass the conformance harness on the same JSON-RPC 2.0 wire. What's still needed for a normative Full claim is harness expansion: the present harness exercises Core and `review/1.0`; equivalent vectors for the other nine profiles are the next step. The expected base conformance for production deployments is **Core + `review/1.0` + `modes/1.0`**.
 
-Conformance attestations are published as [in-toto attestations](https://github.com/in-toto/attestation) and linked from the implementation registry. See [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md) and [`conformance/test-vectors.md`](./conformance/test-vectors.md).
+Conformance attestations are published as [in-toto attestations](https://github.com/in-toto/attestation) and linked from the [implementation registry](./IMPLEMENTATIONS.md). See [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md) and [`conformance/test-vectors.md`](./conformance/test-vectors.md).
 
 ## Reading paths
 

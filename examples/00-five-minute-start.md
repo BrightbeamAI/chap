@@ -128,12 +128,25 @@ curl -s -X POST http://localhost:8080/chap \
   }' | jq
 ```
 
-The response includes a `task_id`. Save it:
+The response includes a `task_id`. Save it for the next steps:
 
 ```bash
 TASK=$(curl -s -X POST http://localhost:8080/chap \
   -H 'Content-Type: application/json' \
-  -d '{ ... same as above ... }' | jq -r '.result.task_id')
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "4",
+    "method": "task.create",
+    "params": {
+      "workspace": "wsp_demo",
+      "from":      "human:alice@example.org",
+      "to":        "agent:triage-bot",
+      "ts":        "2026-05-17T09:01:00Z",
+      "kind":      "draft_response",
+      "assignee":  "agent:triage-bot",
+      "input":     { "ticket_id": "INC-48219", "customer_message": "Where is my order?" }
+    }
+  }' | jq -r '.result.task_id')
 echo $TASK
 # tsk_…
 ```

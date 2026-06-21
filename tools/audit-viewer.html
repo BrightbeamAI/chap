@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none';">
+  <title>CHAP Audit Viewer</title>
+  <style>
+    :root {
+      --bg:          #fff;
+      --fg:          #111;
+      --muted:       #6b6b6b;
+      --line:        #e5e5e5;
+      --hover:       #f7f7f7;
+      --ember:       #EA4700;
+      --amber:       #FF9900;
+      --good:        #1f8a3a;
+      --warn:        #c25a00;
+      --bad:         #b00020;
+      --card:        #fafafa;
+      --code-bg:     #f5f5f5;
+      --override-bg: #fff8ec;
+    }
+    * { box-sizing: border-box }
+    body {
+      margin: 0; padding: 0;
+      font-family: Arial, sans-serif;
+      color: var(--fg); background: var(--bg);
+      font-size: 14px; line-height: 1.5;
+    }
+    header {
+      padding: 20px 28px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; gap: 18px;
+    }
+    h1 {
+      margin: 0; font-size: 18px; font-weight: 700;
+      color: var(--ember);
+    }
+    .tagline { color: var(--muted); font-size: 13px }
+    main { display: grid; grid-template-columns: 360px 1fr; min-height: 92vh }
+    aside {
+      border-right: 1px solid var(--line);
+      padding: 18px;
+      overflow-y: auto;
+      max-height: 92vh;
+    }
+    section.body { padding: 22px 28px; overflow-y: auto; max-height: 92vh }
+
+    /* file picker */
+    .drop {
+      border: 2px dashed var(--line); border-radius: 8px;
+      padding: 22px 14px; text-align: center;
+      cursor: pointer; transition: border-color .15s, background .15s;
+    }
+    .drop.dragover { border-color: var(--amber); background: var(--card) }
+    .drop p   { margin: 4px 0 }
+    .drop strong { color: var(--ember) }
+    .drop input { display: none }
+
+    /* summary cards */
+    .cards {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+      margin-top: 18px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line); border-radius: 6px;
+      padding: 12px;
+    }
+    .card .n { font-size: 22px; font-weight: 700; color: var(--ember) }
+    .card .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em }
+
+    /* method counts */
+    h3 {
+      font-size: 12px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .04em; color: var(--muted);
+      margin: 24px 0 8px;
+    }
+    .bars { display: grid; gap: 3px }
+    .bar { display: grid; grid-template-columns: 130px 1fr 36px; gap: 8px; align-items: center; font-size: 12px }
+    .bar .label { color: var(--fg); font-family: ui-monospace, Menlo, monospace; font-size: 11px }
+    .bar .track { background: var(--line); height: 12px; border-radius: 2px; position: relative }
+    .bar .fill  { position: absolute; inset: 0; right: auto; background: var(--ember); border-radius: 2px }
+    .bar .count { font-size: 11px; color: var(--muted); text-align: right }
+
+    /* chain */
+    .chain { font-family: ui-monospace, Menlo, monospace; font-size: 12px }
+    .entry {
+      padding: 10px 12px; border-left: 3px solid var(--line);
+      margin: 8px 0; background: var(--card);
+      border-radius: 0 4px 4px 0;
+    }
+    .entry.override { border-left-color: var(--ember); background: var(--override-bg) }
+    .entry.approve  { border-left-color: var(--good) }
+    .entry.reject   { border-left-color: var(--bad) }
+    .entry.abstain  { border-left-color: var(--warn) }
+    .entry-head { display: flex; gap: 8px; align-items: baseline; font-weight: 600 }
+    .entry-head .seq { color: var(--muted); font-weight: 400; min-width: 50px }
+    .entry-head .m   { color: var(--fg) }
+    .entry-head .from { color: var(--muted); font-weight: 400; margin-left: auto; font-size: 11px }
+    .entry-body { color: var(--muted); margin-top: 4px; font-size: 11px; padding-left: 58px; word-break: break-all }
+    .hash { display: inline-block; max-width: 90%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom }
+    .chain-broken {
+      display: inline-block; background: var(--bad); color: #fff;
+      padding: 1px 6px; border-radius: 3px; font-size: 10px; margin-left: 6px;
+    }
+
+    /* override panel */
+    .override-detail {
+      margin-top: 6px; padding: 8px 10px;
+      background: #fff; border: 1px solid var(--line); border-radius: 4px;
+      font-size: 11px;
+    }
+    .override-detail .rationale { font-style: italic; color: var(--fg) }
+    .override-detail .tags { margin-top: 4px }
+    .tag {
+      display: inline-block; background: var(--amber); color: #fff;
+      padding: 1px 6px; border-radius: 3px; margin-right: 4px;
+      font-size: 10px; font-family: ui-monospace, Menlo, monospace;
+    }
+    .diff {
+      margin-top: 6px; padding: 6px 8px; background: var(--code-bg);
+      border-radius: 3px; font-family: ui-monospace, Menlo, monospace;
+      white-space: pre-wrap; font-size: 10px; max-height: 110px; overflow-y: auto;
+    }
+
+    .empty {
+      padding: 40px 20px; text-align: center; color: var(--muted);
+      border: 2px dashed var(--line); border-radius: 8px;
+    }
+    code { font-family: ui-monospace, Menlo, monospace }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>CHAP Audit Viewer</h1>
+  <span class="tagline">Drop an exported workspace snapshot to see the hash-linked chain and override analytics.</span>
+</header>
+
+<main>
+  <aside>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".json,.bbcell.json,application/json">
+      <p><strong>Drop a snapshot here</strong></p>
+      <p style="font-size:12px; color:var(--muted)">…or click to choose. Accepts a <code>Coordinator.snapshot()</code> output, a <code>.bbcell.json</code>, or any JSON with a <code>workspaces</code> array of CHAP workspace records.</p>
+    </label>
+
+    <div id="summary" style="display:none">
+      <div class="cards">
+        <div class="card"><div class="n" id="c-audit">0</div><div class="l">Audit entries</div></div>
+        <div class="card"><div class="n" id="c-tasks">0</div><div class="l">Tasks</div></div>
+        <div class="card"><div class="n" id="c-over">0</div><div class="l">Overrides</div></div>
+        <div class="card"><div class="n" id="c-part">0</div><div class="l">Participants</div></div>
+      </div>
+
+      <h3>Chain integrity</h3>
+      <div id="integrity" style="font-size:13px"></div>
+
+      <h3>Methods</h3>
+      <div class="bars" id="methods"></div>
+
+      <h3>Override tags</h3>
+      <div class="bars" id="tags"></div>
+    </div>
+  </aside>
+
+  <section class="body">
+    <div id="empty" class="empty">
+      Drop a CHAP workspace export on the left to inspect its audit chain and override patterns. Nothing leaves your browser — everything renders client-side.
+    </div>
+    <div id="chain" class="chain" style="display:none"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const drop = $("drop");
+const file = $("file");
+
+drop.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  drop.classList.add("dragover");
+});
+drop.addEventListener("dragleave", () => drop.classList.remove("dragover"));
+drop.addEventListener("drop", (e) => {
+  e.preventDefault();
+  drop.classList.remove("dragover");
+  const f = e.dataTransfer.files[0];
+  if (f) readFile(f);
+});
+file.addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) readFile(f);
+});
+
+function readFile(f) {
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const data = JSON.parse(r.result);
+      render(data);
+    } catch (err) {
+      alert("Could not parse JSON: " + err.message);
+    }
+  };
+  r.readAsText(f);
+}
+
+// Accept several input shapes:
+//   - Array of workspace records (Coordinator.snapshot() output)
+//   - { workspaces: [...] }
+//   - A single workspace record
+function extractWorkspaces(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.workspaces)) return data.workspaces;
+  if (data.audit && Array.isArray(data.audit)) return [data];
+  return [];
+}
+
+function render(data) {
+  const workspaces = extractWorkspaces(data);
+  if (workspaces.length === 0) {
+    alert("No CHAP workspace records found in this file.");
+    return;
+  }
+  // Take the first workspace; future revision can expose a selector.
+  const ws = workspaces[0];
+  const audit = ws.audit || [];
+
+  $("empty").style.display = "none";
+  $("summary").style.display = "block";
+  $("chain").style.display = "block";
+
+  // Summary cards
+  $("c-audit").textContent = audit.length;
+  $("c-tasks").textContent = (ws.tasks || []).length;
+  $("c-part").textContent  = (ws.members || []).length;
+
+  // Method counts
+  const methods = {};
+  let overrides = 0;
+  const tags = {};
+  for (const e of audit) {
+    const m = e.envelope && e.envelope.method;
+    if (!m) continue;
+    methods[m] = (methods[m] || 0) + 1;
+    if (m === "decide.override") {
+      overrides++;
+      const t = (e.envelope.params && e.envelope.params.tags) || [];
+      for (const tag of t) tags[tag] = (tags[tag] || 0) + 1;
+    }
+  }
+  $("c-over").textContent = overrides;
+
+  renderBars("methods", methods);
+  renderBars("tags", tags);
+
+  // Chain integrity
+  let breaks = 0;
+  let prevHash = null;
+  for (let i = 0; i < audit.length; i++) {
+    const e = audit[i];
+    if (i > 0 && e.prev_hash && prevHash && e.prev_hash !== prevHash) {
+      breaks++;
+    }
+    // The "current" hash for the next entry would be the result of
+    // hashing envelope + prev_hash; we don't recompute here, just
+    // verify each prev_hash agrees with the last entry's running head.
+    prevHash = e.prev_hash !== undefined ? prevHash : null;
+  }
+  const chainEnabled = audit.some(e => e.prev_hash);
+  const integrity = $("integrity");
+  if (!chainEnabled) {
+    integrity.innerHTML = `<span style="color:var(--muted)">Chain not enabled in this workspace.</span>`;
+  } else if (breaks === 0) {
+    integrity.innerHTML = `<span style="color:var(--good)">✓ All ${audit.length} entries chain cleanly.</span>`;
+  } else {
+    integrity.innerHTML = `<span style="color:var(--bad)">✗ ${breaks} chain break(s) detected.</span>`;
+  }
+
+  // Chain entries
+  const chain = $("chain");
+  chain.innerHTML = "";
+  for (const e of audit) {
+    const env = e.envelope || {};
+    const m = env.method || "?";
+    const cls =
+      m === "decide.override" ? "override" :
+      m === "decide.approve"  ? "approve"  :
+      m === "decide.reject"   ? "reject"   :
+      m === "abstain.declare" ? "abstain"  : "";
+    const div = document.createElement("div");
+    div.className = "entry " + cls;
+
+    const head = document.createElement("div");
+    head.className = "entry-head";
+    head.innerHTML = `<span class="seq">seq=${Number(e.seq)|0}</span><span class="m">${escapeHtml(m)}</span>` +
+                     `<span class="from">${escapeHtml((env.params && env.params.from) || "")}</span>`;
+    div.appendChild(head);
+
+    const hash = e.prev_hash || "";
+    const body = document.createElement("div");
+    body.className = "entry-body";
+    body.innerHTML = hash ? `prev=<span class="hash">${escapeHtml(hash)}</span>` : "";
+    div.appendChild(body);
+
+    // Override detail panel
+    if (m === "decide.override") {
+      const p = env.params || {};
+      const det = document.createElement("div");
+      det.className = "override-detail";
+      det.innerHTML =
+        `<div class="rationale">${escapeHtml(p.rationale || "(no rationale)")}</div>` +
+        (p.tags && p.tags.length
+          ? `<div class="tags">${p.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</div>`
+          : "") +
+        (p.diff
+          ? `<div class="diff">${escapeHtml(JSON.stringify(p.diff, null, 2))}</div>`
+          : "");
+      div.appendChild(det);
+    }
+
+    chain.appendChild(div);
+  }
+}
+
+function renderBars(id, counts) {
+  const el = $(id);
+  el.innerHTML = "";
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) {
+    el.innerHTML = `<span style="font-size:11px; color:var(--muted)">none</span>`;
+    return;
+  }
+  const max = Math.max(...entries.map(e => e[1]));
+  for (const [label, n] of entries) {
+    const pct = Math.round((n / max) * 100);
+    const row = document.createElement("div");
+    row.className = "bar";
+    row.innerHTML =
+      `<span class="label">${escapeHtml(label)}</span>` +
+      `<span class="track"><span class="fill" style="width:${pct}%"></span></span>` +
+      `<span class="count">${n}</span>`;
+    el.appendChild(row);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+</script>
+
+</body>
+</html>

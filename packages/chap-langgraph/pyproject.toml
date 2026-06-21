@@ -1,0 +1,50 @@
+[build-system]
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name            = "chap-langgraph"
+version         = "0.2.4"
+description     = "CHAP bridge for LangGraph: emit hash-linked audit envelopes around human-in-the-loop interrupts."
+readme          = "README.md"
+requires-python = ">=3.10"
+license         = { text = "Apache-2.0" }
+authors         = [ { name = "Brightbeam AI", email = "oss@brightbeam.ai" } ]
+keywords        = ["chap", "langgraph", "agent", "audit", "human-in-the-loop", "interrupt"]
+classifiers     = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "chap-coordinator>=0.2.4",
+]
+
+[project.optional-dependencies]
+# LangGraph itself is not required for the bridge to function; we only
+# need it if the consumer wants the full integration test path. The
+# bridge accepts any dict-shaped state and any opaque "decision"
+# payload, so it works fine in environments without LangGraph.
+langgraph = ["langgraph>=0.2.0"]
+dev       = ["pytest>=8", "pytest-cov>=5"]
+
+[project.urls]
+Homepage      = "https://github.com/BrightbeamAI/chap"
+Repository    = "https://github.com/BrightbeamAI/chap"
+Specification = "https://github.com/BrightbeamAI/chap/blob/main/SPECIFICATION.md"
+
+[tool.setuptools.packages.find]
+include = ["chap_langgraph*"]
+
+[tool.setuptools.package-data]
+"chap_langgraph" = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

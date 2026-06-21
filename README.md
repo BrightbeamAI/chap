@@ -37,18 +37,19 @@ A solo developer using Cursor to review pull requests. The bot flags a "warning"
 
 And here is the code, every line of it.
 
-**1. Spin up a workspace.** Twelve lines, one binary, SQLite for storage:
+**1. Spin up a workspace.** Twenty lines, an embedded coordinator, SQLite for persistence:
 
 ```ts
 import { Coordinator } from "@chap/coordinator";
+import { SqliteStore } from "@chap/coordinator/storage/sqlite";
 
-const coord = new Coordinator({ storage: "sqlite:./chap.db" });
+const coord = new Coordinator({ store: new SqliteStore("./chap.db") });
 
 await coord.dispatch({
   jsonrpc: "2.0", id: "1",
   method: "workspace.create",
   params: {
-    workspace_id: "wsp_pr_reviews",
+    workspace: "wsp_pr_reviews",
     profiles: ["core/1.0", "review/1.0"]
   }
 });
@@ -56,27 +57,63 @@ await coord.dispatch({
 await coord.dispatch({
   jsonrpc: "2.0", id: "2",
   method: "participant.join",
-  params: { workspace_id: "wsp_pr_reviews", uri: "human:me@local" }
+  params: { workspace: "wsp_pr_reviews", from: "human:me@local", type: "human" }
+});
+
+await coord.dispatch({
+  jsonrpc: "2.0", id: "3",
+  method: "participant.join",
+  params: { workspace: "wsp_pr_reviews", from: "agent:cursor#v1", type: "agent" }
 });
 ```
 
 **2. The bot drafts, you override.** Wire your existing Cursor integration to emit envelopes:
 
 ```ts
-// The bot's review is an artefact attached to a task.
-await coord.dispatch({
-  jsonrpc: "2.0", id: "3",
+// The bot's review is the output of a task.
+const created = await coord.dispatch({
+  jsonrpc: "2.0", id: "4",
   method: "task.create",
-  params: { workspace_id: "wsp_pr_reviews", artefact: cursorReview }
+  params: {
+    workspace: "wsp_pr_reviews",
+    from: "agent:cursor#v1",
+    assignee: "agent:cursor#v1",
+    kind: "code_review",
+    input: { pr_id: "PR-482", diff_url: "https://..." }
+  }
+});
+const taskId = created.result.task_id;
+
+await coord.dispatch({
+  jsonrpc: "2.0", id: "5",
+  method: "task.complete",
+  params: {
+    workspace: "wsp_pr_reviews",
+    from: "agent:cursor#v1",
+    task_id: taskId,
+    output: cursorReview
+  }
+});
+
+await coord.dispatch({
+  jsonrpc: "2.0", id: "6",
+  method: "review.request",
+  params: {
+    workspace: "wsp_pr_reviews",
+    from: "agent:cursor#v1",
+    task_id: taskId,
+    artefact: cursorReview
+  }
 });
 
 // You disagree with one comment. Override it.
 await coord.dispatch({
-  jsonrpc: "2.0", id: "4",
+  jsonrpc: "2.0", id: "7",
   method: "decide.override",
   params: {
-    task_id: "tsk_pr_482",
+    workspace: "wsp_pr_reviews",
     from: "human:me@local",
+    task_id: taskId,
     intent_preserved: true,
     diff: [{ op: "replace", path: "/comments/0/severity", value: "info" }],
     rationale: "False positive. Framework convention, not a bug.",
@@ -85,10 +122,11 @@ await coord.dispatch({
 });
 ```
 
-**3. Two months in, analyse what you have been doing.** This is where the protocol pays you back:
+**3. Two months in, analyse what you have been doing.** This is where the protocol pays you back. The reference repo ships an analytics script that reads the audit chain (either over HTTP or directly from your SQLite file) and groups overrides:
 
 ```bash
-$ npx @chap/analyze-overrides wsp_pr_reviews
+# Against the SqliteStore from step 1, no server required:
+$ npm --prefix reference/core-plus-review run analyze -- --db ./chap.db wsp_pr_reviews
 
 Override Learning Report
 ========================

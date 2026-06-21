@@ -13,6 +13,7 @@ import type { Ticket } from "./tickets.js";
 
 const OLLAMA_URL   = process.env.OLLAMA_URL   ?? "http://localhost:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "gemma3:4b";
+const CHAP_NO_LLM  = process.env.CHAP_NO_LLM === "1";
 
 export const BOT_URI = "agent:triage-bot@local";
 
@@ -96,6 +97,9 @@ function parseDraft(text: string): Omit<DraftResult, "raw_response" | "latency_m
 }
 
 export async function draftResponse(ticket: Ticket): Promise<DraftResult> {
+  if (CHAP_NO_LLM) {
+    return mockDraft(ticket);
+  }
   const prompt = DRAFT_PROMPT
     .replace("__SUBJECT__", ticket.subject)
     .replace("__BODY__",    ticket.body);
@@ -113,6 +117,59 @@ export async function draftResponse(ticket: Ticket): Promise<DraftResult> {
     self_confidence: 0.3,
     raw_response: text,
     latency_ms,
+  };
+}
+
+/**
+ * Deterministic mock drafter. Used when CHAP_NO_LLM=1. Produces a
+ * plausible-looking draft based on the ticket subject, so the
+ * playground can demonstrate the review/override flow without
+ * requiring Ollama or a model download. Tone, severity, and
+ * self_confidence vary by ticket so the routing policy still has
+ * something interesting to do.
+ */
+function mockDraft(ticket: Ticket): DraftResult {
+  const s = ticket.subject.toLowerCase();
+  const t0 = Date.now();
+  // Pseudo-deterministic latency derived from subject length so the
+  // routing policy sees a stable signal across reruns.
+  const latency_ms = 120 + (ticket.subject.length % 40);
+
+  let body:     string;
+  let tone:     string;
+  let severity: string;
+  let self_confidence: number;
+
+  if (s.includes("refund") || s.includes("money back")) {
+    body = "Sorry to hear that. We'll review the order and process a refund within 3 business days.";
+    tone = "apologetic";
+    severity = "medium";
+    self_confidence = 0.8;
+  } else if (s.includes("broken") || s.includes("damaged") || s.includes("not working")) {
+    body = "Apologies for the trouble. Could you share a photo and your order number? We'll arrange a replacement at no charge.";
+    tone = "apologetic";
+    severity = "high";
+    self_confidence = 0.7;
+  } else if (s.includes("cancel") || s.includes("urgent")) {
+    body = "We've put the request on the queue. Confirming details shortly.";
+    tone = "formal";
+    severity = "critical";
+    self_confidence = 0.4;
+  } else if (s.includes("track") || s.includes("where")) {
+    body = "Your order is on the way. Tracking links go out the day after dispatch; let us know if you don't see one.";
+    tone = "warm_professional";
+    severity = "low";
+    self_confidence = 0.9;
+  } else {
+    body = "Thanks for reaching out. We've recorded your message and a human will follow up.";
+    tone = "warm_professional";
+    severity = "low";
+    self_confidence = 0.5;
+  }
+  return {
+    body, tone, severity, self_confidence,
+    raw_response: `(CHAP_NO_LLM=1 mock for: ${ticket.subject})`,
+    latency_ms:   Date.now() - t0 + latency_ms,
   };
 }
 

@@ -25,6 +25,9 @@ import { publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
 import { applyJsonPatch } from "./patch.js";
+import type { Store, WorkspaceRecord } from "./storage/store.js";
+import { MemoryStore } from "./storage/store.js";
+import { makeApi, type CoordinatorApi } from "./api.js";
 import type {
   ArtefactId,
   AuditEntry,
@@ -96,6 +99,14 @@ export interface CoordinatorOptions {
   reviewDepthPolicy?: ReviewDepthPolicyFn;
   escalationPolicy?: EscalationPolicyFn;
   defaultProfiles?: string[];
+  /**
+   * Persistence backend. Defaults to MemoryStore (no persistence).
+   * Pass SqliteStore or any other Store implementation to persist
+   * workspaces between process restarts. The Coordinator calls
+   * `store.load()` once during `start()` and `store.save()` after
+   * every successful mutation.
+   */
+  store?: Store;
 }
 
 // ============================================================
@@ -137,21 +148,96 @@ export class Coordinator {
   readonly workspaces = new Map<WorkspaceId, Workspace>();
   readonly options: CoordinatorOptions;
   readonly ids: IdFactory;
+  readonly store: Store;
+  private wsVersions = new Map<WorkspaceId, number>();
   private clockMs?: number;
   private auditListeners: AuditListener[] = [];
   /** Method handler registry; profiles plug into this. */
   readonly handlers = new Map<string, Handler>();
   /** Custom lapse-check function (whisper/1.0). Set by the whisper profile. */
   checkWhisperLapses?: (workspaceId: string, now?: string) => Envelope[];
+  /** Typed method facade. Defined via getter in the constructor. */
+  readonly api!: CoordinatorApi;
+  /** @internal cached facade instance */
+  private _api?: CoordinatorApi;
 
   constructor(options: CoordinatorOptions = {}) {
     this.options = options;
+    this.store = options.store ?? new MemoryStore();
     this.ids = new IdFactory(!!options.deterministicIds, 0n, 1_700_000_000_000);
     if (options.deterministicClock) this.clockMs = 1_700_000_000_000;
     if (options.onAudit) this.auditListeners.push(options.onAudit);
 
     this.registerCoreHandlers();
     this.registerProfileHandlers();
+
+    // Lazily-initialised typed facade. Constructed on first access so
+    // tests that don't use it pay nothing.
+    Object.defineProperty(this, "api", {
+      get: () => {
+        if (!this._api) this._api = makeApi(this);
+        return this._api;
+      },
+      enumerable: false,
+      configurable: true,
+    });
+
+    // Rehydrate any persisted state synchronously. Async stores can
+    // call `start()` instead; this fallback covers the common
+    // synchronous Memory/Sqlite path with no async setup needed.
+    try {
+      const loaded = this.store.load();
+      if (!(loaded instanceof Promise)) {
+        this.applyRecords(loaded);
+      }
+    } catch {
+      /* fall through; caller must invoke start() */
+    }
+  }
+
+  /**
+   * Asynchronously hydrate workspaces from the store. Required only for
+   * stores whose `load()` returns a Promise. Idempotent.
+   */
+  async start(): Promise<void> {
+    const records = await this.store.load();
+    this.applyRecords(records);
+  }
+
+  private applyRecords(records: WorkspaceRecord[]): void {
+    this.workspaces.clear();
+    this.wsVersions.clear();
+    for (const r of records) {
+      this.restore([r.data]);
+      this.wsVersions.set(r.id, r.version);
+    }
+  }
+
+  /** Persist the current snapshot of one workspace to the store. */
+  private persist(ws: Workspace): void {
+    const next = (this.wsVersions.get(ws.id) ?? 0) + 1;
+    this.wsVersions.set(ws.id, next);
+    try {
+      // snapshot() returns an array of all workspaces; we only need
+      // this one, so slice it. Stores are per-workspace.
+      const all = this.snapshot() as Array<Record<string, unknown>>;
+      const data = all.find(w => w.id === ws.id);
+      if (!data) return;
+      const result = this.store.save({
+        id: ws.id,
+        data,
+        version: next,
+        updated_at: this.now(),
+      });
+      // Async stores: fire-and-forget; failures surface via process unhandled-rejection.
+      // Sync stores: nothing to do.
+      if (result instanceof Promise) {
+        result.catch(() => { /* deliberately swallowed; stores should log */ });
+      }
+    } catch {
+      // Persistence failures must not break dispatch. Audit listeners
+      // can mirror the audit stream to a second sink for durability.
+    }
   }
 
   // -- lifecycle -----------------------------------------------------
@@ -331,6 +417,9 @@ export class Coordinator {
     for (const l of this.auditListeners) {
       try { l(ws, entry); } catch { /* listeners never break dispatch */ }
     }
+    // Persistence: only meaningful when a non-Memory store is configured;
+    // MemoryStore.save() is a no-op for the dispatcher's perspective.
+    this.persist(ws);
   }
 
   // -- signature verification (security-signed/1.0) -----------------

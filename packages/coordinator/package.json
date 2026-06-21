@@ -1,28 +1,52 @@
 {
   "name": "@chap/coordinator",
   "version": "0.2.4",
-  "description": "CHAP Coordinator library: the protocol code as an importable module. Covers Core plus every profile.",
+  "description": "Collaborative Human-Agent Protocol (CHAP): reference TypeScript implementation. Coordinator with Core + every shipped profile, plus pluggable storage and typed method facade.",
   "license": "Apache-2.0",
+  "author": "Brightbeam AI <oss@brightbeam.ai>",
+  "homepage": "https://github.com/BrightbeamAI/chap",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BrightbeamAI/chap.git",
+    "directory": "packages/coordinator"
+  },
+  "bugs": {
+    "url": "https://github.com/BrightbeamAI/chap/issues"
+  },
+  "keywords": [
+    "chap", "agent", "protocol", "audit", "json-rpc",
+    "human-ai", "human-agent", "review", "override", "scitt", "mcp", "a2a"
+  ],
   "type": "module",
-  "main": "./src/index.ts",
+  "engines": { "node": ">=18" },
+  "files": ["dist", "README.md", "LICENSE"],
+  "main":   "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types":  "./dist/index.d.ts",
   "exports": {
-    ".":           "./src/index.ts",
-    "./canonical": "./src/canonical.ts",
-    "./crypto":    "./src/crypto.ts",
-    "./ids":       "./src/ids.ts",
-    "./jsonrpc":   "./src/jsonrpc.ts",
-    "./patch":     "./src/patch.ts",
-    "./types":     "./src/types.ts"
+    ".":                 { "types": "./dist/index.d.ts",            "import": "./dist/index.js",            "require": "./dist/index.cjs" },
+    "./jsonrpc":         { "types": "./dist/jsonrpc.d.ts",          "import": "./dist/jsonrpc.js",          "require": "./dist/jsonrpc.cjs" },
+    "./patch":           { "types": "./dist/patch.d.ts",            "import": "./dist/patch.js",            "require": "./dist/patch.cjs" },
+    "./types":           { "types": "./dist/types.d.ts",            "import": "./dist/types.js",            "require": "./dist/types.cjs" },
+    "./methods":         { "types": "./dist/methods.d.ts",          "import": "./dist/methods.js",          "require": "./dist/methods.cjs" },
+    "./api":             { "types": "./dist/api.d.ts",              "import": "./dist/api.js",              "require": "./dist/api.cjs" },
+    "./storage/store":   { "types": "./dist/storage/store.d.ts",    "import": "./dist/storage/store.js",    "require": "./dist/storage/store.cjs" },
+    "./storage/sqlite":  { "types": "./dist/storage/sqlite.d.ts",   "import": "./dist/storage/sqlite.js",   "require": "./dist/storage/sqlite.cjs" }
   },
   "scripts": {
-    "test":      "tsx --test tests/*.test.ts",
-    "typecheck": "tsc"
+    "build":          "tsup",
+    "test":           "tsx --test tests/*.test.ts",
+    "typecheck":      "tsc",
+    "check:schemas":  "tsx scripts/check-method-coverage.ts",
+    "prepublishOnly": "npm run check:schemas && npm run typecheck && npm run test && npm run build"
   },
+  "optionalDependencies": { "better-sqlite3": "^12.11.1" },
   "devDependencies": {
-    "@types/node": "^20.11.0",
-    "tsx":         "^4.7.0",
-    "typescript":  "^5.3.0"
+    "@types/node":     "^20.11.0",
+    "better-sqlite3":  "^12.11.1",
+    "tsup":            "^8.0.0",
+    "tsx":             "^4.7.0",
+    "typescript":      "^5.3.0"
   },
-  "private": true,
-  "engines": { "node": ">=18" }
+  "publishConfig": { "access": "public" }
 }

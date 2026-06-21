@@ -1,28 +1,74 @@
 {
   "name": "@chap/coordinator-mcp",
   "version": "0.2.4",
-  "description": "MCP server adapter for CHAP Coordinator: expose CHAP methods as MCP tools.",
+  "description": "MCP server adapter for the CHAP Coordinator. Exposes every CHAP method as an MCP tool.",
   "license": "Apache-2.0",
+  "author": "Brightbeam AI <oss@brightbeam.ai>",
+  "homepage": "https://github.com/BrightbeamAI/chap",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BrightbeamAI/chap.git",
+    "directory": "packages/coordinator-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/BrightbeamAI/chap/issues"
+  },
+  "keywords": [
+    "chap",
+    "mcp",
+    "model-context-protocol",
+    "agent",
+    "tool",
+    "claude"
+  ],
   "type": "module",
-  "main": "./src/index.ts",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".":          "./src/index.ts",
-    "./schemas":  "./src/schemas.ts",
-    "./tools":    "./src/tools.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./schemas": {
+      "types": "./dist/schemas.d.ts",
+      "import": "./dist/schemas.js",
+      "require": "./dist/schemas.cjs"
+    },
+    "./tools": {
+      "types": "./dist/tools.d.ts",
+      "import": "./dist/tools.js",
+      "require": "./dist/tools.cjs"
+    }
   },
   "scripts": {
-    "test":      "tsx --test tests/*.test.ts",
-    "typecheck": "tsc"
+    "build": "tsup",
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
   },
-  "dependencies": {
-    "@chap/coordinator":         "file:../coordinator",
+  "peerDependencies": {
+    "@chap/coordinator": "^0.2.4",
     "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
+    "@chap/coordinator": "file:../coordinator",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^20.11.0",
-    "tsx":         "^4.7.0",
-    "typescript":  "^5.3.0"
+    "tsup": "^8.5.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
   },
-  "private": true,
-  "engines": { "node": ">=18" }
+  "publishConfig": {
+    "access": "public"
+  }
 }

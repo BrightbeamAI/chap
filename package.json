@@ -1,0 +1,26 @@
+{
+  "name": "chap-monorepo",
+  "version": "0.2.4",
+  "private": true,
+  "description": "CHAP monorepo root. Not published; manages workspace builds, tests, and conformance checks across all packages.",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/coordinator",
+    "packages/coordinator-mcp",
+    "packages/coordinator-a2a",
+    "reference/core",
+    "reference/core-plus-review",
+    "reference/playground",
+    "reference/mcp-server-ts",
+    "reference/a2a-server-ts"
+  ],
+  "scripts": {
+    "build":            "npm run build --workspace=@chap/coordinator && npm run build --workspace=@chap/coordinator-mcp && npm run build --workspace=@chap/coordinator-a2a",
+    "test":             "npm test --workspaces --if-present",
+    "typecheck":        "npm run typecheck --workspaces --if-present",
+    "check:schemas":    "npm run check:schemas --workspace=@chap/coordinator",
+    "conformance:py":   "bash scripts/run-conformance.sh python",
+    "conformance:ts":   "bash scripts/run-conformance.sh typescript"
+  },
+  "engines": { "node": ">=18" }
+}
