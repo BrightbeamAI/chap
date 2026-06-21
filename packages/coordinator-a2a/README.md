@@ -21,7 +21,7 @@ TypeScript project:
 cd packages/coordinator-a2a
 npm pack
 # In your project
-npm install /path/to/chap-coordinator-a2a-0.2.4.tgz
+npm install /path/to/chap-coordinator-a2a-0.2.5.tgz
 ```
 
 Node 18+ required. Runtime dependencies: `@chap/coordinator`,

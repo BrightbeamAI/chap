@@ -18,7 +18,7 @@ TypeScript project:
 cd packages/coordinator-mcp
 npm pack
 # In your project
-npm install /path/to/chap-coordinator-mcp-0.2.4.tgz
+npm install /path/to/chap-coordinator-mcp-0.2.5.tgz
 ```
 
 Node 18+ required. Runtime dependencies: `@chap/coordinator` and
@@ -35,7 +35,7 @@ const coord = new Coordinator({
   defaultProfiles: ["core/1.0", "review/1.0", "audit-scitt/1.0"],
 });
 
-const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.4" });
+const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.5" });
 await server.connect(new StdioServerTransport());
 ```
 

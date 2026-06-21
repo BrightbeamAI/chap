@@ -17,11 +17,11 @@ and whether they pass the published conformance harness.
 
 | Name                        | Language    | CHAP version | Profile surface | Conformance | Status      | License      | Authors            |
 | --------------------------- | ----------- | ------------ | --------------- | ----------- | ----------- | ------------ | ------------------ |
-| `@chap/coordinator`         | TypeScript  | 0.2.4        | Full v0.2 (39 methods) | 21/21 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
-| `chap-coordinator` (Python) | Python 3.10+ | 0.2.4       | Full v0.2 (39 methods) | 21/21 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
-| `@chap/coordinator-mcp`     | TypeScript  | 0.2.4        | All 39 methods as MCP tools | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
-| `@chap/coordinator-a2a`     | TypeScript  | 0.2.4        | All 39 methods as A2A skills | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
-| `chap-langgraph`            | Python 3.10+ | 0.2.4       | Bridge: 8 methods exercised on the HIL path | 10/10 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `@chap/coordinator`         | TypeScript  | 0.2.5        | Full v0.2 (39 methods) | 21/21 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
+| `chap-coordinator` (Python) | Python 3.10+ | 0.2.5       | Full v0.2 (39 methods) | 21/21 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
+| `@chap/coordinator-mcp`     | TypeScript  | 0.2.5        | All 39 methods as MCP tools | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
+| `@chap/coordinator-a2a`     | TypeScript  | 0.2.5        | All 39 methods as A2A skills | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
+| `chap-langgraph`            | Python 3.10+ | 0.2.5       | Bridge: 8 methods exercised on the HIL path | 10/10 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
 
 ## Notes by implementation
 

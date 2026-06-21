@@ -52,7 +52,7 @@ export function makeChapAgentCard(options: ChapAgentCardOptions): AgentCard {
     name:        options.name        ?? "CHAP Coordinator",
     description: options.description ?? DEFAULT_DESCRIPTION,
     url:         options.baseUrl,
-    version:     options.version     ?? "0.2.4",
+    version:     options.version     ?? "0.2.5",
     protocolVersion: "0.3.0",
     preferredTransport: "JSONRPC",
     defaultInputModes:  ["data"],

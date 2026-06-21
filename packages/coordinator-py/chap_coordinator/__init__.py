@@ -48,7 +48,7 @@ from .types import (
     Workspace,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.2.5"
 
 __all__ = [
     # Core class & options

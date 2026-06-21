@@ -1,6 +1,6 @@
 {
   "name": "chap-monorepo",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "CHAP monorepo root. Not published; manages workspace builds, tests, and conformance checks across all packages.",
   "license": "Apache-2.0",

@@ -23,7 +23,7 @@ rejected*.
 pip install chap-langgraph
 ```
 
-Depends on `chap-coordinator>=0.2.4`. LangGraph itself is **optional**:
+Depends on `chap-coordinator>=0.2.5`. LangGraph itself is **optional**:
 the bridge accepts any dict-shaped state and any opaque decision
 payload, so it works in environments without LangGraph and is trivial
 to unit-test.
@@ -93,7 +93,7 @@ See `examples/` for runnable end-to-end demos:
 
 Tested against:
 
-- `chap-coordinator` 0.2.4
+- `chap-coordinator` 0.2.5
 - `langgraph` 0.2.x (optional)
 - Python 3.10, 3.11, 3.12, 3.13
 

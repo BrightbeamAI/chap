@@ -51,7 +51,7 @@ from typing import Any, Callable, Optional, Union
 from chap_coordinator import Coordinator
 
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 
 
 def _make_envelope(method: str, params: dict) -> dict:

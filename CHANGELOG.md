@@ -9,421 +9,262 @@ incremented under the same rules.
 
 ---
 
+## 0.2.5: publish-ready packages, persistent storage, typed facade, framework adapter
+
+The "adoption" release. The protocol was already there; this release closes
+the gap between "impressive spec" and "I had it running in my agent before
+lunch". Backward-compatible: no wire-format or schema changes.
+
+### Added
+
+- **Publish-ready npm packages.** `@chap/coordinator`, `@chap/coordinator-mcp`,
+  and `@chap/coordinator-a2a` now build to `dist/` (ESM + CJS + `.d.ts` +
+  source maps via `tsup`), declare `exports` maps, and ship `prepublishOnly`
+  that runs the schemas-drift check, typecheck, tests, and build.
+- **PyPI-ready Python wheel.** `chap-coordinator` builds cleanly with a
+  `py.typed` marker for type-checker consumers (PEP 561).
+- **Pluggable storage with SQLite backend.** New `Store` interface;
+  `MemoryStore` is the default, `SqliteStore` (via `better-sqlite3` as an
+  optional dep) persists workspaces to disk and rehydrates on coordinator
+  construction. The audit chain head survives restart.
+- **Typed method facade.** `coord.api.task.create({...})`,
+  `coord.api.decide.override({...})`, and equivalents for all 39 methods.
+  Full autocomplete and compile-time checking. The original
+  `dispatch(envelope)` path is unchanged and still recommended for tools
+  that build envelopes by other means.
+- **`chap-langgraph`** package (Python). Bridges LangGraph's
+  human-in-the-loop interrupt boundary into CHAP envelopes
+  (`task.complete` + `review.request`, then `decide.approve` /
+  `decide.reject` / `decide.override` on resume). LangGraph itself is
+  optional; the bridge accepts any dict-shaped state.
+- **Schema-drift detection.** `npm run check:schemas` enforces parity
+  between the JSON-schema method catalogue and the TypeScript
+  `MethodTable`. Caught and fixed 22 stale `spec-only` entries while
+  landing it.
+- **Zero-install playground.** `Dockerfile` + `docker-compose.yml`
+  (one-command demo, bound to `127.0.0.1`). `.devcontainer/` config for
+  Codespaces. New `CHAP_NO_LLM=1` deterministic mock-drafter mode in the
+  playground so the marquee demo runs anywhere without a model download.
+- **Audit/override viewer.** `tools/audit-viewer.html`: single-file HTML
+  with no build step, no dependencies, no network. Drop a `snapshot()`
+  JSON; see hash-chain integrity, method-frequency bars, override-tag
+  bars, and the full chain rendered inline. Hardened with CSP and
+  consistent HTML escaping.
+- **Reusable conformance GitHub Action** at
+  `.github/actions/chap-conformance/`. Other repos can drop in
+  `uses: BrightbeamAI/chap/.github/actions/chap-conformance@v0.2.5` to
+  get a "CHAP-conformant" badge.
+- **Implementation registry** at `IMPLEMENTATIONS.md` (the long-promised
+  link from `ABOUT.md`).
+- **Root `package.json`** with `npm workspaces` so the monorepo is
+  installable with one `npm install`.
+
+### Changed
+
+- **README quickstart fixed.** Previous version called a non-existent
+  `storage` option, used the wrong param names (`workspace_id`/`uri`
+  instead of `workspace`/`from`/`type`), and referenced an
+  `npx @chap/analyze-overrides` package that did not exist. All three
+  issues fixed; the snippet now runs against the real shipped library.
+- **`examples/00-five-minute-start.md`** literal `{ ... same as above ... }`
+  placeholder mid-flow replaced with the real payload.
+- **`analyze-overrides.ts`** gained a `--db <path>` flag so the in-process
+  SqliteStore quickstart works without spinning up the HTTP server.
+
+### Tests
+
+- TS coordinator: **84** (was 72; +6 storage, +6 typed facade)
+- TS MCP: 8, TS A2A: 14, TS playground: 7
+- Python coordinator: 90, Python langgraph: **10** (new)
+- Conformance harness: 21/21 on both references, unchanged
+
+### Security
+
+- Audit viewer hardened: every user-controlled field that lands in
+  `innerHTML` is now passed through `escapeHtml`. Restrictive CSP
+  (`connect-src 'none'`, `frame-ancestors 'none'`) limits the blast
+  radius even if a future innerHTML site slips through.
+- Docker playground bound to `127.0.0.1` only.
+- SqliteStore uses prepared statements with bound parameters; no string
+  interpolation into SQL.
+- `chap-langgraph` idempotency rewritten to use a structural
+  post-condition check rather than matching error-message strings.
+
+### What's not in 0.2.5
+
+Streaming/SSE transports, A2A push notifications, MCP Streamable HTTP,
+and A2A 1.0 in the TypeScript adapter (awaits `@a2a-js/sdk` upstream
+upgrade) all carry forward as deferred items.
+
+---
+
 ## 0.2.4: A2A server transport + inward wrap helpers
 
-The third leg of the transport story. CHAP 0.2.3 made a Coordinator
-addressable as an MCP server. 0.2.4 makes it addressable as an
-[A2A](https://a2a-protocol.org) agent as well, and adds small library
-helpers for the **inward** direction (wrapping an MCP tool call or
-A2A exchange as a CHAP audit entry).
-
-This is a backward-compatible addition. No wire-format changes; no
-breaking changes to 0.2.3 consumers.
+Third leg of the transport story. A Coordinator can now present itself as
+an [A2A](https://a2a-protocol.org) agent, complementing the MCP server
+transport from 0.2.3. Backward-compatible.
 
 ### Added
 
-- **TypeScript A2A adapter.** New package `packages/coordinator-a2a/`
-  (`@chap/coordinator-a2a`). Built on the official `@a2a-js/sdk`
-  (A2A spec **0.3.0**). Entry points:
-  `makeChapAgentCard({ baseUrl, ... })` → Agent Card with 39 skills,
-  one per CHAP method, all named `chap.<method>`.
-  `makeChapAgentExecutor(coord, options?)` → an `AgentExecutor`
-  implementation ready to attach to a `DefaultRequestHandler`.
-  `dispatchA2aMessage(coord, message)` → direct-call helper for tests
-  and for embedding the adapter inside a larger A2A server.
-- **Python A2A adapter.** New module
-  `chap_coordinator.transports.a2a_server`. Built on the official
-  `a2a-sdk` (A2A spec **1.0**). Same shape as the TypeScript adapter:
-  `make_chap_agent_card(base_url=...)`, `make_chap_agent_executor(coord)`,
-  `dispatch_a2a_message(coord, message)`.
-- **Reference A2A servers.** `reference/a2a-server-ts/` (Express) and
-  `reference/a2a-server-py/` (FastAPI + Uvicorn). Both verified
-  end-to-end: agent card serves 39 skills, `message/send` round-trips
-  through the wrapped Coordinator.
-- **Inward wrap helpers** in both languages:
-  - `wrapMcpToolCall(coord, workspace, options)` + `wrap_mcp_tool_call(...)`
-    emit `task.create` + `task.update` + `task.complete` for a
-    completed MCP tool call, attaching a citation with input/output
-    hashes per the pattern in `integrations/CHAP-with-MCP.md` §2.
-  - `wrapA2aMessageExchange(coord, workspace, options)` +
-    `wrap_a2a_message_exchange(...)` do the equivalent for the
-    bridge-participant pattern in `integrations/CHAP-with-A2A.md` §3.
-  - `contentHash(value)` / `content_hash(value)` returns
-    `sha256:<hex>` of the JCS canonicalisation of any JSON value, so
-    audit trails that cite events by hash can be compared against
-    independently-canonicalised copies.
-- **`integrations/CHAP-with-A2A.md` §8 "Code"** documents the
-  transport adapters, the spec-version asymmetry, and the wrap
-  helpers. **`integrations/CHAP-with-MCP.md`** gets a parallel
-  "Wrap helper for inward citations" subsection.
-- **`examples/drive-chap-from-an-a2a-orchestrator.md`** walkthrough,
-  the A2A counterpart of the Claude Desktop walkthrough shipped
-  in 0.2.3.
+- **TypeScript A2A adapter** (`@chap/coordinator-a2a`) on `@a2a-js/sdk`
+  (A2A 0.3.0). `makeChapAgentCard(...)` returns an Agent Card with 39
+  skills, one per CHAP method, named `chap.<method>`.
+  `makeChapAgentExecutor(coord)` returns an `AgentExecutor`.
+- **Python A2A adapter** (`chap_coordinator.transports.a2a_server`) on
+  `a2a-sdk` 1.x (A2A 1.0, with v0.3 compatibility enabled). Same surface
+  as the TypeScript adapter.
+- **Reference A2A servers** at `reference/a2a-server-ts/` (Express) and
+  `reference/a2a-server-py/` (FastAPI). Verified end-to-end with real
+  HTTP.
+- **Inward wrap helpers** (`wrapMcpToolCall`, `wrapA2aMessageExchange`,
+  `contentHash`) in both languages: take a completed external event and
+  emit the matching CHAP audit entries with input/output hashes.
+- **Walkthrough**: `examples/drive-chap-from-an-a2a-orchestrator.md`.
+- Documentation updates across `ABOUT.md`,
+  `RELATIONSHIP-TO-OTHER-STANDARDS.md`, `ARCHITECTURE.md`,
+  `SPECIFICATION.md` §16.3, `FAQ.md`, `GLOSSARY.md`.
 
-### Spec version asymmetry, called out
+### Spec version asymmetry
 
-The two A2A SDKs are at different points of the spec evolution:
-
-- `a2a-sdk` 1.x (Python) implements **A2A 1.0** with PascalCase
-  JSON-RPC methods (`SendMessage`). The reference Python server
-  enables `enable_v0_3_compat=True` so the slash form
-  (`message/send`) continues to work.
-- `@a2a-js/sdk` 0.3.x (TypeScript) implements **A2A 0.3.0** with the
-  slash form. Spec v1.0 support is on the SDK roadmap.
-
-The CHAP adapter layer is identical across both languages; the
-asymmetry is a property of the SDK ecosystem. Agent Cards advertise
-the spec version each implementation targets, so client discovery
-works correctly.
+The Python `a2a-sdk` is at A2A 1.0, the TypeScript `@a2a-js/sdk` is at
+A2A 0.3.0. The CHAP adapter layer is identical across both; Agent Cards
+advertise the correct version per implementation.
 
 ### Tests
 
-- TypeScript A2A adapter: **14 integration tests** in
-  `packages/coordinator-a2a/tests/` (Agent Card shape, skill
-  filtering, dispatch via data part, dispatch via metadata, error
-  surfacing, full workflow including override, deliberation flow,
-  cancellation).
-- Python A2A adapter: **10 integration tests** in
-  `packages/coordinator-py/tests/test_a2a_integration.py`. Same
-  scope as the TypeScript suite.
-- Wrap helpers: **10 tests each** in TypeScript
-  (`packages/coordinator/tests/wrap.test.ts`) and Python
-  (`packages/coordinator-py/tests/test_wrap_helpers.py`).
-- Both reference servers smoke-tested end-to-end against `curl`
-  with a real HTTP round-trip.
-
-Total test counts after 0.2.4: TS 100 (72 library + 8 MCP + 14 A2A +
-7 playground), Python 90 (63 library + 7 MCP + 10 A2A + 10 wrap).
-
-### Design notes
-
-- **One adapter shape per protocol.** The MCP and A2A adapters use
-  the same `chap.<method>` naming for tools / skills. Callers
-  fluent in one are fluent in the other; documentation,
-  diagnostics, and operator mental models port across.
-- **Pure-data sharing.** The A2A adapter reuses `TOOL_NAMES`,
-  `method_for_tool`, and `TOOL_DESCRIPTIONS` from the MCP package
-  (which are pure data, no MCP SDK import). This single-sources the
-  CHAP method list across both transports without forcing an MCP
-  SDK runtime dependency on A2A consumers.
-- **No state in the adapters.** Each adapter holds at most a tiny
-  set of cancelled task ids. All real state lives in the
-  Coordinator.
-- **Auth deferred.** Both A2A SDKs implement their security model
-  at the HTTP transport. Production deployments add OAuth 2.1, mTLS,
-  or API-key gating there.
-
-### What's not in 0.2.4
-
-- **Streaming / SSE** for either MCP or A2A. Synchronous
-  request/response is sufficient to demonstrate the integration;
-  streaming can land in a later release once interop testing
-  warrants it.
-- **A2A push notifications** and the gRPC transport. Both are
-  optional in the spec and not implemented yet.
-- **Streamable HTTP transport for MCP.** Stdio is enough for the
-  current reference; HTTP can come with whatever auth story your
-  deployment requires.
-- **A2A 1.0 support in the TypeScript adapter.** Awaits the
-  `@a2a-js/sdk` upstream upgrade.
+TS A2A: 14. Python A2A: 10. Wrap helpers: 10 each. Both reference
+servers smoke-tested with `curl`.
 
 ---
 
+## 0.2.3: MCP server transport
 
-
-A CHAP Coordinator can now present itself as an MCP server. Point
-Claude Desktop, Cursor, Claude Code, or any other MCP client at it
-and drive a CHAP workspace from natural language. Spec target: MCP
-**2025-11-25** (current stable).
-
-This is a backward-compatible addition. No wire-format changes; no
-breaking changes to existing 0.2.2 consumers.
+A Coordinator can now present itself as an MCP server. Point Claude
+Desktop, Cursor, Claude Code, or any other MCP client at it and drive a
+CHAP workspace from natural language. Spec target: MCP 2025-11-25.
+Backward-compatible.
 
 ### Added
 
-- **TypeScript MCP adapter.** New package `packages/coordinator-mcp/`
-  (`@chap/coordinator-mcp`) wrapping a `Coordinator` as an MCP server.
-  Built on the official `@modelcontextprotocol/sdk`. Entry point
-  `makeChapMcpServer(coord, options)` returns an `Server` ready to
-  attach to any MCP transport (stdio, Streamable HTTP).
-- **Python MCP adapter.** New module
-  `chap_coordinator.transports.mcp_server`, installable via
-  `pip install chap-coordinator[mcp]`. Built on the official `mcp`
-  SDK. Entry point `make_chap_mcp_server(coord, name=..., version=...)`.
-- **39 CHAP methods exposed as MCP tools**, named with a `chap.`
-  prefix (e.g. `chap.workspace.create`, `chap.decide.override`,
-  `chap.deliberate.open`). Each tool's `inputSchema` is the JSON
-  Schema for the corresponding method's params; tool descriptions
-  are tuned for LLM consumption.
-- **Reference stdio servers** at `reference/mcp-server-ts/` and
-  `reference/mcp-server-py/`. Both wrap a Coordinator with every
-  profile enabled and serve it over stdio for direct MCP-client
-  consumption.
-- **Five-minute walkthrough** at
-  `examples/drive-chap-from-claude-desktop.md` showing how to wire
-  the reference server into Claude Desktop and drive a workspace
-  through natural language.
-- **`Coordinator.get_workspace(workspace_id)`** convenience method on
-  the Python reference (already present on TypeScript), aligning the
-  two implementations' surfaces.
+- **TypeScript MCP adapter** (`@chap/coordinator-mcp`) on
+  `@modelcontextprotocol/sdk`.
+- **Python MCP adapter** (`chap_coordinator.transports.mcp_server`) on
+  the official `mcp` SDK, installable via `pip install chap-coordinator[mcp]`.
+- **39 CHAP methods exposed as MCP tools** named `chap.<method>`. Tool
+  `inputSchema` is the JSON Schema for the method's params.
+- **Reference stdio servers** at `reference/mcp-server-{ts,py}/`.
+- **Walkthrough**: `examples/drive-chap-from-claude-desktop.md`.
+- **`Coordinator.get_workspace(...)`** convenience on the Python
+  reference, aligning the two implementations' surfaces.
 
 ### Tests
 
-- TypeScript: **8 integration tests** in `packages/coordinator-mcp/tests/`
-  use the official MCP SDK's `InMemoryTransport.createLinkedPair()` to
-  drive a wrapped Coordinator end-to-end, exercising every major
-  profile (Core, review, routing, deliberation, audit chain).
-- Python: **7 integration tests** in
-  `packages/coordinator-py/tests/test_mcp_integration.py` mirror the
-  TypeScript suite one-for-one using
-  `mcp.shared.memory.create_connected_server_and_client_session`.
-  Both suites pass.
-- Both reference servers verified to handle the MCP `initialize`
-  handshake and advertise all 39 tools via `tools/list`.
-
-### Design notes
-
-- **One Coordinator, one MCP server.** Multi-workspace is handled
-  inside the Coordinator (workspaces are addressable by id); the MCP
-  layer is stateless and routes every tool call through
-  `coord.dispatch()`.
-- **Single-sourced schemas.** Tool inputs are described by JSON
-  Schemas (not Zod / Pydantic) and passed straight to the Coordinator
-  without re-validation at the MCP layer. The Coordinator's own
-  dispatch validates params and returns spec-correct JSON-RPC error
-  codes, which the adapter surfaces as MCP tool errors.
-- **Composition with the citation pattern.** The existing
-  `integrations/CHAP-with-MCP.md` documents how a CHAP audit log can
-  cite MCP tool calls made *inside* a workspace. The new transport
-  layer adds the other direction: an external MCP client driving the
-  workspace. Both patterns use the same MCP wire format underneath.
-- **Auth deferred.** The adapter ships unauthenticated; MCP's OAuth
-  2.1 auth model is implemented by the Streamable HTTP transport,
-  layered at the HTTP boundary rather than inside the adapter. Real
-  deployments add auth there.
-
-### What's not in 0.2.3
-
-These follow in subsequent releases:
-
-- **A2A server transport** (CHAP-as-A2A-agent). The protocol
-  alignment is there (A2A's task lifecycle maps almost 1:1 onto
-  CHAP's) but the adapter and tests are deferred.
-- **MCP-wrap inward helper.** A small utility that takes an MCP
-  tool-call result and emits a corresponding CHAP `task.create` +
-  `task.complete` pair for audit-log provenance. The pattern is
-  fully documented in `integrations/CHAP-with-MCP.md`; the library
-  helper is convenience.
-- **A2A bridge participant.** Same story for A2A.
-- **Streaming / SSE.** Synchronous request/response works; streaming
-  notifications can come later if there's demand.
+TS MCP: 8 integration tests via `InMemoryTransport.createLinkedPair()`.
+Python MCP: 7 integration tests via
+`mcp.shared.memory.create_connected_server_and_client_session`. Both
+reference servers verified via `initialize` handshake + `tools/list`.
 
 ---
 
-
+## 0.2.2: TypeScript profile parity
 
 The TypeScript reference at `packages/coordinator/` is brought up to
-parity with the Python reference: both now cover Core plus every
-profile, 39 method handlers each.
+parity with the Python reference: both now cover Core plus every profile,
+39 method handlers each.
 
 ### Added
 
-- **TypeScript profile coverage.** `packages/coordinator/src/profiles/`
-  now ships handler modules for `whisper/1.0`, `deliberation/1.0`,
-  `handoff/1.0`, `control/1.0`, `routing/1.0`, `security-signed/1.0`,
-  and `audit-scitt/1.0`. Plus `modes/1.0` enforcement (trial-mode
-  forces review, mode-ceiling check at task.create) and
-  `identity-oidc/1.0` + `identity-vc/1.0` binding hooks at
-  `participant.join`. **39 method handlers in total**, matching the
-  Python reference and the spec inventory exactly.
-- **Supporting modules.** `canonical.ts` (JCS), `crypto.ts` (Ed25519
-  via Node built-ins), `ids.ts` (deterministic-friendly ULIDs), and
-  `policy.ts` (the legacy `makeDefaultPolicy` factory preserved as a
-  partial-options helper).
-- **62 tests** under `packages/coordinator/tests/` covering Core,
-  every profile, signed-envelope verification, OIDC and VC binding,
-  cross-language conformance vectors (JCS, Ed25519, chain link), and
-  an end-to-end composition test exercising every method handler in
-  one workspace sequence.
-- **`getWorkspace`, `snapshot`, and `restore`** methods on the
-  Coordinator class for persistence integrations.
+- TS handlers for `whisper/1.0`, `deliberation/1.0`, `handoff/1.0`,
+  `control/1.0`, `routing/1.0`, `security-signed/1.0`, `audit-scitt/1.0`.
+  Plus `modes/1.0` enforcement and `identity-oidc/1.0` / `identity-vc/1.0`
+  binding hooks at `participant.join`.
+- Supporting modules: `canonical.ts` (JCS), `crypto.ts` (Ed25519 via Node
+  built-ins), `ids.ts`, `policy.ts`.
+- 62 tests including JCS and Ed25519 conformance vectors, signed-envelope
+  verification, OIDC/VC binding, and a composition test exercising every
+  method handler.
+- `getWorkspace`, `snapshot`, and `restore` methods on the Coordinator
+  for persistence integrations.
 
-### Changed (potentially breaking)
+### Changed (potentially breaking for `@chap/coordinator` consumers only)
 
-- **Wire field rename: `workspace_id` -> `workspace`.** The previous
-  TypeScript library used `params.workspace_id` while the spec, the
-  conformance harness, the test vectors, the standalone reference
-  servers, and the Python reference all use `params.workspace`. The
-  TypeScript library now uses `workspace`. Consumers of
-  `@chap/coordinator` who relied on `workspace_id` must update their
-  call sites. The playground at `reference/playground/` is updated
-  accordingly.
-- **`participant.join` field rename: `uri` -> `from`.** Same reason.
-  The spec uses `from` to identify the joining participant.
-- **`policy: makeDefaultPolicy(...)` -> `...makeDefaultPolicy(...)`.**
-  The single `policy` slot is replaced by three separate hooks
-  (`routingPolicy`, `reviewDepthPolicy`, `escalationPolicy`) on
-  `CoordinatorOptions`. The `makeDefaultPolicy` factory now returns
-  a partial-options object spread into the constructor argument.
-- **`patch.ts` aligned to RFC 6902.** A `replace` operation against
-  a non-existent path now throws, where previously it silently
-  behaved like `add`. This matches the Python implementation and is
-  what cross-language interop requires.
-
-### Spec fidelity
-
-Same audit pass as 0.2.1, applied to the TypeScript implementation:
-top-level `sig` field for security-signed/1.0; `answer_option` for
-whisper; `vote`/`comment` for deliberation; multi-task `tasks` for
-handoff with single-recipient `to` (URI or `group:`); `scope`
-parameter on control.pause/resume; snapshot as artefact; supersede
-creates the successor; route_decision artefact per routing decision;
-`cnf.jwk` / VP holder-key pinning on join.
+- Wire field rename: `workspace_id` → `workspace`. Matches the spec, the
+  Python reference, the conformance harness, and the test vectors.
+- `participant.join` field rename: `uri` → `from`.
+- `policy: makeDefaultPolicy(...)` slot replaced by separate
+  `routingPolicy`, `reviewDepthPolicy`, `escalationPolicy` hooks.
+- `patch.ts` aligned to RFC 6902: `replace` against a non-existent path
+  now throws (matching Python).
 
 ### Cross-language interop verified
 
-Both reference implementations pass the existing conformance harness
-(`conformance/harness/`) on the same JSON-RPC 2.0 wire:
-
-- TypeScript standalone server (`reference/core-plus-review/`): 21/21
-- TypeScript library server (built from `packages/coordinator/`): 21/21
-- Python server (`reference/python/`): 21/21
-
-The harness currently covers Core and `review/1.0`; expanding it to
-cover the other nine profiles is the next item on the road to a
-normative Full conformance claim.
-
-### Playground updated
-
-The `reference/playground/` smoke tests are updated for the spec-correct
-flow: the agent now calls `review.depth` and `escalate.auto` explicitly
-after `task.complete`, assembles the reviewer set from the escalation
-outcome, and opens the review via `review.request`. All seven
-playground smoke tests pass. A new `reference/playground/src/policies.ts`
-module supplies the playground-specific routing policy used to
-demonstrate the routing/1.0 profile end-to-end.
-
-The artefact's `outcome` field for `escalate.auto` is now a structured
-`{ escalate, to? }` object rather than the bare strings `"escalated"` /
-`"no_escalation"`; the wire response shape (in the JSON-RPC `result`)
-is unchanged. The Python and TypeScript references are both updated.
+All three configurations pass the same 21-vector conformance harness:
+TypeScript standalone server, TypeScript library server, Python server.
 
 ---
 
+## 0.2.1: Python reference implementation
 
-
-A second reference implementation, in Python, lands as a backward-compatible
-addition. No protocol changes; no wire-format changes; no spec changes that
-existing 0.2 implementations need to account for.
+A second reference implementation, in Python. No protocol or wire-format
+changes.
 
 ### Added
 
-- **`packages/coordinator-py/`.** A Python package (`chap-coordinator`)
-  providing the Coordinator as a transport-agnostic library. Covers Core (9
-  methods) plus every profile: `review/1.0`, `whisper/1.0`,
-  `deliberation/1.0`, `handoff/1.0`, `control/1.0`, `routing/1.0`,
-  `modes/1.0`, `security-signed/1.0`, `audit-scitt/1.0`,
-  `identity-oidc/1.0`, `identity-vc/1.0`. **39 method handlers in total**,
-  matching the spec inventory exactly.
-- **`reference/python/`.** An HTTP server, a demo client mirroring the
-  TypeScript reference, and an `analyze_overrides.py` analytics tool. The
-  server speaks the same JSON-RPC 2.0 wire format as the TypeScript
-  reference and passes the existing conformance harness.
-- **63 tests** covering Core, every profile, the cryptographic test
-  vectors, signed-envelope verification, OIDC and VC binding, and an
-  end-to-end composition test that exercises every method handler in one
-  workspace sequence.
-
-### Spec fidelity notes
-
-The Python implementation was reviewed against every profile spec under
-`profiles/` and aligned with the documented field names, error codes, and
-response shapes. Specifically:
-
-- **whisper/1.0:** uses `answer_option` (not `answer`); distinguishes
-  `WHISPER_ALREADY_ANSWERED` (-32020), `WHISPER_LAPSED` (-32021), and
-  `WHISPER_OPTION_NOT_IN_SET` (-32022); exposes `check_whisper_lapses()`
-  for the deadline-emit-notify path.
-- **deliberation/1.0:** uses `vote` and `comment` (not `choice`/`rationale`);
-  emits the flat-outcome response shape; rejects re-votes per
-  `DELIB_ALREADY_VOTED` (-32031).
-- **handoff/1.0:** carries multiple `tasks` per handoff, accepts a
-  single recipient `to` (URI or group), supports first-accept-wins, and
-  validates the proposer-owns-the-tasks precondition.
-- **control/1.0:** `scope` parameter on pause/resume (task/participant/
-  workspace), snapshot returns an artefact id, supersede creates the
-  successor task from a `successor_task` object, rollback uses
-  `to_snapshot_artefact_id` and `what_to_restore`.
-- **security-signed/1.0:** top-level `sig` field (not in params), key
-  records carry `valid_from`/`valid_until` so historical envelopes
-  verify across rotation, `participant.revoke_key` added.
-- **routing/1.0:** every decision produces a `route_decision` artefact;
-  `task.route` updates the task assignee; `review.depth` returns a
-  `sampling_probability` when applicable.
-- **identity-oidc/1.0** and **identity-vc/1.0:** verifier hooks pin the
-  `cnf.jwk` (or VP holder key) as the participant's signing key.
-- **audit-scitt/1.0:** statements are built per the COSE_Sign1 shape and
-  passed to a deployment-supplied `scitt_submitter`; local chain
-  linkage is retained as a supplementary integrity check.
+- `packages/coordinator-py/` (`chap-coordinator`). Core plus every profile,
+  39 method handlers, transport-agnostic library.
+- `reference/python/`: HTTP server, demo client, `analyze_overrides.py`.
+  Passes the same conformance harness as the TypeScript reference on the
+  same JSON-RPC 2.0 wire.
+- 63 tests covering Core, every profile, cryptographic test vectors,
+  signed-envelope verification, OIDC and VC binding, and end-to-end
+  composition.
 
 ### Notes
 
-- The Python package has zero required runtime dependencies for Core. The
-  `security-signed/1.0` profile requires `cryptography>=42`, installed via
-  `pip install "chap-coordinator[crypto]"`.
-- The Python implementation now closes the second-interoperable-
-  implementation prerequisite. The Full conformance level becomes
-  claimable once the conformance harness has been run cross-language at
-  scale (TS client against Python server, and Python client against TS
-  server).
+- Zero required runtime dependencies for Core. The `security-signed/1.0`
+  profile needs `cryptography>=42` via `pip install "chap-coordinator[crypto]"`.
+- The Python implementation closes the second-interoperable-implementation
+  prerequisite for the Full conformance level.
 
 ---
 
 ## 0.2: First public release
 
-The first public release of CHAP. This is a working draft suitable for review,
-experimentation, and early production pilots, not yet a stable 1.0 standard.
+The first public release of CHAP. A working draft suitable for review,
+experimentation, and early production pilots; not yet a stable 1.0.
 
-What this release contains:
+### Contents
 
-- **Core.** A JSON-RPC 2.0 envelope and seven methods (`workspace.describe`,
-  `participant.join`, `participant.leave`, `task.create`, `task.update`,
-  `task.complete`, `audit.read`). A task lifecycle, a participant model, and an
-  append-only evidence log.
-- **Eleven profiles.** `review`, `modes`, `routing`, `whisper`, `deliberation`,
-  `handoff`, `control`, `identity-oidc`, `identity-vc`, `security-signed`,
-  `audit-scitt`. Each independent, each composable.
-- **One reference implementation in TypeScript.** Core, Core+Review, a coordinator
-  package, a CLI, an override-analytics tool, and a two-participant playground.
-- **A conformance harness.** 21 test vectors covering wire format, all seven Core
-  methods, and the six Review methods. Two conformance levels claimable today
-  (Minimal, Recommended); Full waits on a second interoperable implementation.
-- **Twelve worked scenarios** in [`IN_PRACTICE.md`](./IN_PRACTICE.md), spanning a
-  solo developer through GMP-regulated manufacturing.
-- **Full documentation.** [Specification](./SPECIFICATION.md), [Handbook](./HANDBOOK.md),
-  [Architecture](./ARCHITECTURE.md), [Security](./SECURITY.md),
-  [FAQ](./FAQ.md), [Glossary](./GLOSSARY.md), and a relationship mapping to
-  [other standards](./RELATIONSHIP-TO-OTHER-STANDARDS.md).
-
-### What's next
-
-The protocol surface and schemas are stable enough for adoption. With the
-Python reference now in place (see 0.2.1 above), the remaining work toward
-1.0 is cross-language interop testing at scale and review of the profile
-schemas for any breaking adjustments before the API surface freezes.
-Profile surfaces may continue to evolve faster than Core under the CEP
-process described in [`GOVERNANCE.md`](./GOVERNANCE.md).
+- **Core.** A JSON-RPC 2.0 envelope and seven methods
+  (`workspace.describe`, `participant.join`, `participant.leave`,
+  `task.create`, `task.update`, `task.complete`, `audit.read`). Task
+  lifecycle, participant model, append-only evidence log.
+- **Eleven profiles.** `review`, `modes`, `routing`, `whisper`,
+  `deliberation`, `handoff`, `control`, `identity-oidc`, `identity-vc`,
+  `security-signed`, `audit-scitt`.
+- **TypeScript reference implementation.** Core, Core+Review, the
+  coordinator package, a CLI, an override-analytics tool, and a
+  two-participant playground.
+- **Conformance harness** with 21 test vectors covering wire format, all
+  seven Core methods, and the six Review methods. Two conformance levels
+  claimable (Minimal, Recommended).
+- **Twelve worked scenarios** in [`IN_PRACTICE.md`](./IN_PRACTICE.md),
+  spanning a solo developer through GMP-regulated manufacturing.
+- **Documentation**: Specification, Handbook, Architecture, Security,
+  FAQ, Glossary, and a relationship mapping to other standards.
 
 ---
 
 ## Versioning policy
 
 - **MAJOR** (`X.0`): wire-breaking changes; old clients cannot talk to new
-  servers. Migration windows of at least one calendar year between MAJOR versions.
-- **MINOR** (`X.Y`): additive only. New methods, new optional fields, new error
-  codes. Old clients keep working.
-- **PATCH** (`X.Y.Z`): editorial fixes; no semantic change.
+  servers. Migration windows of at least one calendar year between MAJOR
+  versions.
+- **MINOR** (`X.Y`): additive only at the protocol level. New methods, new
+  optional fields, new error codes. Old clients keep working.
+- **PATCH** (`X.Y.Z`): editorial fixes and implementation-side additions.
+  Wire format and schemas unchanged.
 
-Profiles version independently from Core. A workspace declares the specific Core
-version and the specific profile versions it implements via
+Profiles version independently from Core. A workspace declares the specific
+Core version and the specific profile versions it implements via
 `workspace.describe`'s `profiles` field.

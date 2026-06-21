@@ -1,6 +1,6 @@
 {
   "name": "@chap/a2a-server-ts",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Reference A2A server that wraps a CHAP Coordinator. Run via Express for A2A-aware orchestrators.",
   "license": "Apache-2.0",
   "type": "module",

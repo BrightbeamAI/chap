@@ -18,7 +18,7 @@ TypeScript project:
 cd packages/coordinator
 npm pack
 # In your project
-npm install /path/to/chap-coordinator-0.2.4.tgz
+npm install /path/to/chap-coordinator-0.2.5.tgz
 ```
 
 Node 18+ required. Zero external runtime dependencies; uses Node's
