@@ -1,15 +1,19 @@
 """
 analyze-overrides (Python): the override-as-learning-data dividend.
 
-Reads a workspace's audit log via audit.read and produces a tag
-histogram so prompt-revision targets are concrete, not guessed.
+Reads a workspace's audit log and produces a tag histogram so prompt-
+revision targets are concrete, not guessed.
 
 Mirrors the output of reference/core-plus-review/analyze-overrides.ts.
 
 Usage:
 
+    # HTTP mode (default; coordinator runs as a server):
     python analyze_overrides.py wsp_support_triage
     python analyze_overrides.py --url http://my-coord/chap wsp_pr_reviews
+
+    # SQLite mode (no server needed; reads SqliteStore directly):
+    python analyze_overrides.py --db ./chap.db wsp_pr_reviews
 """
 from __future__ import annotations
 
@@ -33,6 +37,29 @@ def call(url: str, method: str, **params) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def load_audit_from_sqlite(db_path: str, workspace: str) -> list[dict]:
+    """Read the audit log straight from a SqliteStore database.
+
+    Mirrors the TypeScript `--db` path. No coordinator needed.
+    """
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT data FROM chap_workspaces WHERE id = ?",
+            (workspace,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        print(f"Workspace {workspace!r} not found in {db_path}",
+              file=sys.stderr)
+        sys.exit(1)
+    data = json.loads(row["data"])
+    return data.get("audit") or []
+
+
 def bar(n: int, max_n: int, width: int = 20) -> str:
     if max_n == 0:
         return ""
@@ -44,14 +71,20 @@ def main(argv: list[str] | None = None) -> int:
         description="Aggregate override patterns from a CHAP audit log",
     )
     p.add_argument("workspace", help="Workspace id, e.g. wsp_support_triage")
-    p.add_argument("--url", default="http://127.0.0.1:8080/chap")
+    p.add_argument("--url", default="http://127.0.0.1:8080/chap",
+                   help="HTTP coordinator URL. Default: http://127.0.0.1:8080/chap")
+    p.add_argument("--db", default=None,
+                   help="Path to a SqliteStore database. Bypasses HTTP.")
     args = p.parse_args(argv)
 
-    r = call(args.url, "audit.read", workspace=args.workspace)
-    if "error" in r:
-        print(f"audit.read failed: {r['error']}", file=sys.stderr)
-        return 1
-    entries = r["result"]["entries"]
+    if args.db:
+        entries = load_audit_from_sqlite(args.db, args.workspace)
+    else:
+        r = call(args.url, "audit.read", workspace=args.workspace)
+        if "error" in r:
+            print(f"audit.read failed: {r['error']}", file=sys.stderr)
+            return 1
+        entries = r["result"]["entries"]
 
     overrides = [
         e for e in entries

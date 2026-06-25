@@ -116,6 +116,11 @@ class CoordinatorOptions:
         default_factory=lambda: ["core/1.0", "review/1.0"]
     )
 
+    store: Any = None
+    """Optional persistence store (see chap_coordinator.storage).
+    Default is in-memory (no persistence). Pass a `SqliteStore` or any
+    object satisfying the `Store` Protocol to persist workspaces."""
+
 
 # ============================================================
 #   Helpers
@@ -141,6 +146,64 @@ def _link_hash(envelope: dict, prev: str) -> str:
     return sha256_hex(canonicalize(envelope) + prev.encode("utf-8"))
 
 
+def _rehydrate_workspace(data: dict) -> "Workspace":
+    """Reconstruct a Workspace dataclass tree from a snapshot dict.
+
+    Mirror of `_snapshot_workspace`; the two should round-trip cleanly.
+    """
+    from .types import (
+        Workspace, Member, Task, TaskHistoryEntry, KeyRecord,
+        WhisperPrompt, Deliberation, Handoff, HandoffTask, AuditEntry,
+    )
+
+    def _opt(cls, d):
+        return cls(**d) if d is not None else None
+
+    members = {
+        k: Member(**v) for k, v in (data.get("members") or {}).items()
+    }
+    # Member.keys can be a dict of KeyRecord; rehydrate those too.
+    for m in members.values():
+        if isinstance(m.keys, dict):
+            m.keys = {k: KeyRecord(**v) if isinstance(v, dict) else v
+                      for k, v in m.keys.items()}
+
+    tasks = {}
+    for k, v in (data.get("tasks") or {}).items():
+        v = dict(v)
+        v["history"] = [TaskHistoryEntry(**h) for h in v.get("history", [])]
+        tasks[k] = Task(**v)
+
+    whispers = {
+        k: WhisperPrompt(**v) for k, v in (data.get("whispers") or {}).items()
+    }
+    deliberations = {
+        k: Deliberation(**v)
+        for k, v in (data.get("deliberations") or {}).items()
+    }
+    handoffs = {}
+    for k, v in (data.get("handoffs") or {}).items():
+        v = dict(v)
+        v["tasks"] = [HandoffTask(**t) for t in v.get("tasks", [])]
+        handoffs[k] = Handoff(**v)
+
+    audit = [AuditEntry(**a) for a in (data.get("audit") or [])]
+
+    ws_kwargs = {
+        k: v for k, v in data.items()
+        if k not in {"members", "tasks", "whispers", "deliberations",
+                     "handoffs", "audit"}
+    }
+    ws = Workspace(**ws_kwargs)
+    ws.members = members
+    ws.tasks = tasks
+    ws.whispers = whispers
+    ws.deliberations = deliberations
+    ws.handoffs = handoffs
+    ws.audit = audit
+    return ws
+
+
 _MODE_ORDER = {"shadow": 0, "trial": 1, "production": 2}
 
 
@@ -161,8 +224,19 @@ class Coordinator:
     transport layer.
     """
 
-    def __init__(self, options: CoordinatorOptions | None = None) -> None:
+    def __init__(self, options: CoordinatorOptions | None = None,
+                 **overrides: Any) -> None:
+        # Two calling styles are supported:
+        #   Coordinator(CoordinatorOptions(store=..., enable_chain=True))
+        #   Coordinator(store=..., enable_chain=True)
+        # The keyword form mirrors the TypeScript constructor's options
+        # object and is the form the README quickstart uses. Any keyword
+        # overrides are applied on top of the options object (or a fresh
+        # default one).
         self.options = options or CoordinatorOptions()
+        if overrides:
+            import dataclasses
+            self.options = dataclasses.replace(self.options, **overrides)
         self.ids = IdFactory(
             deterministic=self.options.deterministic_ids,
             start_ms=1_700_000_000_000,
@@ -179,6 +253,11 @@ class Coordinator:
         self._handlers: dict[str, Callable[[dict], dict]] = {}
         self._register_core_handlers()
         self._register_profile_handlers()
+
+        # Restore from persistent store if one is configured.
+        # This must happen after handlers are registered so the
+        # rehydrated state matches the same schema dispatch expects.
+        self._restore_from_store()
 
     # -- public lifecycle ---------------------------------------------
 
@@ -279,6 +358,48 @@ class Coordinator:
                 listener(ws.id, entry)
             except Exception:
                 pass
+        # Persist the updated workspace to the configured store, if any.
+        # Failures are deliberately swallowed: the in-memory state is
+        # authoritative within the process, and audit listeners are the
+        # documented escape hatch for must-persist workloads.
+        self._persist(ws)
+
+    def _persist(self, ws: Workspace) -> None:
+        if self.options.store is None:
+            return
+        try:
+            record = self._snapshot_workspace(ws)
+            self.options.store.save(record)
+        except Exception:
+            # Persistence failures must not break dispatch. See above.
+            pass
+
+    def _snapshot_workspace(self, ws: Workspace) -> "WorkspaceRecord":
+        """JSON-safe snapshot of one workspace, plus a version counter."""
+        from dataclasses import asdict
+        from .storage.store import WorkspaceRecord
+        data = asdict(ws)
+        version = len(ws.audit)
+        return WorkspaceRecord(
+            id=ws.id, data=data, version=version, updated_at=self.now_iso(),
+        )
+
+    def _restore_from_store(self) -> None:
+        if self.options.store is None:
+            return
+        try:
+            records = self.options.store.load()
+        except Exception:
+            return
+        from .types import Workspace as _Workspace, AuditEntry as _AuditEntry
+        for r in records:
+            try:
+                ws = _rehydrate_workspace(r.data)
+                self.workspaces[ws.id] = ws
+            except Exception:
+                # Skip records we can't parse; future schema migrations
+                # should handle this explicitly.
+                continue
 
     # -- signature verification (security-signed/1.0) ----------------
 

@@ -29,104 +29,185 @@ That's the whole pitch.
 
 ## The 90-second tour
 
-A solo developer using Cursor to review pull requests. The bot flags a "warning" the developer disagrees with. Here is the whole exchange, end to end.
+A solo developer using Cursor to review pull requests. The bot flags a "warning" the developer disagrees with. Here is the whole exchange, end to end. The clip below runs in about 23 seconds across six labelled steps; the matching code is right underneath.
 
 <p align="center">
-  <img src="docs/img/hero.gif" alt="Six-frame walkthrough of a real CHAP Core+Review session: workspace setup, agent drafts a response, human overrides with diff + rationale + tags, audit replay shows the full prev_hash-linked chain, override analytics report shows tag distribution and points the next prompt revision at the right problem." width="100%">
+  <img src="docs/img/hero.gif" alt="Six-step CHAP Core+Review walkthrough with a progress bar and step indicator across the top. Step 1: Setup (workspace, two participants, a task). Step 2: Drafting (agent drafts a response). Step 3: Pending review (review.request with the draft artefact). Step 4: Override (human disagrees: diff, rationale, tags). Step 5: Audit chain (hash-linked replay, prev_hash continuous). Step 6: Two months in (override learning report shows framework-pattern as the top tag, pointing the next prompt revision at the right problem)." width="100%">
 </p>
 
-And here is the code, every line of it.
+And here is the code, every line of it. The narrative below is one continuous story in two languages; pick whichever stack you actually use.
 
-**1. Spin up a workspace.** Twenty lines, an embedded coordinator, SQLite for persistence:
+**1. Spin up a workspace.** An embedded coordinator with SQLite persistence, two participants, a workspace:
+
+<table>
+<tr><th>TypeScript</th><th>Python</th></tr>
+<tr><td valign="top">
 
 ```ts
 import { Coordinator } from "@chap/coordinator";
-import { SqliteStore } from "@chap/coordinator/storage/sqlite";
+import { SqliteStore } from
+  "@chap/coordinator/storage/sqlite";
 
-const coord = new Coordinator({ store: new SqliteStore("./chap.db") });
-
-await coord.dispatch({
-  jsonrpc: "2.0", id: "1",
-  method: "workspace.create",
-  params: {
-    workspace: "wsp_pr_reviews",
-    profiles: ["core/1.0", "review/1.0"]
-  }
+const coord = new Coordinator({
+  store: new SqliteStore("./chap.db"),
 });
 
-await coord.dispatch({
-  jsonrpc: "2.0", id: "2",
-  method: "participant.join",
-  params: { workspace: "wsp_pr_reviews", from: "human:me@local", type: "human" }
+coord.api.workspace.create({
+  workspace: "wsp_pr_reviews",
+  profiles:  ["core/1.0", "review/1.0"],
 });
 
-await coord.dispatch({
-  jsonrpc: "2.0", id: "3",
-  method: "participant.join",
-  params: { workspace: "wsp_pr_reviews", from: "agent:cursor#v1", type: "agent" }
+coord.api.participant.join({
+  workspace: "wsp_pr_reviews",
+  from:      "human:me@local",
+  type:      "human",
+});
+
+coord.api.participant.join({
+  workspace: "wsp_pr_reviews",
+  from:      "agent:cursor#v1",
+  type:      "agent",
 });
 ```
+
+</td><td valign="top">
+
+```python
+from chap_coordinator import Coordinator
+from chap_coordinator.storage.sqlite \
+    import SqliteStore
+
+coord = Coordinator(store=SqliteStore("./chap.db"))
+
+def send(method, params):
+    return coord.dispatch({
+        "jsonrpc": "2.0", "id": method,
+        "method": method, "params": params,
+    })
+
+send("workspace.create", {
+    "workspace": "wsp_pr_reviews",
+    "profiles":  ["core/1.0", "review/1.0"],
+})
+
+send("participant.join", {
+    "workspace": "wsp_pr_reviews",
+    "from":      "human:me@local",
+    "type":      "human",
+})
+
+send("participant.join", {
+    "workspace": "wsp_pr_reviews",
+    "from":      "agent:cursor#v1",
+    "type":      "agent",
+})
+```
+
+</td></tr></table>
 
 **2. The bot drafts, you override.** Wire your existing Cursor integration to emit envelopes:
 
+<table>
+<tr><th>TypeScript</th><th>Python</th></tr>
+<tr><td valign="top">
+
 ```ts
 // The bot's review is the output of a task.
-const created = await coord.dispatch({
-  jsonrpc: "2.0", id: "4",
-  method: "task.create",
-  params: {
-    workspace: "wsp_pr_reviews",
-    from: "agent:cursor#v1",
-    assignee: "agent:cursor#v1",
-    kind: "code_review",
-    input: { pr_id: "PR-482", diff_url: "https://..." }
-  }
-});
-const taskId = created.result.task_id;
-
-await coord.dispatch({
-  jsonrpc: "2.0", id: "5",
-  method: "task.complete",
-  params: {
-    workspace: "wsp_pr_reviews",
-    from: "agent:cursor#v1",
-    task_id: taskId,
-    output: cursorReview
-  }
+const { task_id } = coord.api.task.create({
+  workspace: "wsp_pr_reviews",
+  from:      "agent:cursor#v1",
+  assignee:  "agent:cursor#v1",
+  kind:      "code_review",
+  input:     { pr_id: "PR-482" },
 });
 
-await coord.dispatch({
-  jsonrpc: "2.0", id: "6",
-  method: "review.request",
-  params: {
-    workspace: "wsp_pr_reviews",
-    from: "agent:cursor#v1",
-    task_id: taskId,
-    artefact: cursorReview
-  }
+coord.api.task.complete({
+  workspace: "wsp_pr_reviews",
+  from:      "agent:cursor#v1",
+  task_id,
+  output:    cursorReview,
+});
+
+coord.api.review.request({
+  workspace: "wsp_pr_reviews",
+  from:      "agent:cursor#v1",
+  task_id,
+  artefact:  cursorReview,
+  to:        "human:me@local",
 });
 
 // You disagree with one comment. Override it.
-await coord.dispatch({
-  jsonrpc: "2.0", id: "7",
-  method: "decide.override",
-  params: {
-    workspace: "wsp_pr_reviews",
-    from: "human:me@local",
-    task_id: taskId,
-    intent_preserved: true,
-    diff: [{ op: "replace", path: "/comments/0/severity", value: "info" }],
-    rationale: "False positive. Framework convention, not a bug.",
-    tags: ["false-positive", "framework-pattern-misread"]
-  }
+coord.api.decide.override({
+  workspace:        "wsp_pr_reviews",
+  from:             "human:me@local",
+  task_id,
+  intent_preserved: true,
+  diff: [{ op: "replace",
+           path: "/comments/0/severity",
+           value: "info" }],
+  rationale: "False positive. Framework " +
+             "convention, not a bug.",
+  tags: ["false-positive",
+         "framework-pattern-misread"],
 });
 ```
 
-**3. Two months in, analyse what you have been doing.** This is where the protocol pays you back. The reference repo ships an analytics script that reads the audit chain (either over HTTP or directly from your SQLite file) and groups overrides:
+</td><td valign="top">
+
+```python
+# The bot's review is the output of a task.
+r = send("task.create", {
+    "workspace": "wsp_pr_reviews",
+    "from":      "agent:cursor#v1",
+    "assignee":  "agent:cursor#v1",
+    "kind":      "code_review",
+    "input":     {"pr_id": "PR-482"},
+})
+task_id = r["result"]["task_id"]
+
+send("task.complete", {
+    "workspace": "wsp_pr_reviews",
+    "from":      "agent:cursor#v1",
+    "task_id":   task_id,
+    "output":    cursor_review,
+})
+
+send("review.request", {
+    "workspace": "wsp_pr_reviews",
+    "from":      "agent:cursor#v1",
+    "task_id":   task_id,
+    "artefact":  cursor_review,
+    "to":        "human:me@local",
+})
+
+# You disagree with one comment. Override it.
+send("decide.override", {
+    "workspace":        "wsp_pr_reviews",
+    "from":             "human:me@local",
+    "task_id":          task_id,
+    "intent_preserved": True,
+    "diff": [{"op":    "replace",
+              "path":  "/comments/0/severity",
+              "value": "info"}],
+    "rationale": "False positive. Framework "
+                 "convention, not a bug.",
+    "tags": ["false-positive",
+             "framework-pattern-misread"],
+})
+```
+
+</td></tr></table>
+
+> **About the surfaces.** TypeScript ships a typed facade (`coord.api.*`) so every method gets full autocomplete and compile-time checks. Python keeps the JSON-RPC envelope shape on the surface (`coord.dispatch({...})`) and consumers wrap it however suits the call site; a `send()` helper is the idiom the Python tests use. Both paths emit identical wire bytes; the audit chain is byte-for-byte the same regardless of which client made the call.
+
+**3. Two months in, analyse what you have been doing.** This is where the protocol pays you back. The reference repo ships an analytics script in both languages that reads the audit chain (over HTTP or directly from your SQLite file) and groups overrides:
 
 ```bash
-# Against the SqliteStore from step 1, no server required:
+# TypeScript reference, against the SqliteStore from step 1:
 $ npm --prefix reference/core-plus-review run analyze -- --db ./chap.db wsp_pr_reviews
+
+# Python reference, same idea:
+$ python3 reference/python/analyze_overrides.py --db ./chap.db wsp_pr_reviews
 
 Override Learning Report
 ========================

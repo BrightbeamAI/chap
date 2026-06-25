@@ -23,10 +23,13 @@ lunch". Backward-compatible: no wire-format or schema changes.
   that runs the schemas-drift check, typecheck, tests, and build.
 - **PyPI-ready Python wheel.** `chap-coordinator` builds cleanly with a
   `py.typed` marker for type-checker consumers (PEP 561).
-- **Pluggable storage with SQLite backend.** New `Store` interface;
-  `MemoryStore` is the default, `SqliteStore` (via `better-sqlite3` as an
-  optional dep) persists workspaces to disk and rehydrates on coordinator
-  construction. The audit chain head survives restart.
+- **Pluggable storage with SQLite backend.** New `Store` interface in
+  both languages; `MemoryStore` is the default, `SqliteStore` persists
+  workspaces to disk and rehydrates on coordinator construction. The
+  audit chain head survives restart. TypeScript uses `better-sqlite3`
+  as an optional dep; Python uses the stdlib `sqlite3` module (no
+  external dep needed). Both write the same schema so a database file
+  from one implementation can be read by the other.
 - **Typed method facade.** `coord.api.task.create({...})`,
   `coord.api.decide.override({...})`, and equivalents for all 39 methods.
   Full autocomplete and compile-time checking. The original
