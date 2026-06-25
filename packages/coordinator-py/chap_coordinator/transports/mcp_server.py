@@ -57,7 +57,7 @@ from mcp.types import (
 
 from chap_coordinator.coordinator import Coordinator
 
-from .mcp_schemas import SCHEMAS, TOOL_NAMES, method_for_tool
+from .mcp_schemas import SCHEMAS, TOOL_NAMES, method_for_tool, coerce_tool_args
 from .mcp_tools import TOOL_DESCRIPTIONS
 
 
@@ -68,6 +68,7 @@ __all__ = [
     "TOOL_NAMES",
     "TOOL_DESCRIPTIONS",
     "method_for_tool",
+    "coerce_tool_args",
 ]
 
 
@@ -145,7 +146,7 @@ def make_chap_mcp_server(
             "jsonrpc": "2.0",
             "id": next_id(),
             "method": method,
-            "params": arguments or {},
+            "params": coerce_tool_args(tool_name, arguments or {}),
         }
 
         try:
@@ -200,5 +201,5 @@ def dispatch_tool_call(
         "jsonrpc": "2.0",
         "id": envelope_id,
         "method": method,
-        "params": arguments or {},
+        "params": coerce_tool_args(tool_name, arguments or {}),
     })

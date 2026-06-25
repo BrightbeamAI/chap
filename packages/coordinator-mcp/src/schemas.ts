@@ -138,7 +138,7 @@ export const SCHEMAS: Record<string, JsonSchema> = {
       workspace: WORKSPACE_ID,
       from:      PARTICIPANT_URI,
       task_id:   TASK_ID,
-      output:    { description: "The task's output artefact." },
+      output:    { description: "The task's output artefact. Pass as a JSON object or array, not a JSON-encoded string." },
       confidence: { type: "number", description: "Self-reported confidence (0-1), where supported." },
       routing_hints: ROUTING_HINTS,
     },
@@ -180,14 +180,14 @@ export const SCHEMAS: Record<string, JsonSchema> = {
       task_id:   TASK_ID,
       to:        {
         oneOf: [PARTICIPANT_URI, { type: "array", items: PARTICIPANT_URI }],
-        description: "One or more reviewers.",
+        description: "One or more reviewers. A single URI string, or a JSON array of URI strings (not a JSON-encoded string).",
       },
       rule:      {
         type: "string",
         enum: ["any_one_approves", "all_approve", "quorum:2", "quorum:3"],
         default: "any_one_approves",
       },
-      artefact:  { description: "The draft being submitted for review." },
+      artefact:  { description: "The draft being submitted for review. Pass as a JSON object or array, not a JSON-encoded string." },
       deadline:  { type: "string" },
     },
     required: ["workspace", "from", "task_id", "to", "artefact"],
@@ -607,4 +607,97 @@ export function schemaFor(toolName: string): JsonSchema | null {
 export function methodForTool(toolName: string): string | null {
   if (!toolName.startsWith("chap.")) return null;
   return toolName.slice("chap.".length);
+}
+
+// ============================================================
+//   Stringified-JSON coercion
+// ============================================================
+//
+// LLM MCP clients (Claude Desktop, Cursor, and others) frequently
+// serialise structured tool arguments as JSON-encoded *strings* rather
+// than as native JSON objects/arrays. For example, an `artefact` that
+// should arrive as { "draft": "..." } arrives as the string
+// "{\"draft\": \"...\"}", and a `to` that should be ["human:me@local"]
+// arrives as "[\"human:me@local\"]".
+//
+// The CHAP protocol core is deliberately strict: it stores artefacts
+// and applies JSON Patches against whatever it receives. A stringified
+// object therefore (a) pollutes the audit log with the wrong type and
+// (b) makes object-path patches in decide.override impossible, because
+// there is no object to traverse.
+//
+// We fix this at the adapter boundary, leaving the protocol core
+// untouched. Before an argument is wrapped in a CHAP envelope, any
+// string value whose schema admits a non-string type is JSON-parsed
+// when (and only when) it parses cleanly to a type the schema allows.
+// Plain strings that the schema accepts as strings (participant URIs,
+// task ids, rationales) are never touched, so a bare "human:me@local"
+// passed to a string|array `to` field is preserved as-is.
+
+/** True if the schema admits `object` as a value type. */
+function admitsType(schema: JsonSchema | undefined, t: "object" | "array"): boolean {
+  if (!schema) return false;
+  if (schema.type === t) return true;
+  if (schema.oneOf) return schema.oneOf.some((s) => admitsType(s, t));
+  // A field declared with neither `type` nor `oneOf` (e.g. `output`,
+  // `artefact`) is an opaque payload: it admits any JSON value, so we
+  // allow coercion to both object and array for it.
+  if (schema.type === undefined && !schema.oneOf && !schema.enum) return true;
+  return false;
+}
+
+/**
+ * Coerce a single argument value against its parameter schema. Returns
+ * the parsed value when the string is stringified JSON the schema
+ * accepts; otherwise returns the value unchanged.
+ */
+function coerceValue(value: unknown, schema: JsonSchema | undefined): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return value;
+  const looksLikeObject = trimmed.startsWith("{");
+  const looksLikeArray  = trimmed.startsWith("[");
+  if (!looksLikeObject && !looksLikeArray) return value;
+
+  const wantObject = looksLikeObject && admitsType(schema, "object");
+  const wantArray  = looksLikeArray  && admitsType(schema, "array");
+  if (!wantObject && !wantArray) return value;
+
+  try {
+    const parsed = JSON.parse(value);
+    // Only accept the parse if its type is one the schema admits. This
+    // guards against, say, a string that happens to start with "[" but
+    // is meant to be a literal string in a string-only field.
+    if (Array.isArray(parsed) && admitsType(schema, "array")) return parsed;
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+        && admitsType(schema, "object")) return parsed;
+    return value;
+  } catch {
+    // Not valid JSON: leave it for the coordinator to validate/reject.
+    return value;
+  }
+}
+
+/**
+ * Normalise the arguments object for a tool call, coercing any
+ * stringified-JSON values whose parameter schema admits a structured
+ * type. Unknown keys (not in the schema) are passed through untouched.
+ *
+ * This is a pure function: it returns a new object and does not mutate
+ * its input. Coordinator dispatch sees correctly-typed params, so the
+ * audit log records the right shapes and decide.override patches apply
+ * against real objects.
+ */
+export function coerceToolArgs(
+  toolName: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const schema = schemaFor(toolName);
+  const props = schema?.properties;
+  if (!props) return args;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    out[key] = coerceValue(value, props[key]);
+  }
+  return out;
 }

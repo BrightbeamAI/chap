@@ -1,5 +1,5 @@
 /**
- * Override analyser — reads the workspace audit log, aggregates
+ * Override analyser - reads the workspace audit log, aggregates
  * `decide.override` envelopes, and produces the learning-data report.
  *
  * This is what makes "your overrides become training data for free"
@@ -42,7 +42,7 @@ interface OverrideParams {
   policy_refs?: string[];
   diff?:        { op: string; path: string }[];
   based_on_artefact?: any;
-  // CHAP 0.2.1 — optional artefact-identity / intent fields.
+  // CHAP 0.2.1 - optional artefact-identity / intent fields.
   // Present when the client emitted them; otherwise undefined.
   logical_id?:       string;
   instance_id?:      string;
@@ -101,7 +101,7 @@ async function main(): Promise<void> {
   const total = entries.length;
 
   console.log("\n" + "═".repeat(60));
-  console.log(`  Override Learning-Data Report — ${WS}`);
+  console.log(`  Override Learning-Data Report - ${WS}`);
   console.log("═".repeat(60));
   console.log(`\nTotal overrides:  ${total}`);
 
@@ -215,7 +215,7 @@ async function main(): Promise<void> {
       console.log(`│  → Drafts contain factual errors.`);
       console.log(`│  → Action: improve the agent's retrieval / grounding.`);
     } else {
-      console.log(`│  → Investigate this pattern — it's the cheapest win.`);
+      console.log(`│  → Investigate this pattern - it's the cheapest win.`);
     }
   }
   console.log(`│`);

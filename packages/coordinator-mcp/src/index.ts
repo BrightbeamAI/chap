@@ -49,10 +49,10 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { Coordinator, Envelope } from "@chap/coordinator";
 
-import { SCHEMAS, TOOL_NAMES, methodForTool } from "./schemas.js";
+import { SCHEMAS, TOOL_NAMES, methodForTool, coerceToolArgs } from "./schemas.js";
 import { TOOL_DESCRIPTIONS } from "./tools.js";
 
-export { SCHEMAS, TOOL_NAMES, schemaFor, methodForTool } from "./schemas.js";
+export { SCHEMAS, TOOL_NAMES, schemaFor, methodForTool, coerceToolArgs } from "./schemas.js";
 export { TOOL_DESCRIPTIONS } from "./tools.js";
 export type { JsonSchema } from "./schemas.js";
 
@@ -105,7 +105,7 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
 
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
     const toolName = request.params.name;
-    const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+    const rawArgs = (request.params.arguments ?? {}) as Record<string, unknown>;
     const method = methodForTool(toolName);
 
     if (!method) {
@@ -114,6 +114,10 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
         content: [{ type: "text", text: `Unknown CHAP tool: ${toolName}` }],
       };
     }
+
+    // Normalise stringified-JSON arguments (a common MCP-client
+    // behaviour) before they reach the protocol core. See coerceToolArgs.
+    const args = coerceToolArgs(toolName, rawArgs);
 
     const envelope: Envelope = {
       jsonrpc: "2.0",
@@ -181,6 +185,6 @@ export function dispatchToolCall(
     jsonrpc: "2.0",
     id: envelopeId,
     method,
-    params: args ?? {},
+    params: coerceToolArgs(toolName, args ?? {}),
   });
 }

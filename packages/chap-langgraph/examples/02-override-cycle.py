@@ -3,7 +3,7 @@ Example 2: override cycle with chap-langgraph.
 
 A drafter agent writes a curt reply. The human reviewer edits the tone
 and records the change as a structured override. The audit chain
-captures the diff, the rationale, and the tags — these are the
+captures the diff, the rationale, and the tags - these are the
 ingredients for "your overrides become training data for free".
 
 Run:

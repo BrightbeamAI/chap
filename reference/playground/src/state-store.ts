@@ -1,5 +1,5 @@
 /**
- * State store — persists the Coordinator's snapshot() output to a
+ * State store - persists the Coordinator's snapshot() output to a
  * local JSON file. The playground uses this so the audit chain
  * survives restarts. In production you'd use a real database.
  */

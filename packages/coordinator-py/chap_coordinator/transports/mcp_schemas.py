@@ -126,7 +126,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "workspace": _WORKSPACE_ID,
             "from":      _PARTICIPANT_URI,
             "task_id":   _TASK_ID,
-            "output":    {"description": "The task's output artefact."},
+            "output":    {"description": "The task's output artefact. Pass as a JSON object or array, not a JSON-encoded string."},
             "confidence": {"type": "number", "description": "Self-reported confidence (0-1)."},
             "routing_hints": _ROUTING_HINTS,
         },
@@ -165,14 +165,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "task_id":   _TASK_ID,
             "to": {
                 "oneOf": [_PARTICIPANT_URI, {"type": "array", "items": _PARTICIPANT_URI}],
-                "description": "One or more reviewers.",
+                "description": "One or more reviewers. A single URI string, or a JSON array of URI strings (not a JSON-encoded string).",
             },
             "rule": {
                 "type": "string",
                 "enum": ["any_one_approves", "all_approve", "quorum:2", "quorum:3"],
                 "default": "any_one_approves",
             },
-            "artefact": {"description": "The draft being submitted for review."},
+            "artefact": {"description": "The draft being submitted for review. Pass as a JSON object or array, not a JSON-encoded string."},
             "deadline": {"type": "string"},
         },
         "required": ["workspace", "from", "task_id", "to", "artefact"],
@@ -550,3 +550,88 @@ def method_for_tool(tool_name: str) -> str | None:
     if not tool_name.startswith("chap."):
         return None
     return tool_name[len("chap."):]
+
+
+# ============================================================
+#   Stringified-JSON coercion
+# ============================================================
+#
+# LLM MCP clients (Claude Desktop, Cursor, and others) frequently
+# serialise structured tool arguments as JSON-encoded *strings* rather
+# than as native JSON objects/arrays. For example, an ``artefact`` that
+# should arrive as {"draft": "..."} arrives as the string
+# '{"draft": "..."}', and a ``to`` that should be ["human:me@local"]
+# arrives as '["human:me@local"]'.
+#
+# The CHAP protocol core is deliberately strict: it stores artefacts
+# and applies JSON Patches against whatever it receives. A stringified
+# object therefore (a) pollutes the audit log with the wrong type and
+# (b) makes object-path patches in decide.override impossible, because
+# there is no object to traverse.
+#
+# We fix this at the adapter boundary, leaving the protocol core
+# untouched. Mirrors ``coerceToolArgs`` in the TypeScript adapter; the
+# two must stay in lockstep.
+
+
+def _admits_type(schema: dict[str, Any] | None, t: str) -> bool:
+    """True if the schema admits ``t`` ('object' or 'array') as a value type."""
+    if not schema:
+        return False
+    if schema.get("type") == t:
+        return True
+    if "oneOf" in schema:
+        return any(_admits_type(s, t) for s in schema["oneOf"])
+    # A field declared with neither `type` nor `oneOf` nor `enum`
+    # (e.g. `output`, `artefact`) is an opaque payload: it admits any
+    # JSON value, so we allow coercion to both object and array.
+    if "type" not in schema and "oneOf" not in schema and "enum" not in schema:
+        return True
+    return False
+
+
+def _coerce_value(value: Any, schema: dict[str, Any] | None) -> Any:
+    """Parse a stringified-JSON value when the schema admits its type."""
+    if not isinstance(value, str):
+        return value
+    trimmed = value.strip()
+    if not trimmed:
+        return value
+    looks_object = trimmed.startswith("{")
+    looks_array = trimmed.startswith("[")
+    if not looks_object and not looks_array:
+        return value
+    if not ((looks_object and _admits_type(schema, "object"))
+            or (looks_array and _admits_type(schema, "array"))):
+        return value
+    try:
+        import json as _json
+        parsed = _json.loads(value)
+    except (ValueError, TypeError):
+        # Not valid JSON: leave it for the coordinator to validate/reject.
+        return value
+    if isinstance(parsed, list) and _admits_type(schema, "array"):
+        return parsed
+    if isinstance(parsed, dict) and _admits_type(schema, "object"):
+        return parsed
+    return value
+
+
+def coerce_tool_args(
+    tool_name: str,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    """Normalise a tool call's arguments, coercing stringified-JSON
+    values whose parameter schema admits a structured type.
+
+    Pure: returns a new dict and does not mutate its input. Unknown
+    keys (not in the schema) pass through untouched. Coordinator
+    dispatch then sees correctly-typed params, so the audit log records
+    the right shapes and decide.override patches apply against real
+    objects.
+    """
+    schema = schema_for(tool_name)
+    props = (schema or {}).get("properties")
+    if not props:
+        return args
+    return {key: _coerce_value(val, props.get(key)) for key, val in args.items()}

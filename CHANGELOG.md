@@ -73,6 +73,19 @@ lunch". Backward-compatible: no wire-format or schema changes.
   placeholder mid-flow replaced with the real payload.
 - **`analyze-overrides.ts`** gained a `--db <path>` flag so the in-process
   SqliteStore quickstart works without spinning up the HTTP server.
+- **MCP adapters now coerce stringified-JSON arguments.** LLM MCP clients
+  (Claude Desktop, Cursor, and others) routinely serialise structured
+  tool arguments as JSON-encoded strings rather than native objects or
+  arrays. Both the TypeScript and Python MCP adapters now normalise
+  these at the adapter boundary, before the envelope reaches the
+  protocol core: a string value whose parameter schema admits an
+  object/array type is JSON-parsed when it parses cleanly to an
+  accepted type. Bare strings the schema accepts as strings (URIs, task
+  ids, rationales) are left untouched. The protocol core is unchanged
+  and stays strict; the audit log now records correctly-typed
+  artefacts, and `decide.override` object-path patches apply on the
+  first try. Tool descriptions for `output`, `artefact`, and `to` now
+  state explicitly that a JSON value is expected, not a stringified one.
 
 ### Tests
 

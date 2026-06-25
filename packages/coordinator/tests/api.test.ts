@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { Coordinator } from "../src/coordinator.js";
 import { call, CoordinatorError } from "../src/api.js";
 
-describe("typed facade — basic operations", () => {
+describe("typed facade - basic operations", () => {
   test("workspace.create returns workspace id", () => {
     const c = new Coordinator();
     const r = c.api.workspace.create({ workspace: "wsp_facade" });
@@ -78,7 +78,7 @@ describe("typed facade — basic operations", () => {
   });
 });
 
-describe("typed facade — audit chain equivalence", () => {
+describe("typed facade - audit chain equivalence", () => {
   test("dispatch and api produce equivalent audit entries", () => {
     // Path A: dispatch directly
     const c1 = new Coordinator({ deterministicIds: true, deterministicClock: true });
@@ -114,7 +114,7 @@ describe("typed facade — audit chain equivalence", () => {
   });
 });
 
-describe("typed facade — error handling", () => {
+describe("typed facade - error handling", () => {
   test("unknown workspace throws CoordinatorError with code", () => {
     const c = new Coordinator();
     assert.throws(
@@ -136,14 +136,14 @@ describe("typed facade — error handling", () => {
     const c = new Coordinator();
     c.api.workspace.create({ workspace: "wsp_e" });
     assert.throws(
-      // @ts-expect-error — deliberately missing `type`
+      // @ts-expect-error - deliberately missing `type`
       () => c.api.participant.join({ workspace: "wsp_e", from: "human:x" }),
       /Missing field: type/,
     );
   });
 });
 
-describe("typed facade — standalone call() helper", () => {
+describe("typed facade - standalone call() helper", () => {
   test("call() works without the namespace facade", () => {
     const c = new Coordinator();
     const r = call(c, "workspace.create", { workspace: "wsp_call" });

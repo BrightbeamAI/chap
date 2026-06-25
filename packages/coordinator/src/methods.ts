@@ -14,7 +14,7 @@
  *
  * Scope: 39 method handlers shipped by both v0.2 reference
  * implementations (Core + every shipped profile). Spec-only methods
- * are excluded — they would mislead callers into thinking the local
+ * are excluded - they would mislead callers into thinking the local
  * Coordinator can dispatch them.
  */
 

@@ -1,5 +1,5 @@
 /**
- * CHAP Core reference server — weekend-implementation.
+ * CHAP Core reference server - weekend-implementation.
  *
  * Implements all 7 Core methods, in-memory state, plain HTTP+JSON-RPC.
  * No crypto, no profiles. ~300 lines.

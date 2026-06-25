@@ -1,5 +1,5 @@
 /**
- * CHAP Core reference client — demo walkthrough.
+ * CHAP Core reference client - demo walkthrough.
  *
  * Walks every Core method against a running server:
  *   1. workspace.describe (empty)
@@ -56,7 +56,7 @@ async function main(): Promise<void> {
   console.log(`CHAP Core demo against ${CHAP}`);
   console.log("=".repeat(60));
 
-  // 1. participant.join — alice
+  // 1. participant.join - alice
   await call("participant.join", {
     workspace:    WS,
     from:         ALICE,
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
     role:         "reviewer",
   });
 
-  // 2. participant.join — triage-bot
+  // 2. participant.join - triage-bot
   await call("participant.join", {
     workspace:    WS,
     from:         BOT,
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
     capabilities: { kinds: ["draft_response"] },
   });
 
-  // 3. workspace.describe — see who's in
+  // 3. workspace.describe - see who's in
   await call("workspace.describe", {
     workspace: WS,
     from:      ALICE,
@@ -87,7 +87,7 @@ async function main(): Promise<void> {
     ts:        new Date().toISOString(),
   });
 
-  // 4. task.create — alice delegates to the bot
+  // 4. task.create - alice delegates to the bot
   const created = (await call("task.create", {
     workspace: WS,
     from:      ALICE,
@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   })) as { task_id: string };
   const TASK = created.task_id;
 
-  // 5. task.update — bot starts work
+  // 5. task.update - bot starts work
   await call("task.update", {
     workspace:     WS,
     from:          BOT,
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
     progress_note: "Looking up order status.",
   });
 
-  // 6. task.complete — bot delivers
+  // 6. task.complete - bot delivers
   await call("task.complete", {
     workspace: WS,
     from:      BOT,
@@ -119,12 +119,12 @@ async function main(): Promise<void> {
     task_id:   TASK,
     output: {
       subject: "Re: order status",
-      body:    "Hi — your order ORD-91204 is delayed by the carrier; new ETA Wed.",
+      body:    "Hi - your order ORD-91204 is delayed by the carrier; new ETA Wed.",
     },
     confidence: 0.91,
   });
 
-  // 7. audit.read — alice reads what happened
+  // 7. audit.read - alice reads what happened
   await call("audit.read", {
     workspace: WS,
     from:      ALICE,

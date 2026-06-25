@@ -1,11 +1,11 @@
 /**
- * Core + Review demo — walks through the override-capture flow.
+ * Core + Review demo - walks through the override-capture flow.
  *
  *   1. workspace setup (alice the human, triage-bot the agent)
  *   2. alice creates a draft_response task
  *   3. agent drafts and posts review.request
  *   4. alice overrides with a JSON Patch + rationale + tags
- *   5. audit log read — the override is now structured data
+ *   5. audit log read - the override is now structured data
  */
 
 const CHAP = process.env.CHAP_URL ?? "http://localhost:8080/chap";
@@ -14,7 +14,7 @@ const ALICE  = "human:alice@example.org";
 const BOT    = "agent:triage-bot";
 const COORD  = "service:coordinator@example.org";
 
-// CHAP 0.2.1 — durable handle for "the response to ticket INC-48219".
+// CHAP 0.2.1 - durable handle for "the response to ticket INC-48219".
 // Same id flows from the agent's first draft through the human's override
 // so downstream analytics can see they're two versions of the same
 // underlying item, not two separate items. See SPEC §9.2.1.
@@ -92,16 +92,16 @@ async function main(): Promise<void> {
     summary: "First draft of response to INC-48219.",
   });
 
-  // -------- Alice overrides — softens tone, fixes severity --------
+  // -------- Alice overrides - softens tone, fixes severity --------
   console.log("\n--- Alice reviews. Tone is over-apologetic for what is just a tracking question. ---");
 
   const override = await call("decide.override", {
     workspace: WS, from: ALICE, to: COORD, ts: ts(),
     task_id,
     based_on_artefact: draft,
-    // CHAP 0.2.1 — Alice introduces a logical_id for "the response to
+    // CHAP 0.2.1 - Alice introduces a logical_id for "the response to
     // INC-48219" and signals that the underlying intent (respond to
-    // the customer, give them transit info) is preserved — she refined
+    // the customer, give them transit info) is preserved - she refined
     // the tone, not the decision. In a production deployment the agent
     // would typically assign logical_id when it produces the first
     // draft, and Alice's override would reuse that same id; either

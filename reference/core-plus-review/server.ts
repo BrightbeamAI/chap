@@ -70,7 +70,7 @@ interface OverrideArtefact {
   tags:              string[];
   policy_refs:       string[];
   ts:                string;
-  // CHAP 0.2.1 — optional artefact-identity fields (SPEC §9.2.1, §9.4).
+  // CHAP 0.2.1 - optional artefact-identity fields (SPEC §9.2.1, §9.4).
   // logical_id: durable handle for the thing the artefact is about,
   //             shared across revisions/overrides/supersessions.
   // instance_id: stable handle for this specific version; when present,
@@ -153,7 +153,7 @@ function err(code: number, message: string, data?: unknown) {
 }
 
 // ============================================================
-//   Minimal RFC 6902 JSON Patch — apply
+//   Minimal RFC 6902 JSON Patch - apply
 // ============================================================
 
 function applyJsonPatch(doc: unknown, ops: JsonPatchOp[]): unknown {
@@ -462,7 +462,7 @@ const handlers: Record<string, Handler> = {
       tags:              (p.tags as string[]) ?? [],
       policy_refs:       (p.policy_refs as string[]) ?? [],
       ts:                new Date().toISOString(),
-      // CHAP 0.2.1 — pass through optional identity / intent fields if present.
+      // CHAP 0.2.1 - pass through optional identity / intent fields if present.
       // The reference does not synthesise these; clients that want
       // version-graph projection should send them, in which case the
       // override should carry the same logical_id as the based_on

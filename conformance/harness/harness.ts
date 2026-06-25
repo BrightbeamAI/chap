@@ -116,7 +116,7 @@ function assert(cond: any, msg: string): asserts cond {
 
 function assertEq(actual: unknown, expected: unknown, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`${msg} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    throw new Error(`${msg} - expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
   }
 }
 

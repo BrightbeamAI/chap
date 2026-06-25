@@ -2,8 +2,8 @@
  * Schema-vs-code drift check.
  *
  * Reads two sources of truth and exits non-zero if they disagree:
- *   1. `packages/coordinator/src/methods.ts` — TypeScript MethodTable
- *   2. `schemas/profiles/chap-methods.schema.json` — JSON schema catalogue
+ *   1. `packages/coordinator/src/methods.ts` - TypeScript MethodTable
+ *   2. `schemas/profiles/chap-methods.schema.json` - JSON schema catalogue
  *
  * Catches:
  *   - A method removed from one source but not the other
