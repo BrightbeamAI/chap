@@ -76,6 +76,22 @@ The `deliberation` profile adds richer rules (`quorum:N`, weighted).
 Straightforward. The reviewer's identity, comment, and tags are
 preserved as a `decision` artefact.
 
+**Eligibility.** The actor (`from`) of any review decision MUST be a
+joined workspace member (Core §6.3.1) **and** MUST be one of the
+reviewers the review was addressed to in `review.request`'s `to` set.
+A Coordinator MUST reject a decision from a member who was not an
+addressed reviewer with `-32011` (reviewer not authorised). This holds
+for `decide.approve`, `decide.reject`, `decide.override`, and
+`abstain.declare`. The `rule` field governs *how many* addressed
+reviewers must decide for the review to terminate; the `to` set governs
+*who is eligible* to decide at all.
+
+A broadcast-scoped reviewer relaxes the second condition: if the `to`
+set contains a `workspace:<id>` or `group:<id>` URI, any member (resp.
+any member of that group) is an eligible reviewer, and only the
+membership floor applies. If a review carries no recorded reviewer set,
+the membership floor alone applies.
+
 ```json
 {
   "method": "decide.approve",
@@ -266,7 +282,7 @@ piece of the protocol is plumbing.
 | Code      | Meaning                                                |
 |-----------|--------------------------------------------------------|
 | `-32010`  | Task is not in a reviewable state.                     |
-| `-32011`  | Reviewer is not authorised on this workspace/task.     |
+| `-32011`  | Actor is not authorised: not a workspace member, or a member who was not an addressed reviewer for this task. |
 | `-32012`  | JSON Patch application failed (with path in `data`).   |
 | `-32013`  | Review deadline has lapsed.                            |
 

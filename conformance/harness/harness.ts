@@ -440,6 +440,50 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
     });
     assertEq(result?.state, "in_progress", "should return to in_progress");
   });
+
+  // -------- Authorisation: membership + reviewer-set --------
+  let authTaskId = "";
+  await test("Review profile", "rv-07", "decide by a non-member is rejected with -32011", async () => {
+    const { result: t } = await client.call("task.create", {
+      workspace: ws, from: "human:alice@example.org", to: "agent:reviewer-test-bot",
+      ts: new Date().toISOString(),
+      kind: "authz_test", assignee: "agent:reviewer-test-bot", input: {},
+    });
+    authTaskId = t.task_id;
+    await client.call("task.update", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: "human:alice@example.org",
+      ts: new Date().toISOString(), task_id: authTaskId, state: "in_progress",
+    });
+    await client.call("review.request", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: ["human:alice@example.org"],
+      ts: new Date().toISOString(), task_id: authTaskId, artefact: { body: "x" },
+    });
+    // A participant who never joined attempts to approve.
+    const { error } = await client.call("decide.approve", {
+      workspace: ws, from: "human:ghost@example.org", to: "service:coordinator@example.org",
+      ts: new Date().toISOString(), task_id: authTaskId,
+    });
+    assert(error?.code === -32011, `non-member decide should fail with -32011, got ${JSON.stringify(error)}`);
+  });
+
+  await test("Review profile", "rv-08", "decide by a member not in the reviewer set is rejected with -32011", async () => {
+    // Join a second human who is a member but was not addressed in `to`.
+    await client.call("participant.join", {
+      workspace: ws, from: "human:bystander@example.org", to: "service:coordinator@example.org",
+      ts: new Date().toISOString(), type: "human", role: "observer",
+    });
+    const { error } = await client.call("decide.approve", {
+      workspace: ws, from: "human:bystander@example.org", to: "service:coordinator@example.org",
+      ts: new Date().toISOString(), task_id: authTaskId,
+    });
+    assert(error?.code === -32011, `non-reviewer member decide should fail with -32011, got ${JSON.stringify(error)}`);
+    // And the addressed reviewer can still approve, confirming the path is open.
+    const { result } = await client.call("decide.approve", {
+      workspace: ws, from: "human:alice@example.org", to: "service:coordinator@example.org",
+      ts: new Date().toISOString(), task_id: authTaskId,
+    });
+    assertEq(result?.state, "completed", "addressed reviewer should still be able to approve");
+  });
 }
 
 // ============================================================

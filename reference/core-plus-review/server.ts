@@ -256,6 +256,29 @@ function requireFields(p: Params, fields: string[]): string | null {
   return null;
 }
 
+// Authorisation preconditions (SPECIFICATION.md S6.3.1, profiles/review.md).
+// The actor (`from`) of every method other than participant.join MUST be a
+// joined member; for review decisions it MUST also be an addressed reviewer.
+function requireMember(ws: Workspace, sender: unknown): ReturnType<typeof err> | null {
+  if (typeof sender !== "string" || !ws.members.has(sender as ParticipantUri)) {
+    return err(E.NOT_AUTHORISED, `Not a workspace member: ${String(sender)}`);
+  }
+  return null;
+}
+
+function requireReviewer(task: Task, sender: unknown): ReturnType<typeof err> | null {
+  const review = task.review;
+  if (!review || !review.requested_to || review.requested_to.length === 0) return null;
+  // workspace:/group: scoped reviewers mean "any member"; membership floor suffices.
+  if (review.requested_to.some((r) => typeof r === "string" && (r.startsWith("workspace:") || r.startsWith("group:")))) {
+    return null;
+  }
+  if (typeof sender !== "string" || !review.requested_to.includes(sender as ParticipantUri)) {
+    return err(E.NOT_AUTHORISED, `Not an addressed reviewer for this task: ${String(sender)}`);
+  }
+  return null;
+}
+
 const handlers: Record<string, Handler> = {
 
   // -------- Core --------
@@ -398,6 +421,8 @@ const handlers: Record<string, Handler> = {
     if (missing) return { error: err(E.PARAMS, `Missing field: ${missing}`) };
     const ws = getWorkspace(p.workspace as string);
     if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
+    const notMember = requireMember(ws, p.from);
+    if (notMember) return { error: notMember };
 
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: err(E.PARAMS, `Unknown task`) };
@@ -431,11 +456,15 @@ const handlers: Record<string, Handler> = {
     if (missing) return { error: err(E.PARAMS, `Missing field: ${missing}`) };
     const ws = getWorkspace(p.workspace as string);
     if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
+    const notMember = requireMember(ws, p.from);
+    if (notMember) return { error: notMember };
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: err(E.PARAMS, `Unknown task`) };
     if (task.state !== "review_requested") {
       return { error: err(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
     }
+    const notReviewer = requireReviewer(task, p.from);
+    if (notReviewer) return { error: notReviewer };
 
     const baseArtefact = p.based_on_artefact ?? (task as any).pending_artefact;
     if (baseArtefact === undefined) {
@@ -493,11 +522,15 @@ const handlers: Record<string, Handler> = {
     if (missing) return { error: err(E.PARAMS, `Missing field: ${missing}`) };
     const ws = getWorkspace(p.workspace as string);
     if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
+    const notMember = requireMember(ws, p.from);
+    if (notMember) return { error: notMember };
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: err(E.PARAMS, `Unknown task`) };
     if (task.state !== "review_requested") {
       return { error: err(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
     }
+    const notReviewer = requireReviewer(task, p.from);
+    if (notReviewer) return { error: notReviewer };
 
     const now = new Date().toISOString();
     task.review!.decisions.push({
@@ -550,11 +583,15 @@ function decide(p: Params, kind: "approve" | "reject"): { result?: unknown; erro
   if (missing) return { error: err(E.PARAMS, `Missing field: ${missing}`) };
   const ws = getWorkspace(p.workspace as string);
   if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
+  const notMember = requireMember(ws, p.from);
+  if (notMember) return { error: notMember };
   const task = ws.tasks.get(p.task_id as string);
   if (!task) return { error: err(E.PARAMS, `Unknown task`) };
   if (task.state !== "review_requested") {
     return { error: err(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
   }
+  const notReviewer = requireReviewer(task, p.from);
+  if (notReviewer) return { error: notReviewer };
 
   const now = new Date().toISOString();
   task.review!.decisions.push({

@@ -20,6 +20,13 @@ the Participant has insufficient information, insufficient authority, or a
 conflict of interest. Triggered by `abstain.declare`; produces an
 `abstention` artefact.
 
+**Actor.** [normative] The Participant on whose behalf an envelope is sent,
+named in the `from` field. For every method other than `participant.join`,
+the actor MUST be a joined member of the named workspace; envelopes from a
+non-member are rejected (the error table calls this `unknown_participant`;
+the reference implementations currently return `not_authorised`, -32011).
+See SPECIFICATION.md S6.3.1.
+
 **Admin (role).** [normative] A workspace role with the authority to invite
 and evict Participants, change mode, and rotate Coordinator responsibilities.
 
@@ -38,6 +45,19 @@ CHAP uses `auth_time` to enforce step-up windows for privileged operations.
 
 **Authority (URI portion).** The `@authority` suffix on a Participant URI
 (e.g. `human:alice@example.org`). Identifies the issuing identity domain.
+
+---
+
+## B
+
+**Break-glass.** An informative term for admitting an actor outside the
+normal membership flow to handle an emergency (for example, a senior
+approver stepping in to decide a stalled review). CHAP does not define a
+distinct break-glass method. The recommended pattern is a *flagged join*:
+the actor joins via `participant.join` carrying a role or flag that marks
+the entry as exceptional, then acts as a normal member. Because the join
+is itself an audited evidence entry, the exceptional admission is on the
+record and no decision is ever attributed to a non-member.
 
 ---
 
@@ -282,6 +302,13 @@ request's `id`.
 **Review.** A bounded approval step in which one or more reviewers
 evaluate an artefact and produce a decision under the task's decision
 rule. Opened by `review.request`; closed by `decide.*` operations.
+
+**Reviewer set.** [normative] The reviewers a review was addressed to,
+recorded as the `to` set on `review.request`. Under `review/1.0`, only a
+member in the reviewer set may act on the review (`decide.*`,
+`abstain.declare`); a member outside it is rejected with `-32011`. The
+decision rule governs how many of the set must decide; the set governs
+who is eligible. See profiles/review.md S3.2.
 
 **Role.** A workspace-local label attached to each Participant entry in
 the workspace descriptor. Determines authority via the workspace policy's

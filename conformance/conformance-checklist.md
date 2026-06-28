@@ -57,6 +57,7 @@ CHAP conformance.
 - [ ] `participant.join` adds the participant to `members`; rejects with `-32602` for missing fields.
 - [ ] `participant.leave` removes the participant; idempotent.
 - [ ] `task.create` validates that the assignee is a current member; returns `task_id` and `state: "created"`.
+- [ ] Every actor-action method validates that `from` (the actor) is a current member, rejecting a non-member with `-32011` (the spec's `unknown_participant` condition; see SPECIFICATION.md §6.3.1). Verified by harness vectors `rv-07` and `rv-08`.
 - [ ] `task.update` enforces the `created → in_progress → (completed|declined)` state machine; rejects illegal transitions with `-32602`.
 - [ ] `task.complete` is terminal; subsequent transitions on the same `task_id` are rejected with `-32602`.
 - [ ] `audit.read` supports `range` and at minimum the `method`, `from`, `task_id` filters; returns `entries` and `next_seq`.
@@ -93,6 +94,7 @@ a profile it does not pass.**
 - [ ] Implements `review.request`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`, `escalate.raise`.
 - [ ] Adds `review_requested`, `abstained`, `escalated` task states.
 - [ ] `decide.override`'s `diff` is validated as a well-formed RFC 6902 JSON Patch and applied deterministically.
+- [ ] Review decisions (`decide.*`, `abstain.declare`) require `from` to be one of the reviewers addressed in `review.request`'s `to` set; a member outside that set is rejected with `-32011` (see [`../profiles/review.md`](../profiles/review.md) §3.2). Verified by harness vector `rv-08`.
 - [ ] Override entries preserve `rationale`, `tags`, `policy_refs` as queryable audit data.
 - [ ] `audit.read` filters support `method = decide.override`.
 - [ ] Returns `-32010` … `-32013` for review-specific failures (see [`../profiles/review.md`](../profiles/review.md) §5).

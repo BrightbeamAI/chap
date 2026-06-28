@@ -263,6 +263,55 @@ export class Coordinator {
     return this.workspaces.get(id);
   }
 
+  // ----- authorisation preconditions -----
+
+  /**
+   * Assert that `sender` is a joined member of `ws`. Returns an error
+   * fragment if not, else null. Every actor-action method runs this on
+   * its `from` so a decision, completion, or review request can never
+   * be attributed to a participant who never joined. See
+   * SPECIFICATION.md S6.3 and the `unknown_participant` condition in
+   * S13.3. (The published spec assigns -32403; the reference
+   * implementations use NOT_AUTHORISED -32011 because -32403 already
+   * denotes OIDC_TOKEN_INVALID in their private range. The spec/impl
+   * error-table divergence is tracked separately.)
+   */
+  private requireMember(ws: Workspace, sender: unknown): { error: ReturnType<typeof rpcError> } | null {
+    if (typeof sender !== "string" || !ws.members.has(sender)) {
+      return { error: rpcError(E.NOT_AUTHORISED, `Not a workspace member: ${String(sender)}`) };
+    }
+    return null;
+  }
+
+  /**
+   * Assert that `sender` was addressed in the task's review. Applied to
+   * review-decision methods (decide.* and abstain.declare): to act on a
+   * review you must be one of the reviewers it was addressed to (the
+   * `to` set on review.request). Membership is the floor; this is the
+   * eligibility ceiling for decisions. Returns an error fragment if not
+   * eligible, else null.
+   */
+  private requireReviewer(task: Task, sender: unknown): { error: ReturnType<typeof rpcError> } | null {
+    const review = task.review;
+    if (!review || !review.requested_to || review.requested_to.length === 0) {
+      // No recorded reviewer set: fall back to the membership floor,
+      // which the caller has already enforced.
+      return null;
+    }
+    // A broadcast-scoped reviewer (workspace:/group: URI) means "any
+    // member" (resp. "any group member"); the membership floor already
+    // passed, so no per-URI match is required. Mirrors the handoff
+    // profile's group-recipient handling and keeps the documented
+    // `to: workspace:<id>` broadcast pattern working.
+    if (review.requested_to.some((r) => typeof r === "string" && (r.startsWith("workspace:") || r.startsWith("group:")))) {
+      return null;
+    }
+    if (typeof sender !== "string" || !review.requested_to.includes(sender as ParticipantUri)) {
+      return { error: rpcError(E.NOT_AUTHORISED, `Not an addressed reviewer for this task: ${String(sender)}`) };
+    }
+    return null;
+  }
+
   /** Serialise all workspaces to a JSON-safe structure for persistence. */
   snapshot(): unknown {
     const out: Array<Record<string, unknown>> = [];
@@ -746,6 +795,8 @@ export class Coordinator {
   private opTaskComplete(p: Record<string, unknown>): ReturnType<Handler> {
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
     if (task.state === "completed" || task.state === "declined") {
@@ -790,6 +841,8 @@ export class Coordinator {
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
     const to = p.to;
@@ -815,11 +868,15 @@ export class Coordinator {
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
     if (task.state !== "review_requested") {
       return { error: rpcError(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
     }
+    const notReviewer = this.requireReviewer(task, p.from);
+    if (notReviewer) return notReviewer;
     const now = this.now();
     task.review!.decisions.push({
       reviewer: p.from as ParticipantUri,
@@ -844,11 +901,15 @@ export class Coordinator {
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
     if (task.state !== "review_requested") {
       return { error: rpcError(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
     }
+    const notReviewer = this.requireReviewer(task, p.from);
+    if (notReviewer) return notReviewer;
     const base = p.based_on_artefact !== undefined ? p.based_on_artefact : task.pending_artefact;
     if (base === undefined) return { error: rpcError(E.PARAMS, "No base artefact for override") };
     let applied: unknown;
@@ -895,11 +956,15 @@ export class Coordinator {
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
     if (task.state !== "review_requested") {
       return { error: rpcError(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
     }
+    const notReviewer = this.requireReviewer(task, p.from);
+    if (notReviewer) return notReviewer;
     const now = this.now();
     task.review!.decisions.push({
       reviewer: p.from as ParticipantUri,

@@ -473,6 +473,40 @@ Roles are workspace-local strings. The protocol defines two
 All other role names are deployment-defined. The workspace's
 `policy_uri` describes which roles may invoke which methods.
 
+#### 6.3.1 Actor membership (precondition)
+
+The `from` field of every method names the **actor**: the Participant
+on whose behalf the envelope is sent. For every method other than
+`participant.join` itself, the actor MUST be a current member of the
+named workspace at the time the envelope is processed. A Coordinator
+MUST reject an envelope whose `from` is not a joined member. The error
+table (§13.3) names this condition `unknown_participant`; the reference
+implementations currently surface it with the `not_authorised` code
+(-32011) rather than the table's -32403, because -32403 already denotes
+an invalid OIDC token in their private error range. This code-level
+divergence is being reconciled separately and does not affect the
+precondition itself. Enforcing it makes the audit log's attribution
+sound: a recorded decision, completion, or review request can never
+name a Participant who never joined.
+
+Membership is the floor, not the ceiling. Individual profiles MAY
+impose a stricter eligibility rule on top of it. In particular, the
+`review/1.0` profile requires that the actor of a review decision
+(`decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`)
+be one of the reviewers the review was addressed to in `review.request`'s
+`to` set; see [`profiles/review.md`](./profiles/review.md). Membership
+verification is distinct from, and composes with, identity verification:
+the `identity-oidc/1.0` and `identity-vc/1.0` profiles bind a verified
+real-world identity to a Participant, but the membership precondition
+here applies whether or not those profiles are in force.
+
+Legitimately admitting a new actor (an escalation target, or an
+emergency "break-glass" approver) is done by joining them first, which
+records the entry into the workspace as its own audit event. There is
+no path by which a non-member acts; the exceptional nature of an
+admission is captured in how, and under what role, the Participant
+joined.
+
 ### 6.4 Policy
 
 A workspace's policy describes:

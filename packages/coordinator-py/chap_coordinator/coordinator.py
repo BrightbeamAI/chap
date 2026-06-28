@@ -274,6 +274,65 @@ class Coordinator:
         """Convenience: get a workspace by id, or ``None``."""
         return self.workspaces.get(workspace_id)
 
+    # -- authorisation preconditions -----------------------------------
+
+    @staticmethod
+    def _require_member(ws: Workspace, sender: str | None) -> dict | None:
+        """Assert that ``sender`` is a joined member of ``ws``.
+
+        Returns an error envelope fragment if not, else ``None``. Every
+        actor-action method runs this on its ``from`` so a decision,
+        completion, or review request can never be attributed to a
+        participant who never joined. See SPECIFICATION.md S6.3 and the
+        ``unknown_participant`` error condition in S13.3.
+
+        (The published spec assigns this condition code -32403; the
+        reference implementations use the internal NOT_AUTHORISED code
+        -32011 because -32403 is already taken in their private range by
+        OIDC_TOKEN_INVALID. The spec-vs-implementation error-table
+        divergence is tracked separately.)
+        """
+        if not sender or sender not in ws.members:
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED,
+                f"Not a workspace member: {sender}",
+            )}
+        return None
+
+    @staticmethod
+    def _require_reviewer(task: Task, sender: str | None) -> dict | None:
+        """Assert that ``sender`` was addressed in the task's review.
+
+        Applied to review-decision methods (decide.* and abstain.declare):
+        to act on a review you must be one of the reviewers it was
+        addressed to (the ``to`` set on review.request). Membership is the
+        floor; this is the eligibility ceiling for decisions. Returns an
+        error envelope fragment if not eligible, else ``None``.
+
+        A broadcast-scoped reviewer (a ``workspace:`` or ``group:`` URI in
+        the ``to`` set) means "any member" (resp. "any group member"), so
+        in that case the membership floor the caller already enforced is
+        sufficient and no per-URI match is required. This mirrors the
+        handoff profile's treatment of group recipients and keeps the
+        documented ``to: workspace:<id>`` broadcast pattern working.
+        """
+        review = task.review
+        if review is None or not review.requested_to:
+            # No recorded reviewer set: fall back to the membership floor,
+            # which the caller has already enforced.
+            return None
+        # If the review was broadcast to a workspace/group scope, any member
+        # is eligible; the membership floor already passed.
+        if any(isinstance(r, str) and (r.startswith("workspace:") or r.startswith("group:"))
+               for r in review.requested_to):
+            return None
+        if sender not in review.requested_to:
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED,
+                f"Not an addressed reviewer for this task: {sender}",
+            )}
+        return None
+
     # -- public dispatch -----------------------------------------------
 
     def dispatch(self, envelope: dict) -> dict:
@@ -750,6 +809,9 @@ class Coordinator:
         ws = self.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p.get("from"))
+        if not_member:
+            return not_member
         task = ws.tasks.get(p.get("task_id", ""))
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
@@ -798,6 +860,9 @@ class Coordinator:
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p.get("from"))
+        if not_member:
+            return not_member
         task = ws.tasks.get(p["task_id"])
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
@@ -828,6 +893,9 @@ class Coordinator:
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p.get("from"))
+        if not_member:
+            return not_member
         task = ws.tasks.get(p["task_id"])
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
@@ -835,6 +903,9 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_REVIEWABLE, f"Task not awaiting review: {task.state}"
             )}
+        not_reviewer = self._require_reviewer(task, p.get("from"))
+        if not_reviewer:
+            return not_reviewer
         now = self.now_iso()
         assert task.review is not None
         task.review.decisions.append({
@@ -862,6 +933,9 @@ class Coordinator:
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p.get("from"))
+        if not_member:
+            return not_member
         task = ws.tasks.get(p["task_id"])
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
@@ -869,6 +943,9 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_REVIEWABLE, f"Task not awaiting review: {task.state}"
             )}
+        not_reviewer = self._require_reviewer(task, p.get("from"))
+        if not_reviewer:
+            return not_reviewer
         base = p.get("based_on_artefact", task.pending_artefact)
         if base is None:
             return {"error": rpc_error(E.PARAMS, "No base artefact for override")}
@@ -923,6 +1000,9 @@ class Coordinator:
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p.get("from"))
+        if not_member:
+            return not_member
         task = ws.tasks.get(p["task_id"])
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
@@ -930,6 +1010,9 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_REVIEWABLE, f"Task not awaiting review: {task.state}"
             )}
+        not_reviewer = self._require_reviewer(task, p.get("from"))
+        if not_reviewer:
+            return not_reviewer
         now = self.now_iso()
         assert task.review is not None
         task.review.decisions.append({

@@ -304,6 +304,30 @@ that supports `cnf.jwk` or that you can wrap with a DPoP-issuing
 shim. The `identity-vc` profile works with any W3C-compliant VC
 issuer. There's no vendor dependency at the protocol layer.
 
+### Who can approve, reject, or override a review?
+
+Two conditions, checked in order. First, the actor (`from`) must be a
+joined member of the workspace; a Coordinator rejects any method whose
+actor never joined. Second, for a review decision specifically, the
+actor must be one of the reviewers the review was addressed to in
+`review.request`'s `to` set. A member who was not addressed cannot
+decide that review. The `rule` field (`any_one_approves`, `all_approve`,
+`quorum:N`) controls *how many* of the addressed reviewers must decide
+for the review to terminate; the `to` set controls *who is eligible* to
+decide at all. If you want any member to be able to review, address the
+request to the workspace itself (`to: "workspace:<id>"`) or to a group
+(`to: "group:<id>"`); a broadcast address makes any member (resp. any
+group member) eligible, with only the membership floor applying.
+
+Membership is the floor, identity is a separate layer: the
+`identity-oidc` and `identity-vc` profiles bind a verified real-world
+identity on top of membership, but the membership check applies whether
+or not those profiles are active. If you need an approver who has not
+yet joined (an escalation target, or an emergency approver), join them
+first; that join is itself recorded in the audit log, so there is never
+a decision attributed to a non-participant. See SPECIFICATION.md S6.3.1
+and profiles/review.md S3.2.
+
 ### How does CHAP handle GDPR / right-to-be-forgotten?
 
 Append-only logs and erasure rights are in genuine tension. CHAP's

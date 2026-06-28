@@ -128,6 +128,28 @@ live inside Workspaces. Artefacts are produced by Tasks. Participants
 send Messages. There is exactly one EvidenceEntry per accepted Message,
 and the chain is per-Workspace.
 
+**Authorisation layering.** Whether a Message is accepted at all is
+decided in layers, innermost first:
+
+1. **Membership (Core).** The actor (`from`) must be a joined member of
+   the Workspace. This is the floor: a Message from a non-member is
+   refused before any profile logic runs, so the chain can never record
+   an action by a Participant who never joined.
+2. **Eligibility (profile).** A profile may narrow who, among members,
+   may invoke a given method. `review/1.0` requires that the actor of a
+   review decision be one of the reviewers the review was addressed to;
+   `deliberation/1.0` requires a voter to be in the deliberation's voter
+   list; `handoff/1.0` requires the recipient to be a member.
+3. **Identity (profile).** `identity-oidc/1.0` and `identity-vc/1.0`
+   bind a verified real-world identity to the actor. These compose with
+   membership rather than replacing it: they raise the bar from "is a
+   member" to "is a member with a freshly-verified identity," and apply
+   only when the profile is in force.
+
+Each layer is additive and audited. The membership layer is the one a
+conforming Core implementation must enforce unconditionally; the others
+are switched on by the workspace's profile set.
+
 ---
 
 ## 3. Task lifecycle

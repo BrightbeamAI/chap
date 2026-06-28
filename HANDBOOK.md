@@ -377,6 +377,36 @@ role_permissions:
   operator:   [control.*, workspace.*, participant.evict]
 ```
 
+### 7.5 What the Coordinator enforces before your policy runs
+
+Two checks happen in the Coordinator itself, beneath whatever
+role-to-method policy you configure above:
+
+1. **Membership.** The actor (`from`) of every method except
+   `participant.join` must be a joined member of the workspace.
+   A non-member is rejected with `not_authorised` (-32011) before any
+   policy or profile logic runs. You do not configure this; it is always
+   on. Its purpose is audit integrity: the log can never record an action
+   by someone who never joined.
+2. **Reviewer-set eligibility (with `review/1.0`).** A review decision
+   (`decide.*`, `abstain.declare`) is accepted only from a member who was
+   named in the review's `to` set. A member who was not asked to review
+   cannot decide it. The decision `rule` controls how many of the
+   addressed reviewers must act; the `to` set controls who is eligible.
+   To let any member review, address the request to `workspace:<id>` (or
+   a `group:<id>`); a broadcast address makes any member (resp. any group
+   member) eligible.
+
+These are floors, not a replacement for your policy. Your
+`role_permissions` map still decides, for example, that only `reviewer`
+may call `decide.*` at all. The Coordinator's checks sit underneath:
+even a participant your policy would allow must first be a member, and
+for a review decision must first be an addressed reviewer. Admitting
+someone new (an escalation target, an emergency approver) is done by
+joining them first; there is no path for a non-member to act, so the
+admission itself is always on the record. See SPECIFICATION.md §6.3.1
+and profiles/review.md §3.2.
+
 ---
 
 ## 8. Audit, retention, and right-to-be-forgotten

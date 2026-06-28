@@ -87,12 +87,49 @@ lunch". Backward-compatible: no wire-format or schema changes.
   first try. Tool descriptions for `output`, `artefact`, and `to` now
   state explicitly that a JSON value is expected, not a stringified one.
 
+### Fixed
+
+- **Actor membership is now enforced.** Before this release, only a
+  task's *assignee* was checked for membership (at `task.create` /
+  `task.route`); the *actor* (`from`) of a method was not. A decision,
+  completion, or review request could therefore be attributed to a
+  participant who had never joined. The error table (S13.3) defined an
+  `unknown_participant` code for this condition, but no normative
+  precondition stated it and no implementation enforced it. Every
+  actor-action method in Core and `review/1.0` (`task.complete`,
+  `review.request`, `decide.approve`, `decide.reject`, `decide.override`,
+  `abstain.declare`) now verifies that `from` is a joined member and
+  rejects a non-member with `not_authorised` (-32011). Applied
+  identically in the TypeScript coordinator, the Python coordinator, and
+  the standalone `core-plus-review` reference server. New precondition
+  text added at SPECIFICATION.md S6.3.1. Reported by a collaborator
+  integrating CHAP over MCP.
+- **Reviewer-set eligibility (review/1.0).** To act on a review,
+  `decide.*` and `abstain.declare` now require `from` to be one of the
+  reviewers the review was addressed to (the `to` set on
+  `review.request`), not merely any member. The `rule` field still
+  governs *how many* must decide; `to` governs *who is eligible*. A
+  review with no recorded reviewer set falls back to the membership
+  floor. This is a new normative rule for the profile, surfaced via the
+  `-32011` code review.md already defined. See profiles/review.md S3.2.
+
+  Notes: `escalate.raise` already required its escalation target to be a
+  member, so it was unchanged. No break-glass machinery is introduced;
+  admitting a new actor is done by joining first, which records the
+  entry as its own audit event (flagged-join is the recommended pattern,
+  documented as future work). The reference implementations surface both
+  conditions with `not_authorised` (-32011) rather than the spec table's
+  `unknown_participant` (-32403), because -32403 already denotes
+  `OIDC_TOKEN_INVALID` in their private error range; the broader
+  spec-vs-implementation error-table divergence is a separate tracked
+  item.
+
 ### Tests
 
-- TS coordinator: **84** (was 72; +6 storage, +6 typed facade)
-- TS MCP: 8, TS A2A: 14, TS playground: 7
-- Python coordinator: 90, Python langgraph: **10** (new)
-- Conformance harness: 21/21 on both references, unchanged
+- TS coordinator: **95** (was 72; +6 storage, +6 typed facade, +11 authorisation)
+- TS MCP: 17 (was 8; +9 stringified-JSON coercion), TS A2A: 14, TS playground: 7
+- Python coordinator: **120** (+8 storage, +9 MCP coercion, +11 authorisation), Python langgraph: **10** (new)
+- Conformance harness: **23/23** on both references (+2 authorisation vectors)
 
 ### Security
 
