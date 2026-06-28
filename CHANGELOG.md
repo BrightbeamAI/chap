@@ -9,6 +9,110 @@ incremented under the same rules.
 
 ---
 
+## 0.2.6: MCP argument coercion, dual-language tour, and authorisation enforcement
+
+Follows the 0.2.5 adoption release. Three things: a real-world MCP
+integration fix, a clearer README walkthrough, and an authorisation
+tightening reported by a collaborator. Backward-compatible on the wire:
+no envelope or schema changes. The authorisation work changes behaviour
+(it rejects envelopes that were silently accepted before), so it lands
+as a minor version rather than a patch.
+
+### Fixed
+
+- **MCP adapters coerce stringified-JSON arguments.** A real Claude
+  Desktop integration surfaced that LLM MCP clients routinely serialise
+  structured tool arguments as JSON-encoded strings rather than native
+  objects or arrays. That left an artefact stored as a string, which
+  then crashed a `decide.override` object-path patch with an internal
+  error (-32603). Both the TypeScript and Python MCP adapters now
+  normalise these at the adapter boundary, before the envelope reaches
+  the protocol core: a string value whose parameter schema admits an
+  object/array type is JSON-parsed when, and only when, it parses
+  cleanly to an accepted type. Bare strings the schema accepts as
+  strings (participant URIs, task ids, rationales) are left untouched.
+  The protocol core is unchanged and stays strict; the audit log now
+  records correctly-typed artefacts and the override applies on the
+  first try. Tool descriptions for `output`, `artefact`, and `to` now
+  state explicitly that a JSON value is expected, not a stringified one.
+- **Actor membership is now enforced.** Before this release, only a
+  task's *assignee* was checked for membership (at `task.create` /
+  `task.route`); the *actor* (`from`) of a method was not. A decision,
+  completion, or review request could therefore be attributed to a
+  participant who had never joined. The error table (§13.3) defined an
+  `unknown_participant` code for this condition, but no normative
+  precondition stated it and no implementation enforced it. Every
+  actor-action method in Core and `review/1.0` (`task.complete`,
+  `review.request`, `decide.approve`, `decide.reject`, `decide.override`,
+  `abstain.declare`) now verifies that `from` is a joined member and
+  rejects a non-member with `not_authorised` (-32011). Applied
+  identically in the TypeScript coordinator, the Python coordinator, and
+  the standalone `core-plus-review` reference server. New precondition
+  text added at SPECIFICATION.md §6.3.1. Reported by a collaborator
+  integrating CHAP over MCP.
+
+### Added
+
+- **Reviewer-set eligibility (review/1.0).** To act on a review,
+  `decide.*` and `abstain.declare` now require `from` to be one of the
+  reviewers the review was addressed to (the `to` set on
+  `review.request`), not merely any member. The `rule` field still
+  governs *how many* must decide; the `to` set governs *who is eligible*.
+  A review addressed to a broadcast scope (`workspace:<id>` or
+  `group:<id>`) admits any member (resp. any group member); a review
+  with no recorded reviewer set falls back to the membership floor. This
+  is a new normative rule for the profile, surfaced via the `-32011`
+  code review.md already defined. See profiles/review.md §3.2.
+- **Worked authorisation walkthrough** at
+  `packages/coordinator-py/examples/authorisation_walkthrough.py`:
+  exercises an allowed approve and override plus the two refused paths
+  (non-member, and member-not-in-reviewer-set), each rejected with
+  -32011.
+- **Conformance vectors `rv-07` and `rv-08`** covering the non-member
+  and non-reviewer rejections; the harness now runs 23 vectors.
+
+### Changed
+
+- **README 90-second tour rewritten as dual-language.** The walkthrough
+  now shows TypeScript (typed facade) and Python (dict-based dispatch)
+  side by side, and the hero GIF was rebuilt with a step indicator and a
+  progress bar so the six-step Core+review flow is legible. Documentation
+  only; no API change.
+- **Docs updated for the authorisation model.** New SPECIFICATION.md
+  §6.3.1 (actor-membership precondition); profiles/review.md §3.2
+  (reviewer-set eligibility, with the broadcast-scope caveat); a HANDBOOK
+  §7.5 on what the Coordinator enforces beneath workspace policy; FAQ,
+  ARCHITECTURE (authorisation layering), and GLOSSARY (Actor, Break-glass,
+  Reviewer set) entries.
+
+### Notes
+
+- `escalate.raise` already required its escalation target to be a member,
+  so it was unchanged. No break-glass machinery is introduced; admitting
+  a new actor is done by joining first, which records the entry as its
+  own audit event (flagged-join is the recommended future pattern).
+- The reference implementations surface the membership and reviewer-set
+  conditions with `not_authorised` (-32011) rather than the spec table's
+  `unknown_participant` (-32403), because -32403 already denotes
+  `OIDC_TOKEN_INVALID` in their private error range. The broader
+  spec-vs-implementation error-table reconciliation is tracked
+  separately and is out of scope here.
+- The MCP coercion fix is scoped to the adapter boundary; the same
+  stringified-JSON input reaching the core through a non-adapter path
+  still produces -32603, a latent core rough edge left for a separate
+  change.
+
+### Tests
+
+- TS coordinator: **95** (+11 authorisation), TS MCP: **17** (+9 coercion),
+  TS A2A: 14, TS playground: 7
+- Python coordinator: **120** (+9 coercion, +11 authorisation),
+  Python langgraph: 10
+- Conformance harness: **23/23** on both reference implementations
+  (+2 authorisation vectors)
+
+---
+
 ## 0.2.5: publish-ready packages, persistent storage, typed facade, framework adapter
 
 The "adoption" release. The protocol was already there; this release closes
@@ -73,63 +177,13 @@ lunch". Backward-compatible: no wire-format or schema changes.
   placeholder mid-flow replaced with the real payload.
 - **`analyze-overrides.ts`** gained a `--db <path>` flag so the in-process
   SqliteStore quickstart works without spinning up the HTTP server.
-- **MCP adapters now coerce stringified-JSON arguments.** LLM MCP clients
-  (Claude Desktop, Cursor, and others) routinely serialise structured
-  tool arguments as JSON-encoded strings rather than native objects or
-  arrays. Both the TypeScript and Python MCP adapters now normalise
-  these at the adapter boundary, before the envelope reaches the
-  protocol core: a string value whose parameter schema admits an
-  object/array type is JSON-parsed when it parses cleanly to an
-  accepted type. Bare strings the schema accepts as strings (URIs, task
-  ids, rationales) are left untouched. The protocol core is unchanged
-  and stays strict; the audit log now records correctly-typed
-  artefacts, and `decide.override` object-path patches apply on the
-  first try. Tool descriptions for `output`, `artefact`, and `to` now
-  state explicitly that a JSON value is expected, not a stringified one.
-
-### Fixed
-
-- **Actor membership is now enforced.** Before this release, only a
-  task's *assignee* was checked for membership (at `task.create` /
-  `task.route`); the *actor* (`from`) of a method was not. A decision,
-  completion, or review request could therefore be attributed to a
-  participant who had never joined. The error table (S13.3) defined an
-  `unknown_participant` code for this condition, but no normative
-  precondition stated it and no implementation enforced it. Every
-  actor-action method in Core and `review/1.0` (`task.complete`,
-  `review.request`, `decide.approve`, `decide.reject`, `decide.override`,
-  `abstain.declare`) now verifies that `from` is a joined member and
-  rejects a non-member with `not_authorised` (-32011). Applied
-  identically in the TypeScript coordinator, the Python coordinator, and
-  the standalone `core-plus-review` reference server. New precondition
-  text added at SPECIFICATION.md S6.3.1. Reported by a collaborator
-  integrating CHAP over MCP.
-- **Reviewer-set eligibility (review/1.0).** To act on a review,
-  `decide.*` and `abstain.declare` now require `from` to be one of the
-  reviewers the review was addressed to (the `to` set on
-  `review.request`), not merely any member. The `rule` field still
-  governs *how many* must decide; `to` governs *who is eligible*. A
-  review with no recorded reviewer set falls back to the membership
-  floor. This is a new normative rule for the profile, surfaced via the
-  `-32011` code review.md already defined. See profiles/review.md S3.2.
-
-  Notes: `escalate.raise` already required its escalation target to be a
-  member, so it was unchanged. No break-glass machinery is introduced;
-  admitting a new actor is done by joining first, which records the
-  entry as its own audit event (flagged-join is the recommended pattern,
-  documented as future work). The reference implementations surface both
-  conditions with `not_authorised` (-32011) rather than the spec table's
-  `unknown_participant` (-32403), because -32403 already denotes
-  `OIDC_TOKEN_INVALID` in their private error range; the broader
-  spec-vs-implementation error-table divergence is a separate tracked
-  item.
 
 ### Tests
 
-- TS coordinator: **95** (was 72; +6 storage, +6 typed facade, +11 authorisation)
-- TS MCP: 17 (was 8; +9 stringified-JSON coercion), TS A2A: 14, TS playground: 7
-- Python coordinator: **120** (+8 storage, +9 MCP coercion, +11 authorisation), Python langgraph: **10** (new)
-- Conformance harness: **23/23** on both references (+2 authorisation vectors)
+- TS coordinator: **84** (was 72; +6 storage, +6 typed facade)
+- TS MCP: 8, TS A2A: 14, TS playground: 7
+- Python coordinator: **100**, Python langgraph: **10** (new)
+- Conformance harness: 21/21 on both references
 
 ### Security
 

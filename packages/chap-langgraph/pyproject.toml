@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "chap-langgraph"
-version         = "0.2.5"
+version         = "0.2.6"
 description     = "CHAP bridge for LangGraph: emit hash-linked audit envelopes around human-in-the-loop interrupts."
 readme          = "README.md"
 requires-python = ">=3.10"

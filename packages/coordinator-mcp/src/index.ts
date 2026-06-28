@@ -13,7 +13,7 @@
  *   import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
  *
  *   const coord = new Coordinator({ ... });
- *   const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.3" });
+ *   const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.6" });
  *   await server.connect(new StdioServerTransport());
  *
  * Usage (Streamable HTTP): see reference/mcp-server-ts/server.ts.
@@ -59,7 +59,7 @@ export type { JsonSchema } from "./schemas.js";
 export interface ChapMcpOptions {
   /** Server name advertised to MCP clients. Default: "chap". */
   name?: string;
-  /** Server version. Default: "0.2.3". */
+  /** Server version. Default: "0.2.6". */
   version?: string;
   /** Override the list of CHAP methods to expose. Default: all 39. */
   toolFilter?: (toolName: string) => boolean;
@@ -77,7 +77,7 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
   const server = new Server(
     {
       name:    options.name    ?? "chap",
-      version: options.version ?? "0.2.3",
+      version: options.version ?? "0.2.6",
     },
     {
       capabilities: {
