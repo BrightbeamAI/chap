@@ -149,6 +149,11 @@ def test_unknown_decision_raises(bridge):
         bridge.record_decision(ask({"x": 1}), reply(response="?"), decision="maybe")
 
 
+def test_override_without_returned_content_raises(bridge):
+    with pytest.raises(ValueError, match="returned"):
+        bridge.record_decision(ask({"x": 1}), reply(), decision="override")
+
+
 def test_chain_is_hash_linked(bridge):
     bridge.record_decision(ask({"x": 1}), reply(response="ok"), decision="approve")
     bridge.record_decision(ask({"x": 2}), reply(response="no"), decision="reject")

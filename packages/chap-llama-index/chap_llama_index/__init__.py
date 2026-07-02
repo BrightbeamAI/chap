@@ -156,6 +156,8 @@ class ChapHitlBridge:
             if returned is None:
                 returned = _event_get(response_event, "response")
             if diff is None:
+                if returned is None:
+                    raise ValueError("an override needs `returned` content (or a `diff`)")
                 diff = _diff(proposed, returned, "")
             if not diff:
                 # The edit changed nothing; record the approve it really is.
