@@ -55,8 +55,8 @@ def main() -> None:
     results.approvals[requests.approvals[0].tool_call_id] = ToolApproved()
     bridge.record_results(requests, results)
 
-    # 2. Approve, but cap the amount. The edit is the diff; a senior
-    #    reviewer signs it, and the metadata carries the why.
+    # 2. Refining edit: same decision, capped amount. intent_preserved
+    #    stays true (the default), and the metadata carries the why.
     requests = propose()
     call = requests.approvals[0]
     results = DeferredToolResults()
@@ -70,7 +70,23 @@ def main() -> None:
     }}
     bridge.record_results(requests, results)
 
-    # 3. Deny.
+    # 3. Substituting edit: the reviewer redirects the payment, a
+    #    different decision than the agent's, so intent_preserved=false.
+    requests = propose()
+    call = requests.approvals[0]
+    results = DeferredToolResults()
+    results.approvals[call.tool_call_id] = ToolApproved(
+        override_args={**call.args_as_dict(), "to": "acct-escrow"},
+    )
+    results.metadata = {call.tool_call_id: {
+        "approver":         "human:sam@example.org",
+        "rationale":        "wrong recipient; routed to escrow instead",
+        "tags":             ["wrong-recipient"],
+        "intent_preserved": False,
+    }}
+    bridge.record_results(requests, results)
+
+    # 4. Deny.
     requests = propose()
     results = DeferredToolResults()
     results.approvals[requests.approvals[0].tool_call_id] = ToolDenied(
@@ -86,7 +102,8 @@ def main() -> None:
         who = params.get("from", "")
         detail = ""
         if env["method"] == "decide.override":
-            detail = f"  diff={params['diff']} tags={params['tags']}"
+            detail = (f"  intent_preserved={params['intent_preserved']}"
+                      f" diff={params['diff']} tags={params['tags']}")
         elif env["method"] in ("decide.approve", "decide.reject"):
             detail = f"  {params.get('comment', '')}"
         print(f"  seq={entry['seq']:<2} {env['method']:<16} {who}{detail}")
