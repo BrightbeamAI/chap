@@ -13,6 +13,7 @@ mechanics, and a [`system/`](./01-solo-dev-overrides/system/)
 implementation that wires the same story into a real agent framework
 (Pydantic AI) to prove CHAP works inside a genuine human-in-the-loop
 system. Contribute at whichever tier fits your ambition.
+shape.
 
 ## How this differs from `examples/` and adapter demos
 
