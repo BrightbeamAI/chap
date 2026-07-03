@@ -29,6 +29,21 @@ standard library**: from a clone of the repo it imports the in-repo
 `pip install chap-coordinator` works with the same script. No network, no
 services, no config.
 
+### Two ways to run this scenario
+
+| | [`scenario.py`](./scenario.py) | [`system/`](./system/) |
+|---|---|---|
+| **What it is** | The story staged directly against the coordinator. | The story wired into a real agent framework (Pydantic AI). |
+| **Proves** | The CHAP mechanics: record, verify, query. | CHAP slots into a real system's human-in-the-loop path. |
+| **Runs with** | Standard library only. | `pip install "pydantic-ai-slim>=1.0"`, still offline, no API key. |
+| **Bar to read/copy** | Good first issue. | A completed system example to aspire to. |
+
+Start with `scenario.py` to understand what CHAP records; open
+[`system/`](./system/) to see it running inside a genuine agent loop. The
+two use slightly different decision sets (the system version models each
+review as a single approval-gated action), but both reach the same finding:
+the framework-signature false positive dominates your overrides.
+
 ## What you'll see
 
 The script prints three things, each a distinct reason CHAP is worth more

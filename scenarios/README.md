@@ -7,6 +7,12 @@ implementation here, one self-contained folder per scenario.
 
 These are community-contributed and a good way to start using CHAP.
 [Scenario 1](./01-solo-dev-overrides/) is the worked example; copy its
+shape. It comes in two tiers: a zero-dependency
+[`scenario.py`](./01-solo-dev-overrides/scenario.py) that shows the CHAP
+mechanics, and a [`system/`](./01-solo-dev-overrides/system/)
+implementation that wires the same story into a real agent framework
+(Pydantic AI) to prove CHAP works inside a genuine human-in-the-loop
+system. Contribute at whichever tier fits your ambition.
 shape.
 
 ## How this differs from `examples/` and adapter demos
@@ -74,6 +80,33 @@ wanted`, not beginner work.
    version of the same story belongs in that adapter's own `examples/`,
    not as a separate scenario here.
 4. **Add your row** to the catalog above.
+
+### System implementations (a richer tier)
+
+A scenario's `scenario.py` shows the CHAP mechanics with no dependencies.
+A **system implementation** goes further: it wires the same story into a
+real agent framework and proves CHAP works inside a genuine
+human-in-the-loop system. These are the "completed examples" that show
+CHAP in production shape, and they are especially welcome.
+
+[Scenario 1's `system/`](./01-solo-dev-overrides/system/) is the pattern:
+a real Pydantic AI agent whose action is approval-gated, driven through
+the [`chap-pydantic-ai`](../packages/chap-pydantic-ai/) bridge, recorded
+on the audit chain. The bar to copy:
+
+- A real agent framework drives the workflow (any of the four adapters:
+  [`chap-langgraph`](../packages/chap-langgraph/),
+  [`chap-pydantic-ai`](../packages/chap-pydantic-ai/),
+  [`chap-ag2`](../packages/chap-ag2/),
+  [`chap-llama-index`](../packages/chap-llama-index/)).
+- CHAP mediates the human decision, recorded on the chain.
+- It runs offline and reproducibly by default (a stub model, scripted
+  decisions) with a documented one-line path to a live model, so CI and a
+  first-time reader can run it.
+- The README states plainly what is real and what is stubbed.
+
+Put a system implementation under its scenario's folder (e.g.
+`scenarios/NN-slug/system/`) and note it in your row.
 
 ### Definition of done
 
