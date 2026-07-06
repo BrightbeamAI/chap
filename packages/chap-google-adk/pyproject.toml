@@ -1,0 +1,49 @@
+[build-system]
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name            = "chap-google-adk"
+version         = "0.2.6"
+description     = "CHAP adapter for Google ADK: record a human-decision envelope when a run pauses for tool confirmation."
+readme          = "README.md"
+requires-python = ">=3.10"
+license         = { text = "Apache-2.0" }
+authors         = [ { name = "Brightbeam AI", email = "oss@brightbeam.ai" } ]
+keywords        = ["chap", "google-adk", "adk", "agent", "audit", "human-in-the-loop", "tool-confirmation"]
+classifiers     = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "chap-coordinator>=0.2.5",
+]
+
+[project.optional-dependencies]
+# Google ADK is only needed to run a live agent. The adapter reads the call
+# and confirmation structurally, so the bridge and its tests work without it
+# installed.
+google-adk = ["google-adk>=1.29"]
+dev        = ["pytest>=8", "pytest-cov>=5"]
+
+[project.urls]
+Homepage      = "https://github.com/BrightbeamAI/chap"
+Repository    = "https://github.com/BrightbeamAI/chap"
+Specification = "https://github.com/BrightbeamAI/chap/blob/main/SPECIFICATION.md"
+
+[tool.setuptools.packages.find]
+include = ["chap_google_adk*"]
+
+[tool.setuptools.package-data]
+"chap_google_adk" = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
