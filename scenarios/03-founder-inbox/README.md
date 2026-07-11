@@ -9,7 +9,7 @@ A solo SaaS founder puts a triage agent in front of the support inbox: it
 drafts a reply, and the founder approves, edits, or escalates each one. Six
 weeks in, a customer files a chargeback claiming the bot quoted the wrong
 refund policy. The provider logs have expired and the keys have rotated, so
-the founder's own memory is the only record — except every ticket ran
+the founder's own memory is the only record, except every ticket ran
 through a CHAP coordinator.
 
 One `audit.read` reconstructs the disputed ticket's whole history in order.
@@ -39,8 +39,8 @@ services, no config.
    entry. When the chargeback lands, the record is provable, not a story
    about expired logs.
 2. **The chargeback query.** It pulls the disputed ticket back out of the
-   chain and prints its full history in order — opened, drafted, sent for
-   review, approved — and shows the one ticket the founder escalated, which
+   chain and prints its full history in order: opened, drafted, sent for
+   review, approved, and shows the one ticket the founder escalated, which
    opened a new task for a specialist rather than ending there.
 3. **The pattern scan.** It counts how many drafts cited the wrong refund
    policy across the whole chain. The punchline: not one bad ticket but
@@ -68,7 +68,7 @@ not the volume.
 ## A note on `policy_cited`
 
 The wrong policy the bot quoted lives as `policy_cited` on the draft
-artefact — deliberately **not** the protocol's `policy_refs`. `policy_refs`
+artefact, deliberately **not** the protocol's `policy_refs`. `policy_refs`
 is the *governing* policy of a task or decision; `policy_cited` is *content*
 the agent wrote into its draft, and the whole scenario turns on that content
 being wrong. Modelling it as artefact content is what lets the pattern scan

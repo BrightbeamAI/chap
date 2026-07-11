@@ -69,7 +69,7 @@ derived from it (an explicit `decision` still wins). An **override is never
 inferred**: ADK's `payload` is a separate, tool-defined object (a leave tool
 asks for `approved_days`, not a modified `days`), so treating it as the
 edited args would record a change the human never made. An edit is recorded
-only when you pass it explicitly — the edited args as `returned`, or a
+only when you pass it explicitly: the edited args as `returned`, or a
 ready-made RFC 6902 `diff`. `intent_preserved` defaults to `true` on an
 override; set it `false` for a substituting edit. A no-op edit records
 `decide.approve`.

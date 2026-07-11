@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chap-coordinator"
-version = "0.2.6"
+version = "0.2.7"
 description = "Python reference implementation of the Collaborative Human-Agent Protocol (CHAP)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -48,7 +48,7 @@ dev = [
 Homepage = "https://github.com/BrightbeamAI/chap"
 Repository = "https://github.com/BrightbeamAI/chap"
 Specification = "https://github.com/BrightbeamAI/chap/blob/main/SPECIFICATION.md"
-Paper = "https://arxiv.org/abs/2506.09751"
+Paper = "https://arxiv.org/abs/2606.09751"
 
 [tool.setuptools.packages.find]
 include = ["chap_coordinator*"]

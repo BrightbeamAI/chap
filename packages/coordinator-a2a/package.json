@@ -1,6 +1,6 @@
 {
   "name": "@chap/coordinator-a2a",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "A2A server adapter for the CHAP Coordinator. Exposes every CHAP method as an A2A AgentSkill.",
   "license": "Apache-2.0",
   "author": "Brightbeam AI <oss@brightbeam.ai>",
@@ -58,8 +58,8 @@
   },
   "peerDependencies": {
     "@a2a-js/sdk": "^0.3.13",
-    "@chap/coordinator": "^0.2.6",
-    "@chap/coordinator-mcp": "^0.2.6"
+    "@chap/coordinator": "^0.2.7",
+    "@chap/coordinator-mcp": "^0.2.7"
   },
   "devDependencies": {
     "@a2a-js/sdk": "^0.3.13",
