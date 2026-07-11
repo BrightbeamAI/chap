@@ -9,6 +9,87 @@ incremented under the same rules.
 
 ---
 
+## 0.2.7: framework adopters and the scenarios directory
+
+Additive release on top of 0.2.6. Four more framework bridges join
+`chap-langgraph`, and a new top-level `scenarios/` directory turns the
+`IN_PRACTICE.md` narratives into runnable, contributable examples. No
+change to the protocol core, the coordinators, or the wire format: this
+release adds adapters and worked examples around an unchanged 0.2.x
+protocol.
+
+### Added
+
+- **Four framework adopters**, joining `chap-langgraph` (shipped in 0.2.5).
+  Each bridges a real agent framework's human-in-the-loop mechanism to
+  CHAP's `review`/`decide` methods, so an approval, edit, or denial in the
+  framework becomes a `decide.approve` / `decide.override` /
+  `decide.reject` on the audit chain:
+  - **`chap-pydantic-ai`** (`ChapApprovalBridge`): bridges
+    [Pydantic AI](https://ai.pydantic.dev)'s deferred-tool approval flow.
+    An edit before approval records an override with the diff; per-call
+    rationale and tags come from the tool-result metadata.
+  - **`chap-ag2`** (`ChapTurnBridge`): bridges
+    [AG2](https://github.com/ag2ai/ag2) (AutoGen) agent turns.
+  - **`chap-llama-index`** (`ChapHitlBridge`): bridges
+    [LlamaIndex Workflows](https://developers.llamaindex.ai/python/framework/understanding/workflows/)
+    human-in-the-loop events.
+  - **`chap-google-adk`**: bridges
+    [Google ADK](https://google.github.io/adk-docs/) human-in-the-loop
+    tool confirmations.
+
+  All four join both the agent and the reviewer, address the review to the
+  approver, and decide from the approver, so they satisfy the actor
+  membership and reviewer-set eligibility rules added in 0.2.6. Each ships
+  with tests that run against the reference coordinator with authorisation
+  enforcement active, plus a runnable example. The frameworks themselves
+  are optional dependencies; the bridges and their tests do not require
+  them installed.
+
+- **`scenarios/` directory**: runnable, community-contributed domain
+  narratives on CHAP core, one self-contained folder per scenario, kept
+  distinct from `examples/` (capability walkthroughs) and the adapters'
+  own `examples/` (framework demos). Includes a catalog README (all twelve
+  `IN_PRACTICE.md` scenarios with status, labels, layout, and a
+  definition-of-done) and the first three worked examples:
+  - **`01-solo-dev-overrides/`** in two tiers: a zero-dependency
+    `scenario.py` (core/1.0 + review/1.0 + audit-scitt/1.0) that records a
+    mix of decisions, verifies the hash-linked chain, reconstructs one
+    override, and prints an override learning report; and a `system/`
+    implementation driving the same story through a real Pydantic AI agent
+    whose review action is approval-gated, offline and reproducible, with a
+    documented one-line path to a live model.
+  - **`02-marketing-copy/`**: one drafter, one editor; overrides tagged and
+    aggregated into an opener-rewrite report.
+  - **`03-founder-inbox/`**: a support inbox reconstructed from the chain,
+    with a repeated wrong-policy pattern surfaced across tickets.
+
+### Changed
+
+- `IMPLEMENTATIONS.md` updated: the four new bridges added to the registry
+  with their test counts, and the `chap-langgraph` row bumped to 0.2.7.
+
+### Notes
+
+- **Packaging.** The four new bridges are wired for release the same way
+  `chap-langgraph` is [pending: see the release-workflow decision]. Any
+  bridge not yet published to PyPI ships as source in the repo and runs
+  from a clone.
+- **No coordinator changes.** The TypeScript and Python coordinators, the
+  MCP and A2A adapters, the spec, and the wire format are unchanged from
+  0.2.6. Version numbers are bumped in lockstep for release consistency.
+
+### Tests
+
+- New bridge suites, all green against the coordinator with authorisation
+  enforcement: `chap-pydantic-ai` 17, `chap-ag2` 14, `chap-llama-index` 13,
+  `chap-google-adk` 15.
+- Full tree unchanged elsewhere: TS coordinator 95, MCP 17, A2A 14,
+  playground 7; Python coordinator 120, langgraph 10. Conformance harness
+  23/23 on both reference implementations.
+
+---
+
 ## 0.2.6: MCP argument coercion, dual-language tour, and authorisation enforcement
 
 Follows the 0.2.5 adoption release. Three things: a real-world MCP

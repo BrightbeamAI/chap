@@ -21,7 +21,11 @@ and whether they pass the published conformance harness.
 | `chap-coordinator` (Python) | Python 3.10+ | 0.2.5       | Full v0.2 (39 methods) | 23/23 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
 | `@chap/coordinator-mcp`     | TypeScript  | 0.2.5        | All 39 methods as MCP tools | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
 | `@chap/coordinator-a2a`     | TypeScript  | 0.2.5        | All 39 methods as A2A skills | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
-| `chap-langgraph`            | Python 3.10+ | 0.2.5       | Bridge: 8 methods exercised on the HIL path | 10/10 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-langgraph`            | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 10/10 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-pydantic-ai`          | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 17/17 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-ag2`                  | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 14/14 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-llama-index`          | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 13/13 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-google-adk`           | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 15/15 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
 
 ## Notes by implementation
 
@@ -79,6 +83,47 @@ entry. LangGraph itself is an optional dependency.
 
 Package: [`packages/chap-langgraph/`](./packages/chap-langgraph/) ·
 Examples: [`packages/chap-langgraph/examples/`](./packages/chap-langgraph/examples/).
+
+### `chap-pydantic-ai` (Pydantic AI bridge)
+
+Bridges [Pydantic AI](https://ai.pydantic.dev)'s deferred-tool
+approval flow (`ToolApproved` / `ToolDenied`) to CHAP. An approval
+becomes `decide.approve`, an approval with edited arguments becomes
+`decide.override` carrying the diff, a denial becomes `decide.reject`;
+per-call rationale and tags are read from the tool-result metadata.
+Pydantic AI is an optional dependency.
+
+Package: [`packages/chap-pydantic-ai/`](./packages/chap-pydantic-ai/) ·
+Examples: [`packages/chap-pydantic-ai/examples/`](./packages/chap-pydantic-ai/examples/).
+
+### `chap-ag2` (AG2 / AutoGen bridge)
+
+Bridges [AG2](https://github.com/ag2ai/ag2) (AutoGen) agent turns to
+CHAP, recording the human's decision on a proposed turn as the
+matching `decide.*` entry. AG2 is an optional dependency.
+
+Package: [`packages/chap-ag2/`](./packages/chap-ag2/) ·
+Examples: [`packages/chap-ag2/examples/`](./packages/chap-ag2/examples/).
+
+### `chap-llama-index` (LlamaIndex Workflows bridge)
+
+Bridges [LlamaIndex
+Workflows](https://developers.llamaindex.ai/python/framework/understanding/workflows/)
+human-in-the-loop events to CHAP's `review`/`decide` sequence.
+LlamaIndex is an optional dependency.
+
+Package: [`packages/chap-llama-index/`](./packages/chap-llama-index/) ·
+Examples: [`packages/chap-llama-index/examples/`](./packages/chap-llama-index/examples/).
+
+### `chap-google-adk` (Google ADK bridge)
+
+Bridges [Google ADK](https://google.github.io/adk-docs/)
+human-in-the-loop tool confirmations to CHAP. Approve, edit, and
+reject map to `decide.approve` / `decide.override` / `decide.reject`.
+Google ADK is an optional dependency.
+
+Package: [`packages/chap-google-adk/`](./packages/chap-google-adk/) ·
+Examples: [`packages/chap-google-adk/examples/`](./packages/chap-google-adk/examples/).
 
 ## Wanted
 
