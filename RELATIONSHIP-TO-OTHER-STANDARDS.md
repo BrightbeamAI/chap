@@ -210,12 +210,12 @@ an A2A agent, with every CHAP method exposed as a tool or skill.
 This lets existing MCP clients and A2A orchestrators drive a CHAP
 workspace without any CHAP-specific code:
 
-- `@chap/coordinator-mcp` (TypeScript) and
+- `@brightbeamai/coordinator-mcp` (TypeScript) and
   `chap_coordinator.transports.mcp_server` (Python) target MCP
   **2025-11-25**. All 39 CHAP methods become MCP tools named
   `chap.<method>`. Reference stdio servers ship in
   `reference/mcp-server-{ts,py}/`.
-- `@chap/coordinator-a2a` (TypeScript) and
+- `@brightbeamai/coordinator-a2a` (TypeScript) and
   `chap_coordinator.transports.a2a_server` (Python) expose the
   Coordinator as an A2A agent. Same 39 methods become discrete
   `AgentSkill` entries. The TypeScript SDK targets A2A **0.3.0**

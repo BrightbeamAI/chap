@@ -100,7 +100,7 @@ def test_object_path_override_succeeds_with_stringified_args():
     dispatch_tool_call(coord, "chap.task.complete", {
         "workspace": "wsp_demo", "from": "agent:bot@local", "task_id": task_id,
         "output": '{"draft": "Your order is in transit; updates within 24 hours"}',  # stringified
-        "confidence": 0.9,
+        "confidence": "0.9",
     })
     dispatch_tool_call(coord, "chap.review.request", {
         "workspace": "wsp_demo", "from": "agent:bot@local", "task_id": task_id,

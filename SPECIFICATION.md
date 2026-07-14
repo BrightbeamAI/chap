@@ -38,7 +38,7 @@ and only when, they appear in all capitals.
 schemas, and reference implementations are stable enough for
 experimentation and early production pilots; they are not yet
 sufficient for a normative conformance claim. Specifically: the
-specification has one reference implementation (the `@chap/coordinator`
+specification has one reference implementation (the `@brightbeamai/coordinator`
 package in this repository), not the two interoperable implementations
 typical of a standards-track promotion; an empirical interoperability
 test suite covering all defined methods is published as a draft (see
@@ -323,6 +323,24 @@ Every CHAP message MUST be signed. The signature algorithm is
 
 [RFC 8032]: https://www.rfc-editor.org/rfc/rfc8032
 [RFC 8785]: https://www.rfc-editor.org/rfc/rfc8785
+
+**Canonical number restriction.** RFC 8785 §3.2.2.3 specifies number
+serialisation via the ECMAScript number-to-string algorithm. Reproducing
+that algorithm byte-identically across languages is error-prone, and any
+mismatch would cause a chain or signature produced by one implementation
+to fail verification against another. To make cross-implementation
+agreement provable rather than approximate, CHAP restricts the canonical
+number space: a number in a CHAP envelope or artefact MUST be an integer
+whose absolute value is at most 2^53 - 1 (the ECMAScript safe-integer
+bound). Non-integer values and integers of larger magnitude are not valid
+CHAP canonical numbers and MUST be represented as strings (for example the
+decimal reading `"8.2"`, or the digits of a large identifier). A JSON
+literal such as `2.0` is integer-valued and canonicalises to `2`.
+Conforming implementations MUST reject out-of-range and non-integer
+numbers identically; the shared vectors in
+`conformance/canonical-number-vectors.json` pin the accepted outputs and
+the rejected inputs. A future protocol version MAY define a canonical
+decimal-string format to admit fractional values without ambiguity.
 
 Signing procedure:
 

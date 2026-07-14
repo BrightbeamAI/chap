@@ -48,7 +48,11 @@ from .types import (
     Workspace,
 )
 
-__version__ = "0.2.5"
+try:
+    from importlib.metadata import version as _pkg_version, PackageNotFoundError
+    __version__ = _pkg_version("chap-coordinator")
+except PackageNotFoundError:  # running from a source checkout, not installed
+    __version__ = "0.0.0+source"
 
 __all__ = [
     # Core class & options

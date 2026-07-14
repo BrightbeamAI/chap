@@ -9,14 +9,16 @@ incremented under the same rules.
 
 ---
 
-## 0.2.7: framework adopters and the scenarios directory
+## 0.2.7: framework adopters, the scenarios directory, and cross-implementation fixes
 
-Additive release on top of 0.2.6. Four more framework bridges join
-`chap-langgraph`, and a new top-level `scenarios/` directory turns the
-`IN_PRACTICE.md` narratives into runnable, contributable examples. No
-change to the protocol core, the coordinators, or the wire format: this
-release adds adapters and worked examples around an unchanged 0.2.x
-protocol.
+Adds four framework bridges and a runnable `scenarios/` directory, and
+hardens the two reference implementations for their first registry
+publish. Most of this release is additive, but it also includes a
+normative canonicalisation change (numbers restricted to safe integers, to
+guarantee byte-identical hashing across implementations) and a JSON Patch
+prototype-pollution fix; see Changed and Security below. Both changes can
+affect envelopes that carried non-integer numbers, so read those sections
+before upgrading.
 
 ### Added
 
@@ -66,27 +68,67 @@ protocol.
 
 ### Changed
 
+- **Canonicalisation now restricts numbers to safe integers.** A number in
+  a CHAP envelope or artefact must be an integer with absolute value at
+  most 2^53 - 1; non-integers and larger magnitudes are rejected and must
+  be represented as strings (for example `"8.2"`). This makes the Python
+  and TypeScript canonicalisers produce byte-identical output by
+  construction, so a chain or signature written by one implementation
+  verifies against the other. Previously each implementation formatted some
+  numbers differently (for example `1e-7`), which could break
+  cross-implementation verification. **Potentially breaking:** an envelope
+  that carried a non-integer number as a JSON number is now rejected;
+  carry it as a string. Integer-only payloads are unaffected. See the
+  number-format note in `SPECIFICATION.md` and the shared vectors in
+  `conformance/canonical-number-vectors.json`.
+- **`confidence` accepts a string as well as a number.** Because a
+  confidence score is typically a decimal and is recorded in the audit
+  envelope, it follows the canonical-number rule: pass a decimal as a
+  string (`"0.9"`). The routing engine coerces it to a number for its
+  thresholds, so routing behaviour is unchanged.
+- **JSON Patch (`decide.override`) is now full RFC 6902 in both
+  implementations.** The TypeScript coordinator previously supported only
+  `add`/`replace`/`remove` and threw on `move`/`copy`/`test`, auto-created
+  missing intermediate objects on `add`, and silently ignored array append
+  (`/-`) and out-of-range operations. It now matches the Python reference
+  exactly (all six operations, correct array insert/append, out-of-range
+  operations raise). Pinned by `conformance/json-patch-vectors.json`.
 - `IMPLEMENTATIONS.md` updated: the four new bridges added to the registry
   with their test counts, and the `chap-langgraph` row bumped to 0.2.7.
 
-### Notes
+### Security
 
-- **Packaging.** The four new bridges are wired for release the same way
+- **JSON Patch prototype-pollution fix (TypeScript).** A crafted
+  `decide.override` diff with a path through `__proto__`, `constructor`, or
+  `prototype` could pollute `Object.prototype` in the coordinator process.
+  Both implementations now reject those path segments. Since an override
+  diff comes from a reviewer, this closes an injection vector reachable
+  from ordinary protocol input.
+
+### Packaging
+
+- Publish-readiness fixes across all packages: author contact set to
+  `oss@brightbeam.com`; an Apache-2.0 `LICENSE` file added to every
+  package; the SPDX `license` expression adopted (deprecated classifier
+  removed); package `__version__` now derives from installed metadata
+  instead of a hardcoded string that had drifted; the npm scope is
+  `@brightbeamai`; bridge READMEs and dependency pins corrected.
+- The four newer bridges are wired for release the same way
   `chap-langgraph` is [pending: see the release-workflow decision]. Any
   bridge not yet published to PyPI ships as source in the repo and runs
   from a clone.
-- **No coordinator changes.** The TypeScript and Python coordinators, the
-  MCP and A2A adapters, the spec, and the wire format are unchanged from
-  0.2.6. Version numbers are bumped in lockstep for release consistency.
 
 ### Tests
 
 - New bridge suites, all green against the coordinator with authorisation
   enforcement: `chap-pydantic-ai` 17, `chap-ag2` 14, `chap-llama-index` 13,
   `chap-google-adk` 15.
-- Full tree unchanged elsewhere: TS coordinator 95, MCP 17, A2A 14,
-  playground 7; Python coordinator 120, langgraph 10. Conformance harness
-  23/23 on both reference implementations.
+- New cross-implementation conformance suites for canonicalisation and JSON
+  Patch, asserting byte-identical output and matching rejection between the
+  Python and TypeScript references.
+- TypeScript coordinator 103, MCP 17, A2A 14, playground 7; Python
+  coordinator 172, langgraph 10. Conformance harness 23/23 on both
+  reference implementations.
 
 ---
 
@@ -202,8 +244,8 @@ lunch". Backward-compatible: no wire-format or schema changes.
 
 ### Added
 
-- **Publish-ready npm packages.** `@chap/coordinator`, `@chap/coordinator-mcp`,
-  and `@chap/coordinator-a2a` now build to `dist/` (ESM + CJS + `.d.ts` +
+- **Publish-ready npm packages.** `@brightbeamai/coordinator`, `@brightbeamai/coordinator-mcp`,
+  and `@brightbeamai/coordinator-a2a` now build to `dist/` (ESM + CJS + `.d.ts` +
   source maps via `tsup`), declare `exports` maps, and ship `prepublishOnly`
   that runs the schemas-drift check, typecheck, tests, and build.
 - **PyPI-ready Python wheel.** `chap-coordinator` builds cleanly with a
@@ -252,7 +294,7 @@ lunch". Backward-compatible: no wire-format or schema changes.
 - **README quickstart fixed.** Previous version called a non-existent
   `storage` option, used the wrong param names (`workspace_id`/`uri`
   instead of `workspace`/`from`/`type`), and referenced an
-  `npx @chap/analyze-overrides` package that did not exist. All three
+  `npx @brightbeamai/analyze-overrides` package that did not exist. All three
   issues fixed; the snippet now runs against the real shipped library.
 - **`examples/00-five-minute-start.md`** literal `{ ... same as above ... }`
   placeholder mid-flow replaced with the real payload.
@@ -294,7 +336,7 @@ transport from 0.2.3. Backward-compatible.
 
 ### Added
 
-- **TypeScript A2A adapter** (`@chap/coordinator-a2a`) on `@a2a-js/sdk`
+- **TypeScript A2A adapter** (`@brightbeamai/coordinator-a2a`) on `@a2a-js/sdk`
   (A2A 0.3.0). `makeChapAgentCard(...)` returns an Agent Card with 39
   skills, one per CHAP method, named `chap.<method>`.
   `makeChapAgentExecutor(coord)` returns an `AgentExecutor`.
@@ -334,7 +376,7 @@ Backward-compatible.
 
 ### Added
 
-- **TypeScript MCP adapter** (`@chap/coordinator-mcp`) on
+- **TypeScript MCP adapter** (`@brightbeamai/coordinator-mcp`) on
   `@modelcontextprotocol/sdk`.
 - **Python MCP adapter** (`chap_coordinator.transports.mcp_server`) on
   the official `mcp` SDK, installable via `pip install chap-coordinator[mcp]`.
@@ -374,7 +416,7 @@ parity with the Python reference: both now cover Core plus every profile,
 - `getWorkspace`, `snapshot`, and `restore` methods on the Coordinator
   for persistence integrations.
 
-### Changed (potentially breaking for `@chap/coordinator` consumers only)
+### Changed (potentially breaking for `@brightbeamai/coordinator` consumers only)
 
 - Wire field rename: `workspace_id` → `workspace`. Matches the spec, the
   Python reference, the conformance harness, and the test vectors.

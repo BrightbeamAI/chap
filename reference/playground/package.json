@@ -1,5 +1,5 @@
 {
-  "name": "@chap/playground",
+  "name": "@brightbeamai/playground",
   "version": "1.0.0",
   "description": "CHAP playground — a runnable two-human + agent demo using local Ollama (Gemma3).",
   "license": "Apache-2.0",
@@ -12,7 +12,7 @@
     "test:tsx":    "tsx --test tests/smoke.test.ts"
   },
   "dependencies": {
-    "@chap/coordinator": "file:../../packages/coordinator"
+    "@brightbeamai/coordinator": "file:../../packages/coordinator"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

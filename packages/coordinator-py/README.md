@@ -122,7 +122,7 @@ transport you like. State is held in memory; persist by subscribing
 to the audit listener.
 
 A minimal stdlib HTTP server is at
-[`reference/python/server.py`](../../reference/python/) in the parent repo.
+[`reference/python/server.py`](https://github.com/BrightbeamAI/chap/tree/main/reference/python) in the parent repo.
 
 ## Determinism for tests
 
@@ -242,13 +242,13 @@ pytest
 This implementation was reviewed against every profile spec under
 `profiles/` and aligned with the documented field names, error codes,
 and response shapes. The full audit notes are in the parent repo's
-[`CHANGELOG.md`](../../CHANGELOG.md), with the 0.2.1 entry covering
+[`CHANGELOG.md`](https://github.com/BrightbeamAI/chap/blob/main/CHANGELOG.md), with the 0.2.1 entry covering
 the original Python implementation and 0.2.3 / 0.2.4 covering the
 MCP and A2A transport additions.
 
 ## License
 
-Apache 2.0. See the parent repository's [LICENSE](../../LICENSE).
+Apache 2.0. See the parent repository's [LICENSE](./LICENSE).
 
 ## Specification
 

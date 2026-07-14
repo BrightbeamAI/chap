@@ -240,7 +240,7 @@ async def test_executor_full_workflow() -> None:
     # task.complete
     msg = _build_message("chap.task.complete", {
         "workspace": "wsp_flow", "from": "agent:bot", "task_id": task_id,
-        "output": {"body": "draft", "severity": "warning"}, "confidence": 0.9,
+        "output": {"body": "draft", "severity": "warning"}, "confidence": "0.9",
     })
     events = await _run(executor, msg)
     assert _extract_data(events[0])["state"] == "completed"

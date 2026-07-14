@@ -121,4 +121,4 @@ approve, a refining edit, a substituting edit, and a reject against real
 
 ## License
 
-Apache 2.0. See [LICENSE](../../LICENSE).
+Apache 2.0. See [LICENSE](./LICENSE).

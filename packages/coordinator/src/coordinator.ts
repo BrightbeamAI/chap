@@ -1,5 +1,5 @@
 /**
- * @chap/coordinator/coordinator
+ * @brightbeamai/coordinator/coordinator
  *
  * The Coordinator class. CHAP protocol logic, packaged as a library
  * rather than a CLI server. Applications instantiate one, call
@@ -803,7 +803,7 @@ export class Coordinator {
       return { error: rpcError(E.PARAMS, `Task is terminal: ${task.state}`) };
     }
     task.output = p.output;
-    if (typeof p.confidence === "number") task.confidence = p.confidence;
+    if (typeof p.confidence === "number" || typeof p.confidence === "string") task.confidence = p.confidence;
     task.state = "completed";
     task.updated_at = this.now();
     task.history.push({ ts: task.updated_at, from: p.from as ParticipantUri, state: "completed" });

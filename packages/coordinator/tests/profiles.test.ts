@@ -287,7 +287,7 @@ test("control.set_mode_ceiling blocks higher mode with -32040", () => {
 test("review.depth: high criticality -> full", () => {
   const { c, send, tid } = setup();
   c.workspaces.get("wsp_p")!.tasks.get(tid)!.routing_hints = {
-    criticality: "critical", confidence: 0.9,
+    criticality: "critical", confidence: "0.9",
   };
   const r = send("review.depth", { workspace: "wsp_p", task_id: tid });
   assert.equal((r.result as { depth: string }).depth, "full");
@@ -296,7 +296,7 @@ test("review.depth: high criticality -> full", () => {
 test("review.depth: low crit + high conf -> skip", () => {
   const { c, send, tid } = setup();
   c.workspaces.get("wsp_p")!.tasks.get(tid)!.routing_hints = {
-    criticality: "low", confidence: 0.97,
+    criticality: "low", confidence: "0.97",
   };
   const r = send("review.depth", { workspace: "wsp_p", task_id: tid });
   assert.equal((r.result as { depth: string }).depth, "skip");
@@ -305,7 +305,7 @@ test("review.depth: low crit + high conf -> skip", () => {
 test("review.depth: spot_check carries sampling_probability", () => {
   const { c, send, tid } = setup();
   c.workspaces.get("wsp_p")!.tasks.get(tid)!.routing_hints = {
-    criticality: "low", confidence: 0.85,
+    criticality: "low", confidence: "0.85",
   };
   const r = send("review.depth", { workspace: "wsp_p", task_id: tid });
   const out = r.result as { depth: string; sampling_probability: number };
@@ -331,7 +331,7 @@ test("task.route: empty candidates -> -32513", () => {
 test("escalate.auto: critical triggers escalation", () => {
   const { c, send, tid } = setup();
   c.workspaces.get("wsp_p")!.tasks.get(tid)!.routing_hints = {
-    criticality: "critical", confidence: 0.9,
+    criticality: "critical", confidence: "0.9",
   };
   const r = send("escalate.auto", { workspace: "wsp_p", task_id: tid,
     default_escalation_target: "human:bob" });

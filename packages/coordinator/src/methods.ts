@@ -106,7 +106,7 @@ export type TaskUpdateResult = OkResult;
 
 export interface TaskCompleteParams extends WorkspaceParam, ActorParam, TaskParam {
   output?:     unknown;
-  confidence?: number;
+  confidence?: number | string;
 }
 export type TaskCompleteResult = OkResult;
 

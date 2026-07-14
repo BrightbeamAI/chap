@@ -819,7 +819,9 @@ class Coordinator:
             return {"error": rpc_error(E.PARAMS, f"Task is terminal: {task.state}")}
         task.output = p.get("output")
         if "confidence" in p:
-            task.confidence = float(p["confidence"])
+            # Stored as received (number or string) so it hashes deterministically;
+            # the routing engine coerces to a number for its thresholds.
+            task.confidence = p["confidence"]
         task.state = "completed"
         task.updated_at = self.now_iso()
         task.history.append(TaskHistoryEntry(

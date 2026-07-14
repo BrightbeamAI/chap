@@ -29,17 +29,17 @@ Type "# A tiny CHAP workspace. Two participants, one task."
 Sleep 800ms
 Enter
 
-Type "npx @chap/playground create-workspace wsp_demo --profiles core/1.0,review/1.0"
+Type "npx @brightbeamai/playground create-workspace wsp_demo --profiles core/1.0,review/1.0"
 Sleep 500ms
 Enter
 Sleep 2s
 
-Type "npx @chap/playground join wsp_demo --as human:alice@example.com"
+Type "npx @brightbeamai/playground join wsp_demo --as human:alice@example.com"
 Sleep 500ms
 Enter
 Sleep 1500ms
 
-Type "npx @chap/playground join wsp_demo --as agent:reviewer-bot"
+Type "npx @brightbeamai/playground join wsp_demo --as agent:reviewer-bot"
 Sleep 500ms
 Enter
 Sleep 1500ms
@@ -49,7 +49,7 @@ Type "# The bot proposes a review."
 Sleep 600ms
 Enter
 
-Type "npx @chap/playground agent reviewer-bot draft --task tsk_pr_482 --file demo/draft.json"
+Type "npx @brightbeamai/playground agent reviewer-bot draft --task tsk_pr_482 --file demo/draft.json"
 Sleep 500ms
 Enter
 Sleep 2s
@@ -58,7 +58,7 @@ Type "# I disagree with one comment. Override with rationale."
 Sleep 600ms
 Enter
 
-Type "npx @chap/playground human alice override --task tsk_pr_482 \\"
+Type "npx @brightbeamai/playground human alice override --task tsk_pr_482 \\"
 Sleep 200ms
 Enter
 Type "  --path /comments/0/severity --to info \\"
@@ -77,7 +77,7 @@ Type "# Six months later. Replay the whole chain."
 Sleep 600ms
 Enter
 
-Type "npx @chap/playground audit read --task tsk_pr_482"
+Type "npx @brightbeamai/playground audit read --task tsk_pr_482"
 Sleep 500ms
 Enter
 Sleep 3s

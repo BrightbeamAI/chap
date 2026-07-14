@@ -1,4 +1,4 @@
-# @chap/coordinator-mcp
+# @brightbeamai/coordinator-mcp
 
 MCP server adapter for the CHAP Coordinator. Wraps a `Coordinator`
 instance and exposes every CHAP method as an [MCP](https://modelcontextprotocol.io)
@@ -21,14 +21,14 @@ npm pack
 npm install /path/to/chap-coordinator-mcp-0.2.5.tgz
 ```
 
-Node 18+ required. Runtime dependencies: `@chap/coordinator` and
+Node 18+ required. Runtime dependencies: `@brightbeamai/coordinator` and
 `@modelcontextprotocol/sdk`.
 
 ## Quick start
 
 ```typescript
-import { Coordinator } from "@chap/coordinator";
-import { makeChapMcpServer } from "@chap/coordinator-mcp";
+import { Coordinator } from "@brightbeamai/coordinator";
+import { makeChapMcpServer } from "@brightbeamai/coordinator-mcp";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 const coord = new Coordinator({

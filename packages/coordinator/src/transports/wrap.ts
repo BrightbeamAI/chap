@@ -1,5 +1,5 @@
 /**
- * @chap/coordinator/transports/wrap
+ * @brightbeamai/coordinator/transports/wrap
  *
  * Inward integration helpers: turn an external tool/agent event into
  * a CHAP envelope landing in a workspace's audit log. Library
@@ -35,7 +35,7 @@ export interface WrapMcpToolCallOptions {
   /** Optional routing hints attached to the CHAP task. */
   routingHints?: Record<string, unknown>;
   /** Optional confidence value attached to task.complete. */
-  confidence?: number;
+  confidence?: number | string;
 }
 
 export interface WrapResult {
@@ -134,7 +134,7 @@ export interface WrapA2aExchangeOptions {
   /** Optional routing hints attached to the task. */
   routingHints?: Record<string, unknown>;
   /** Optional confidence value attached to task.complete. */
-  confidence?: number;
+  confidence?: number | string;
 }
 
 export interface WrapA2aResult {

@@ -8,15 +8,15 @@ version = "0.2.7"
 description = "Python reference implementation of the Collaborative Human-Agent Protocol (CHAP)"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
-    { name = "Brightbeam AI", email = "oss@brightbeam.ai" },
+    { name = "Brightbeam AI", email = "oss@brightbeam.com" },
 ]
 keywords = ["chap", "agent", "protocol", "audit", "json-rpc", "human-ai"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

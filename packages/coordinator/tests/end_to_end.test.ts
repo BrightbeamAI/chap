@@ -43,7 +43,7 @@ test("full lifecycle exercises every profile in one sequence", () => {
   // task + update
   const tR = send("task.create", { workspace: "wsp_e2e", from: "human:alice",
     kind: "draft", input: { q: "?" }, assignee: "agent:bot",
-    routing_hints: { criticality: "low", confidence: 0.9 }});
+    routing_hints: { criticality: "low", confidence: "0.9" }});
   const tid = (tR.result as { task_id: string }).task_id;
   send("task.update", { workspace: "wsp_e2e", task_id: tid, state: "in_progress", from: "agent:bot" });
 

@@ -1,5 +1,5 @@
 /**
- * @chap/coordinator-mcp/schemas
+ * @brightbeamai/coordinator-mcp/schemas
  *
  * JSON Schema definitions for each CHAP method, used as the
  * inputSchema for the corresponding MCP tool. Each schema describes

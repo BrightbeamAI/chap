@@ -51,7 +51,11 @@ from typing import Any, Callable, Optional, Union
 from chap_coordinator import Coordinator
 
 
-__version__ = "0.2.5"
+try:
+    from importlib.metadata import version as _pkg_version, PackageNotFoundError
+    __version__ = _pkg_version("chap-langgraph")
+except PackageNotFoundError:  # running from a source checkout, not installed
+    __version__ = "0.0.0+source"
 
 
 def _make_envelope(method: str, params: dict) -> dict:

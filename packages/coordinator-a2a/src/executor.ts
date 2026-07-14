@@ -1,5 +1,5 @@
 /**
- * @chap/coordinator-a2a/executor
+ * @brightbeamai/coordinator-a2a/executor
  *
  * Implementation of the @a2a-js/sdk ``AgentExecutor`` interface that
  * dispatches incoming messages through a CHAP Coordinator.
@@ -23,8 +23,8 @@ import type {
   TaskStatusUpdateEvent,
 } from "@a2a-js/sdk";
 
-import type { Coordinator, Envelope } from "@chap/coordinator";
-import { methodForTool } from "@chap/coordinator-mcp/schemas";
+import type { Coordinator, Envelope } from "@brightbeamai/coordinator";
+import { methodForTool } from "@brightbeamai/coordinator-mcp/schemas";
 
 export interface ChapAgentExecutorOptions {
   /** Optional id generator for CHAP envelope ids. */

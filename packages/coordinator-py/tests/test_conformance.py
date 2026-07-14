@@ -22,7 +22,7 @@ def test_jcs_keys_sorted():
         "to": "service:coordinator@example.org",
         "type": "notification",
         "method": "participant.heartbeat",
-        "params": {"load": 0.42, "status": "ready"},
+        "params": {"load": "0.42", "status": "ready"},
         "evidence": {"prev_hash": "sha256:" + "0" * 64},
     }
     canon = canonicalize(envelope)

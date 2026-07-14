@@ -51,7 +51,7 @@ def test_full_lifecycle_every_profile(coord):
     r = send(coord, "task.create", workspace="wsp_e2e",
              **{"from": "human:alice@x"},
              kind="draft", input={"q": "?"}, assignee="agent:bot",
-             routing_hints={"criticality": "low", "confidence": 0.9})
+             routing_hints={"criticality": "low", "confidence": "0.9"})
     tid = r["result"]["task_id"]
 
     send(coord, "task.update", workspace="wsp_e2e", task_id=tid,

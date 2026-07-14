@@ -1,4 +1,4 @@
-# @chap/coordinator (TypeScript)
+# @brightbeamai/coordinator (TypeScript)
 
 TypeScript reference implementation of the Collaborative Human-Agent Protocol (CHAP).
 
@@ -26,28 +26,28 @@ built-in `crypto` for Ed25519 and JCS.
 
 ## Companion packages
 
-The `@chap/coordinator` package is the protocol core. Two transport
+The `@brightbeamai/coordinator` package is the protocol core. Two transport
 adapters ship alongside it for embedding a Coordinator in MCP and
 A2A ecosystems:
 
-- [`@chap/coordinator-mcp`](../coordinator-mcp/) wraps a Coordinator
+- [`@brightbeamai/coordinator-mcp`](https://github.com/BrightbeamAI/chap/tree/main/packages/coordinator-mcp) wraps a Coordinator
   as an MCP server. Every CHAP method becomes an MCP tool named
   `chap.<method>`. Reference stdio server at
   `reference/mcp-server-ts/`. Spec target: MCP 2025-11-25.
-- [`@chap/coordinator-a2a`](../coordinator-a2a/) wraps a Coordinator
+- [`@brightbeamai/coordinator-a2a`](https://github.com/BrightbeamAI/chap/tree/main/packages/coordinator-a2a) wraps a Coordinator
   as an A2A agent. Every CHAP method becomes an `AgentSkill` on the
   Agent Card. Reference Express server at `reference/a2a-server-ts/`.
   Spec target: A2A 0.3.0.
 
 Inward citation helpers (`wrapMcpToolCall`, `wrapA2aMessageExchange`,
-`contentHash`) are exported from `@chap/coordinator` directly. They
+`contentHash`) are exported from `@brightbeamai/coordinator` directly. They
 take a completed external event and emit the matching CHAP audit
 entries with input/output hashes.
 
 ## Quick start
 
 ```typescript
-import { Coordinator } from "@chap/coordinator";
+import { Coordinator } from "@brightbeamai/coordinator";
 
 const coord = new Coordinator({
   defaultProfiles: ["core/1.0", "review/1.0", "whisper/1.0"],
@@ -178,7 +178,7 @@ Key lifecycle:
 - `participant.revoke_key` is an admin operation; envelopes signed
   with the revoked key after revocation are rejected.
 
-Helpers exported from `@chap/coordinator/crypto`:
+Helpers exported from `@brightbeamai/coordinator/crypto`:
 
 ```typescript
 import {
@@ -186,7 +186,7 @@ import {
   signEnvelope,          // sign canonical bytes -> ed25519:<kid>:<b64>
   verifyEnvelope,        // verify a sig tag against canonical + pubkey
   publicKeyFromJwk,      // JWK -> Node KeyObject
-} from "@chap/coordinator";
+} from "@brightbeamai/coordinator";
 ```
 
 ## Routing policies (routing/1.0)
@@ -257,13 +257,13 @@ exercising every method handler in one workspace.
 This implementation was reviewed against every profile spec under
 `profiles/` and aligned with the documented field names, error codes,
 and response shapes. The full audit notes are in the parent repo's
-[`CHANGELOG.md`](../../CHANGELOG.md), with the 0.2.2 entry covering
+[`CHANGELOG.md`](https://github.com/BrightbeamAI/chap/blob/main/CHANGELOG.md), with the 0.2.2 entry covering
 the original TypeScript expansion and 0.2.3 / 0.2.4 covering the MCP
 and A2A transport additions.
 
 ## License
 
-Apache 2.0. See the parent repository's [LICENSE](../../LICENSE).
+Apache 2.0. See the parent repository's [LICENSE](./LICENSE).
 
 ## Specification
 
