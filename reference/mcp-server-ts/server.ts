@@ -31,8 +31,8 @@
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
-import { Coordinator } from "@brightbeamai/coordinator";
-import { makeChapMcpServer } from "@brightbeamai/coordinator-mcp";
+import { Coordinator } from "@brightbeamai/chap-coordinator";
+import { makeChapMcpServer } from "@brightbeamai/chap-coordinator-mcp";
 
 const coord = new Coordinator({
   defaultProfiles: [

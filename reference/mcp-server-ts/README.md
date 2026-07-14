@@ -61,7 +61,7 @@ audit-scitt). State is in-memory and lost on exit.
 
 ## Architecture
 
-See the [`@brightbeamai/coordinator-mcp`](../../packages/coordinator-mcp/)
+See the [`@brightbeamai/chap-coordinator-mcp`](../../packages/coordinator-mcp/)
 package, which this reference uses unchanged. For production
 deployments, persist state via the Coordinator's `onAudit` listener
 and apply auth at the transport layer (MCP's OAuth 2.1 model

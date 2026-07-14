@@ -1,5 +1,5 @@
 /**
- * @brightbeamai/coordinator/patch
+ * @brightbeamai/chap-coordinator/patch
  *
  * RFC 6902 JSON Patch implementation, plus a small diff computer that
  * produces a patch from two values. Used by the Coordinator for

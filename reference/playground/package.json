@@ -12,7 +12,7 @@
     "test:tsx":    "tsx --test tests/smoke.test.ts"
   },
   "dependencies": {
-    "@brightbeamai/coordinator": "file:../../packages/coordinator"
+    "@brightbeamai/chap-coordinator": "file:../../packages/coordinator"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

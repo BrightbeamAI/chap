@@ -1,5 +1,5 @@
 {
-  "name": "@brightbeamai/coordinator-mcp",
+  "name": "@brightbeamai/chap-coordinator-mcp",
   "version": "0.2.7",
   "description": "MCP server adapter for the CHAP Coordinator. Exposes every CHAP method as an MCP tool.",
   "license": "Apache-2.0",
@@ -57,11 +57,11 @@
     "prepublishOnly": "npm run typecheck && npm run test && npm run build"
   },
   "peerDependencies": {
-    "@brightbeamai/coordinator": "^0.2.7",
+    "@brightbeamai/chap-coordinator": "^0.2.7",
     "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
-    "@brightbeamai/coordinator": "file:../coordinator",
+    "@brightbeamai/chap-coordinator": "file:../coordinator",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^20.11.0",
     "tsup": "^8.5.1",

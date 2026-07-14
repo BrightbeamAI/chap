@@ -1,5 +1,5 @@
 /**
- * @brightbeamai/coordinator/crypto
+ * @brightbeamai/chap-coordinator/crypto
  *
  * Ed25519 signing/verification for the security-signed/1.0 profile.
  *

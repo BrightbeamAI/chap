@@ -9,8 +9,8 @@
     "start": "tsx server.ts"
   },
   "dependencies": {
-    "@brightbeamai/coordinator":     "file:../../packages/coordinator",
-    "@brightbeamai/coordinator-mcp": "file:../../packages/coordinator-mcp",
+    "@brightbeamai/chap-coordinator":     "file:../../packages/coordinator",
+    "@brightbeamai/chap-coordinator-mcp": "file:../../packages/coordinator-mcp",
     "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {

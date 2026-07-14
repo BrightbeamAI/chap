@@ -408,7 +408,7 @@ CHAP 0.2.4 also ships a small library utility that codifies the
 inward citation pattern from §2:
 
 - TypeScript: `wrapMcpToolCall(coord, workspace, options)` from
-  `@brightbeamai/coordinator`. Pure data; no MCP SDK runtime cost.
+  `@brightbeamai/chap-coordinator`. Pure data; no MCP SDK runtime cost.
 - Python: `wrap_mcp_tool_call(coord, workspace, caller=..., tool=..., args=..., result=...)`
   from `chap_coordinator.transports.wrap`.
 
@@ -420,7 +420,7 @@ new task id and both hashes so downstream callers can cite the
 wrapped event directly.
 
 ```typescript
-import { Coordinator, wrapMcpToolCall } from "@brightbeamai/coordinator";
+import { Coordinator, wrapMcpToolCall } from "@brightbeamai/chap-coordinator";
 
 const { task_id, input_hash, output_hash } = wrapMcpToolCall(
   coord, "wsp_support_eu",

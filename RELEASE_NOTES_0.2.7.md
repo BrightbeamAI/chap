@@ -99,7 +99,7 @@ All bumped to 0.2.7 in lockstep. The new bridges' publication status
 depends on the release-workflow decision; anything not yet on PyPI ships as
 source and runs from a clone.
 
-- `@brightbeamai/coordinator`, `@brightbeamai/coordinator-mcp`, `@brightbeamai/coordinator-a2a` (npm)
+- `@brightbeamai/chap-coordinator`, `@brightbeamai/chap-coordinator-mcp`, `@brightbeamai/chap-coordinator-a2a` (npm)
 - `chap-coordinator`, `chap-langgraph`, and the new `chap-pydantic-ai`,
   `chap-ag2`, `chap-llama-index`, `chap-google-adk` (PyPI)
 

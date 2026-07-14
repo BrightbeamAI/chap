@@ -1,8 +1,8 @@
 /**
- * @brightbeamai/coordinator
+ * @brightbeamai/chap-coordinator
  *
  * Public entry point. Re-exports the Coordinator class and the
- * supporting types so consumers can `import { Coordinator } from "@brightbeamai/coordinator"`.
+ * supporting types so consumers can `import { Coordinator } from "@brightbeamai/chap-coordinator"`.
  *
  * Architecture:
  *

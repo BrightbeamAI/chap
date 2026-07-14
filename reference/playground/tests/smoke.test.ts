@@ -15,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { Coordinator } from "@brightbeamai/coordinator";
+import { Coordinator } from "@brightbeamai/chap-coordinator";
 import { makePlaygroundPolicies } from "../src/policies.js";
 import { processTicket } from "../src/ollama-agent.js";
 import { TICKETS, getTicket } from "../src/tickets.js";

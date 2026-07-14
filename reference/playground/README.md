@@ -6,7 +6,7 @@ every message a real CHAP envelope, every override a real RFC 6902
 JSON Patch, and every routing decision a real `route_decision`
 artefact in the evidence chain.
 
-The protocol code is the unmodified `@brightbeamai/coordinator` library
+The protocol code is the unmodified `@brightbeamai/chap-coordinator` library
 imported from `packages/coordinator/`. This is not a simulation; the
 wire format is the same one a production CHAP deployment would use.
 
@@ -110,7 +110,7 @@ the record:
 
 | Real                                          | Simplified                                       |
 |-----------------------------------------------|--------------------------------------------------|
-| Protocol code (`@brightbeamai/coordinator` library)   | No auth, production: `identity-oidc/1.0`        |
+| Protocol code (`@brightbeamai/chap-coordinator` library)   | No auth, production: `identity-oidc/1.0`        |
 | Envelope wire format on `/rpc`                | Routing policy is in-process, production: `routing/1.0` profile |
 | RFC 6902 JSON Patch on overrides              | State persisted to a local JSON file, production: database |
 | Evidence chain, persisted across restarts     | No signing, production: `security-signed/1.0`   |

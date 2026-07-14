@@ -1,5 +1,5 @@
 /**
- * @brightbeamai/coordinator/coordinator
+ * @brightbeamai/chap-coordinator/coordinator
  *
  * The Coordinator class. CHAP protocol logic, packaged as a library
  * rather than a CLI server. Applications instantiate one, call

@@ -44,9 +44,9 @@ And here is the code, every line of it. The narrative below is one continuous st
 <tr><td valign="top">
 
 ```ts
-import { Coordinator } from "@brightbeamai/coordinator";
+import { Coordinator } from "@brightbeamai/chap-coordinator";
 import { SqliteStore } from
-  "@brightbeamai/coordinator/storage/sqlite";
+  "@brightbeamai/chap-coordinator/storage/sqlite";
 
 const coord = new Coordinator({
   store: new SqliteStore("./chap.db"),
@@ -246,7 +246,7 @@ The two fields most people miss on first read are `intent_preserved` and `tags`.
 **TypeScript / Node:**
 
 ```bash
-npm install @brightbeamai/coordinator
+npm install @brightbeamai/chap-coordinator
 ```
 
 **Python:**
@@ -268,7 +268,7 @@ CHAP 0.2 is a public draft. Concretely, this repo contains:
 - **A conformance harness.** 23 test vectors, signing/canonicalisation/chain checks, in-toto attestation output. Two conformance levels are claimable today (Minimal, Recommended); Full waits on broader interop testing across the two implementations.
 - **MCP server transport.** A CHAP Coordinator can present itself as an [MCP](https://modelcontextprotocol.io) server, exposing every CHAP method as a tool. Point Claude Desktop, Cursor, Claude Code, or any MCP client at it and drive a CHAP workspace from natural language. TypeScript adapter at [`packages/coordinator-mcp/`](./packages/coordinator-mcp/), Python adapter at [`chap_coordinator.transports.mcp_server`](./packages/coordinator-py/chap_coordinator/transports/mcp_server.py), runnable reference servers at [`reference/mcp-server-ts/`](./reference/mcp-server-ts/) and [`reference/mcp-server-py/`](./reference/mcp-server-py/). Five-minute walkthrough at [`examples/drive-chap-from-claude-desktop.md`](./examples/drive-chap-from-claude-desktop.md).
 - **A2A server transport.** A CHAP Coordinator can also present itself as an [A2A](https://a2a-protocol.org) agent, advertising every CHAP method as a discrete skill on its Agent Card. Any A2A-aware orchestrator (Azure AI Foundry, Amazon Bedrock AgentCore, Google ADK, custom multi-agent systems) can register the coordinator by URL and delegate work to it. TypeScript adapter at [`packages/coordinator-a2a/`](./packages/coordinator-a2a/), Python adapter at [`chap_coordinator.transports.a2a_server`](./packages/coordinator-py/chap_coordinator/transports/a2a_server.py), reference servers at [`reference/a2a-server-ts/`](./reference/a2a-server-ts/) and [`reference/a2a-server-py/`](./reference/a2a-server-py/). Walkthrough at [`examples/drive-chap-from-an-a2a-orchestrator.md`](./examples/drive-chap-from-an-a2a-orchestrator.md).
-- **Inward wrap helpers.** Small library utilities that turn an external MCP tool call or A2A exchange into a CHAP `task.create` + `task.complete` pair, with hashes of the input/output canonicalisations recorded as citations on the resulting artefact. The library counterpart to the citation patterns in `integrations/CHAP-with-{MCP,A2A}.md`. Available as `wrapMcpToolCall` / `wrapA2aMessageExchange` from `@brightbeamai/coordinator`, and as `wrap_mcp_tool_call` / `wrap_a2a_message_exchange` from `chap_coordinator.transports.wrap`.
+- **Inward wrap helpers.** Small library utilities that turn an external MCP tool call or A2A exchange into a CHAP `task.create` + `task.complete` pair, with hashes of the input/output canonicalisations recorded as citations on the resulting artefact. The library counterpart to the citation patterns in `integrations/CHAP-with-{MCP,A2A}.md`. Available as `wrapMcpToolCall` / `wrapA2aMessageExchange` from `@brightbeamai/chap-coordinator`, and as `wrap_mcp_tool_call` / `wrap_a2a_message_exchange` from `chap_coordinator.transports.wrap`.
 - **Framework bridges.** Thin Python adapters that connect a real agent framework's human-in-the-loop mechanism to CHAP's `review`/`decide` methods, so an approval, edit, or denial in the framework becomes a `decide.approve` / `decide.override` / `decide.reject` on the audit chain. Five today, each with its own examples and tests, each framework an optional dependency: [`chap-langgraph`](./packages/chap-langgraph/) (LangGraph), [`chap-pydantic-ai`](./packages/chap-pydantic-ai/) (Pydantic AI), [`chap-ag2`](./packages/chap-ag2/) (AG2 / AutoGen), [`chap-llama-index`](./packages/chap-llama-index/) (LlamaIndex Workflows), and [`chap-google-adk`](./packages/chap-google-adk/) (Google ADK).
 - **Twelve worked scenarios.** [`IN_PRACTICE.md`](./IN_PRACTICE.md) walks through real cases from a solo developer with Cursor up to GMP-regulated fill-finish manufacturing. Runnable implementations live in [`scenarios/`](./scenarios/), one folder per story (three implemented so far), open to community contributions.
 

@@ -1,5 +1,5 @@
 /**
- * @brightbeamai/coordinator. type vocabulary
+ * @brightbeamai/chap-coordinator. type vocabulary
  *
  * Wire-shape and in-memory types for the Coordinator. The schemas at
  * schemas/ are the normative wire types; these mirror them in

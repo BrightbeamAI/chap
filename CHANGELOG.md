@@ -244,8 +244,8 @@ lunch". Backward-compatible: no wire-format or schema changes.
 
 ### Added
 
-- **Publish-ready npm packages.** `@brightbeamai/coordinator`, `@brightbeamai/coordinator-mcp`,
-  and `@brightbeamai/coordinator-a2a` now build to `dist/` (ESM + CJS + `.d.ts` +
+- **Publish-ready npm packages.** `@brightbeamai/chap-coordinator`, `@brightbeamai/chap-coordinator-mcp`,
+  and `@brightbeamai/chap-coordinator-a2a` now build to `dist/` (ESM + CJS + `.d.ts` +
   source maps via `tsup`), declare `exports` maps, and ship `prepublishOnly`
   that runs the schemas-drift check, typecheck, tests, and build.
 - **PyPI-ready Python wheel.** `chap-coordinator` builds cleanly with a
@@ -336,7 +336,7 @@ transport from 0.2.3. Backward-compatible.
 
 ### Added
 
-- **TypeScript A2A adapter** (`@brightbeamai/coordinator-a2a`) on `@a2a-js/sdk`
+- **TypeScript A2A adapter** (`@brightbeamai/chap-coordinator-a2a`) on `@a2a-js/sdk`
   (A2A 0.3.0). `makeChapAgentCard(...)` returns an Agent Card with 39
   skills, one per CHAP method, named `chap.<method>`.
   `makeChapAgentExecutor(coord)` returns an `AgentExecutor`.
@@ -376,7 +376,7 @@ Backward-compatible.
 
 ### Added
 
-- **TypeScript MCP adapter** (`@brightbeamai/coordinator-mcp`) on
+- **TypeScript MCP adapter** (`@brightbeamai/chap-coordinator-mcp`) on
   `@modelcontextprotocol/sdk`.
 - **Python MCP adapter** (`chap_coordinator.transports.mcp_server`) on
   the official `mcp` SDK, installable via `pip install chap-coordinator[mcp]`.
@@ -416,7 +416,7 @@ parity with the Python reference: both now cover Core plus every profile,
 - `getWorkspace`, `snapshot`, and `restore` methods on the Coordinator
   for persistence integrations.
 
-### Changed (potentially breaking for `@brightbeamai/coordinator` consumers only)
+### Changed (potentially breaking for `@brightbeamai/chap-coordinator` consumers only)
 
 - Wire field rename: `workspace_id` → `workspace`. Matches the spec, the
   Python reference, the conformance harness, and the test vectors.

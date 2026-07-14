@@ -9,8 +9,8 @@
     "start": "tsx server.ts"
   },
   "dependencies": {
-    "@brightbeamai/coordinator":     "file:../../packages/coordinator",
-    "@brightbeamai/coordinator-a2a": "file:../../packages/coordinator-a2a",
+    "@brightbeamai/chap-coordinator":     "file:../../packages/coordinator",
+    "@brightbeamai/chap-coordinator-a2a": "file:../../packages/coordinator-a2a",
     "@a2a-js/sdk":           "^0.3.13",
     "express":               "^4.19.0"
   },

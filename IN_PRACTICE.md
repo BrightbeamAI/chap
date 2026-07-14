@@ -4,7 +4,7 @@ Twelve situations where teams reach for the protocol. They run from one person o
 
 A note on scope before the cases. CHAP defines what gets recorded and how it links together. It does not pick your model, write your prompts, design your routing rules, interpret your regulator, or decide whether a particular human review was substantively good enough. Each case below describes what CHAP contributes; the substantive work above it remains yours.
 
-The code samples assume the `@brightbeamai/coordinator` Node package or the reference TypeScript client. Equivalents in Python, Rust, or Go follow the same envelope shapes; the wire format is `application/chap+json` and any HTTP client works.
+The code samples assume the `@brightbeamai/chap-coordinator` Node package or the reference TypeScript client. Equivalents in Python, Rust, or Go follow the same envelope shapes; the wire format is `application/chap+json` and any HTTP client works.
 
 ## Contents
 
@@ -35,7 +35,7 @@ You ship to GitHub. Cursor reviews every PR. You accept most of its suggestions,
 Run a single-binary coordinator on your laptop with SQLite under the hood. The cheapest possible setup is twenty lines of Node:
 
 ```ts
-import { Coordinator } from "@brightbeamai/coordinator";
+import { Coordinator } from "@brightbeamai/chap-coordinator";
 
 const coord = new Coordinator({ storage: "sqlite:./chap.db" });
 coord.dispatch({
