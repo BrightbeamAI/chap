@@ -114,7 +114,7 @@ async def test_full_workflow_through_mcp() -> None:
         _unwrap(await client.call_tool("chap.task.complete", {
             "workspace": "wsp_flow", "from": "agent:bot", "task_id": task_id,
             "output": {"body": "draft body", "severity": "warning"},
-            "confidence": 0.85,
+            "confidence": "0.85",
         }))
 
         _unwrap(await client.call_tool("chap.review.request", {

@@ -140,4 +140,4 @@ and prints the resulting chain.
 
 ## License
 
-Apache 2.0. See [LICENSE](../../LICENSE).
+Apache 2.0. See [LICENSE](./LICENSE).

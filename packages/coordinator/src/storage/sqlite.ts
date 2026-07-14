@@ -10,8 +10,8 @@
  *   )
  *
  * Usage:
- *   import { Coordinator } from "@chap/coordinator";
- *   import { SqliteStore } from "@chap/coordinator/storage/sqlite";
+ *   import { Coordinator } from "@brightbeamai/coordinator";
+ *   import { SqliteStore } from "@brightbeamai/coordinator/storage/sqlite";
  *
  *   const coord = new Coordinator({
  *     store: new SqliteStore("./chap.db"),

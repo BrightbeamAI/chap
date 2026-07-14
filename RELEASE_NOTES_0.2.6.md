@@ -87,7 +87,7 @@ recorded in the audit chain.
 
 All published at 0.2.6:
 
-- `@chap/coordinator`, `@chap/coordinator-mcp`, `@chap/coordinator-a2a` (npm)
+- `@brightbeamai/coordinator`, `@brightbeamai/coordinator-mcp`, `@brightbeamai/coordinator-a2a` (npm)
 - `chap-coordinator`, `chap-langgraph` (PyPI)
 
 Full detail in [CHANGELOG.md](./CHANGELOG.md).

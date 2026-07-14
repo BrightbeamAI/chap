@@ -69,7 +69,7 @@ in-memory and lost on exit.
 
 ## Architecture
 
-See the [`@chap/coordinator-a2a`](../../packages/coordinator-a2a/)
+See the [`@brightbeamai/coordinator-a2a`](../../packages/coordinator-a2a/)
 package, which this reference uses unchanged.
 
 ## License

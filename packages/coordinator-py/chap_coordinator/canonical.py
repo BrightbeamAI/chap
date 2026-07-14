@@ -1,14 +1,23 @@
 """
 chap_coordinator.canonical
 
-RFC 8785 (JCS) JSON canonicalisation. CHAP signs and hashes the JCS
+Deterministic JSON canonicalisation for CHAP. CHAP signs and hashes the
 canonicalisation of envelopes (with ``evidence.sig`` removed for the
 ``security-signed/1.0`` profile, or the bare envelope for plain Core
 chain linkage).
 
-This is a pragmatic JCS implementation sufficient for the JSON value
-space CHAP uses (objects, arrays, strings, booleans, null, integers,
-and short decimal floats). It conforms to RFC 8785 for those values.
+This follows RFC 8785 (JCS) for objects, arrays, strings, booleans, and
+null, with one deliberate restriction on numbers. RFC 8785 mandates the
+ECMAScript number-to-string algorithm, which is genuinely hard to
+reproduce byte-identically across languages; getting it subtly wrong
+would make a chain written by one implementation fail verification
+against another. To make cross-implementation agreement provable rather
+than approximate, a CHAP canonical number MUST be an integer within the
+IEEE-754 / ECMAScript safe-integer range (abs value <= 2**53 - 1).
+Non-integer values and larger magnitudes are rejected: represent them as
+strings (for example ``"8.2"`` for a decimal reading, or the digits of a
+large identifier as a string). The TypeScript reference enforces the
+identical rule, so both accept and reject exactly the same inputs.
 """
 from __future__ import annotations
 
@@ -17,6 +26,20 @@ import json
 from typing import Any
 
 ZERO_HASH = "sha256:" + "0" * 64
+
+# ECMAScript Number.MAX_SAFE_INTEGER (2**53 - 1). Integers with a larger
+# magnitude cannot be represented exactly as a double and are rejected so
+# the Python and TypeScript canonicalisers can never diverge on them.
+_MAX_SAFE_INTEGER = 9007199254740991
+
+_NON_INTEGER_ERROR = (
+    "CHAP canonical numbers must be integers; represent decimals as strings "
+    "(e.g. \"8.2\") so the hash is deterministic across implementations."
+)
+_NUMBER_RANGE_ERROR = (
+    "CHAP canonical integers must be within the safe-integer range "
+    "(abs value <= 2**53 - 1); represent larger numbers as strings."
+)
 
 
 def _canon(obj: Any) -> str:
@@ -30,14 +53,18 @@ def _canon(obj: Any) -> str:
     if isinstance(obj, str):
         return json.dumps(obj, ensure_ascii=False)
     if isinstance(obj, int):
+        if abs(obj) > _MAX_SAFE_INTEGER:
+            raise ValueError(_NUMBER_RANGE_ERROR)
         return str(obj)
     if isinstance(obj, float):
         if obj != obj or obj in (float("inf"), float("-inf")):
-            raise ValueError("Non-finite numbers are not permitted in JCS.")
-        if obj.is_integer():
-            return str(int(obj))
-        # Shortest round-trip via repr; sufficient for the value space CHAP uses.
-        return repr(obj)
+            raise ValueError("Non-finite numbers are not permitted in a CHAP canonical value.")
+        if not obj.is_integer():
+            raise ValueError(_NON_INTEGER_ERROR)
+        as_int = int(obj)
+        if abs(as_int) > _MAX_SAFE_INTEGER:
+            raise ValueError(_NUMBER_RANGE_ERROR)
+        return str(as_int)
     if isinstance(obj, dict):
         items: list[str] = []
         for key in sorted(obj.keys()):

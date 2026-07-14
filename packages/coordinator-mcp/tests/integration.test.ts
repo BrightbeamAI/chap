@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { Coordinator } from "@chap/coordinator";
+import { Coordinator } from "@brightbeamai/coordinator";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
@@ -171,7 +171,7 @@ test("Full workflow through MCP: workspace + members + task + review + override"
       arguments: {
         workspace: "wsp_flow", from: "agent:bot", task_id: taskId,
         output: { body: "draft body", severity: "warning" },
-        confidence: 0.85,
+        confidence: "0.85",
       },
     }) as never);
 

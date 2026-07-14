@@ -1,5 +1,5 @@
 /**
- * @chap/coordinator. type vocabulary
+ * @brightbeamai/coordinator. type vocabulary
  *
  * Wire-shape and in-memory types for the Coordinator. The schemas at
  * schemas/ are the normative wire types; these mirror them in
@@ -98,7 +98,7 @@ export interface TaskRoutingHints {
 }
 
 export interface ArtefactRoutingHints {
-  confidence?:        number;
+  confidence?:        number | string;
   model_id?:          string;
   cost_consumed_usd?: number;
   latency_ms?:        number;
@@ -289,7 +289,7 @@ export interface Task {
   delegator:    ParticipantUri;
   input:        Record<string, unknown>;
   output?:      unknown;
-  confidence?:  number;
+  confidence?:  number | string;
   deadline?:    string;
   created_at:   string;
   updated_at:   string;

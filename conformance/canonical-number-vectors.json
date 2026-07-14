@@ -1,0 +1,32 @@
+{
+  "description": "Cross-implementation canonicalisation vectors for CHAP. Every conforming implementation MUST produce the exact byte string in `canonical` for each `accept` case, and MUST raise an error for each `reject` case. This is what guarantees that a hash or signature computed by one implementation verifies against another. See canonical.ts / canonical.py and the number-format note in the specification.",
+  "accept": [
+    { "value": 0,                    "canonical": "0" },
+    { "value": 1,                    "canonical": "1" },
+    { "value": -1,                   "canonical": "-1" },
+    { "value": 42,                   "canonical": "42" },
+    { "value": -42,                  "canonical": "-42" },
+    { "value": 1000,                 "canonical": "1000" },
+    { "value": 9007199254740991,     "canonical": "9007199254740991" },
+    { "value": -9007199254740991,    "canonical": "-9007199254740991" },
+    { "value": true,                 "canonical": "true" },
+    { "value": false,                "canonical": "false" },
+    { "value": null,                 "canonical": "null" },
+    { "value": "8.2",                "canonical": "\"8.2\"" },
+    { "value": [1, 2, 3],            "canonical": "[1,2,3]" },
+    { "value": { "seq": 3, "tags": ["a", "b"], "n": 100 }, "canonical": "{\"n\":100,\"seq\":3,\"tags\":[\"a\",\"b\"]}" },
+    { "value": { "b": 1, "a": 2 },   "canonical": "{\"a\":2,\"b\":1}" }
+  ],
+  "reject": [
+    { "note": "non-integer decimal", "json": "1.5" },
+    { "note": "non-integer decimal", "json": "0.1" },
+    { "note": "exponent / very small", "json": "1e-7" },
+    { "note": "exponent / very large", "json": "1e21" },
+    { "note": "2**53 exceeds safe-integer range", "json": "9007199254740992" },
+    { "note": "2**53 + 1 exceeds safe-integer range", "json": "9007199254740993" }
+  ],
+  "notes": {
+    "2.0": "A JSON `2.0` parses to the value 2 (integer-valued) and canonicalises to \"2\" on both sides. Because it is expressed as a JSON literal here, it is covered by the implementation unit tests rather than this file (JSON has no way to distinguish 2 from 2.0).",
+    "reject_via_json": "The reject cases carry a raw JSON string because some values (e.g. 9007199254740993) cannot be represented exactly once parsed into a double; each implementation parses the JSON, then attempts to canonicalise, and must raise."
+  }
+}

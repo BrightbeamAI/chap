@@ -17,10 +17,10 @@ and whether they pass the published conformance harness.
 
 | Name                        | Language    | CHAP version | Profile surface | Conformance | Status      | License      | Authors            |
 | --------------------------- | ----------- | ------------ | --------------- | ----------- | ----------- | ------------ | ------------------ |
-| `@chap/coordinator`         | TypeScript  | 0.2.5        | Full v0.2 (39 methods) | 23/23 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
-| `chap-coordinator` (Python) | Python 3.10+ | 0.2.5       | Full v0.2 (39 methods) | 23/23 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
-| `@chap/coordinator-mcp`     | TypeScript  | 0.2.5        | All 39 methods as MCP tools | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
-| `@chap/coordinator-a2a`     | TypeScript  | 0.2.5        | All 39 methods as A2A skills | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/coordinator`         | TypeScript  | 0.2.7        | Full v0.2 (39 methods) | 23/23 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
+| `chap-coordinator` (Python) | Python 3.10+ | 0.2.7       | Full v0.2 (39 methods) | 23/23 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/coordinator-mcp`     | TypeScript  | 0.2.7        | All 39 methods as MCP tools | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/coordinator-a2a`     | TypeScript  | 0.2.7        | All 39 methods as A2A skills | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
 | `chap-langgraph`            | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 10/10 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
 | `chap-pydantic-ai`          | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 17/17 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
 | `chap-ag2`                  | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 14/14 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
@@ -29,7 +29,7 @@ and whether they pass the published conformance harness.
 
 ## Notes by implementation
 
-### `@chap/coordinator` (TypeScript reference)
+### `@brightbeamai/coordinator` (TypeScript reference)
 
 The protocol as a library. Embed it in a Node service, drive it
 directly from a script, or wire it under one of the transport
@@ -39,7 +39,7 @@ audit-scitt/1.0. Zero runtime dependencies for Core. Optional
 `better-sqlite3` for persistent storage.
 
 Package: [`packages/coordinator/`](./packages/coordinator/) ·
-Conformance: passes the 21-vector v0.2 harness on the same JSON-RPC
+Conformance: passes the 23-vector v0.2 harness on the same JSON-RPC
 2.0 wire as the Python reference.
 
 ### `chap-coordinator` (Python reference)
@@ -50,10 +50,10 @@ identical. Includes the same wrap-helper conveniences and the MCP/A2A
 server transport adapters as Python modules.
 
 Package: [`packages/coordinator-py/`](./packages/coordinator-py/) ·
-Conformance: passes the same 21-vector v0.2 harness as the TypeScript
+Conformance: passes the same 23-vector v0.2 harness as the TypeScript
 reference.
 
-### `@chap/coordinator-mcp` (MCP transport adapter)
+### `@brightbeamai/coordinator-mcp` (MCP transport adapter)
 
 Wraps a Coordinator as an MCP server. Every CHAP method becomes an
 MCP tool named `chap.<method>`. Spec target: MCP 2025-11-25. Stateless
@@ -63,7 +63,7 @@ Coordinator.
 Package: [`packages/coordinator-mcp/`](./packages/coordinator-mcp/) ·
 Walkthrough: [`examples/drive-chap-from-claude-desktop.md`](./examples/drive-chap-from-claude-desktop.md).
 
-### `@chap/coordinator-a2a` (A2A transport adapter)
+### `@brightbeamai/coordinator-a2a` (A2A transport adapter)
 
 Wraps a Coordinator as an A2A agent. Every CHAP method becomes an
 `AgentSkill` on the published Agent Card. Spec target: A2A 0.3.0

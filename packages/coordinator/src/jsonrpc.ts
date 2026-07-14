@@ -1,5 +1,5 @@
 /**
- * @chap/coordinator/jsonrpc
+ * @brightbeamai/coordinator/jsonrpc
  *
  * Error codes (JSON-RPC standard + CHAP private range) and helpers.
  *

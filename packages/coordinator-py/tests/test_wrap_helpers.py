@@ -64,7 +64,7 @@ def test_wrap_mcp_emits_task_create_and_complete() -> None:
         server="github",
         args={"title": "bug", "body": "details"},
         result={"issue_url": "https://github.com/example/repo/issues/1"},
-        confidence=0.95,
+        confidence="0.95",
     )
     assert res["task_id"].startswith("tsk_")
     assert res["input_hash"].startswith("sha256:")
@@ -147,7 +147,7 @@ def test_wrap_a2a_basic() -> None:
         remote_agent="a2a:partner-org/agent-1",
         sent={"task": "summarise", "doc": "hello world"},
         received={"summary": "Hello, world."},
-        confidence=0.9,
+        confidence="0.9",
     )
     assert res["task_id"].startswith("tsk_")
     ws = coord.get_workspace("wsp_wrap")

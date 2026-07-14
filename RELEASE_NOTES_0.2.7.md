@@ -1,9 +1,12 @@
 # CHAP 0.2.7
 
-An additive release on top of 0.2.6: four more framework bridges and a new
-runnable `scenarios/` directory. **No change to the protocol core, the
-coordinators, or the wire format**: this release adds adapters and worked
-examples around an unchanged 0.2.x protocol.
+Adds four framework bridges and a runnable `scenarios/` directory, and
+hardens the two reference implementations for their first registry publish.
+Mostly additive, but with two changes that can affect envelopes carrying
+non-integer numbers: a normative canonicalisation restriction (numbers must
+be safe integers, so hashing is byte-identical across implementations) and
+a JSON Patch prototype-pollution fix. See "What changed" and "Upgrade
+notes" below.
 
 ## Highlights
 
@@ -52,17 +55,34 @@ and the first three worked examples:
 The scenarios directory is open to contribution: good-first-issue scenarios
 for newcomers, `help wanted` for the regulated ones.
 
-## Also in this release
+## What changed
 
-- `IMPLEMENTATIONS.md` updated with the four new bridges and their test
-  counts.
+- **Canonicalisation restricts numbers to safe integers.** A number in a
+  CHAP envelope must be an integer with absolute value at most 2^53 - 1;
+  decimals and larger magnitudes are rejected and must be carried as
+  strings (`"8.2"`). This guarantees the Python and TypeScript
+  canonicalisers hash identically, so chains and signatures verify across
+  implementations. It is potentially breaking: an envelope that carried a
+  non-integer as a JSON number is now rejected.
+- **JSON Patch is full RFC 6902 in both implementations**, and a
+  prototype-pollution vector in the TypeScript patch apply (paths through
+  `__proto__`/`constructor`/`prototype`) is closed. See the Security note
+  in `CHANGELOG.md`.
+- **`confidence` accepts a string** as well as a number, following the same
+  rule; routing behaviour is unchanged.
+- Publish-readiness fixes: per-package `LICENSE`, `oss@brightbeam.com`
+  contact, SPDX license expression, metadata-derived `__version__`, and the
+  `@brightbeamai` npm scope.
+- `IMPLEMENTATIONS.md` updated with the four new bridges and their tests.
 
 ## Upgrade notes
 
-Nothing to change. This release adds packages and examples; it does not
-alter the coordinators, the profiles, or the wire format. Existing 0.2.6
-deployments are unaffected. If you use one of the new frameworks, install
-its bridge; otherwise there is nothing new to adopt.
+If your envelopes only ever carried integer numbers, there is nothing to
+change; the new bridges are opt-in. If you placed non-integer numbers
+(decimals, or integers above 2^53) directly in envelope payloads or in
+`confidence`, carry them as strings from now on: the coordinator will
+otherwise reject them with a clear error. Cross-implementation
+verification is unaffected for integer and string payloads.
 
 ## Tests
 
@@ -79,7 +99,7 @@ All bumped to 0.2.7 in lockstep. The new bridges' publication status
 depends on the release-workflow decision; anything not yet on PyPI ships as
 source and runs from a clone.
 
-- `@chap/coordinator`, `@chap/coordinator-mcp`, `@chap/coordinator-a2a` (npm)
+- `@brightbeamai/coordinator`, `@brightbeamai/coordinator-mcp`, `@brightbeamai/coordinator-a2a` (npm)
 - `chap-coordinator`, `chap-langgraph`, and the new `chap-pydantic-ai`,
   `chap-ag2`, `chap-llama-index`, `chap-google-adk` (PyPI)
 

@@ -1,0 +1,34 @@
+{
+  "description": "Cross-implementation JSON Patch (RFC 6902) vectors for CHAP. For each `accept` case, applying `patch` to `doc` MUST produce `expected` in every conforming implementation. For each `reject` case, applying the patch MUST raise. This guarantees a decide.override applied by one implementation yields the same artefact (and the same content hash) as another. See patch.ts / patch.py.",
+  "accept": [
+    { "name": "add object key",        "doc": {"a": 1},              "patch": [{"op": "add", "path": "/b", "value": 2}],                 "expected": {"a": 1, "b": 2} },
+    { "name": "add replaces existing",  "doc": {"a": 1},              "patch": [{"op": "add", "path": "/a", "value": 2}],                 "expected": {"a": 2} },
+    { "name": "add array insert",       "doc": {"a": [1, 3]},         "patch": [{"op": "add", "path": "/a/1", "value": 2}],               "expected": {"a": [1, 2, 3]} },
+    { "name": "add array append dash",  "doc": {"a": [1, 2]},         "patch": [{"op": "add", "path": "/a/-", "value": 3}],               "expected": {"a": [1, 2, 3]} },
+    { "name": "replace object",         "doc": {"a": 1},              "patch": [{"op": "replace", "path": "/a", "value": 9}],             "expected": {"a": 9} },
+    { "name": "replace array element",  "doc": {"a": [0, 0]},         "patch": [{"op": "replace", "path": "/a/1", "value": 9}],           "expected": {"a": [0, 9]} },
+    { "name": "remove object key",      "doc": {"a": 1, "b": 2},      "patch": [{"op": "remove", "path": "/a"}],                          "expected": {"b": 2} },
+    { "name": "remove array element",   "doc": {"a": [1, 2, 3]},      "patch": [{"op": "remove", "path": "/a/1"}],                        "expected": {"a": [1, 3]} },
+    { "name": "move",                   "doc": {"a": 1, "b": 2},      "patch": [{"op": "move", "from": "/a", "path": "/c"}],              "expected": {"b": 2, "c": 1} },
+    { "name": "copy",                   "doc": {"a": {"x": 1}},       "patch": [{"op": "copy", "from": "/a", "path": "/b"}],              "expected": {"a": {"x": 1}, "b": {"x": 1}} },
+    { "name": "test then replace",      "doc": {"a": 1},              "patch": [{"op": "test", "path": "/a", "value": 1}, {"op": "replace", "path": "/a", "value": 2}], "expected": {"a": 2} },
+    { "name": "escaped ~1 (slash) key", "doc": {"a/b": 1},           "patch": [{"op": "replace", "path": "/a~1b", "value": 2}],          "expected": {"a/b": 2} },
+    { "name": "escaped ~0 (tilde) key", "doc": {"a~b": 1},           "patch": [{"op": "replace", "path": "/a~0b", "value": 2}],          "expected": {"a~b": 2} },
+    { "name": "nested replace",         "doc": {"a": {"b": [0, 0]}}, "patch": [{"op": "replace", "path": "/a/b/1", "value": 9}],         "expected": {"a": {"b": [0, 9]}} },
+    { "name": "root replace",           "doc": {"a": 1},              "patch": [{"op": "replace", "path": "", "value": {"z": 0}}],        "expected": {"z": 0} },
+    { "name": "sequence of ops",        "doc": {"n": 1},              "patch": [{"op": "add", "path": "/m", "value": 2}, {"op": "remove", "path": "/n"}], "expected": {"m": 2} }
+  ],
+  "reject": [
+    { "name": "prototype pollution __proto__",    "doc": {}, "patch": [{"op": "add", "path": "/__proto__/polluted", "value": "x"}] },
+    { "name": "prototype pollution constructor",  "doc": {}, "patch": [{"op": "add", "path": "/constructor/prototype/x", "value": "x"}] },
+    { "name": "replace missing key",              "doc": {"a": 1}, "patch": [{"op": "replace", "path": "/b", "value": 2}] },
+    { "name": "replace array out of range",       "doc": {"a": [1]}, "patch": [{"op": "replace", "path": "/a/5", "value": 9}] },
+    { "name": "remove missing key",               "doc": {"a": 1}, "patch": [{"op": "remove", "path": "/b"}] },
+    { "name": "remove array out of range",        "doc": {"a": [1]}, "patch": [{"op": "remove", "path": "/a/5"}] },
+    { "name": "add into missing intermediate",    "doc": {"a": {}}, "patch": [{"op": "add", "path": "/a/b/c", "value": 1}] },
+    { "name": "test mismatch",                    "doc": {"a": 1}, "patch": [{"op": "test", "path": "/a", "value": 2}] },
+    { "name": "move into own child",              "doc": {"a": {"b": 1}}, "patch": [{"op": "move", "from": "/a", "path": "/a/c"}] },
+    { "name": "unknown op",                       "doc": {"a": 1}, "patch": [{"op": "frobnicate", "path": "/a", "value": 2}] },
+    { "name": "remove root",                      "doc": {"a": 1}, "patch": [{"op": "remove", "path": ""}] }
+  ]
+}

@@ -1,5 +1,5 @@
 /**
- * Integration tests for the @chap/coordinator-a2a adapter.
+ * Integration tests for the @brightbeamai/coordinator-a2a adapter.
  *
  * The @a2a-js/sdk doesn't ship an in-memory transport, so we exercise
  * the dispatch path directly: build a ``ChapAgentExecutor``, hand it
@@ -20,8 +20,8 @@ import type {
 } from "@a2a-js/sdk/server";
 import type { DataPart, Message } from "@a2a-js/sdk";
 
-import { Coordinator } from "@chap/coordinator";
-import { TOOL_NAMES } from "@chap/coordinator-mcp/schemas";
+import { Coordinator } from "@brightbeamai/coordinator";
+import { TOOL_NAMES } from "@brightbeamai/coordinator-mcp/schemas";
 
 import {
   ChapAgentExecutor,
@@ -267,7 +267,7 @@ test("executor full workflow exercises every shipped profile via A2A", async () 
   });
   await dispatch("chap.task.complete", {
     workspace: "wsp_flow", from: "agent:bot", task_id: taskId,
-    output: { body: "draft", severity: "warning" }, confidence: 0.85,
+    output: { body: "draft", severity: "warning" }, confidence: "0.85",
   });
   await dispatch("chap.review.request", {
     workspace: "wsp_flow", from: "agent:bot", task_id: taskId,

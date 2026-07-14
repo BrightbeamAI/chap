@@ -12,5 +12,5 @@ export default defineConfig({
   sourcemap: true,
   clean:     true,
   target:    "es2022",
-  external:  ["@chap/coordinator", "@chap/coordinator-mcp", "@a2a-js/sdk"],
+  external:  ["@brightbeamai/coordinator", "@brightbeamai/coordinator-mcp", "@a2a-js/sdk"],
 });

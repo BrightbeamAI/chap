@@ -337,7 +337,7 @@ def test_review_depth_high_criticality_returns_full(ready):
     coord, send, tid = ready
     # Set hints on the task first
     coord.workspaces["wsp_p"].tasks[tid].routing_hints = {
-        "criticality": "critical", "confidence": 0.9,
+        "criticality": "critical", "confidence": "0.9",
     }
     r = send("review.depth", workspace="wsp_p", task_id=tid)
     assert r["result"]["depth"] == "full"
@@ -347,7 +347,7 @@ def test_review_depth_high_criticality_returns_full(ready):
 def test_review_depth_low_crit_high_conf_skips(ready):
     coord, send, tid = ready
     coord.workspaces["wsp_p"].tasks[tid].routing_hints = {
-        "criticality": "low", "confidence": 0.97,
+        "criticality": "low", "confidence": "0.97",
     }
     r = send("review.depth", workspace="wsp_p", task_id=tid)
     assert r["result"]["depth"] == "skip"
@@ -356,7 +356,7 @@ def test_review_depth_low_crit_high_conf_skips(ready):
 def test_review_depth_spot_check_has_sampling(ready):
     coord, send, tid = ready
     coord.workspaces["wsp_p"].tasks[tid].routing_hints = {
-        "criticality": "low", "confidence": 0.85,
+        "criticality": "low", "confidence": "0.85",
     }
     r = send("review.depth", workspace="wsp_p", task_id=tid)
     assert r["result"]["depth"] == "spot_check"
@@ -383,7 +383,7 @@ def test_task_route_candidates_empty(ready):
 def test_escalate_auto_critical_triggers(ready):
     coord, send, tid = ready
     coord.workspaces["wsp_p"].tasks[tid].routing_hints = {
-        "criticality": "critical", "confidence": 0.9,
+        "criticality": "critical", "confidence": "0.9",
     }
     r = send("escalate.auto", workspace="wsp_p", task_id=tid,
              default_escalation_target="human:bob@x")

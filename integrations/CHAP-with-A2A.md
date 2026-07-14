@@ -309,7 +309,7 @@ discover its skills, and delegate work to it.
 
 ### What ships
 
-- `packages/coordinator-a2a/`. TypeScript adapter (`@chap/coordinator-a2a`).
+- `packages/coordinator-a2a/`. TypeScript adapter (`@brightbeamai/coordinator-a2a`).
   Built on the official `@a2a-js/sdk` (A2A spec **0.3.0**).
 - `chap_coordinator.transports.a2a_server`. Python adapter, installable
   via `pip install chap-coordinator[a2a]`. Built on the official

@@ -26,7 +26,7 @@ import {
   E,
   type Envelope,
   rpcError,
-} from "@chap/coordinator";
+} from "@brightbeamai/coordinator";
 import { makePlaygroundPolicies } from "./policies.js";
 
 import { makeFileStateStore } from "./state-store.js";

@@ -54,7 +54,7 @@ def wrap_mcp_tool_call(
     server: str | None = None,
     task_kind: str | None = None,
     routing_hints: dict[str, Any] | None = None,
-    confidence: float | None = None,
+    confidence: float | str | None = None,
     review_required: bool = False,
 ) -> dict[str, str]:
     """Wrap a completed MCP tool call as a CHAP task pair.
@@ -185,7 +185,7 @@ def wrap_a2a_message_exchange(
     received: dict[str, Any],
     task_kind: str = "a2a_exchange",
     routing_hints: dict[str, Any] | None = None,
-    confidence: float | None = None,
+    confidence: float | str | None = None,
 ) -> dict[str, str]:
     """Wrap a completed A2A message exchange as a CHAP task pair.
 

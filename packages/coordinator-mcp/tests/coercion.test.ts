@@ -14,7 +14,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { Coordinator } from "@chap/coordinator";
+import { Coordinator } from "@brightbeamai/coordinator";
 import { dispatchToolCall, coerceToolArgs } from "../src/index.js";
 
 function freshCoord(): Coordinator {
@@ -116,7 +116,7 @@ describe("stringified-JSON end-to-end: the Claude Desktop replay", () => {
     dispatchToolCall(coord, "chap.task.complete", {
       workspace: "wsp_demo", from: "agent:bot@local", task_id: taskId,
       output: '{"draft": "Your order is in transit; updates within 24 hours"}', // stringified
-      confidence: 0.9,
+      confidence: "0.9",
     });
     dispatchToolCall(coord, "chap.review.request", {
       workspace: "wsp_demo", from: "agent:bot@local", task_id: taskId,

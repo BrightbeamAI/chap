@@ -62,7 +62,7 @@ test("wrapMcpToolCall emits task.create + task.complete", () => {
     server: "github",
     args: { title: "bug", body: "details" },
     result: { issue_url: "https://github.com/example/repo/issues/1" },
-    confidence: 0.95,
+    confidence: "0.95",
   });
   assert.ok(res.task_id.startsWith("tsk_"));
   assert.ok(res.input_hash.startsWith("sha256:"));
@@ -138,7 +138,7 @@ test("wrapA2aMessageExchange basic", () => {
     remoteAgent: "a2a:partner-org/agent-1",
     sent: { task: "summarise", doc: "hello world" },
     received: { summary: "Hello, world." },
-    confidence: 0.9,
+    confidence: "0.9",
   });
   assert.ok(res.task_id.startsWith("tsk_"));
   const ws = coord.getWorkspace("wsp_wrap")!;

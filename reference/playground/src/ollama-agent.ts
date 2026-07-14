@@ -8,7 +8,7 @@
  * There is no privileged in-process API; this is the real protocol.
  */
 
-import type { Coordinator, Envelope, ArtefactRoutingHints } from "@chap/coordinator";
+import type { Coordinator, Envelope, ArtefactRoutingHints } from "@brightbeamai/coordinator";
 import type { Ticket } from "./tickets.js";
 
 const OLLAMA_URL   = process.env.OLLAMA_URL   ?? "http://localhost:11434";

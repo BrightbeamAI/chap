@@ -188,7 +188,7 @@ class Task:
     review: ReviewState | None = None
     review_required: bool | None = None  # set by modes/1.0 (trial forces True)
     output: Any = None
-    confidence: float | None = None
+    confidence: float | str | None = None
     supersedes: str | None = None
     superseded_by: str | None = None
     parent: str | None = None

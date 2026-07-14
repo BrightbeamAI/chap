@@ -1,5 +1,5 @@
 {
-  "name": "@chap/conformance-harness",
+  "name": "@brightbeamai/conformance-harness",
   "version": "1.0.0",
   "description": "CHAP conformance test harness — runs canonical vectors against any CHAP endpoint.",
   "license": "Apache-2.0",

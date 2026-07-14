@@ -45,13 +45,13 @@ is about getting the automation wired up.
    Enable 2FA at <https://www.npmjs.com/settings/~/profile>. Use "Auth-only"
    mode initially; once everything is stable, switch to "Auth and writes".
 
-2. Create the `@chap` organisation:
+2. Create the `@brightbeamai` organisation:
    ```bash
    npm login                  # log in as the Brightbeam account
-   npm org create chap        # creates the @chap scope
+   npm org create brightbeamai        # creates the @brightbeamai scope
    ```
 
-   If `@chap` is already taken, fall back to `@brightbeam` and update the
+   The scope is `@brightbeamai` (the registered npm org). Update the
    `name` field in every `packages/*/package.json` to use the new scope
    (`@brightbeam/coordinator`, etc.) plus the peer-dep refs.
 
@@ -59,7 +59,7 @@ is about getting the automation wired up.
    <https://www.npmjs.com/settings/~/tokens>:
    - Type: **Granular Access Token**
    - Permissions: **Publish**
-   - Scope: `@chap` (or whichever scope you chose)
+   - Scope: `@brightbeamai` (or whichever scope you chose)
    - Expiration: 365 days (or shorter)
 
    Copy the token. You'll add it as a GitHub secret in the next step.
@@ -168,7 +168,7 @@ grep -rln "<old version>" --include="*.json" --include="*.toml" --include="*.py"
 Most common causes:
 1. The `NPM_TOKEN` secret is missing or expired. Regenerate at
    <https://www.npmjs.com/settings/~/tokens>.
-2. The `@chap` scope is owned by someone else. `npm whoami` and `npm org ls chap`
+2. The `@brightbeamai` scope is owned by someone else. `npm whoami` and `npm org ls brightbeamai`
    on a local machine to check.
 3. Trying to republish a version that already exists. npm refuses
    re-publishing the same version even if you `npm unpublish` it (24-hour cooldown).
@@ -223,7 +223,7 @@ this, but only if you configure it BEFORE the first publish:
 4. The first workflow run will:
    - Create `chap-coordinator` on PyPI from the pending publisher
    - Create `chap-langgraph` on PyPI from the pending publisher
-   - Publish all 3 npm packages to `@chap`
+   - Publish all 3 npm packages to `@brightbeamai`
 
 Subsequent releases just need a version bump + tag.
 

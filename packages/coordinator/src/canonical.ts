@@ -1,18 +1,31 @@
 /**
- * @chap/coordinator/canonical
+ * @brightbeamai/coordinator/canonical
  *
- * RFC 8785 JSON Canonicalisation Scheme (JCS) implementation.
- * CHAP signs and hashes the JCS canonicalisation of envelopes.
+ * Deterministic JSON canonicalisation for CHAP. CHAP signs and hashes the
+ * canonicalisation of envelopes.
  *
- * Pragmatic JCS sufficient for the JSON value space CHAP uses
- * (objects, arrays, strings, booleans, null, integers, short
- * decimal floats). RFC 8785 §3.2.2.3 number formatting via
- * shortest round-trip.
+ * Follows RFC 8785 (JCS) for objects, arrays, strings, booleans, and null,
+ * with one deliberate restriction on numbers. RFC 8785 mandates the
+ * ECMAScript number-to-string algorithm, which is hard to reproduce
+ * byte-identically across languages; a subtle mismatch would make a chain
+ * written by one implementation fail verification against another. To make
+ * cross-implementation agreement provable rather than approximate, a CHAP
+ * canonical number MUST be an integer within the safe-integer range
+ * (abs value <= Number.MAX_SAFE_INTEGER). Non-integers and larger
+ * magnitudes are rejected: represent them as strings. The Python reference
+ * enforces the identical rule.
  */
 
 import { createHash } from "node:crypto";
 
 export const ZERO_HASH = "sha256:" + "0".repeat(64);
+
+const NON_INTEGER_ERROR =
+  'CHAP canonical numbers must be integers; represent decimals as strings ' +
+  '(e.g. "8.2") so the hash is deterministic across implementations.';
+const NUMBER_RANGE_ERROR =
+  "CHAP canonical integers must be within the safe-integer range " +
+  "(abs value <= Number.MAX_SAFE_INTEGER); represent larger numbers as strings.";
 
 function canonicalString(s: string): string {
   // JSON string escaping; \uXXXX for control chars
@@ -21,11 +34,18 @@ function canonicalString(s: string): string {
 
 function canonicalNumber(n: number): string {
   if (!Number.isFinite(n)) {
-    throw new Error("Non-finite numbers are not permitted in JCS");
+    throw new Error(
+      "Non-finite numbers are not permitted in a CHAP canonical value",
+    );
   }
-  if (Number.isInteger(n)) return n.toString();
-  // Shortest round-trip. JS's default toString is close to RFC 8785's
-  // ECMAScript-style rendering and is what JCS requires.
+  if (!Number.isInteger(n)) {
+    throw new Error(NON_INTEGER_ERROR);
+  }
+  if (Math.abs(n) > Number.MAX_SAFE_INTEGER) {
+    throw new Error(NUMBER_RANGE_ERROR);
+  }
+  // A safe integer's toString() is always plain decimal digits (no
+  // exponent), byte-identical to Python's str(int(...)).
   return n.toString();
 }
 

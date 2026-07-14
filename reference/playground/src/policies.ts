@@ -10,7 +10,7 @@ import type {
   EscalationPolicyFn,
   ReviewDepthPolicyFn,
   RoutingPolicyFn,
-} from "@chap/coordinator";
+} from "@brightbeamai/coordinator";
 
 const CRIT: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 

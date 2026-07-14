@@ -15,10 +15,10 @@
     "reference/a2a-server-ts"
   ],
   "scripts": {
-    "build":            "npm run build --workspace=@chap/coordinator && npm run build --workspace=@chap/coordinator-mcp && npm run build --workspace=@chap/coordinator-a2a",
+    "build":            "npm run build --workspace=@brightbeamai/coordinator && npm run build --workspace=@brightbeamai/coordinator-mcp && npm run build --workspace=@brightbeamai/coordinator-a2a",
     "test":             "npm test --workspaces --if-present",
     "typecheck":        "npm run typecheck --workspaces --if-present",
-    "check:schemas":    "npm run check:schemas --workspace=@chap/coordinator",
+    "check:schemas":    "npm run check:schemas --workspace=@brightbeamai/coordinator",
     "conformance:py":   "bash scripts/run-conformance.sh python",
     "conformance:ts":   "bash scripts/run-conformance.sh typescript"
   },

@@ -1,5 +1,5 @@
 /**
- * @chap/coordinator-a2a/card
+ * @brightbeamai/coordinator-a2a/card
  *
  * Build the AgentCard advertised at the agent's well-known URL.
  * Every CHAP method becomes a discrete ``AgentSkill`` with id
@@ -9,8 +9,8 @@
 
 import type { AgentCard, AgentSkill } from "@a2a-js/sdk";
 
-import { TOOL_NAMES, methodForTool } from "@chap/coordinator-mcp/schemas";
-import { TOOL_DESCRIPTIONS } from "@chap/coordinator-mcp/tools";
+import { TOOL_NAMES, methodForTool } from "@brightbeamai/coordinator-mcp/schemas";
+import { TOOL_DESCRIPTIONS } from "@brightbeamai/coordinator-mcp/tools";
 
 export interface ChapAgentCardOptions {
   /** Base URL advertised on the Agent Card. */

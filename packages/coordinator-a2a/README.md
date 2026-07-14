@@ -1,4 +1,4 @@
-# @chap/coordinator-a2a
+# @brightbeamai/coordinator-a2a
 
 A2A server adapter for the CHAP Coordinator. Wraps a `Coordinator`
 instance and exposes every CHAP method as an
@@ -24,18 +24,18 @@ npm pack
 npm install /path/to/chap-coordinator-a2a-0.2.5.tgz
 ```
 
-Node 18+ required. Runtime dependencies: `@chap/coordinator`,
-`@chap/coordinator-mcp` (for the shared schemas), and `@a2a-js/sdk`.
+Node 18+ required. Runtime dependencies: `@brightbeamai/coordinator`,
+`@brightbeamai/coordinator-mcp` (for the shared schemas), and `@a2a-js/sdk`.
 
 ## Quick start
 
 ```typescript
 import express from "express";
-import { Coordinator } from "@chap/coordinator";
+import { Coordinator } from "@brightbeamai/coordinator";
 import {
   makeChapAgentCard,
   makeChapAgentExecutor,
-} from "@chap/coordinator-a2a";
+} from "@brightbeamai/coordinator-a2a";
 import {
   DefaultRequestHandler,
   InMemoryTaskStore,
