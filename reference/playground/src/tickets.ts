@@ -7,7 +7,7 @@
  * senior reviewer) have meaningful work.
  */
 
-import type { TaskRoutingHints } from "@brightbeamai/coordinator";
+import type { TaskRoutingHints } from "@brightbeamai/chap-coordinator";
 
 export interface Ticket {
   id:            string;

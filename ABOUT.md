@@ -199,10 +199,10 @@ chap-protocol/
 │   └── a2a-server-py/                   A2A HTTP server (Python, FastAPI).
 │
 ├── packages/
-│   ├── coordinator/                     @brightbeamai/coordinator (TypeScript): protocol as a library.
+│   ├── coordinator/                     @brightbeamai/chap-coordinator (TypeScript): protocol as a library.
 │   ├── coordinator-py/                  chap-coordinator (Python): Core + every profile.
-│   ├── coordinator-mcp/                 @brightbeamai/coordinator-mcp: MCP transport adapter.
-│   └── coordinator-a2a/                 @brightbeamai/coordinator-a2a: A2A transport adapter.
+│   ├── coordinator-mcp/                 @brightbeamai/chap-coordinator-mcp: MCP transport adapter.
+│   └── coordinator-a2a/                 @brightbeamai/chap-coordinator-a2a: A2A transport adapter.
 │
 ├── conformance/                         Test suite for implementers.
 │   ├── conformance-checklist.md

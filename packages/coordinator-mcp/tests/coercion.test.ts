@@ -14,7 +14,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { Coordinator } from "@brightbeamai/coordinator";
+import { Coordinator } from "@brightbeamai/chap-coordinator";
 import { dispatchToolCall, coerceToolArgs } from "../src/index.js";
 
 function freshCoord(): Coordinator {

@@ -24,11 +24,11 @@ import {
 } from "@a2a-js/sdk/server";
 import { A2AExpressApp } from "@a2a-js/sdk/server/express";
 
-import { Coordinator } from "@brightbeamai/coordinator";
+import { Coordinator } from "@brightbeamai/chap-coordinator";
 import {
   makeChapAgentCard,
   makeChapAgentExecutor,
-} from "@brightbeamai/coordinator-a2a";
+} from "@brightbeamai/chap-coordinator-a2a";
 
 function parsePort(): number {
   const idx = process.argv.indexOf("--port");

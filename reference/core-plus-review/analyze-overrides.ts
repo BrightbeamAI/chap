@@ -65,7 +65,7 @@ async function call(method: string, params: Record<string, unknown>): Promise<an
 async function loadAuditFromSqlite(dbPath: string, workspace: string): Promise<any> {
   // Lazy-import only when the --db flag is used so the HTTP path
   // doesn't pull better-sqlite3 into the dependency tree.
-  const { SqliteStore } = await import("@brightbeamai/coordinator/storage/sqlite");
+  const { SqliteStore } = await import("@brightbeamai/chap-coordinator/storage/sqlite");
   const store = new SqliteStore(dbPath);
   const records = store.load();
   const r = records.find(r => r.id === workspace);

@@ -1,5 +1,5 @@
 /**
- * @brightbeamai/coordinator-a2a
+ * @brightbeamai/chap-coordinator-a2a
  *
  * A2A server adapter for a CHAP Coordinator. Wraps a Coordinator
  * instance and exposes every CHAP method as an A2A skill.
@@ -9,8 +9,8 @@
  *
  * Usage::
  *
- *   import { Coordinator } from "@brightbeamai/coordinator";
- *   import { makeChapAgentCard, makeChapAgentExecutor } from "@brightbeamai/coordinator-a2a";
+ *   import { Coordinator } from "@brightbeamai/chap-coordinator";
+ *   import { makeChapAgentCard, makeChapAgentExecutor } from "@brightbeamai/chap-coordinator-a2a";
  *   import { DefaultRequestHandler, InMemoryTaskStore } from "@a2a-js/sdk/server";
  *   import { A2AExpressApp } from "@a2a-js/sdk/server/express";
  *   import express from "express";

@@ -1,5 +1,5 @@
 /**
- * @brightbeamai/coordinator/ids
+ * @brightbeamai/chap-coordinator/ids
  *
  * ULID-format identifier generation. Supports a deterministic mode
  * for tests/demos so byte-for-byte replay works.

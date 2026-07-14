@@ -12,5 +12,5 @@ export default defineConfig({
   sourcemap: true,
   clean:     true,
   target:    "es2022",
-  external:  ["@brightbeamai/coordinator", "@modelcontextprotocol/sdk"],
+  external:  ["@brightbeamai/chap-coordinator", "@modelcontextprotocol/sdk"],
 });

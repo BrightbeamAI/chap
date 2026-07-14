@@ -1,5 +1,5 @@
 /**
- * @brightbeamai/coordinator-mcp/tools
+ * @brightbeamai/chap-coordinator-mcp/tools
  *
  * One-line descriptions for each CHAP method exposed as an MCP tool.
  * These show up in MCP-client UIs (Claude Desktop, Cursor, etc.) and

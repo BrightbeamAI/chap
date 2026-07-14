@@ -1,5 +1,5 @@
 /**
- * Integration tests for the @brightbeamai/coordinator-a2a adapter.
+ * Integration tests for the @brightbeamai/chap-coordinator-a2a adapter.
  *
  * The @a2a-js/sdk doesn't ship an in-memory transport, so we exercise
  * the dispatch path directly: build a ``ChapAgentExecutor``, hand it
@@ -20,8 +20,8 @@ import type {
 } from "@a2a-js/sdk/server";
 import type { DataPart, Message } from "@a2a-js/sdk";
 
-import { Coordinator } from "@brightbeamai/coordinator";
-import { TOOL_NAMES } from "@brightbeamai/coordinator-mcp/schemas";
+import { Coordinator } from "@brightbeamai/chap-coordinator";
+import { TOOL_NAMES } from "@brightbeamai/chap-coordinator-mcp/schemas";
 
 import {
   ChapAgentExecutor,

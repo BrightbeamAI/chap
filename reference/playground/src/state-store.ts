@@ -6,7 +6,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { Coordinator } from "@brightbeamai/coordinator";
+import type { Coordinator } from "@brightbeamai/chap-coordinator";
 
 export interface StateStore {
   load(): Promise<void>;

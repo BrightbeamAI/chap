@@ -1,5 +1,5 @@
 /**
- * @brightbeamai/coordinator/transports/wrap
+ * @brightbeamai/chap-coordinator/transports/wrap
  *
  * Inward integration helpers: turn an external tool/agent event into
  * a CHAP envelope landing in a workspace's audit log. Library

@@ -1,5 +1,5 @@
 /**
- * @brightbeamai/coordinator-mcp
+ * @brightbeamai/chap-coordinator-mcp
  *
  * MCP server adapter for a CHAP Coordinator. Wraps a Coordinator
  * instance and exposes every CHAP method as an MCP tool.
@@ -8,8 +8,8 @@
  *
  * Usage (stdio):
  *
- *   import { Coordinator } from "@brightbeamai/coordinator";
- *   import { makeChapMcpServer } from "@brightbeamai/coordinator-mcp";
+ *   import { Coordinator } from "@brightbeamai/chap-coordinator";
+ *   import { makeChapMcpServer } from "@brightbeamai/chap-coordinator-mcp";
  *   import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
  *
  *   const coord = new Coordinator({ ... });
@@ -47,7 +47,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { Coordinator, Envelope } from "@brightbeamai/coordinator";
+import type { Coordinator, Envelope } from "@brightbeamai/chap-coordinator";
 
 import { SCHEMAS, TOOL_NAMES, methodForTool, coerceToolArgs } from "./schemas.js";
 import { TOOL_DESCRIPTIONS } from "./tools.js";

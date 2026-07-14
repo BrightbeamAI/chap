@@ -38,7 +38,7 @@ and only when, they appear in all capitals.
 schemas, and reference implementations are stable enough for
 experimentation and early production pilots; they are not yet
 sufficient for a normative conformance claim. Specifically: the
-specification has one reference implementation (the `@brightbeamai/coordinator`
+specification has one reference implementation (the `@brightbeamai/chap-coordinator`
 package in this repository), not the two interoperable implementations
 typical of a standards-track promotion; an empirical interoperability
 test suite covering all defined methods is published as a draft (see

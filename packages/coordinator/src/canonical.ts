@@ -1,5 +1,5 @@
 /**
- * @brightbeamai/coordinator/canonical
+ * @brightbeamai/chap-coordinator/canonical
  *
  * Deterministic JSON canonicalisation for CHAP. CHAP signs and hashes the
  * canonicalisation of envelopes.
