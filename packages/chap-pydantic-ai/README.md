@@ -24,7 +24,7 @@ An edited argument is recorded as an RFC 6902 diff, so the chain captures
 pip install chap-pydantic-ai
 ```
 
-Depends on `chap-coordinator>=0.2.5`. Pydantic AI is **optional**: the
+Depends on `chap-coordinator>=0.2.7`. Pydantic AI is **optional**: the
 adapter reads the resolution objects structurally, so the bridge and its
 tests work without it installed. Install the extra to run a live agent:
 
@@ -134,7 +134,7 @@ and prints the resulting chain.
 
 ## Compatibility
 
-- `chap-coordinator` 0.2.5
+- `chap-coordinator` 0.2.7
 - `pydantic-ai` 1.x–2.x (optional; verified against 2.0)
 - Python 3.10, 3.11, 3.12, 3.13
 

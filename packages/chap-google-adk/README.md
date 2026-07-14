@@ -24,7 +24,7 @@ not just *approved/denied*.
 pip install chap-google-adk
 ```
 
-Depends on `chap-coordinator>=0.2.5`. Google ADK is **optional**: the adapter
+Depends on `chap-coordinator>=0.2.7`. Google ADK is **optional**: the adapter
 reads the call and confirmation structurally, so the bridge and its tests
 work without it installed. Install the extra to run a live agent:
 
@@ -105,7 +105,7 @@ real `google-adk` (offline, no API key), and prints the resulting chain.
 
 ## Compatibility
 
-- `chap-coordinator` 0.2.6
+- `chap-coordinator` 0.2.7
 - `google-adk` >=1.29 (optional; tool-confirmation API present since 1.29, example verified on 2.3)
 - Python 3.10, 3.11, 3.12, 3.13
 

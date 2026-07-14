@@ -18,7 +18,7 @@ TypeScript project:
 cd packages/coordinator
 npm pack
 # In your project
-npm install /path/to/chap-coordinator-0.2.5.tgz
+npm install ./brightbeamai-chap-coordinator-*.tgz   # the .tgz that npm pack just produced
 ```
 
 Node 18+ required. Zero external runtime dependencies; uses Node's

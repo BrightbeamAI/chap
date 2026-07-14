@@ -21,7 +21,7 @@ TypeScript project:
 cd packages/coordinator-a2a
 npm pack
 # In your project
-npm install /path/to/chap-coordinator-a2a-0.2.5.tgz
+npm install ./brightbeamai-chap-coordinator-a2a-*.tgz   # the .tgz that npm pack just produced
 ```
 
 Node 18+ required. Runtime dependencies: `@brightbeamai/chap-coordinator`,

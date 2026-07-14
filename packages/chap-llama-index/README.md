@@ -24,7 +24,7 @@ not just *approved/rejected*.
 pip install chap-llama-index
 ```
 
-Depends on `chap-coordinator>=0.2.5`. LlamaIndex is **optional**: the
+Depends on `chap-coordinator>=0.2.7`. LlamaIndex is **optional**: the
 adapter reads events structurally, so the bridge and its tests work
 without it installed. Install the extra to run a live workflow:
 
@@ -115,7 +115,7 @@ approve, a refining edit, a substituting edit, and a reject against real
 
 ## Compatibility
 
-- `chap-coordinator` 0.2.6
+- `chap-coordinator` 0.2.7
 - `llama-index-workflows` 1.x–2.x (optional; verified against 2.22)
 - Python 3.10, 3.11, 3.12, 3.13
 

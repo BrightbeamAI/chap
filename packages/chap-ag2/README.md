@@ -21,7 +21,7 @@ review; the human's reply is the decision on it.
 pip install chap-ag2
 ```
 
-Depends on `chap-coordinator>=0.2.5`. AG2 is **optional**: the adapter
+Depends on `chap-coordinator>=0.2.7`. AG2 is **optional**: the adapter
 reads the message and reply as plain values, so the bridge and its tests
 work without it installed. Install the extra to run a live conversation:
 
@@ -101,7 +101,7 @@ chain.
 
 ## Compatibility
 
-- `chap-coordinator` 0.2.6
+- `chap-coordinator` 0.2.7
 - `ag2` 0.9+ (optional; verified against 0.14)
 - Python 3.10, 3.11, 3.12, 3.13
 
