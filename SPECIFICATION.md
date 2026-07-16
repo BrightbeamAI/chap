@@ -512,7 +512,14 @@ impose a stricter eligibility rule on top of it. In particular, the
 `review/1.0` profile requires that the actor of a review decision
 (`decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`)
 be one of the reviewers the review was addressed to in `review.request`'s
-`to` set; see [`profiles/review.md`](./profiles/review.md). Membership
+`to` set; see [`profiles/review.md`](./profiles/review.md). A `to` entry
+that is a broadcast scope (`workspace:<id>` or `group:<name>`) is satisfied
+by any workspace member: the Coordinator does not model group membership,
+so a `group:` target means "any member", not "any member of that named
+group". Deployments that need a decision genuinely restricted to a named
+group MUST enforce that restriction externally (for example via an
+`identity-*` profile or an application-layer check). A future profile MAY
+introduce a first-class group-membership model. Membership
 verification is distinct from, and composes with, identity verification:
 the `identity-oidc/1.0` and `identity-vc/1.0` profiles bind a verified
 real-world identity to a Participant, but the membership precondition

@@ -310,11 +310,15 @@ class Coordinator:
         error envelope fragment if not eligible, else ``None``.
 
         A broadcast-scoped reviewer (a ``workspace:`` or ``group:`` URI in
-        the ``to`` set) means "any member" (resp. "any group member"), so
-        in that case the membership floor the caller already enforced is
-        sufficient and no per-URI match is required. This mirrors the
-        handoff profile's treatment of group recipients and keeps the
-        documented ``to: workspace:<id>`` broadcast pattern working.
+        the ``to`` set) is satisfied by any workspace member, so in that
+        case the membership floor the caller already enforced is
+        sufficient and no per-URI match is required. Note that the
+        coordinator does not model group membership: a ``group:`` target is
+        treated as "any member", not "any member of that group". Deployments
+        needing true group restriction must enforce it externally. This
+        mirrors the handoff profile's treatment of group recipients and
+        keeps the documented ``to: workspace:<id>`` broadcast pattern
+        working.
         """
         review = task.review
         if review is None or not review.requested_to:
@@ -345,13 +349,28 @@ class Coordinator:
 
         method = envelope.get("method")
         env_id = envelope.get("id")
-        params = envelope.get("params") or {}
 
         if not isinstance(method, str):
             return make_response(env_id, error=rpc_error(E.REQUEST, "Missing method"))
 
+        # JSON-RPC params, when present, must be a structured value (object).
+        # CHAP methods use by-name params; reject non-object params cleanly as
+        # Invalid params rather than letting a handler raise an internal error.
+        raw_params = envelope.get("params")
+        if raw_params is None:
+            params: dict = {}
+        elif isinstance(raw_params, dict):
+            params = raw_params
+        else:
+            return make_response(env_id, error=rpc_error(
+                E.PARAMS, "Invalid params: expected an object"))
+
         # security-signed/1.0: verify top-level `sig` field if required.
-        if self.options.require_signatures and method != "participant.join":
+        # participant.join and workspace.create are bootstrap operations that
+        # run before any signing key is registered for the actor, so they
+        # cannot be signature-verified; every other method must verify.
+        if (self.options.require_signatures
+                and method not in ("participant.join", "workspace.create")):
             sig_err = self._verify_signature(envelope)
             if sig_err:
                 return make_response(env_id, error=sig_err)
@@ -361,6 +380,24 @@ class Coordinator:
             stale = self._check_step_up(params)
             if stale:
                 return make_response(env_id, error=stale)
+
+        # control/1.0 and deliberation/1.0: these operations are privileged
+        # and MUST be performed by a workspace member. Control is the
+        # governance "emergency brake"; deliberation open/close set the vote
+        # parameters and finalize the tally. Without this floor a non-member
+        # could resume a paused workspace, raise the mode ceiling, or open and
+        # close a deliberation to finalize an outcome early. (The per-voter
+        # eligibility check in deliberate.vote is separate and still applies.
+        # Deployments needing a stricter role gate than membership layer it on
+        # top via an identity-* profile or application check.)
+        if (method.startswith("control.") or method.startswith("deliberate.")
+                or method.startswith("handoff.")):
+            ws_id = params.get("workspace") if isinstance(params, dict) else None
+            ws = self.workspaces.get(ws_id) if isinstance(ws_id, str) else None
+            if ws is not None:
+                not_member = self._require_member(ws, params.get("from"))
+                if not_member:
+                    return make_response(env_id, error=not_member["error"])
 
         # control/1.0 workspace-paused gate (S6 -32063).
         if method not in {"workspace.create", "workspace.describe",
@@ -383,8 +420,12 @@ class Coordinator:
         try:
             out = handler(params)
         except Exception as exc:
+            # Keep the wire message generic; a handler exception may carry
+            # internal detail that should not be disclosed to callers. The
+            # specifics remain available to operators via the data field.
             return make_response(
-                env_id, error=rpc_error(E.INTERNAL, f"Internal error: {exc}")
+                env_id,
+                error=rpc_error(E.INTERNAL, "Internal error", data={"detail": str(exc)}),
             )
 
         if "error" in out:
@@ -476,15 +517,30 @@ class Coordinator:
         sender = params.get("from") if isinstance(params, dict) else None
         ws_id = params.get("workspace") if isinstance(params, dict) else None
         ts = params.get("ts") or envelope.get("ts") or self.now_iso()
+        # Fail closed: a signature is present (checked above) and
+        # require_signatures is on, so it must verify. If we cannot resolve
+        # the context needed to verify it, reject rather than skip -- a
+        # signature we cannot check must never be treated as valid.
         if not sender or not ws_id:
-            return None  # Cannot verify; let normal handler reject.
+            return rpc_error(E.SIG_VERIFY_FAILED,
+                             "Cannot verify signature: missing from/workspace")
 
         ws = self.workspaces.get(ws_id)
         if not ws:
-            return None
+            return rpc_error(E.SIG_VERIFY_FAILED,
+                             "Cannot verify signature: unknown workspace")
         member = ws.members.get(sender)
         if not member:
             return rpc_error(E.SIG_KEY_NOT_FOUND, f"No member: {sender}")
+        # Revocation is present-tense: a revoked key must be rejected for any
+        # live request regardless of the envelope's self-asserted `ts`.
+        # Checking against `ts` alone lets a holder of a revoked key backdate
+        # `ts` to before the revocation and still be accepted. Use the
+        # coordinator's trusted clock for the revocation decision.
+        now = self.now_iso()
+        for k in member.keys:
+            if k.kid == kid and k.revoked_at is not None and now >= k.revoked_at:
+                return rpc_error(E.SIG_KEY_REVOKED, f"Key {kid} is revoked")
         key = member.key_for(kid, ts)
         if not key:
             for k in member.keys:
@@ -815,8 +871,15 @@ class Coordinator:
         task = ws.tasks.get(p.get("task_id", ""))
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
-        if task.state in ("completed", "declined"):
-            return {"error": rpc_error(E.PARAMS, f"Task is terminal: {task.state}")}
+        # Completion is only legal from an active, non-terminal, non-paused
+        # state. An allowlist (rather than a denylist of terminal states) is
+        # safer: any state not explicitly listed -- cancelled, superseded,
+        # paused, already-completed/declined, abstained, escalated -- is
+        # rejected, so completion can neither revive a terminated task nor
+        # bypass a pause.
+        if task.state not in ("created", "in_progress"):
+            return {"error": rpc_error(
+                E.PARAMS, f"Cannot complete task in state: {task.state}")}
         task.output = p.get("output")
         if "confidence" in p:
             # Stored as received (number or string) so it hashes deterministically;

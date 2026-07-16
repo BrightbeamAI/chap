@@ -132,7 +132,14 @@ def register_audit_scitt(coord: "Coordinator") -> None:
                            "note": "No verify_scitt_receipt hook configured"}}
 
     def audit_verify_chain(p: dict) -> dict:
-        """Local prev_hash chain replay (supplementary to SCITT)."""
+        """Local prev_hash chain replay (supplementary to SCITT).
+
+        Recomputes the chain from the envelopes and checks (a) that every
+        entry's stored prev_hash equals the recomputed running hash, and
+        (b) that the final recomputed head equals the stored chain_head.
+        The head check is essential: without it the last entry is
+        unprotected, since no stored prev_hash covers it.
+        """
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
@@ -140,15 +147,22 @@ def register_audit_scitt(coord: "Coordinator") -> None:
         prev = ZERO_HASH
         for e in ws.audit:
             expected_prev = prev
-            if e.prev_hash is not None and e.prev_hash != expected_prev:
+            # A chain-enabled workspace must have prev_hash on every entry;
+            # a missing value is a defect, not a reason to skip the check.
+            if e.prev_hash != expected_prev:
                 errors.append(f"seq {e.seq}: prev_hash mismatch")
             prev = sha256_hex(canonicalize(e.envelope) + expected_prev.encode("utf-8"))
+        # The recomputed head must match the stored head; this is what
+        # makes the final entry tamper-evident.
+        stored_head = ws.chain_head or ZERO_HASH
+        if prev != stored_head:
+            errors.append("chain_head mismatch: replay does not match stored head")
         if errors:
             return {"error": rpc_error(E.PARAMS, "; ".join(errors))}
         return {"result": {
             "ok": True,
             "entries_checked": len(ws.audit),
-            "chain_head": ws.chain_head or ZERO_HASH,
+            "chain_head": stored_head,
         }}
 
     coord._handlers["audit.submit_to_scitt"] = audit_submit_to_scitt

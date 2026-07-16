@@ -75,6 +75,39 @@ for newcomers, `help wanted` for the regulated ones.
   `@brightbeamai` npm scope.
 - `IMPLEMENTATIONS.md` updated with the four new bridges and their tests.
 
+## Security hardening
+
+This release includes a security and correctness review of both reference
+coordinators. Each fix below applies to the Python and TypeScript
+implementations and is covered by a regression test; see `CHANGELOG.md` for
+detail.
+
+- **Authorisation on privileged profiles.** `control/1.0` operations
+  (pause/resume/cancel/snapshot/rollback/supersede/set_mode_ceiling),
+  `deliberation/1.0` open/close/comment, and `handoff/1.0` methods now
+  require workspace membership; previously a non-member could, for example,
+  resume a paused workspace, raise the mode ceiling, or close a
+  deliberation to finalise its tally early. `whisper/1.0` answers now
+  require the answerer to be an addressed recipient.
+- **Signature verification** (`security-signed/1.0`) now fails closed (a
+  present-but-unverifiable signature is rejected, not skipped -- this
+  notably affected `workspace.create`), and key revocation is evaluated
+  against the coordinator's trusted clock so it cannot be bypassed by
+  backdating the envelope's `ts`.
+- **Audit chain verification** now detects tampering of every entry,
+  including the last, by comparing the replayed head to the stored
+  `chain_head` and by not letting an entry opt out of its own check.
+- **`task.complete` state machine.** Completion is now allowed only from an
+  active state (`created`/`in_progress`), so it cannot revive a cancelled
+  or superseded task or bypass a pause.
+- **JSON-RPC hardening.** Non-object `params` are rejected as `-32602`, and
+  internal errors no longer echo raw exception text on the wire.
+
+None of these change the wire format for well-formed, authorised traffic;
+they close gaps that were reachable only by malformed or unauthorised
+requests. The canonicalisation number restriction above is the one
+potentially breaking change.
+
 ## Upgrade notes
 
 If your envelopes only ever carried integer numbers, there is nothing to

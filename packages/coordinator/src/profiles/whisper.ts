@@ -58,6 +58,18 @@ export function registerWhisper(coord: Coordinator): void {
     }
     const prompt = ws.whispers.get(p.whisper_id as string);
     if (!prompt) return { error: rpcError(E.PARAMS, "Unknown whisper id") };
+    // Only a participant the whisper was addressed to may answer it. A
+    // broadcast scope (workspace:/group:) is satisfied by any member; the
+    // coordinator does not model group membership (see SPECIFICATION.md).
+    const answerer = p.from as string;
+    const broadcast = prompt.askee.some((a) => typeof a === "string" && (a.startsWith("workspace:") || a.startsWith("group:")));
+    if (broadcast) {
+      if (!ws.members.has(answerer)) {
+        return { error: rpcError(E.NOT_AUTHORISED, `Not a workspace member: ${answerer}`) };
+      }
+    } else if (!prompt.askee.includes(answerer)) {
+      return { error: rpcError(E.NOT_AUTHORISED, `Whisper was not addressed to ${answerer}`) };
+    }
     if (prompt.state === "answered") {
       return { error: rpcError(E.WHISPER_ALREADY_ANSWERED, "Whisper already answered") };
     }

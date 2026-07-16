@@ -298,10 +298,11 @@ export class Coordinator {
       // which the caller has already enforced.
       return null;
     }
-    // A broadcast-scoped reviewer (workspace:/group: URI) means "any
-    // member" (resp. "any group member"); the membership floor already
-    // passed, so no per-URI match is required. Mirrors the handoff
-    // profile's group-recipient handling and keeps the documented
+    // A broadcast-scoped reviewer (workspace:/group: URI) is satisfied by
+    // any workspace member; the membership floor already passed. Note the
+    // coordinator does not model group membership: a group: target means
+    // "any member", not "any member of that group" (deployments needing
+    // true group restriction enforce it externally). Keeps the documented
     // `to: workspace:<id>` broadcast pattern working.
     if (review.requested_to.some((r) => typeof r === "string" && (r.startsWith("workspace:") || r.startsWith("group:")))) {
       return null;
@@ -398,10 +399,24 @@ export class Coordinator {
       return reply(envelope, { error: rpcError(E.REQUEST, "Invalid JSON-RPC 2.0 request") });
     }
     const method = envelope.method;
-    const params = (envelope.params ?? {}) as Record<string, unknown>;
+    // JSON-RPC params, when present, must be a structured value (object).
+    // CHAP methods use by-name params; reject non-object params cleanly as
+    // Invalid params for parity with the Python reference.
+    const rawParams = envelope.params;
+    if (
+      rawParams !== undefined &&
+      rawParams !== null &&
+      (typeof rawParams !== "object" || Array.isArray(rawParams))
+    ) {
+      return reply(envelope, { error: rpcError(E.PARAMS, "Invalid params: expected an object") });
+    }
+    const params = (rawParams ?? {}) as Record<string, unknown>;
 
     // security-signed/1.0: verify top-level sig if required.
-    if (this.options.requireSignatures && method !== "participant.join") {
+    // participant.join and workspace.create are bootstrap operations that
+    // run before any signing key is registered for the actor, so they cannot
+    // be signature-verified; every other method must verify.
+    if (this.options.requireSignatures && method !== "participant.join" && method !== "workspace.create") {
       const sigErr = this.verifySignature(envelope);
       if (sigErr) return reply(envelope, { error: sigErr });
     }
@@ -410,6 +425,23 @@ export class Coordinator {
     if (this.options.enforceStepUp && PRIVILEGED_METHODS.has(method)) {
       const stale = this.checkStepUp(params);
       if (stale) return reply(envelope, { error: stale });
+    }
+
+    // control/1.0 and deliberation/1.0: these operations are privileged and
+    // MUST be performed by a workspace member. Control is the governance
+    // "emergency brake"; deliberation open/close set the vote parameters and
+    // finalize the tally. Without this floor a non-member could resume a
+    // paused workspace, raise the mode ceiling, or open and close a
+    // deliberation to finalize an outcome early. (The per-voter eligibility
+    // check in deliberate.vote is separate and still applies. A stricter role
+    // gate than membership is layered on top via an identity-* profile.)
+    if (method.startsWith("control.") || method.startsWith("deliberate.") || method.startsWith("handoff.")) {
+      const wsId = params.workspace as string | undefined;
+      const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
+      if (ws) {
+        const notMember = this.requireMember(ws, params.from);
+        if (notMember) return reply(envelope, { error: notMember.error });
+      }
     }
 
     // control/1.0 workspace-paused gate (S6 -32063).
@@ -435,8 +467,11 @@ export class Coordinator {
     try {
       out = handler(params);
     } catch (e) {
+      // Keep the wire message generic; a handler exception may carry internal
+      // detail that should not be disclosed to callers. Specifics stay in the
+      // data field for operators.
       const msg = e instanceof Error ? e.message : String(e);
-      return reply(envelope, { error: rpcError(E.INTERNAL, `Internal error: ${msg}`) });
+      return reply(envelope, { error: rpcError(E.INTERNAL, "Internal error", { detail: msg }) });
     }
     if (out.error) return reply(envelope, { error: out.error });
 
@@ -487,11 +522,29 @@ export class Coordinator {
     const sender = params.from as string | undefined;
     const wsId = params.workspace as string | undefined;
     const ts = (params.ts as string | undefined) ?? this.now();
-    if (!sender || !wsId) return null;  // not enough context; let handler reject
+    // Fail closed: a signature is present and requireSignatures is on, so it
+    // must verify. If we cannot resolve the context needed to verify it,
+    // reject rather than skip -- a signature we cannot check must never be
+    // treated as valid.
+    if (!sender || !wsId) {
+      return rpcError(E.SIG_VERIFY_FAILED, "Cannot verify signature: missing from/workspace");
+    }
     const ws = this.workspaces.get(wsId);
-    if (!ws) return null;
+    if (!ws) {
+      return rpcError(E.SIG_VERIFY_FAILED, "Cannot verify signature: unknown workspace");
+    }
     const member = ws.members.get(sender);
     if (!member) return rpcError(E.SIG_KEY_NOT_FOUND, `No member: ${sender}`);
+
+    // Revocation is present-tense: a revoked key must be rejected for any
+    // live request regardless of the envelope's self-asserted `ts`. Checking
+    // against `ts` alone lets a holder of a revoked key backdate `ts` to
+    // before the revocation and still be accepted. Use the coordinator's
+    // trusted clock for the revocation decision.
+    const now = this.now();
+    if (member.keys.some(k => k.kid === kid && k.revoked_at !== undefined && now >= k.revoked_at)) {
+      return rpcError(E.SIG_KEY_REVOKED, `Key ${kid} is revoked`);
+    }
 
     const key = this.lookupKey(member, kid, ts);
     if (!key) {
@@ -799,8 +852,13 @@ export class Coordinator {
     if (notMember) return notMember;
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
-    if (task.state === "completed" || task.state === "declined") {
-      return { error: rpcError(E.PARAMS, `Task is terminal: ${task.state}`) };
+    // Completion is only legal from an active, non-terminal, non-paused state.
+    // An allowlist (rather than a denylist of terminal states) is safer: any
+    // state not listed -- cancelled, superseded, paused, already
+    // completed/declined, abstained, escalated -- is rejected, so completion
+    // can neither revive a terminated task nor bypass a pause.
+    if (task.state !== "created" && task.state !== "in_progress") {
+      return { error: rpcError(E.PARAMS, `Cannot complete task in state: ${task.state}`) };
     }
     task.output = p.output;
     if (typeof p.confidence === "number" || typeof p.confidence === "string") task.confidence = p.confidence;

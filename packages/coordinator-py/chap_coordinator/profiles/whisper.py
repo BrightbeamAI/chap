@@ -71,6 +71,19 @@ def register_whisper(coord: "Coordinator") -> None:
         prompt = ws.whispers.get(p["whisper_id"])
         if not prompt:
             return {"error": rpc_error(E.PARAMS, "Unknown whisper id")}
+        # Only a participant the whisper was addressed to may answer it. A
+        # broadcast scope (workspace:/group:) is satisfied by any member; the
+        # coordinator does not model group membership (see SPECIFICATION.md).
+        answerer = p["from"]
+        broadcast = any(isinstance(a, str) and (a.startswith("workspace:") or a.startswith("group:"))
+                        for a in prompt.askee)
+        if broadcast:
+            if answerer not in ws.members:
+                return {"error": rpc_error(E.NOT_AUTHORISED,
+                                           f"Not a workspace member: {answerer}")}
+        elif answerer not in prompt.askee:
+            return {"error": rpc_error(E.NOT_AUTHORISED,
+                                       f"Whisper was not addressed to {answerer}")}
         if prompt.state == "answered":
             return {"error": rpc_error(E.WHISPER_ALREADY_ANSWERED,
                                        "Whisper already answered")}

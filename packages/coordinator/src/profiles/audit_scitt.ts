@@ -89,10 +89,18 @@ export function registerAuditScitt(coord: Coordinator): void {
     let prev = ZERO_HASH;
     for (const e of ws.audit) {
       const expectedPrev = prev;
-      if (e.prev_hash !== undefined && e.prev_hash !== expectedPrev) {
+      // A chain-enabled workspace must have prev_hash on every entry; a
+      // missing value is a defect, not a reason to skip the check.
+      if (e.prev_hash !== expectedPrev) {
         errors.push(`seq ${e.seq}: prev_hash mismatch`);
       }
       prev = sha256Hex(Buffer.concat([canonicalize(e.envelope), Buffer.from(expectedPrev, "utf-8")]));
+    }
+    // The recomputed head must match the stored head; this is what makes
+    // the final entry tamper-evident.
+    const storedHead = ws.chain_head ?? ZERO_HASH;
+    if (prev !== storedHead) {
+      errors.push("chain_head mismatch: replay does not match stored head");
     }
     if (errors.length) {
       return { error: rpcError(E.PARAMS, errors.join("; ")) };
@@ -100,7 +108,7 @@ export function registerAuditScitt(coord: Coordinator): void {
     return { result: {
       ok: true,
       entries_checked: ws.audit.length,
-      chain_head: ws.chain_head ?? ZERO_HASH,
+      chain_head: storedHead,
     }};
   });
 }

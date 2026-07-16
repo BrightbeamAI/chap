@@ -95,15 +95,100 @@ before upgrading.
   operations raise). Pinned by `conformance/json-patch-vectors.json`.
 - `IMPLEMENTATIONS.md` updated: the four new bridges added to the registry
   with their test counts, and the `chap-langgraph` row bumped to 0.2.7.
+- **Non-object JSON-RPC `params` are rejected as `-32602` (Invalid
+  params)** in both implementations, rather than being passed to a handler
+  (which previously could raise an opaque internal error). CHAP methods use
+  by-name params, so a non-object `params` is always invalid.
+- **Clarified reviewer scoping for `group:` targets.** A review addressed
+  to a `group:` URI is satisfied by any workspace member: the coordinator
+  does not model group membership, so it cannot restrict a decision to a
+  named group on its own. Deployments that need true group restriction must
+  enforce it externally. This is now stated explicitly in the code and
+  `SPECIFICATION.md`; a future profile may add a first-class group model.
+  (Behaviour is unchanged; this is a documentation correction.)
 
 ### Security
 
+- **`task.complete` now enforces its legal source states (both
+  implementations).** Completion previously rejected only `completed` and
+  `declined` tasks, so a `cancelled` or `superseded` task could be revived
+  by completing it, and a `paused` task could be completed to bypass the
+  pause. Completion is now allowed only from `created` or `in_progress`
+  (an allowlist, so any other state is rejected). The `task.status`
+  transition table already enforced this for status changes; this closes
+  the equivalent hole on the dedicated completion path.
+- **`whisper/1.0` answers now require the answerer to be an addressed askee
+  (both implementations).** `whisper.answer` previously accepted an answer
+  from any caller, so a party the question was not directed at could answer
+  a directed whisper and have it recorded as authoritative. Only a
+  participant in the whisper's `askee` set may now answer; a broadcast
+  scope (`workspace:`/`group:`) is satisfied by any member, consistent with
+  reviewer scoping. The existing already-answered, lapsed, and
+  option-in-set checks are unchanged.
+- **`handoff/1.0` methods now require workspace membership (both
+  implementations).** The ownership check (proposer must be the current
+  assignee of each task, `HANDOFF_TASKS_NOT_ASSIGNED_TO_PROPOSER`) and the
+  recipient-membership check were already enforced; the added floor closes
+  a gap where a non-member could call `handoff.decline` to write decline
+  metadata onto a handoff.
+- **`deliberation/1.0` open/close/comment now require workspace membership
+  (both implementations).** These methods previously performed no
+  membership check, so a non-member could open a deliberation (choosing its
+  rule, participants, weights, and veto set) or call `deliberate.close` to
+  finalize the tally early. Membership is now enforced at dispatch for all
+  `deliberate.*` methods. The existing per-voter eligibility
+  (`DELIB_VOTER_NOT_IN_LIST`) and double-vote (`DELIB_ALREADY_VOTED`) checks
+  are unchanged and continue to apply.
+- **`control/1.0` operations now require workspace membership (both
+  implementations).** None of the control methods
+  (`pause`/`resume`/`cancel`/`snapshot`/`rollback`/`supersede`/`set_mode_ceiling`)
+  previously performed any authorization check, so a non-member could
+  defeat the governance "emergency brake" -- for example resume a workspace
+  a governor had paused, raise the mode ceiling to escalate autonomy, or
+  cancel in-flight tasks. All `control.*` methods now enforce the
+  membership floor at dispatch. (Deployments needing a stricter role gate
+  than membership layer it on top via an identity-* profile or application
+  check; `control.rollback` remains append-only and does not truncate the
+  audit chain.)
+- **Signature verification now fails closed (`security-signed/1.0`, both
+  implementations).** When `require_signatures` is enabled and a signature
+  is present but cannot be verified (missing `from`/`workspace`, or an
+  unknown workspace), the request is now rejected rather than silently
+  skipped. Previously these cases returned "no error", so a request with an
+  unverifiable signature could proceed; notably `workspace.create` accepted
+  a garbage signature because the workspace did not yet exist at
+  verification time. `workspace.create` (like `participant.join`) is now an
+  explicit bootstrap exemption -- it runs before any signing key is
+  registered and so is not signature-verified -- while every other method
+  must present a verifiable signature.
+- **Signed-request key revocation can no longer be bypassed by backdating
+  (`security-signed/1.0`, both implementations).** Signature verification
+  previously selected the key and evaluated revocation using the envelope's
+  own `ts`, which the signer controls; a holder of a revoked key could set
+  `ts` to before the revocation and still be accepted. Revocation is now
+  evaluated against the coordinator's trusted clock, so a revoked key is
+  rejected for any live request regardless of the claimed `ts`. (Historical
+  verification against the validity window still uses `ts`.)
+- **Audit chain verification now detects tampering of every entry
+  (`audit.verify_chain`, both implementations).** Two flaws previously let
+  a modified chain pass verification: the replayed chain head was never
+  compared against the stored `chain_head` (so tampering the final entry,
+  which no stored `prev_hash` covers, went undetected), and an entry could
+  opt out of its own check by dropping its `prev_hash`. Verification now
+  recomputes every link, requires each stored `prev_hash` to match, and
+  compares the replayed head to the stored head. This closes a
+  tamper-evidence gap in the audit chain.
 - **JSON Patch prototype-pollution fix (TypeScript).** A crafted
   `decide.override` diff with a path through `__proto__`, `constructor`, or
   `prototype` could pollute `Object.prototype` in the coordinator process.
   Both implementations now reject those path segments. Since an override
   diff comes from a reviewer, this closes an injection vector reachable
   from ordinary protocol input.
+- **Internal errors no longer echo raw exception text on the wire.** The
+  JSON-RPC internal-error response (`-32603`) previously included the raw
+  exception message, which could disclose internal detail to callers. The
+  wire message is now generic; specifics are carried in the error `data`
+  field for operators.
 
 ### Packaging
 
