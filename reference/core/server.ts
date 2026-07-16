@@ -278,8 +278,10 @@ const handlers: Record<string, Handler> = {
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: err(E.PARAMS, `Unknown task: ${p.task_id}`) };
 
-    if (task.state === "completed" || task.state === "declined") {
-      return { error: err(E.PARAMS, `Task is terminal: ${task.state}`) };
+    // Completion is only legal from an active state; an allowlist prevents
+    // reviving a terminal task (matches the reference coordinators).
+    if (task.state !== "created" && task.state !== "in_progress") {
+      return { error: err(E.PARAMS, `Cannot complete task in state: ${task.state}`) };
     }
 
     task.state      = "completed";
