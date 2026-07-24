@@ -418,6 +418,11 @@ class Coordinator:
             )
 
         try:
+            canonicalize(envelope)
+        except (ValueError, TypeError) as exc:
+            return make_response(env_id, error=rpc_error(E.PARAMS, str(exc)))
+
+        try:
             out = handler(params)
         except Exception as exc:
             # Keep the wire message generic; a handler exception may carry
