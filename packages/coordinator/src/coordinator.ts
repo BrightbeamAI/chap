@@ -463,6 +463,13 @@ export class Coordinator {
       return reply(envelope, { error: rpcError(E.METHOD, `Unknown method: ${method}`) });
     }
 
+    try {
+      canonicalize(envelope);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return reply(envelope, { error: rpcError(E.PARAMS, msg) });
+    }
+
     let out: { result?: unknown; error?: { code: number; message: string; data?: unknown } };
     try {
       out = handler(params);
