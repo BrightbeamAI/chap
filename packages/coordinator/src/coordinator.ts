@@ -761,6 +761,8 @@ export class Coordinator {
       }
     }
 
+    const attested = [...member.keys];
+
     // security-signed/1.0: register supplied JWKs
     const jwks = p.jwks as { keys?: Array<{ kid: string; [k: string]: unknown }> } | undefined;
     if (jwks?.keys) {
@@ -771,6 +773,16 @@ export class Coordinator {
       }
     }
 
+    const existing = ws.members.get(uri);
+    if (existing) {
+      if (member.oidc_sub !== undefined) existing.oidc_sub = member.oidc_sub;
+      if (member.oidc_auth_time !== undefined) existing.oidc_auth_time = member.oidc_auth_time;
+      if (member.vc_holder !== undefined) existing.vc_holder = member.vc_holder;
+      for (const k of attested) {
+        if (!existing.keys.some(x => x.kid === k.kid)) existing.keys.push(k);
+      }
+      return { result: { joined: true, as: uri } };
+    }
     ws.members.set(uri, member);
     return { result: { joined: true, as: uri } };
   }

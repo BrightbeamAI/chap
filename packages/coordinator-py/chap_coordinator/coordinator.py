@@ -768,6 +768,8 @@ class Coordinator:
                     jwk=vp_jwk, kid=vp_jwk["kid"], valid_from=now,
                 ))
 
+        attested = list(member.keys)
+
         # security-signed/1.0: register any JWKs supplied in the join envelope.
         jwks = p.get("jwks")
         if isinstance(jwks, dict):
@@ -779,6 +781,16 @@ class Coordinator:
                             jwk=j, kid=j["kid"], valid_from=now,
                         ))
 
+        existing = ws.members.get(uri)
+        if existing is not None:
+            for f in ("oidc_sub", "oidc_auth_time", "vc_holder"):
+                v = getattr(member, f)
+                if v is not None:
+                    setattr(existing, f, v)
+            for k in attested:
+                if not any(x.kid == k.kid for x in existing.keys):
+                    existing.keys.append(k)
+            return {"result": {"joined": True, "as": uri}}
         ws.members[uri] = member
         return {"result": {"joined": True, "as": uri}}
 
