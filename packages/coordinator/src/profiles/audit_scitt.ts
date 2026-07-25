@@ -85,9 +85,14 @@ export function registerAuditScitt(coord: Coordinator): void {
   coord.handlers.set("audit.verify_chain", (p) => {
     const ws = coord.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    if (!(ws.chain_enabled || coord.options.enableChain)) {
+      return { error: rpcError(E.PARAMS, "Chain not enabled for this workspace") };
+    }
+    let start = ws.audit.findIndex(e => e.prev_hash != null);
+    if (start < 0) start = ws.audit.length;
     const errors: string[] = [];
     let prev = ZERO_HASH;
-    for (const e of ws.audit) {
+    for (const e of ws.audit.slice(start)) {
       const expectedPrev = prev;
       // A chain-enabled workspace must have prev_hash on every entry; a
       // missing value is a defect, not a reason to skip the check.
@@ -107,7 +112,7 @@ export function registerAuditScitt(coord: Coordinator): void {
     }
     return { result: {
       ok: true,
-      entries_checked: ws.audit.length,
+      entries_checked: ws.audit.length - start,
       chain_head: storedHead,
     }};
   });

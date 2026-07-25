@@ -143,9 +143,13 @@ def register_audit_scitt(coord: "Coordinator") -> None:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        if not (ws.chain_enabled or coord.options.enable_chain):
+            return {"error": rpc_error(E.PARAMS, "Chain not enabled for this workspace")}
+        start = next((i for i, e in enumerate(ws.audit) if e.prev_hash is not None),
+                     len(ws.audit))
         errors: list[str] = []
         prev = ZERO_HASH
-        for e in ws.audit:
+        for e in ws.audit[start:]:
             expected_prev = prev
             # A chain-enabled workspace must have prev_hash on every entry;
             # a missing value is a defect, not a reason to skip the check.
@@ -161,7 +165,7 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             return {"error": rpc_error(E.PARAMS, "; ".join(errors))}
         return {"result": {
             "ok": True,
-            "entries_checked": len(ws.audit),
+            "entries_checked": len(ws.audit) - start,
             "chain_head": stored_head,
         }}
 
