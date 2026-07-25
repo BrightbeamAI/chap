@@ -70,6 +70,11 @@ for newcomers, `help wanted` for the regulated ones.
   in `CHANGELOG.md`.
 - **`confidence` accepts a string** as well as a number, following the same
   rule; routing behaviour is unchanged.
+- **`participant.join` is idempotent for re-joins.** When an existing
+  member re-joins, newly attested keys and OIDC/VC identity fields are now
+  merged into the existing member record rather than replacing it, so a
+  participant can rotate or add a signing key without dropping prior keys or
+  losing their prior identity binding.
 - Publish-readiness fixes: per-package `LICENSE`, `oss@brightbeam.com`
   contact, SPDX license expression, metadata-derived `__version__`, and the
   `@brightbeamai` npm scope.
@@ -96,7 +101,16 @@ detail.
   backdating the envelope's `ts`.
 - **Audit chain verification** now detects tampering of every entry,
   including the last, by comparing the replayed head to the stored
-  `chain_head` and by not letting an entry opt out of its own check.
+  `chain_head` and by not letting an entry opt out of its own check. It also
+  verifies only the chained region: a workspace where hash-chaining was
+  enabled partway through verifies correctly (leading un-chained entries are
+  skipped), and verification of a workspace with no chain enabled returns a
+  clear error rather than a false pass.
+- **Canonicalisation is enforced at dispatch.** An inbound envelope that
+  fails to canonicalise (for example, one carrying a non-integer JSON
+  number) is now rejected with `-32602` at the dispatch boundary, rather
+  than being accepted and failing later when the audit entry is hashed. This
+  makes the safe-integer rule an explicit front-door check.
 - **`task.complete` state machine.** Completion is now allowed only from an
   active state (`created`/`in_progress`), so it cannot revive a cancelled
   or superseded task or bypass a pause.
@@ -116,6 +130,14 @@ change; the new bridges are opt-in. If you placed non-integer numbers
 `confidence`, carry them as strings from now on: the coordinator will
 otherwise reject them with a clear error. Cross-implementation
 verification is unaffected for integer and string payloads.
+
+Concretely, an agent that reports a confidence score should send it as a
+string (`"confidence": "0.9"`), not a raw float. Routing policies coerce it
+back to a number, so thresholds behave identically; the only change is on
+the wire. With canonicalisation now enforced at dispatch, an envelope that
+carries a float confidence is rejected with `-32602` rather than silently
+mis-hashed, so update any drafter or agent that emits a raw float. The
+bundled playground and scenario agents have been updated accordingly.
 
 ## Tests
 

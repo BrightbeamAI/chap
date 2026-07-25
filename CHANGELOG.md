@@ -95,6 +95,14 @@ before upgrading.
   operations raise). Pinned by `conformance/json-patch-vectors.json`.
 - `IMPLEMENTATIONS.md` updated: the four new bridges added to the registry
   with their test counts, and the `chap-langgraph` row bumped to 0.2.7.
+- **Canonicalisation is enforced at the dispatch boundary.** An inbound
+  envelope that fails to canonicalise (for example, one carrying a
+  non-integer JSON number) is rejected with `-32602` at dispatch rather
+  than being accepted and failing later when its audit entry is hashed.
+- **`participant.join` is idempotent for re-joins.** When an existing member
+  re-joins, newly attested keys and OIDC/VC identity fields are merged into
+  the existing member record rather than replacing it, so a participant can
+  rotate or add a signing key without dropping prior keys.
 - **Non-object JSON-RPC `params` are rejected as `-32602` (Invalid
   params)** in both implementations, rather than being passed to a handler
   (which previously could raise an opaque internal error). CHAP methods use
@@ -177,7 +185,10 @@ before upgrading.
   opt out of its own check by dropping its `prev_hash`. Verification now
   recomputes every link, requires each stored `prev_hash` to match, and
   compares the replayed head to the stored head. This closes a
-  tamper-evidence gap in the audit chain.
+  tamper-evidence gap in the audit chain. Verification is scoped to the
+  chained region: leading un-chained entries (from before chaining was
+  enabled on the workspace) are skipped, and verifying a workspace with no
+  chain enabled returns a clear error rather than a false pass.
 - **JSON Patch prototype-pollution fix (TypeScript).** A crafted
   `decide.override` diff with a path through `__proto__`, `constructor`, or
   `prototype` could pollute `Object.prototype` in the coordinator process.

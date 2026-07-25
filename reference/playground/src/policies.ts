@@ -34,7 +34,7 @@ export function makePlaygroundPolicies(seniorTarget: string): {
 
   const reviewDepthPolicy: ReviewDepthPolicyFn = (_task, hints) => {
     const crit = (hints.criticality as string) ?? "medium";
-    const conf = typeof hints.confidence === "number" ? hints.confidence : 1.0;
+    const conf = hints.confidence != null ? Number(hints.confidence) : 1.0;
     const r = CRIT[crit] ?? 1;
     // critical -> full
     if (r >= 3) return { depth: "full",
@@ -52,7 +52,7 @@ export function makePlaygroundPolicies(seniorTarget: string): {
 
   const escalationPolicy: EscalationPolicyFn = (_task, hints) => {
     const crit = (hints.criticality as string) ?? "medium";
-    const conf = typeof hints.confidence === "number" ? hints.confidence : 1.0;
+    const conf = hints.confidence != null ? Number(hints.confidence) : 1.0;
     const r = CRIT[crit] ?? 1;
     // critical OR (high AND confidence<0.6) -> escalate
     const shouldEscalate = (r >= 3) || (r >= 2 && conf < 0.6);

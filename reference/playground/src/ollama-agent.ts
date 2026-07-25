@@ -221,8 +221,12 @@ export async function processTicket(
   const draft = await drafter(ticket);
 
   // 4. Submit completion with routing_hints (the measurement signals).
+  // Confidence is a decimal, so it is carried as a string to satisfy the
+  // canonical-number rule (decimals must be strings for deterministic
+  // hashing); the routing policy coerces it back to a number.
+  const confidenceStr = String(draft.self_confidence);
   const artefactHints: ArtefactRoutingHints = {
-    confidence:       draft.self_confidence,
+    confidence:       confidenceStr,
     model_id:         OLLAMA_MODEL,
     cost_consumed_usd: 0,           // local model. no API cost
     latency_ms:       draft.latency_ms,
@@ -239,7 +243,7 @@ export async function processTicket(
         tone:     draft.tone,
         severity: draft.severity,
       },
-      confidence:       draft.self_confidence,
+      confidence:       confidenceStr,
       routing_hints:    artefactHints,
     },
   });
@@ -256,7 +260,7 @@ export async function processTicket(
   // passed in alongside.
   const taskHintsForRouting: Record<string, unknown> = {
     ...(ticket.routing_hints as Record<string, unknown>),
-    confidence: draft.self_confidence,
+    confidence: confidenceStr,
   };
   // Stash the merged hints onto the task so the routing handlers
   // (which read from the task) see them. This is a small convenience
