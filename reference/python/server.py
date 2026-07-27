@@ -25,6 +25,31 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from chap_coordinator import Coordinator, CoordinatorOptions
 
+MAX_BODY_BYTES = 1_000_000
+MAX_JSON_DEPTH = 64
+
+
+def _within_depth(value: object, limit: int) -> bool:
+    """Iteratively check nesting depth. dispatch/deepcopy/canonicalize
+    recurse, so an over-deep envelope is rejected before it reaches them."""
+    stack = [(value, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > limit:
+            return False
+        if isinstance(node, dict):
+            for v in node.values():
+                stack.append((v, depth + 1))
+        elif isinstance(node, list):
+            for v in node:
+                stack.append((v, depth + 1))
+    return True
+
+
+def _parse_error(message: str) -> dict:
+    return {"jsonrpc": "2.0", "id": None,
+            "error": {"code": -32700, "message": message}}
+
 
 def make_handler(coord: Coordinator):
     class Handler(BaseHTTPRequestHandler):
@@ -47,14 +72,23 @@ def make_handler(coord: Coordinator):
                 self.wfile.write(b'{"error":"POST /chap"}')
                 return
 
-            length = int(self.headers.get("Content-Length") or 0)
-            raw = self.rfile.read(length).decode("utf-8")
+            header = self.headers.get("Content-Length")
             try:
+                length = int(header) if header is not None else 0
+            except ValueError:
+                self._write(400, _parse_error("Invalid Content-Length header"))
+                return
+            if length < 0 or length > MAX_BODY_BYTES:
+                self._write(400, _parse_error("Content-Length out of range"))
+                return
+            try:
+                raw = self.rfile.read(length).decode("utf-8")
                 envelope = json.loads(raw)
-            except json.JSONDecodeError:
-                resp = {"jsonrpc": "2.0", "id": None,
-                        "error": {"code": -32700, "message": "Malformed JSON"}}
-                self._write(400, resp)
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                self._write(400, _parse_error("Malformed JSON"))
+                return
+            if not _within_depth(envelope, MAX_JSON_DEPTH):
+                self._write(400, _parse_error("Envelope nesting too deep"))
                 return
 
             response = coord.dispatch(envelope)
