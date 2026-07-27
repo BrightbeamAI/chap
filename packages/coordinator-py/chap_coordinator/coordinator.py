@@ -141,6 +141,14 @@ def _missing(params: dict, fields: list[str]) -> str | None:
     return None
 
 
+def _tags_error(params: dict) -> dict | None:
+    tags = params.get("tags")
+    if tags is not None and (not isinstance(tags, list)
+                             or not all(isinstance(t, str) for t in tags)):
+        return {"error": rpc_error(E.PARAMS, "tags must be a list of strings")}
+    return None
+
+
 def _link_hash(envelope: dict, prev: str) -> str:
     """Chain link: sha256( JCS(envelope) || prev_hash )."""
     return sha256_hex(canonicalize(envelope) + prev.encode("utf-8"))
@@ -972,6 +980,9 @@ class Coordinator:
         miss = _missing(p, ["workspace", "from", "task_id"])
         if miss:
             return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
+        bad_tags = _tags_error(p)
+        if bad_tags:
+            return bad_tags
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
@@ -1012,6 +1023,9 @@ class Coordinator:
         miss = _missing(p, ["workspace", "from", "task_id", "diff", "rationale"])
         if miss:
             return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
+        bad_tags = _tags_error(p)
+        if bad_tags:
+            return bad_tags
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}

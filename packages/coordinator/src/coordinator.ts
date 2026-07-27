@@ -123,6 +123,14 @@ function missing(params: Record<string, unknown>, fields: string[]): string | nu
   return null;
 }
 
+function tagsError(p: Record<string, unknown>): { error: ReturnType<typeof rpcError> } | null {
+  const tags = p.tags;
+  if (tags !== undefined && (!Array.isArray(tags) || !tags.every((t) => typeof t === "string"))) {
+    return { error: rpcError(E.PARAMS, "tags must be a list of strings") };
+  }
+  return null;
+}
+
 function linkHash(envelope: Envelope, prev: string): string {
   return sha256Hex(Buffer.concat([canonicalize(envelope), Buffer.from(prev, "utf-8")]));
 }
@@ -943,6 +951,8 @@ export class Coordinator {
   private opDecide(p: Record<string, unknown>, kind: "approve" | "reject"): ReturnType<Handler> {
     const miss = missing(p, ["workspace", "from", "task_id"]);
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
+    const badTags = tagsError(p);
+    if (badTags) return badTags;
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const notMember = this.requireMember(ws, p.from);
@@ -976,6 +986,8 @@ export class Coordinator {
   private opDecideOverride(p: Record<string, unknown>): ReturnType<Handler> {
     const miss = missing(p, ["workspace", "from", "task_id", "diff", "rationale"]);
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
+    const badTags = tagsError(p);
+    if (badTags) return badTags;
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const notMember = this.requireMember(ws, p.from);
