@@ -1118,9 +1118,15 @@ class Coordinator:
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p.get("from"))
+        if not_member:
+            return not_member
         orig = ws.tasks.get(p["original_task_id"])
         if not orig:
             return {"error": rpc_error(E.PARAMS, "Unknown original task")}
+        if orig.state in ("completed", "cancelled", "superseded"):
+            return {"error": rpc_error(
+                E.PARAMS, f"Cannot escalate a terminal task: {orig.state}")}
         nt = p["new_task"]
         assignee = nt.get("assignee")
         if not assignee or assignee not in ws.members:

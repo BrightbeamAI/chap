@@ -1061,8 +1061,13 @@ export class Coordinator {
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
     const orig = ws.tasks.get(p.original_task_id as string);
     if (!orig) return { error: rpcError(E.PARAMS, "Unknown original task") };
+    if (orig.state === "completed" || orig.state === "cancelled" || orig.state === "superseded") {
+      return { error: rpcError(E.PARAMS, `Cannot escalate a terminal task: ${orig.state}`) };
+    }
     const nt = p.new_task as Record<string, unknown>;
     const assignee = nt.assignee as string;
     if (!assignee || !ws.members.has(assignee)) {
