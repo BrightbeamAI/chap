@@ -770,12 +770,12 @@ class Coordinator:
 
         attested = list(member.keys)
 
-        # security-signed/1.0: register any JWKs supplied in the join envelope.
+        # Self-asserted JWKs are ignored for an identity-bound participant: the
+        # verifier-pinned cnf.jwk / vp_jwk is the signing key (proof of possession).
         jwks = p.get("jwks")
-        if isinstance(jwks, dict):
+        if isinstance(jwks, dict) and not attested:
             for j in jwks.get("keys", []) or []:
                 if isinstance(j, dict) and j.get("kid"):
-                    # Skip if we already pinned via cnf.jwk
                     if not any(k.kid == j["kid"] for k in member.keys):
                         member.keys.append(KeyRecord(
                             jwk=j, kid=j["kid"], valid_from=now,

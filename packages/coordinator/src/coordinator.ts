@@ -763,9 +763,10 @@ export class Coordinator {
 
     const attested = [...member.keys];
 
-    // security-signed/1.0: register supplied JWKs
+    // Self-asserted JWKs are ignored for an identity-bound participant: the
+    // verifier-pinned cnf.jwk / vp_jwk is the signing key (proof of possession).
     const jwks = p.jwks as { keys?: Array<{ kid: string; [k: string]: unknown }> } | undefined;
-    if (jwks?.keys) {
+    if (jwks?.keys && attested.length === 0) {
       for (const j of jwks.keys) {
         if (j.kid && !member.keys.some(k => k.kid === j.kid)) {
           member.keys.push({ jwk: j as unknown as KeyRecord["jwk"], kid: j.kid, valid_from: now });
