@@ -68,6 +68,14 @@ PRIVILEGED_METHODS = frozenset({
 })
 
 
+# Read-only methods return workspace state but do not mutate it, so they are not
+# recorded in the audit chain -- recording a read would grow and re-link it.
+_READ_ONLY_METHODS = frozenset({
+    "workspace.describe", "audit.read",
+    "audit.verify_chain", "audit.verify_receipt",
+})
+
+
 @dataclass
 class CoordinatorOptions:
     """Options controlling Coordinator behaviour."""
@@ -438,7 +446,7 @@ class Coordinator:
 
         # Record audit on successful operations that name a workspace
         ws_id = params.get("workspace")
-        if isinstance(ws_id, str):
+        if isinstance(ws_id, str) and method not in _READ_ONLY_METHODS:
             ws = self.workspaces.get(ws_id)
             if ws is not None:
                 self._record_audit(ws, envelope)
