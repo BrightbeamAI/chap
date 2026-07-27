@@ -40,7 +40,7 @@ function computeOutcome(delib: Deliberation): Deliberation["outcome"] {
   const weights = delib.weights ?? {};
 
   const weighted = (vs: typeof yea) =>
-    vs.reduce((s, v) => s + (weights[v.voter] ?? v.weight ?? 1.0), 0);
+    vs.reduce((s, v) => s + (weights[v.voter] ?? 1.0), 0);
 
   if (parsed.kind === "any_one_approves") {
     return {

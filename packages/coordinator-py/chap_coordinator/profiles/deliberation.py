@@ -83,8 +83,8 @@ def _compute_outcome(delib: Deliberation) -> dict:
                 "vetoes": []}
 
     if kind == "weighted_vote":
-        yea_w = sum(weights.get(v["voter"], v.get("weight", 1.0)) for v in yea)
-        nay_w = sum(weights.get(v["voter"], v.get("weight", 1.0)) for v in nay)
+        yea_w = sum(weights.get(v["voter"], 1.0) for v in yea)
+        nay_w = sum(weights.get(v["voter"], 1.0) for v in nay)
         passed = yea_w >= params["threshold"]
         return {"outcome": "approved" if passed else "rejected",
                 "rule": delib.rule,
@@ -97,8 +97,8 @@ def _compute_outcome(delib: Deliberation) -> dict:
                     "rule": delib.rule,
                     "tally": {"yea": 0.0, "nay": 0.0},
                     "vetoes": [v["voter"] for v in vetoes]}
-        yea_w = sum(weights.get(v["voter"], v.get("weight", 1.0)) for v in yea)
-        nay_w = sum(weights.get(v["voter"], v.get("weight", 1.0)) for v in nay)
+        yea_w = sum(weights.get(v["voter"], 1.0) for v in yea)
+        nay_w = sum(weights.get(v["voter"], 1.0) for v in nay)
         passed = yea_w >= params["threshold"]
         return {"outcome": "approved" if passed else "rejected",
                 "rule": delib.rule,
