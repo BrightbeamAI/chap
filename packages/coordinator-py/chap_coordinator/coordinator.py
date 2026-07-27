@@ -152,7 +152,7 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     Mirror of `_snapshot_workspace`; the two should round-trip cleanly.
     """
     from .types import (
-        Workspace, Member, Task, TaskHistoryEntry, KeyRecord,
+        Workspace, Member, Task, TaskHistoryEntry, KeyRecord, ReviewState,
         WhisperPrompt, Deliberation, Handoff, HandoffTask, AuditEntry,
     )
 
@@ -162,9 +162,10 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     members = {
         k: Member(**v) for k, v in (data.get("members") or {}).items()
     }
-    # Member.keys can be a dict of KeyRecord; rehydrate those too.
     for m in members.values():
-        if isinstance(m.keys, dict):
+        if isinstance(m.keys, list):
+            m.keys = [KeyRecord(**k) if isinstance(k, dict) else k for k in m.keys]
+        elif isinstance(m.keys, dict):
             m.keys = {k: KeyRecord(**v) if isinstance(v, dict) else v
                       for k, v in m.keys.items()}
 
@@ -172,6 +173,8 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     for k, v in (data.get("tasks") or {}).items():
         v = dict(v)
         v["history"] = [TaskHistoryEntry(**h) for h in v.get("history", [])]
+        if isinstance(v.get("review"), dict):
+            v["review"] = ReviewState(**v["review"])
         tasks[k] = Task(**v)
 
     whispers = {
