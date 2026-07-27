@@ -56,6 +56,7 @@ AuditListener = Callable[[str, AuditEntry], None]
 TokenVerifier = Callable[[str], dict | None]
 CredentialVerifier = Callable[[dict], dict | None]
 ScittSubmitter = Callable[[dict], dict | None]  # SCITT statement -> receipt or None
+ScittReceiptVerifier = Callable[[dict], bool]  # receipt -> verified?
 
 
 # Methods classified as privileged for step-up auth (identity-oidc/1.0 S4
@@ -102,6 +103,10 @@ class CoordinatorOptions:
     scitt_submitter: ScittSubmitter | None = None
     """Hook for audit-scitt/1.0; called with a SCITT signed statement;
     returns the receipt (opaque to CHAP) or None on failure."""
+
+    verify_scitt_receipt: ScittReceiptVerifier | None = None
+    """Hook for audit-scitt/1.0; called with a receipt; returns whether it
+    verifies. When unset, audit.verify_receipt fails closed."""
 
     routing_policy: Callable[[Task, list[str]], dict] | None = None
     """Hook for routing/1.0 task.route; returns {selected, rationale...}."""
