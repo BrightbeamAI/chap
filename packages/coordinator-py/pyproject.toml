@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chap-coordinator"
-version = "0.2.7"
+version = "0.2.8"
 description = "Python reference implementation of the Collaborative Human-Agent Protocol (CHAP)"
 readme = "README.md"
 requires-python = ">=3.10"
