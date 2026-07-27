@@ -160,3 +160,11 @@ def test_coordinator_error_surfaces(bridge):
             "from": bridge.reviewer,
             "task_id": "tsk_does_not_exist",
         })
+
+
+def test_participant_type_rejects_unknown_scheme() -> None:
+    from chap_ag2 import _participant_type
+    assert _participant_type("human:alice") == "human"
+    assert _participant_type("agent:bot#v1") == "agent"
+    with pytest.raises(ValueError, match="known scheme"):
+        _participant_type("alice")

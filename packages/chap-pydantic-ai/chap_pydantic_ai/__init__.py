@@ -88,7 +88,12 @@ def _participant_type(uri: str) -> str:
     agent:bot -> agent. The type then matches the identity instead of
     being assumed."""
     scheme = uri.split(":", 1)[0]
-    return scheme if scheme in ("human", "agent", "service", "group") else "human"
+    if scheme not in ("human", "agent", "service", "group"):
+        raise ValueError(
+            "participant URI must use a known scheme "
+            f"(human/agent/service/group): {uri!r}"
+        )
+    return scheme
 
 
 # ---- RFC 6902 diff (the args edit, as a JSON Patch) ------------------

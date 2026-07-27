@@ -92,7 +92,12 @@ def _diff(before: Any, after: Any, path: str) -> list[dict]:
 
 def _participant_type(uri: str) -> str:
     scheme = uri.split(":", 1)[0]
-    return scheme if scheme in ("human", "agent", "service", "group") else "human"
+    if scheme not in ("human", "agent", "service", "group"):
+        raise ValueError(
+            "participant URI must use a known scheme "
+            f"(human/agent/service/group): {uri!r}"
+        )
+    return scheme
 
 
 # ============================================================
