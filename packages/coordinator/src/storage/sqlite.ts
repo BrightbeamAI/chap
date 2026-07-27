@@ -110,12 +110,15 @@ export class SqliteStore implements Store {
       version: number;
       updated_at: string;
     }>;
-    return rows.map(r => ({
-      id: r.id,
-      data: JSON.parse(r.data),
-      version: r.version,
-      updated_at: r.updated_at,
-    }));
+    const out: WorkspaceRecord[] = [];
+    for (const r of rows) {
+      try {
+        out.push({ id: r.id, data: JSON.parse(r.data), version: r.version, updated_at: r.updated_at });
+      } catch {
+        // A single unreadable row must not discard every other workspace; skip it.
+      }
+    }
+    return out;
   }
 
   save(record: WorkspaceRecord): void {

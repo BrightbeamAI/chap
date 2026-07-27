@@ -82,15 +82,20 @@ class SqliteStore:
         rows = self._conn.execute(
             "SELECT id, data, version, updated_at FROM chap_workspaces"
         ).fetchall()
-        return [
-            WorkspaceRecord(
-                id=row["id"],
-                data=json.loads(row["data"]),
-                version=row["version"],
-                updated_at=row["updated_at"],
-            )
-            for row in rows
-        ]
+        out: list[WorkspaceRecord] = []
+        for row in rows:
+            try:
+                out.append(WorkspaceRecord(
+                    id=row["id"],
+                    data=json.loads(row["data"]),
+                    version=row["version"],
+                    updated_at=row["updated_at"],
+                ))
+            except Exception:
+                # A single unreadable row must not discard every other
+                # workspace; skip it and keep the rest.
+                continue
+        return out
 
     def save(self, record: WorkspaceRecord) -> None:
         self._conn.execute(
