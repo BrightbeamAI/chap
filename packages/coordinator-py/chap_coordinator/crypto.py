@@ -64,9 +64,9 @@ def public_jwk(uri: str, key: Any | None = None) -> dict:
     }
 
 
-def sign(canonical_bytes: bytes, key: Any) -> str:
-    """Sign canonical bytes, returning ``ed25519:<base64>``."""
-    return "ed25519:" + _b64(key.sign(canonical_bytes))
+def sign(canonical_bytes: bytes, key: Any, kid: str) -> str:
+    """Sign canonical bytes, returning ``ed25519:<kid>:<base64>``."""
+    return "ed25519:" + kid + ":" + _b64(key.sign(canonical_bytes))
 
 
 def verify(canonical_bytes: bytes, sig: str, public_key: Any) -> bool:
