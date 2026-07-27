@@ -79,7 +79,7 @@ export function registerAuditScitt(coord: Coordinator): void {
       if (!ok) return { error: rpcError(E.SCITT_RECEIPT_INVALID, "Receipt did not verify") };
       return { result: { verified: true } };
     }
-    return { result: { verified: null, note: "No verifyScittReceipt hook configured" } };
+    return { error: rpcError(E.SCITT_RECEIPT_INVALID, "No verifyScittReceipt hook configured; receipt not verified") };
   });
 
   coord.handlers.set("audit.verify_chain", (p) => {

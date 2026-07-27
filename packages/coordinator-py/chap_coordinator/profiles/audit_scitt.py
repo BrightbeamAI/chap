@@ -128,8 +128,9 @@ def register_audit_scitt(coord: "Coordinator") -> None:
                 return {"error": rpc_error(E.SCITT_RECEIPT_INVALID,
                                            "Receipt did not verify")}
             return {"result": {"verified": True}}
-        return {"result": {"verified": None,
-                           "note": "No verify_scitt_receipt hook configured"}}
+        return {"error": rpc_error(
+            E.SCITT_RECEIPT_INVALID,
+            "No verify_scitt_receipt hook configured; receipt not verified")}
 
     def audit_verify_chain(p: dict) -> dict:
         """Local prev_hash chain replay (supplementary to SCITT).
