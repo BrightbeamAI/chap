@@ -66,10 +66,14 @@ def _canon(obj: Any) -> str:
             raise ValueError(_NUMBER_RANGE_ERROR)
         return str(as_int)
     if isinstance(obj, dict):
-        items: list[str] = []
-        for key in sorted(obj.keys()):
+        for key in obj:
             if not isinstance(key, str):
                 raise TypeError("JCS object keys must be strings.")
+        items: list[str] = []
+        # JCS sorts keys by UTF-16 code unit, not code point; comparing the
+        # UTF-16-BE bytes reproduces the JavaScript reference's ordering for
+        # astral characters (surrogate pairs sort below U+E000..U+FFFF).
+        for key in sorted(obj, key=lambda k: k.encode("utf-16-be")):
             items.append(f"{json.dumps(key, ensure_ascii=False)}:{_canon(obj[key])}")
         return "{" + ",".join(items) + "}"
     if isinstance(obj, (list, tuple)):
