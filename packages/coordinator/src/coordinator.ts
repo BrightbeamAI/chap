@@ -83,6 +83,12 @@ export const PRIVILEGED_METHODS = new Set<string>([
   "participant.rotate_key", "participant.revoke_key",
 ]);
 
+// Read-only methods return workspace state but do not mutate it, so they are not
+// recorded in the audit chain -- recording a read would grow and re-link it.
+const READ_ONLY_METHODS = new Set<string>([
+  "workspace.describe", "audit.read", "audit.verify_chain", "audit.verify_receipt",
+]);
+
 export interface CoordinatorOptions {
   deterministicIds?: boolean;
   deterministicClock?: boolean;
@@ -492,7 +498,7 @@ export class Coordinator {
 
     // Record audit on success
     const wsId = params.workspace as string | undefined;
-    if (typeof wsId === "string") {
+    if (typeof wsId === "string" && !READ_ONLY_METHODS.has(method)) {
       const ws = this.workspaces.get(wsId);
       if (ws) this.recordAudit(ws, envelope);
     }
