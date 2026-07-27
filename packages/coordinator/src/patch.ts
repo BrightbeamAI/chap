@@ -218,10 +218,33 @@ function applyOne(doc: any, op: JsonPatchOp): any {
   throw new PatchError(`Unsupported op: ${JSON.stringify(kind)}`);
 }
 
+const MAX_PATCH_OPS = 1000;
+const MAX_DOCUMENT_NODES = 100_000;
+
+function nodeCount(value: unknown): number {
+  if (Array.isArray(value)) {
+    let n = 1;
+    for (const v of value) n += nodeCount(v);
+    return n;
+  }
+  if (value !== null && typeof value === "object") {
+    let n = 1;
+    for (const v of Object.values(value as Record<string, unknown>)) n += nodeCount(v);
+    return n;
+  }
+  return 1;
+}
+
 export function applyJsonPatch(doc: unknown, ops: JsonPatchOp[]): unknown {
+  if (ops.length > MAX_PATCH_OPS) {
+    throw new PatchError(`Patch has too many operations (${ops.length} > ${MAX_PATCH_OPS})`);
+  }
   let out: any = JSON.parse(JSON.stringify(doc));
   for (const op of ops) {
     out = applyOne(out, op);
+    if (nodeCount(out) > MAX_DOCUMENT_NODES) {
+      throw new PatchError(`Patched document exceeds the node limit (${MAX_DOCUMENT_NODES})`);
+    }
   }
   return out;
 }
