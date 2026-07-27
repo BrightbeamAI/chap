@@ -182,12 +182,36 @@ def _apply_one(doc: Any, op: dict) -> Any:
     raise PatchError(f"Unsupported op: {kind!r}")
 
 
+MAX_PATCH_OPS = 1000
+MAX_DOCUMENT_NODES = 100_000
+
+
+def _node_count(value: Any) -> int:
+    if isinstance(value, dict):
+        return 1 + sum(_node_count(v) for v in value.values())
+    if isinstance(value, list):
+        return 1 + sum(_node_count(v) for v in value)
+    return 1
+
+
 def apply_json_patch(doc: Any, patch: list[dict]) -> Any:
     """Apply an RFC 6902 JSON Patch, returning the patched document.
 
-    The input ``doc`` is not mutated.
+    The input ``doc`` is not mutated. ``copy``/``move`` can amplify the
+    document (copying a node into itself doubles it each step), so the op
+    count and the working document's node count are bounded; both limits
+    match the TypeScript reference so a patch refused by one is refused by
+    the other.
     """
+    if len(patch) > MAX_PATCH_OPS:
+        raise PatchError(
+            f"Patch has too many operations ({len(patch)} > {MAX_PATCH_OPS})"
+        )
     out = copy.deepcopy(doc)
     for op in patch:
         out = _apply_one(out, op)
+        if _node_count(out) > MAX_DOCUMENT_NODES:
+            raise PatchError(
+                f"Patched document exceeds the node limit ({MAX_DOCUMENT_NODES})"
+            )
     return out

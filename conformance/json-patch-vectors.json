@@ -29,6 +29,7 @@
     { "name": "test mismatch",                    "doc": {"a": 1}, "patch": [{"op": "test", "path": "/a", "value": 2}] },
     { "name": "move into own child",              "doc": {"a": {"b": 1}}, "patch": [{"op": "move", "from": "/a", "path": "/a/c"}] },
     { "name": "unknown op",                       "doc": {"a": 1}, "patch": [{"op": "frobnicate", "path": "/a", "value": 2}] },
-    { "name": "remove root",                      "doc": {"a": 1}, "patch": [{"op": "remove", "path": ""}] }
+    { "name": "remove root",                      "doc": {"a": 1}, "patch": [{"op": "remove", "path": ""}] },
+    { "name": "copy bomb exceeds node cap",       "doc": {"a": [0]}, "patch": [{"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}, {"op": "copy", "from": "/a", "path": "/a/-"}] }
   ]
 }
