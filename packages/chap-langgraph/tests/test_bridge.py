@@ -161,3 +161,24 @@ def test_chap_error_surfaces_through_bridge(bridge: ChapBridge) -> None:
             "diff":      [{"op": "replace", "path": "/missing/path", "value": 1}],
             "rationale": "this will fail",
         })
+
+
+def test_ambiguous_decision_is_not_approved(bridge: ChapBridge) -> None:
+    """A payload without an explicit action must not default to approve.
+
+    A reject expressed under the wrong key (``{"decision": "reject"}``) used
+    to be recorded as a decide.approve.
+    """
+    state = hil_review(bridge, {"reply": "rude"}, "draft")
+    with pytest.raises(ValueError, match="explicit 'action'"):
+        bridge.apply_decision(state["chap_task_id"], {"decision": "reject"})
+
+
+def test_non_human_reviewer_rejected(coord: Coordinator) -> None:
+    with pytest.raises(ValueError, match="human:"):
+        ChapBridge(
+            coord,
+            workspace="wsp_lg_bot",
+            agent="agent:drafter#v1",
+            reviewer="agent:bot#v1",
+        )

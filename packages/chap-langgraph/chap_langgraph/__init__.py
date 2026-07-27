@@ -91,6 +91,11 @@ class ChapBridge:
     on_envelope: Optional[Callable[[str, dict], None]] = None
 
     def __post_init__(self) -> None:
+        if not self.reviewer.startswith("human:"):
+            raise ValueError(
+                "reviewer must be a 'human:' URI for a human-in-the-loop "
+                f"bridge, got {self.reviewer!r}"
+            )
         # Ensure the workspace exists. workspace.create is idempotent
         # on the same id: the second call is a no-op for the data
         # model and produces a clean error rather than corrupting state.
@@ -204,9 +209,14 @@ class ChapBridge:
             payload: dict[str, Any] = {}
         elif isinstance(decision, dict):
             payload = dict(decision)
-            action = payload.pop("action", None) or (
-                "override" if "diff" in payload else "approve"
-            )
+            action = payload.pop("action", None)
+            if action is None and "diff" in payload:
+                action = "override"
+            if action is None:
+                raise ValueError(
+                    "decision payload needs an explicit 'action' "
+                    "(approve/reject/override)"
+                )
         else:
             raise TypeError(f"unexpected decision payload: {type(decision)}")
 
