@@ -987,7 +987,9 @@ export class Coordinator {
     }
     const notReviewer = this.requireReviewer(task, p.from);
     if (notReviewer) return notReviewer;
-    const base = p.based_on_artefact !== undefined ? p.based_on_artefact : task.pending_artefact;
+    // The override is of the artefact under review; use the coordinator's
+    // record, not a caller-supplied "before" that could be fabricated.
+    const base = task.pending_artefact;
     if (base === undefined) return { error: rpcError(E.PARAMS, "No base artefact for override") };
     let applied: unknown;
     try {
