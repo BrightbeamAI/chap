@@ -1050,7 +1050,9 @@ class Coordinator:
         not_reviewer = self._require_reviewer(task, p.get("from"))
         if not_reviewer:
             return not_reviewer
-        base = p.get("based_on_artefact", task.pending_artefact)
+        # The override is of the artefact under review; use the coordinator's
+        # record, not a caller-supplied "before" that could be fabricated.
+        base = task.pending_artefact
         if base is None:
             return {"error": rpc_error(E.PARAMS, "No base artefact for override")}
         try:
