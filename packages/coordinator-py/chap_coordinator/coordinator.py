@@ -96,6 +96,11 @@ class CoordinatorOptions:
     enforce_step_up: bool = False
     """Reject privileged methods when OIDC auth_time is stale."""
 
+    require_read_membership: bool = False
+    """Require audit.read / workspace.describe callers to be members. Off by
+    default: reads are transport-delegated. Enable for multi-tenant or
+    directly-exposed deployments."""
+
     on_audit: AuditListener | None = None
     """Called after every successfully recorded audit entry."""
 
@@ -701,6 +706,10 @@ class Coordinator:
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, f"Unknown workspace: {p['workspace']}")}
+        if self.options.require_read_membership:
+            not_member = self._require_member(ws, p.get("from"))
+            if not_member:
+                return not_member
         out: dict[str, Any] = {
             "id": ws.id,
             "created": ws.created,
@@ -720,12 +729,19 @@ class Coordinator:
         return {"result": out}
 
     def _op_workspace_set_profiles(self, p: dict) -> dict:
-        miss = _missing(p, ["workspace", "profiles"])
+        miss = _missing(p, ["workspace", "from", "profiles"])
         if miss:
             return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p["from"])
+        if not_member:
+            return not_member
+        if ws.members[p["from"]].role != "admin":
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED,
+                "workspace.set_profiles requires the admin role")}
         new_profiles = list(p["profiles"])
         if not any(prof.startswith("core/") for prof in new_profiles):
             new_profiles.append("core/1.0")
@@ -819,6 +835,10 @@ class Coordinator:
         return {"result": {"joined": True, "as": uri}}
 
     def _op_participant_leave(self, p: dict) -> dict:
+        # Self-removal: pops the caller's own `from`. Under require_signatures
+        # the signature binds `from`, so a member can only remove itself;
+        # evicting another member is an admin operation, not this. Unsigned, a
+        # spoofed `from` is the transport's responsibility.
         ws = self.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
@@ -832,6 +852,9 @@ class Coordinator:
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p.get("from"))
+        if not_member:
+            return not_member
         assignee = p.get("assignee") or p.get("to")
         if not assignee or assignee not in ws.members:
             return {"error": rpc_error(E.PARAMS, "Assignee not in workspace")}
@@ -879,6 +902,9 @@ class Coordinator:
         ws = self.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p.get("from"))
+        if not_member:
+            return not_member
         task = ws.tasks.get(p.get("task_id", ""))
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
@@ -937,6 +963,10 @@ class Coordinator:
         ws = self.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        if self.options.require_read_membership:
+            not_member = self._require_member(ws, p.get("from"))
+            if not_member:
+                return not_member
         rng = p.get("range") or {}
         flt = p.get("filter") or {}
         from_seq = int(rng.get("from_seq", 0))
