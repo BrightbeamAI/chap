@@ -608,8 +608,17 @@ class Coordinator:
         if not ws:
             return None
         member = ws.members.get(sender)
-        if not member or member.oidc_auth_time is None:
+        if member is None:
             return None
+        # Step-up applies to OIDC actors -- humans, or any member with an OIDC
+        # binding. Agents and services authenticate out of band (SPIFFE/X.509),
+        # so they are not held to an auth_time window here.
+        if member.type != "human" and member.oidc_sub is None:
+            return None
+        if member.oidc_auth_time is None:
+            return rpc_error(E.OIDC_STEP_UP_REQUIRED,
+                             "Step-up authentication required",
+                             {"window_sec": ws.step_up_window_sec})
         now_unix = int(_dt.datetime.now(_dt.timezone.utc).timestamp())
         age = now_unix - member.oidc_auth_time
         if age > ws.step_up_window_sec:
@@ -617,6 +626,10 @@ class Coordinator:
                              "Step-up authentication required",
                              {"window_sec": ws.step_up_window_sec,
                               "age_sec": age})
+        if ws.min_acr is not None and member.oidc_acr != ws.min_acr:
+            return rpc_error(E.OIDC_STEP_UP_REQUIRED,
+                             "Step-up required: acr below the workspace minimum",
+                             {"required_acr": ws.min_acr, "acr": member.oidc_acr})
         return None
 
     # ============================================================
@@ -687,6 +700,7 @@ class Coordinator:
             mode_ceiling=p.get("mode_ceiling") or "production",
             routing_policy_uri=p.get("routing_policy_uri"),
             step_up_window_sec=int(p.get("step_up_window_sec") or 300),
+            min_acr=p.get("min_acr"),
         )
         if "audit-scitt/1.0" in profiles or self.options.enable_chain:
             ws.chain_enabled = True
@@ -770,6 +784,7 @@ class Coordinator:
             at = claims.get("auth_time")
             if isinstance(at, (int, float)):
                 member.oidc_auth_time = int(at)
+            member.oidc_acr = claims.get("acr")
             # Pin the cnf.jwk if present (RFC 7800)
             cnf = claims.get("cnf") or {}
             cnf_jwk = cnf.get("jwk") if isinstance(cnf, dict) else None

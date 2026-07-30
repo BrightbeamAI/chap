@@ -90,6 +90,7 @@ class Member:
     # OIDC binding (set when identity-oidc/1.0 is in use)
     oidc_sub: str | None = None
     oidc_auth_time: int | None = None
+    oidc_acr: str | None = None
     # VC binding (set when identity-vc/1.0 is in use)
     vc_holder: str | None = None  # e.g. did:example:alice
 
@@ -566,6 +567,7 @@ class Workspace:
     mode_ceiling: Mode = "production"
     routing_policy_uri: str | None = None
     step_up_window_sec: int = 300  # identity-oidc/1.0 step-up window
+    min_acr: str | None = None  # required OIDC acr for privileged methods
     members: dict[str, Member] = field(default_factory=dict)
     tasks: dict[str, Task] = field(default_factory=dict)
     overrides: dict[str, OverrideArtefact] = field(default_factory=dict)
