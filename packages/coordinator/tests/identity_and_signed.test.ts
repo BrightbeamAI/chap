@@ -122,10 +122,29 @@ test("participant.revoke_key marks the key revoked", () => {
   c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",
     params: { workspace: "wsp_rv", from: "human:alice", type: "human", role: "owner",
               jwks: { keys: [k.jwk] }}});
+  c.dispatch({ jsonrpc: "2.0", id: "2a", method: "participant.join",
+    params: { workspace: "wsp_rv", from: "human:admin", type: "human", role: "admin" }});
   const r = c.dispatch({ jsonrpc: "2.0", id: "3", method: "participant.revoke_key",
     params: { workspace: "wsp_rv", from: "human:admin",
               target_uri: "human:alice", kid: k.jwk.kid, reason: "test" }});
   assert.ok((r.result as { revoked: boolean }).revoked);
+});
+
+test("participant.revoke_key requires self or admin", () => {
+  const c = new Coordinator({});
+  c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create",
+    params: { workspace: "w" }});
+  for (const who of ["human:alice", "human:bob"]) {
+    const g = genKeypair();
+    c.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
+      params: { workspace: "w", from: who, type: "human", jwks: { keys: [{ ...g.jwk, kid: who }] }}});
+  }
+  const revoke = (from: string, target: string) =>
+    c.dispatch({ jsonrpc: "2.0", id: "r", method: "participant.revoke_key",
+      params: { workspace: "w", from, target_uri: target, kid: target }});
+
+  assert.equal((revoke("human:bob", "human:alice").error as { code: number }).code, -32011);
+  assert.ok((revoke("human:alice", "human:alice").result as { revoked: boolean }).revoked);
 });
 
 // ============================================================

@@ -207,6 +207,11 @@ def test_participant_revoke_key():
                     "params": {"workspace": "wsp_rv",
                                "from": "human:alice@x", "type": "human",
                                "role": "r", "jwks": {"keys": [jwk]}}})
+    coord.dispatch({"jsonrpc": "2.0", "id": "2a",
+                    "method": "participant.join",
+                    "params": {"workspace": "wsp_rv",
+                               "from": "human:admin@x", "type": "human",
+                               "role": "admin"}})
     r = coord.dispatch({"jsonrpc": "2.0", "id": "3",
                         "method": "participant.revoke_key",
                         "params": {"workspace": "wsp_rv",
@@ -215,6 +220,30 @@ def test_participant_revoke_key():
                                    "kid": "k-1",
                                    "reason": "test"}})
     assert r["result"]["revoked"] is True
+
+
+def test_revoke_key_requires_self_or_admin():
+    c = Coordinator(CoordinatorOptions())
+    c.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w"}})
+    for who in ("human:alice", "human:bob"):
+        _, pub = _gen_keypair()
+        jwk = {"kty": "OKP", "crv": "Ed25519", "kid": who, "x": _b64url_nopad(pub)}
+        c.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
+                    "params": {"workspace": "w", "from": who, "type": "human",
+                               "jwks": {"keys": [jwk]}}})
+
+    def revoke(frm, target):
+        return c.dispatch({"jsonrpc": "2.0", "id": "r",
+                           "method": "participant.revoke_key",
+                           "params": {"workspace": "w", "from": frm,
+                                      "target_uri": target, "kid": target}})
+
+    other = revoke("human:bob", "human:alice")
+    assert other["error"]["code"] == -32011
+
+    own = revoke("human:alice", "human:alice")
+    assert own["result"]["revoked"] is True
 
 
 # ============================================================
