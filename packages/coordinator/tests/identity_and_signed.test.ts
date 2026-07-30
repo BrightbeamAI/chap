@@ -114,6 +114,27 @@ test("participant.rotate_key sets valid_until on old key", () => {
   assert.ok(old.valid_until !== undefined);
 });
 
+test("participant.rotate_key must be signed with the old key", () => {
+  const c = new Coordinator({ requireSignatures: true });
+  const k1 = genKeypair();
+  const k2 = genKeypair();
+  const k3 = genKeypair();
+  c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create",
+    params: { workspace: "w" }});
+  c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",
+    params: { workspace: "w", from: "human:alice", type: "human",
+              jwks: { keys: [k1.jwk, k2.jwk] },
+              profiles: ["core/1.0", "security-signed/1.0"] }});
+
+  const rotate = (sk: KeyObject, kid: string) =>
+    c.dispatch(signed({ jsonrpc: "2.0", id: "r", method: "participant.rotate_key",
+      params: { workspace: "w", from: "human:alice",
+                old_kid: k1.jwk.kid, new_jwk: k3.jwk }}, sk, kid));
+
+  assert.equal((rotate(k2.sk, k2.jwk.kid).error as { code: number }).code, -32073);
+  assert.ok((rotate(k1.sk, k1.jwk.kid).result as { rotated: boolean }).rotated);
+});
+
 test("participant.revoke_key marks the key revoked", () => {
   const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
   const k = genKeypair();

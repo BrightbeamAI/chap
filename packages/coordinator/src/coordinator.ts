@@ -433,6 +433,14 @@ export class Coordinator {
     if (this.options.requireSignatures && method !== "participant.join" && method !== "workspace.create") {
       const sigErr = this.verifySignature(envelope);
       if (sigErr) return reply(envelope, { error: sigErr });
+      if (method === "participant.rotate_key") {
+        const signingKid = (envelope.sig as string).split(":")[1];
+        const oldKid = params.old_kid as string | undefined;
+        if (oldKid !== undefined && signingKid !== oldKid) {
+          return reply(envelope, { error: rpcError(E.SIG_ROTATION_KEY_MISMATCH,
+            "Rotation must be signed with the old key") });
+        }
+      }
     }
 
     // identity-oidc/1.0: step-up freshness on privileged methods.

@@ -192,6 +192,34 @@ def test_participant_rotate_key():
     assert new.valid_from is not None
 
 
+def test_rotate_key_must_be_signed_with_the_old_key():
+    c = Coordinator(CoordinatorOptions(require_signatures=True))
+    c.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w"}})
+    sk1, pub1 = _gen_keypair()
+    sk2, pub2 = _gen_keypair()
+    jwk1 = {"kty": "OKP", "crv": "Ed25519", "kid": "k1", "x": _b64url_nopad(pub1)}
+    jwk2 = {"kty": "OKP", "crv": "Ed25519", "kid": "k2", "x": _b64url_nopad(pub2)}
+    c.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:alice", "type": "human",
+                           "jwks": {"keys": [jwk1, jwk2]},
+                           "profiles": ["core/1.0", "security-signed/1.0"]}})
+    _, pub3 = _gen_keypair()
+    jwk3 = {"kty": "OKP", "crv": "Ed25519", "kid": "k3", "x": _b64url_nopad(pub3)}
+
+    def rotate(sk, kid):
+        env = {"jsonrpc": "2.0", "id": "r", "method": "participant.rotate_key",
+               "params": {"workspace": "w", "from": "human:alice",
+                          "old_kid": "k1", "new_jwk": jwk3}}
+        return c.dispatch(_sign_envelope(sk, env, kid))
+
+    signed_with_wrong_key = rotate(sk2, "k2")
+    assert signed_with_wrong_key["error"]["code"] == -32073
+
+    signed_with_old_key = rotate(sk1, "k1")
+    assert signed_with_old_key["result"]["rotated"] is True
+
+
 def test_participant_revoke_key():
     coord = Coordinator(CoordinatorOptions(
         deterministic_ids=True, deterministic_clock=True,
