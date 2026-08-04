@@ -398,6 +398,13 @@ class Coordinator:
             sig_err = self._verify_signature(envelope)
             if sig_err:
                 return make_response(env_id, error=sig_err)
+            if method == "participant.rotate_key":
+                signing_kid = envelope["sig"].split(":", 2)[1]
+                old_kid = params.get("old_kid")
+                if old_kid is not None and signing_kid != old_kid:
+                    return make_response(env_id, error=rpc_error(
+                        E.SIG_ROTATION_KEY_MISMATCH,
+                        "Rotation must be signed with the old key"))
 
         # identity-oidc/1.0: step-up freshness check on privileged methods.
         if self.options.enforce_step_up and method in PRIVILEGED_METHODS:

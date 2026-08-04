@@ -55,14 +55,6 @@ def register_security_signed(coord: "Coordinator") -> None:
             return {"error": rpc_error(E.SIG_KEY_REVOKED,
                                        f"Key {old_kid} is revoked")}
 
-        # The spec says the rotation message MUST be signed with the old key.
-        # If require_signatures is on, the dispatch layer has already verified
-        # the envelope; we additionally check that the signing kid matches
-        # the old_kid named in params.
-        envelope_sig = p.get("_envelope_sig")  # populated by dispatch wrapper
-        # Pragmatic: if a signature was supplied, ensure the kid matches.
-        # The full top-level sig verification path is at dispatch time.
-
         new_jwk = p["new_jwk"]
         if not isinstance(new_jwk, dict) or "kid" not in new_jwk:
             return {"error": rpc_error(E.PARAMS, "new_jwk must include kid")}
