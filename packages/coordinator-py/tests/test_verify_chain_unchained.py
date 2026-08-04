@@ -31,7 +31,7 @@ def test_chain_enabled_midlife_verifies_from_first_chained_entry():
     c = Coordinator(CoordinatorOptions(deterministic_ids=True))
     s = _send(c)
     s("workspace.create", workspace="w", profiles=["core/1.0"])
-    s("participant.join", workspace="w", **{"from": "human:a"}, type="human")
+    s("participant.join", workspace="w", **{"from": "human:a"}, type="human", role="admin")
     s("participant.join", workspace="w", **{"from": "agent:b"}, type="agent")
     s("task.create", workspace="w", **{"from": "human:a"}, kind="k", input={}, assignee="agent:b")
     s("workspace.set_profiles", workspace="w", **{"from": "human:a"},

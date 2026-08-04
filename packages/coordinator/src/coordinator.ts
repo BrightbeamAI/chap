@@ -95,6 +95,7 @@ export interface CoordinatorOptions {
   enableChain?: boolean;
   requireSignatures?: boolean;
   enforceStepUp?: boolean;
+  requireReadMembership?: boolean;
   onAudit?: AuditListener;
   onAutoEscalate?: (task: Task, to: ParticipantUri) => void;
   verifyOidcToken?: TokenVerifier;
@@ -720,6 +721,10 @@ export class Coordinator {
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, `Unknown workspace: ${p.workspace}`) };
+    if (this.options.requireReadMembership) {
+      const notMember = this.requireMember(ws, p.from);
+      if (notMember) return notMember;
+    }
     return { result: {
       id: ws.id,
       created: ws.created,
@@ -738,10 +743,15 @@ export class Coordinator {
   }
 
   private opWorkspaceSetProfiles(p: Record<string, unknown>): ReturnType<Handler> {
-    const miss = missing(p, ["workspace", "profiles"]);
+    const miss = missing(p, ["workspace", "from", "profiles"]);
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
+    if (ws.members.get(p.from as string)!.role !== "admin") {
+      return { error: rpcError(E.NOT_AUTHORISED, "workspace.set_profiles requires the admin role") };
+    }
     const newProfiles = [...(p.profiles as string[])];
     if (!newProfiles.some(pr => pr.startsWith("core/"))) newProfiles.push("core/1.0");
     ws.profiles = newProfiles;
@@ -830,6 +840,10 @@ export class Coordinator {
   }
 
   private opParticipantLeave(p: Record<string, unknown>): ReturnType<Handler> {
+    // Self-removal: deletes the caller's own `from`. Under requireSignatures the
+    // signature binds `from`, so a member can only remove itself; evicting
+    // another member is an admin operation, not this. Unsigned, a spoofed
+    // `from` is the transport's responsibility.
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     ws.members.delete(p.from as string);
@@ -841,6 +855,8 @@ export class Coordinator {
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
     const assignee = (p.assignee as string) || (p.to as string);
     if (!assignee || !ws.members.has(assignee)) {
       return { error: rpcError(E.PARAMS, "Assignee not in workspace") };
@@ -885,6 +901,8 @@ export class Coordinator {
   private opTaskUpdate(p: Record<string, unknown>): ReturnType<Handler> {
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
     const newState = p.state as Task["state"];
@@ -932,6 +950,10 @@ export class Coordinator {
   private opAuditRead(p: Record<string, unknown>): ReturnType<Handler> {
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    if (this.options.requireReadMembership) {
+      const notMember = this.requireMember(ws, p.from);
+      if (notMember) return notMember;
+    }
     const range = (p.range as { from_seq?: number; to_seq?: number } | undefined) ?? {};
     const filter = (p.filter as { method?: string; from?: string; task_id?: string } | undefined) ?? {};
     const fromSeq = range.from_seq ?? 0;

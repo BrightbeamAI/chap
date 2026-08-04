@@ -28,7 +28,7 @@ test("a chain enabled mid-life verifies from the first chained entry", () => {
   const c = new Coordinator({ deterministicIds: true });
   const s = send(c);
   s("workspace.create", { workspace: "w", profiles: ["core/1.0"] });
-  s("participant.join", { workspace: "w", from: "human:a", type: "human" });
+  s("participant.join", { workspace: "w", from: "human:a", type: "human", role: "admin" });
   s("participant.join", { workspace: "w", from: "agent:b", type: "agent" });
   s("task.create", { workspace: "w", from: "human:a", kind: "k", input: {}, assignee: "agent:b" });
   s("workspace.set_profiles", { workspace: "w", from: "human:a", profiles: ["core/1.0", "audit-scitt/1.0"] });
