@@ -46,6 +46,14 @@ export function registerSecuritySigned(coord: Coordinator): void {
     for (const f of ["target_uri", "kid"]) {
       if (!(f in p)) return { error: rpcError(E.PARAMS, `Missing field: ${f}`) };
     }
+    const sender = p.from as string | undefined;
+    if (sender !== p.target_uri) {
+      const caller = sender ? ws.members.get(sender) : undefined;
+      if (!caller || caller.role !== "admin") {
+        return { error: rpcError(E.NOT_AUTHORISED,
+          "Revoking another member's key requires the admin role") };
+      }
+    }
     const member = ws.members.get(p.target_uri as string);
     if (!member) return { error: rpcError(E.SIG_KEY_NOT_FOUND, `Unknown target: ${p.target_uri}`) };
     const key = member.keys.find(k => k.kid === p.kid);

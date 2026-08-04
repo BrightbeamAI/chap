@@ -78,6 +78,13 @@ def register_security_signed(coord: "Coordinator") -> None:
         for f in ("target_uri", "kid"):
             if f not in p:
                 return {"error": rpc_error(E.PARAMS, f"Missing field: {f}")}
+        sender = p.get("from")
+        if sender != p["target_uri"]:
+            caller = ws.members.get(sender) if sender else None
+            if caller is None or caller.role != "admin":
+                return {"error": rpc_error(
+                    E.NOT_AUTHORISED,
+                    "Revoking another member's key requires the admin role")}
         member = ws.members.get(p["target_uri"])
         if not member:
             return {"error": rpc_error(E.SIG_KEY_NOT_FOUND,
