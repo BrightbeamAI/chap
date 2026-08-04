@@ -82,6 +82,7 @@ export interface Member {
   paused:        boolean;         // control.pause scope=participant
   oidc_sub?:     string;
   oidc_auth_time?: number;        // unix seconds
+  oidc_acr?:     string;
   vc_holder?:    string;
 }
 
@@ -338,6 +339,7 @@ export interface Workspace {
   mode_ceiling: Mode;
   routing_policy_uri?: string;
   step_up_window_sec: number;
+  min_acr?: string;
   members:         Map<ParticipantUri, Member>;
   tasks:           Map<TaskId, Task>;
   overrides:       Map<ArtefactId, OverrideArtefact>;

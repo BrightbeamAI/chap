@@ -340,6 +340,7 @@ export class Coordinator {
         mode_ceiling: ws.mode_ceiling,
         routing_policy_uri: ws.routing_policy_uri,
         step_up_window_sec: ws.step_up_window_sec,
+        min_acr:         ws.min_acr,
         members:         Array.from(ws.members.values()),
         tasks:           Array.from(ws.tasks.values()),
         overrides:       Array.from(ws.overrides.values()),
@@ -371,6 +372,7 @@ export class Coordinator {
         mode_ceiling: (w.mode_ceiling as Mode) ?? "production",
         routing_policy_uri: w.routing_policy_uri as string | undefined,
         step_up_window_sec: (w.step_up_window_sec as number) ?? 300,
+        min_acr: w.min_acr as string | undefined,
         members: new Map(),
         tasks: new Map(),
         overrides: new Map(),
@@ -619,12 +621,26 @@ export class Coordinator {
     const ws = this.workspaces.get(wsId);
     if (!ws) return null;
     const member = ws.members.get(sender);
-    if (!member || member.oidc_auth_time === undefined) return null;
+    if (!member) return null;
+    // Step-up applies to OIDC actors -- humans, or any member with an OIDC
+    // binding. Agents and services authenticate out of band (SPIFFE/X.509),
+    // so they are not held to an auth_time window here.
+    if (member.type !== "human" && member.oidc_sub === undefined) return null;
+    if (member.oidc_auth_time === undefined) {
+      return rpcError(E.OIDC_STEP_UP_REQUIRED, "Step-up authentication required", {
+        window_sec: ws.step_up_window_sec,
+      });
+    }
     const nowSec = Math.floor(Date.now() / 1000);
     const age = nowSec - member.oidc_auth_time;
     if (age > ws.step_up_window_sec) {
       return rpcError(E.OIDC_STEP_UP_REQUIRED, "Step-up authentication required", {
         window_sec: ws.step_up_window_sec, age_sec: age,
+      });
+    }
+    if (ws.min_acr !== undefined && member.oidc_acr !== ws.min_acr) {
+      return rpcError(E.OIDC_STEP_UP_REQUIRED, "Step-up required: acr below the workspace minimum", {
+        required_acr: ws.min_acr, acr: member.oidc_acr,
       });
     }
     return null;
@@ -682,6 +698,7 @@ export class Coordinator {
       mode_ceiling: (p.mode_ceiling as Mode) ?? "production",
       routing_policy_uri: p.routing_policy_uri as string | undefined,
       step_up_window_sec: typeof p.step_up_window_sec === "number" ? p.step_up_window_sec : 300,
+      min_acr: p.min_acr as string | undefined,
       members: new Map(),
       tasks: new Map(),
       overrides: new Map(),
@@ -766,6 +783,7 @@ export class Coordinator {
       member.oidc_sub = claims.sub as string | undefined;
       const at = claims.auth_time;
       if (typeof at === "number") member.oidc_auth_time = at;
+      member.oidc_acr = claims.acr as string | undefined;
       const cnf = claims.cnf as Record<string, unknown> | undefined;
       const cnfJwk = cnf?.jwk as Record<string, unknown> | undefined;
       if (cnfJwk && typeof cnfJwk.kid === "string") {
@@ -800,6 +818,7 @@ export class Coordinator {
     if (existing) {
       if (member.oidc_sub !== undefined) existing.oidc_sub = member.oidc_sub;
       if (member.oidc_auth_time !== undefined) existing.oidc_auth_time = member.oidc_auth_time;
+      if (member.oidc_acr !== undefined) existing.oidc_acr = member.oidc_acr;
       if (member.vc_holder !== undefined) existing.vc_holder = member.vc_holder;
       for (const k of attested) {
         if (!existing.keys.some(x => x.kid === k.kid)) existing.keys.push(k);
