@@ -348,6 +348,8 @@ export interface Workspace {
   handoffs:        Map<string, Handoff>;
   snapshots:       Map<ArtefactId, SnapshotArtefact>;
   route_decisions: Map<ArtefactId, RouteDecisionArtefact>;
+  // task.create idempotency: caller-supplied key -> task_id.
+  idempotency_keys: Record<string, TaskId>;
   audit:           AuditEntry[];
   chain_head?:     string;
   chain_enabled:   boolean;

@@ -447,6 +447,20 @@ class Coordinator:
                         E.CONTROL_WORKSPACE_PAUSED,
                         f"Workspace {ws_id} is paused"))
 
+        # task.create idempotency: a repeat carrying a seen idempotency_key
+        # returns the original task rather than creating (or recording) a
+        # duplicate -- safe for at-least-once redelivery.
+        if method == "task.create":
+            key = params.get("idempotency_key")
+            ws_id = params.get("workspace")
+            ws = self.workspaces.get(ws_id) if isinstance(ws_id, str) else None
+            if ws is not None and isinstance(key, str):
+                existing_id = ws.idempotency_keys.get(key)
+                task = ws.tasks.get(existing_id) if existing_id else None
+                if task is not None:
+                    return make_response(env_id, result={
+                        "task_id": existing_id, "state": task.state})
+
         handler = self._handlers.get(method)
         if handler is None:
             return make_response(
@@ -918,6 +932,9 @@ class Coordinator:
             task.review_required = bool(p["review_required"])
 
         ws.tasks[task_id] = task
+        key = p.get("idempotency_key")
+        if isinstance(key, str):
+            ws.idempotency_keys[key] = task_id
         return {"result": {"task_id": task_id, "state": "created"}}
 
     def _op_task_update(self, p: dict) -> dict:

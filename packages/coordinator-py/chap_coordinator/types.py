@@ -576,6 +576,9 @@ class Workspace:
     handoffs: dict[str, Handoff] = field(default_factory=dict)
     snapshots: dict[str, SnapshotArtefact] = field(default_factory=dict)
     route_decisions: dict[str, RouteDecisionArtefact] = field(default_factory=dict)
+    # task.create idempotency: caller-supplied key -> task_id, so a redelivered
+    # create returns the original task instead of a duplicate.
+    idempotency_keys: dict[str, str] = field(default_factory=dict)
     audit: list[AuditEntry] = field(default_factory=list)
     # Chain state (audit-scitt/1.0 supplementary chain linkage)
     chain_head: str | None = None
