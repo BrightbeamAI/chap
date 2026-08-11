@@ -58,11 +58,11 @@
   },
   "peerDependencies": {
     "@brightbeamai/chap-coordinator": "^0.2.7",
-    "@modelcontextprotocol/sdk": "^1.29.0"
+    "@modelcontextprotocol/sdk": "^1.30.0"
   },
   "devDependencies": {
     "@brightbeamai/chap-coordinator": "file:../coordinator",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^20.11.0",
     "tsup": "^8.5.1",
     "tsx": "^4.7.0",

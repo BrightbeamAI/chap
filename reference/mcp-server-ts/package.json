@@ -11,7 +11,7 @@
   "dependencies": {
     "@brightbeamai/chap-coordinator":     "file:../../packages/coordinator",
     "@brightbeamai/chap-coordinator-mcp": "file:../../packages/coordinator-mcp",
-    "@modelcontextprotocol/sdk": "^1.29.0"
+    "@modelcontextprotocol/sdk": "^1.30.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
