@@ -350,6 +350,7 @@ export class Coordinator {
         handoffs:        Array.from(ws.handoffs.values()),
         snapshots:       Array.from(ws.snapshots.values()),
         route_decisions: Array.from(ws.route_decisions.values()),
+        idempotency_keys: ws.idempotency_keys,
         audit:           ws.audit,
         chain_head:      ws.chain_head,
         chain_enabled:   ws.chain_enabled,
@@ -382,6 +383,7 @@ export class Coordinator {
         handoffs: new Map(),
         snapshots: new Map(),
         route_decisions: new Map(),
+        idempotency_keys: (w.idempotency_keys as Record<string, string>) ?? {},
         audit: (w.audit as AuditEntry[]) ?? [],
         chain_head: w.chain_head as string | undefined,
         chain_enabled: !!w.chain_enabled,
@@ -480,6 +482,20 @@ export class Coordinator {
         if (ws && ws.state === "paused") {
           return reply(envelope, { error: rpcError(E.CONTROL_WORKSPACE_PAUSED, `Workspace ${wsId} is paused`) });
         }
+      }
+    }
+
+    // task.create idempotency: a repeat carrying a seen idempotency_key returns
+    // the original task rather than creating (or recording) a duplicate -- safe
+    // for at-least-once redelivery.
+    if (method === "task.create") {
+      const wsId = params.workspace;
+      const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
+      const key = params.idempotency_key;
+      if (ws && typeof key === "string") {
+        const existingId = ws.idempotency_keys[key];
+        const task = existingId ? ws.tasks.get(existingId) : undefined;
+        if (task) return reply(envelope, { result: { task_id: existingId, state: task.state } });
       }
     }
 
@@ -708,6 +724,7 @@ export class Coordinator {
       handoffs: new Map(),
       snapshots: new Map(),
       route_decisions: new Map(),
+      idempotency_keys: {},
       audit: [],
       chain_enabled: chainEnabled,
       chain_head: chainEnabled ? ZERO_HASH : undefined,
@@ -895,6 +912,7 @@ export class Coordinator {
     else if ("review_required" in p) task.review_required = !!p.review_required;
 
     ws.tasks.set(taskId, task);
+    if (typeof p.idempotency_key === "string") ws.idempotency_keys[p.idempotency_key] = taskId;
     return { result: { task_id: taskId, state: "created" } };
   }
 

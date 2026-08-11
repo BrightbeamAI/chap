@@ -94,6 +94,7 @@ export interface TaskCreateParams extends WorkspaceParam, ActorParam {
   to?:            ParticipantUri;   // alias for assignee
   routing_hints?: Record<string, unknown>;
   deadline?:      string;
+  idempotency_key?: string;
 }
 export interface TaskCreateResult { task_id: TaskId }
 
