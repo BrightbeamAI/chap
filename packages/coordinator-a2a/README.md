@@ -24,7 +24,7 @@ npm pack
 npm install ./brightbeamai-chap-coordinator-a2a-*.tgz   # the .tgz that npm pack just produced
 ```
 
-Node 18+ required. Runtime dependencies: `@brightbeamai/chap-coordinator`,
+Node 20+ required. Runtime dependencies: `@brightbeamai/chap-coordinator`,
 `@brightbeamai/chap-coordinator-mcp` (for the shared schemas), and `@a2a-js/sdk`.
 
 ## Quick start

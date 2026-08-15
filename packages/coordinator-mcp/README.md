@@ -21,7 +21,7 @@ npm pack
 npm install ./brightbeamai-chap-coordinator-mcp-*.tgz   # the .tgz that npm pack just produced
 ```
 
-Node 18+ required. Runtime dependencies: `@brightbeamai/chap-coordinator` and
+Node 20+ required. Runtime dependencies: `@brightbeamai/chap-coordinator` and
 `@modelcontextprotocol/sdk`.
 
 ## Quick start

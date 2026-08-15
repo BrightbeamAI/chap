@@ -10,7 +10,7 @@ same CHAP coordinator underneath, different transport on top.
 
 ## Prerequisites
 
-- Either Node.js 18+ (for the TypeScript reference) or Python 3.10+
+- Either Node.js 20+ (for the TypeScript reference) or Python 3.10+
   (for the Python reference). Both expose the same 39 skills.
 - An A2A client. The walkthrough uses raw `curl` to keep it
   self-contained; substitute Azure AI Foundry, Amazon Bedrock

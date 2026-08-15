@@ -13,7 +13,7 @@ example.
 | `server.ts`       | The full Core server (~300 lines).                   |
 | `client.ts`       | A demo client that walks every Core method.          |
 | `package.json`    | Scripts: `start:demo`, `demo:client`, `demo`.        |
-| `tsconfig.json`   | Strict TS, ES2022 target, Node 18+ built-ins only.   |
+| `tsconfig.json`   | Strict TS, ES2022 target, Node 20+ built-ins only.   |
 
 For Core + the Review profile (override capture, JSON Patch
 application, override-analysis tooling), see

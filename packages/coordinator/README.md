@@ -21,7 +21,7 @@ npm pack
 npm install ./brightbeamai-chap-coordinator-*.tgz   # the .tgz that npm pack just produced
 ```
 
-Node 18+ required. Zero external runtime dependencies; uses Node's
+Node 20+ required. Zero external runtime dependencies; uses Node's
 built-in `crypto` for Ed25519 and JCS.
 
 ## Companion packages

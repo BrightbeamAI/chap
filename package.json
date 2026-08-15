@@ -22,5 +22,5 @@
     "conformance:py":   "bash scripts/run-conformance.sh python",
     "conformance:ts":   "bash scripts/run-conformance.sh typescript"
   },
-  "engines": { "node": ">=18" }
+  "engines": { "node": ">=20" }
 }

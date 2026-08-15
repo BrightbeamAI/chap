@@ -43,15 +43,12 @@ export class IdFactory {
       this.counter += 1n;
       return (this.counter * 0x9E3779B97F4A7C15n) & ((1n << 80n) - 1n);
     }
-    // 80 bits of randomness
+    // 80 bits of randomness. `globalThis.crypto` is standard from Node 19
+    // and present in every other supported runtime, so there is no fallback
+    // path: the previous one called `require`, which does not exist in an
+    // ES module and so threw on any runtime without the global.
     const buf = new Uint8Array(10);
-    if (typeof crypto !== "undefined" && crypto.getRandomValues) {
-      crypto.getRandomValues(buf);
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const nodeCrypto = require("node:crypto") as { randomBytes: (n: number) => Buffer };
-      buf.set(nodeCrypto.randomBytes(10));
-    }
+    crypto.getRandomValues(buf);
     let n = 0n;
     for (const b of buf) n = (n << 8n) | BigInt(b);
     return n;

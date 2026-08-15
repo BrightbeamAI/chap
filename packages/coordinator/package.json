@@ -18,7 +18,7 @@
     "human-ai", "human-agent", "review", "override", "scitt", "mcp", "a2a"
   ],
   "type": "module",
-  "engines": { "node": ">=18" },
+  "engines": { "node": ">=20" },
   "files": ["dist", "README.md", "LICENSE"],
   "main":   "./dist/index.cjs",
   "module": "./dist/index.js",

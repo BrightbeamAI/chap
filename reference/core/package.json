@@ -1,18 +1,16 @@
 {
   "name": "@brightbeamai/reference-core",
   "version": "0.1.0",
-  "description": "CHAP Core reference implementation — weekend-buildable.",
+  "description": "CHAP Core reference implementation \u2014 weekend-buildable.",
   "license": "Apache-2.0",
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
     "start:demo": "tsx server.ts",
-    "demo:client": "tsx client.ts",
-    "demo": "tsx server.ts & sleep 1 && tsx client.ts && kill %1",
-    "test": "tsx client.ts"
+    "demo:client": "tsx client.ts"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

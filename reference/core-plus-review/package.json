@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=18" },
+  "engines": { "node": ">=20" },
   "scripts": {
     "start:demo":   "tsx server.ts",
     "demo:client":  "tsx client.ts",

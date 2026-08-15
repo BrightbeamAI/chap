@@ -10,7 +10,7 @@
  * data dividend lives.
  *
  * In-memory state, plain HTTP + JSON-RPC 2.0. No external deps beyond
- * Node 18+ built-ins. ~500 lines.
+ * Node 20+ built-ins. ~500 lines.
  */
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";

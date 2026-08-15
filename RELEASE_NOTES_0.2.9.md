@@ -71,6 +71,13 @@ detailed under MCP 2026-07-28 below.
 - **Python reference server** hardened against malformed requests: invalid
   `Content-Length`, unbounded reads, and deeply nested bodies. (#59)
 
+### Runtime support
+
+- **The supported Node floor is now 20.** Node 18 reached end of life in April
+  2025 and lacked a standard `globalThis.crypto`, which sent id generation down
+  a fallback that called `require` from an ES module and threw. The fallback is
+  removed rather than repaired: every supported runtime provides the global.
+
 ### MCP 2026-07-28
 
 Both MCP adapters now target the 2026-07-28 revision and continue to serve
