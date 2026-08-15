@@ -316,8 +316,9 @@ decide that review. The `rule` field (`any_one_approves`, `all_approve`,
 for the review to terminate; the `to` set controls *who is eligible* to
 decide at all. If you want any member to be able to review, address the
 request to the workspace itself (`to: "workspace:<id>"`) or to a group
-(`to: "group:<id>"`); a broadcast address makes any member (resp. any
-group member) eligible, with only the membership floor applying.
+(`to: "group:<id>"`). Either address is a broadcast: any workspace
+member becomes eligible, with only the membership floor applying. A
+`group:` target does not narrow eligibility to that named group.
 
 Membership is the floor, identity is a separate layer: the
 `identity-oidc` and `identity-vc` profiles bind a verified real-world
@@ -331,8 +332,8 @@ and profiles/review.md S3.2.
 ### How does CHAP handle GDPR / right-to-be-forgotten?
 
 Append-only logs and erasure rights are in genuine tension. CHAP's
-pattern (see [`HANDBOOK.md`](./HANDBOOK.md) §8.3 and
-[`SECURITY.md`](./SECURITY.md) §6):
+pattern (see [`HANDBOOK.md`](./HANDBOOK.md) §8.3 and the
+confidentiality limitation in [`SECURITY.md`](./SECURITY.md) §8):
 
 1. Pseudonymise personal data in envelopes wherever possible.
 2. Reference any remaining personal data via redaction keys
@@ -529,9 +530,12 @@ audit-volume limits hit first; size for storage.
 
 ### What about partial failures and idempotency?
 
-CHAP envelope IDs are unique; a Coordinator MUST de-duplicate by
-`(workspace, id)`. Retrying a failed request with the same envelope
-is safe. Operations that mutate state are idempotent on envelope ID.
+CHAP envelope IDs are unique per sender, and a Coordinator rejects an
+id it has already seen rather than replaying it, so a blind retry is
+not automatically safe. Where you need a retry to be idempotent, use
+the `idempotency_key` parameter on `task.create`: a redelivered create
+carrying a key the Coordinator has already seen returns the original
+task, with no duplicate and no second audit entry.
 
 ### How do real-time UIs get updates?
 

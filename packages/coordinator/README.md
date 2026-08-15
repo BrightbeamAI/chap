@@ -9,16 +9,8 @@ surface, so the two interoperate on the same JSON-RPC 2.0 wire.
 
 ## Install
 
-This package is currently distributed alongside the spec repo rather
-than published to npm. To use it directly from source in another
-TypeScript project:
-
 ```bash
-# From the chap repo root
-cd packages/coordinator
-npm pack
-# In your project
-npm install ./brightbeamai-chap-coordinator-*.tgz   # the .tgz that npm pack just produced
+npm install @brightbeamai/chap-coordinator
 ```
 
 Node 20+ required. Zero external runtime dependencies; uses Node's
@@ -248,7 +240,7 @@ statements so the caller can submit out-of-band.
 npm test
 ```
 
-72 tests as of this release, covering Core, every profile, JCS and
+The suite covers Core, every profile, JCS and
 Ed25519 conformance vectors, signed-envelope verification, OIDC/VC
 binding, the inward wrap helpers, and an end-to-end composition test
 exercising every method handler in one workspace.

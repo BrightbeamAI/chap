@@ -6,7 +6,7 @@ success.
 
 ## What it tests
 
-**Core (mandatory)**: 12 tests covering:
+**Core (mandatory)**: 15 vectors covering:
 
 - Wire format: malformed JSON, non-JSON-RPC bodies, unknown methods.
 - The seven Core methods: `workspace.describe`, `participant.join`,
@@ -16,7 +16,7 @@ success.
 - Filter correctness: `audit.read` filters work.
 - Member enforcement: assigning to non-members fails.
 
-**Review profile (optional)**: 6 tests covering:
+**Review profile (optional)**: 8 vectors covering:
 
 - `review.request` transitions task to `review_requested`.
 - `decide.override` applies the RFC 6902 JSON Patch and produces an

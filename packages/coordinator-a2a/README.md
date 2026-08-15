@@ -12,16 +12,8 @@ CHAP 0.2.
 
 ## Install
 
-This package is distributed alongside the spec repo rather than
-published to npm. To use it directly from source in another
-TypeScript project:
-
 ```bash
-# From the chap repo root
-cd packages/coordinator-a2a
-npm pack
-# In your project
-npm install ./brightbeamai-chap-coordinator-a2a-*.tgz   # the .tgz that npm pack just produced
+npm install @brightbeamai/chap-coordinator-a2a
 ```
 
 Node 20+ required. Runtime dependencies: `@brightbeamai/chap-coordinator`,
@@ -93,7 +85,7 @@ correct version for each implementation.
 npm test
 ```
 
-14 integration tests cover the Agent Card shape, dispatch via data
+The integration tests cover the Agent Card shape, dispatch via data
 part, dispatch via metadata, error surfacing, the full
 workflow including override, deliberation flow, and cancellation.
 

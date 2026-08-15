@@ -123,10 +123,12 @@ classDiagram
     Participant "1" --> "*" Message : sends
 ```
 
-**The contract.** Every Message becomes exactly one EvidenceEntry. Tasks
-live inside Workspaces. Artefacts are produced by Tasks. Participants
-send Messages. There is exactly one EvidenceEntry per accepted Message,
-and the chain is per-Workspace.
+**The contract.** Every state-changing Message becomes exactly one
+EvidenceEntry. Tasks live inside Workspaces. Artefacts are produced by
+Tasks. Participants send Messages. There is exactly one EvidenceEntry
+per accepted state-changing Message, and the chain is per-Workspace.
+Read-only methods are not recorded, so that inspecting or verifying the
+chain does not alter it.
 
 **Authorisation layering.** Whether a Message is accepted at all is
 decided in layers, innermost first:
@@ -281,7 +283,7 @@ flowchart TB
     IN["task.assign<br/>mode = X"]:::mode
     CHK{"X ≤ workspace<br/>mode_ceiling?"}
     YES["dispatch"]:::ok
-    NO["reject<br/>-32501<br/>mode_ceiling_exceeded"]:::block
+    NO["reject<br/>-32040<br/>mode_ceiling_exceeded"]:::block
     OBS{"X = shadow?"}
     ROUTE1["dispatch to assignee<br/>+ shadow_observers only"]:::ok
     ROUTE2["dispatch to assignee<br/>(normal routing)"]:::ok

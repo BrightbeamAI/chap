@@ -38,9 +38,10 @@ and only when, they appear in all capitals.
 schemas, and reference implementations are stable enough for
 experimentation and early production pilots; they are not yet
 sufficient for a normative conformance claim. Specifically: the
-specification has one reference implementation (the `@brightbeamai/chap-coordinator`
-package in this repository), not the two interoperable implementations
-typical of a standards-track promotion; an empirical interoperability
+specification's two reference implementations, the TypeScript and
+Python coordinators in this repository, are authored by the same team
+rather than being the independently authored implementations typical
+of a standards-track promotion; an empirical interoperability
 test suite covering all defined methods is published as a draft (see
 [`conformance/`](./conformance/)) but is not exhaustive. Breaking
 changes to the wire format will follow Semantic Versioning, but the
@@ -473,7 +474,7 @@ their evidence chain is sealed. `archived` workspaces are read-only.
   ],
   "shadow_observers": ["human:eve@example.org"],
   "evidence_head": "sha256:8b1c…d9e0",
-  "evidence_count": 14823
+  "audit_count": 14823
 }
 ```
 
@@ -772,7 +773,7 @@ existence and content are recorded in the chain.
       "output_hash": "sha256:d4e5…"
     }
   ],
-  "confidence": 0.86,
+  "confidence": "0.86",
   "content_hash": "sha256:7f8e9d0c…"
 }
 ```
@@ -880,9 +881,9 @@ when the profile is not in use.
 ```json
 {
   "routing_hints": {
-    "confidence": 0.62,
+    "confidence": "0.62",
     "model_id": "careful-draft-v2:2026-05",
-    "cost_consumed_usd": 3.40,
+    "cost_consumed_usd": "3.40",
     "latency_ms": 2810
   }
 }
@@ -917,16 +918,34 @@ The `routing/1.0` profile defines an additional artefact kind,
 ### 10.1 Evidence chain
 
 Each workspace maintains a single append-only chain of evidence
-entries. Every accepted CHAP message produces exactly one entry.
-Entries are linked by SHA-256 hashes:
+entries. Every accepted state-changing CHAP message produces exactly
+one entry.
+
+The read-only methods `workspace.describe`, `audit.read`,
+`audit.verify_chain` and `audit.verify_receipt` are **not** recorded.
+A chain that grew when it was read would change the very state the
+read reports, and verifying a chain would alter the chain just
+verified. Implementations MUST NOT record these four methods, since a
+Coordinator that records them produces a different chain for the same
+sequence of state changes and so fails cross-implementation
+comparison.
+
+Entries are linked by SHA-256 hashes over the canonical envelope and
+the previous head:
 
 ```
-entry_n.prev_hash = SHA-256( JCS(envelope_{n-1} without evidence.sig)
-                             || evidence_{n-1}.sig )
+entry_n.prev_hash = chain head before entry_n
+chain_head        = SHA-256( JCS(envelope_n) || entry_n.prev_hash )
 ```
+
+Every digest is the string `sha256:` followed by 64 lowercase hex
+characters. `JCS(envelope_n)` is the canonical serialisation of the
+recorded envelope, and `prev_hash` is concatenated as its full UTF-8
+string form, prefix included. The genesis entry's `prev_hash` is
+`sha256:` followed by 64 zeros.
 
 The chain head is published in the workspace descriptor as
-`evidence_head` and the chain length as `evidence_count`.
+`evidence_head` and the chain length as `audit_count`.
 
 ### 10.2 Verification
 
@@ -1005,7 +1024,7 @@ matching policy entry.
 The Coordinator MUST:
 
 - Reject any `task.assign` whose mode exceeds the workspace's ceiling
-  with error `-32501` (`mode_ceiling_exceeded`).
+  with error `-32040` (`mode_ceiling_exceeded`).
 - Refuse to dispatch shadow-mode artefacts to participants not on
   the workspace's `shadow_observers` list.
 - Record every mode change as a first-class evidence entry.
@@ -1204,7 +1223,7 @@ Error codes follow JSON-RPC conventions with CHAP-specific extensions:
 | -32404 | `key_revoked`                   | Signing key has been revoked.                        |
 | -32405 | `version_unsupported`           | `chap` version not recognised.                        |
 | -32500 | `policy_denied`                 | Caller's role does not permit the method.            |
-| -32501 | `mode_ceiling_exceeded`         | Task mode exceeds workspace ceiling.                 |
+| -32040 | `mode_ceiling_exceeded`         | Task mode exceeds workspace ceiling.                 |
 | -32502 | `scope_missing`                 | Recipient has not declared the required scope.       |
 | -32600 | `task_state_invalid`            | Method illegal in task's current state.              |
 | -32601 | `review_rule_unmet`             | Decision cannot terminate the review under the rule. |
@@ -1524,9 +1543,10 @@ in the catalogue including the profile-defined methods marked
 *specified* in the v0.2 method index; A2A composition (§16.2);
 external evidence anchoring via `audit-scitt/1.0`; and successful
 execution of the published interop test suite against a second,
-independent implementation. CHAP 0.2 does not currently have a
-second interoperable implementation, so no implementation can
-correctly claim the Full level under this revision. Implementations
+independently authored implementation. The two coordinators in this
+repository interoperate on the same wire and both pass the harness,
+but they share authorship, so no implementation can correctly claim
+the Full level under this revision. Implementations
 already meeting the technical requirements above are welcome to
 publish a Recommended attestation and a list of additional methods
 implemented; promotion to Full will be opened once the interop

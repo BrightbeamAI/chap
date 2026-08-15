@@ -107,14 +107,19 @@ differs but the bytes look almost right, check (in order):
 
 ## 3. Evidence-chain linkage
 
-The chain is a sequence of entries; each entry's `prev_hash` is the
-SHA-256 of the previous entry's `envelope_hash` concatenated with
-its `sig` (both as their full string forms, including the `sha256:`
-and `ed25519:…:` prefixes).
+The chain is a sequence of entries. Each entry carries the chain head
+as it stood before that entry, and the new head is the SHA-256 of the
+entry's canonical envelope concatenated with that previous head.
 
 ```
-prev_hash(N+1) = sha256( envelope_hash(N) || sig(N) )
+entry[N].prev_hash = head before entry N   (sha256:0*64 at genesis)
+head after entry N = sha256( JCS(envelope[N]) || entry[N].prev_hash )
 ```
+
+Every digest is `sha256:` followed by 64 lowercase hex characters.
+`JCS(envelope[N])` is the canonical serialisation of the recorded
+envelope; `prev_hash` is concatenated as its full UTF-8 string form,
+prefix included. Genesis carries `sha256:` followed by 64 zeros.
 
 Below is a four-entry chain (genesis plus three) with placeholder
 canonical envelopes for entries 1-3. The hashes are derived
@@ -176,7 +181,7 @@ sig           = ed25519:k-2026-05-17a:dGVzdHNpZzM=
 For each i ≥ 1:
 
 ```
-expected_prev_hash_at_i = sha256( envelope_hash[i-1] + sig[i-1] )
+expected_prev_hash_at_i = sha256( JCS(envelope[i-1]) + entry[i-1].prev_hash )
 assert entry[i].prev_hash == expected_prev_hash_at_i
 ```
 

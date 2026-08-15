@@ -12,7 +12,7 @@ example.
 |-------------------|------------------------------------------------------|
 | `server.ts`       | The full Core server (~300 lines).                   |
 | `client.ts`       | A demo client that walks every Core method.          |
-| `package.json`    | Scripts: `start:demo`, `demo:client`, `demo`.        |
+| `package.json`    | Scripts: `start:demo`, `demo:client`.                |
 | `tsconfig.json`   | Strict TS, ES2022 target, Node 20+ built-ins only.   |
 
 For Core + the Review profile (override capture, JSON Patch
@@ -28,12 +28,6 @@ npm install
 npm run start:demo   # server on http://localhost:8080/chap
 # in another terminal:
 npm run demo:client
-```
-
-Or in one command:
-
-```bash
-npm run demo
 ```
 
 You should see output like:

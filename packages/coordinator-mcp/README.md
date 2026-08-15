@@ -9,16 +9,8 @@ Spec target: **MCP 2026-07-28**, serving MCP 2025-11-25 clients as well · CHAP 
 
 ## Install
 
-This package is distributed alongside the spec repo rather than
-published to npm. To use it directly from source in another
-TypeScript project:
-
 ```bash
-# From the chap repo root
-cd packages/coordinator-mcp
-npm pack
-# In your project
-npm install ./brightbeamai-chap-coordinator-mcp-*.tgz   # the .tgz that npm pack just produced
+npm install @brightbeamai/chap-coordinator-mcp
 ```
 
 Node 20+ required. Runtime dependencies: `@brightbeamai/chap-coordinator` and
@@ -76,7 +68,7 @@ might have loaded simultaneously.
 npm test
 ```
 
-8 integration tests use the SDK's `InMemoryTransport.createLinkedPair()`
+The integration tests use the SDK's `InMemoryTransport.createLinkedPair()`
 to drive a wrapped Coordinator end-to-end, exercising every major
 profile.
 

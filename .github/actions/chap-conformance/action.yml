@@ -10,9 +10,9 @@ inputs:
     description: "URL of the CHAP coordinator endpoint to test against (e.g. http://localhost:8080/chap). The endpoint must accept JSON-RPC 2.0 POSTs."
     required: true
   ref:
-    description: "Git ref of the BrightbeamAI/chap repository to source the harness from. Defaults to v0.2.5."
+    description: "Git ref of the BrightbeamAI/chap repository to source the harness from. Defaults to v0.2.9."
     required: false
-    default: 'v0.2.5'
+    default: 'v0.2.9'
   profiles:
     description: "Comma-separated list of profiles to test. Default is the v0.2 conformance set: core,review,whisper,deliberation,handoff,control,routing."
     required: false

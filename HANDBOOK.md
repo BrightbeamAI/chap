@@ -372,9 +372,9 @@ Role-to-method permissions live in workspace policy. Example:
 ```yaml
 role_permissions:
   auditor:    [audit.read]
-  drafter:    [task.update, task.complete, message.post]
+  drafter:    [task.update, task.complete, notify.message]
   reviewer:   [decide.approve, decide.reject, decide.override, abstain.declare, escalate.raise]
-  operator:   [control.*, workspace.*, participant.evict]
+  operator:   [control.*, workspace.*, participant.leave]
 ```
 
 ### 7.5 What the Coordinator enforces before your policy runs
@@ -393,9 +393,10 @@ role-to-method policy you configure above:
    named in the review's `to` set. A member who was not asked to review
    cannot decide it. The decision `rule` controls how many of the
    addressed reviewers must act; the `to` set controls who is eligible.
-   To let any member review, address the request to `workspace:<id>` (or
-   a `group:<id>`); a broadcast address makes any member (resp. any group
-   member) eligible.
+   To let any member review, address the request to `workspace:<id>` or
+   a `group:<id>`. Either address is a broadcast: it makes any workspace
+   member eligible. A `group:` target does not narrow eligibility to the
+   members of that named group.
 
 These are floors, not a replacement for your policy. Your
 `role_permissions` map still decides, for example, that only `reviewer`
@@ -446,9 +447,11 @@ CHAP's recommended pattern:
    to your data-handling policy so subject-rights requests have a
    defined path.
 
-The protocol doesn't mandate a specific redaction mechanism; it
-provides the hooks. See [`SECURITY.md`](./SECURITY.md) §6 for the
-mechanism.
+The protocol doesn't specify a redaction mechanism; it provides the
+hooks and leaves the mechanism to the deployment. See
+[`SECURITY.md`](./SECURITY.md) §8, which records the absence of
+confidentiality for evidence-chain content and recommends opaque
+artefact URIs with external content storage.
 
 ### 8.4 Auditor access
 

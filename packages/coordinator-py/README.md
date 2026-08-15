@@ -235,8 +235,8 @@ pip install -e ".[dev]"
 pytest
 ```
 
-90 tests as of this release: 63 core library, 7 MCP integration,
-10 A2A integration, 10 wrap-helper.
+The suite covers the core library, the MCP and A2A transports, and the
+wrap helpers.
 
 ## Spec fidelity
 

@@ -200,8 +200,11 @@ when the relevant profile is in use.
 
 ### 3.2 Audit log
 
-Every accepted envelope MUST be appended to the workspace's audit
-log in arrival order, with the Coordinator's own arrival timestamp.
+Every accepted state-changing envelope MUST be appended to the
+workspace's audit log in arrival order, with the Coordinator's own
+arrival timestamp. Read-only methods, `workspace.describe` and
+`audit.read` among the Core seven, MUST NOT be appended: a log that
+grew when read would change what the read reports.
 Each log entry has at minimum:
 
 ```json

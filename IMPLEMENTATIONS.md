@@ -21,11 +21,11 @@ and whether they pass the published conformance harness.
 | `chap-coordinator` (Python) | Python 3.10+ | 0.2.9        | Full v0.2 (39 methods) | 23/23 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
 | `@brightbeamai/chap-coordinator-mcp`     | TypeScript  | 0.2.9        | All 39 methods as MCP tools | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
 | `@brightbeamai/chap-coordinator-a2a`     | TypeScript  | 0.2.9        | All 39 methods as A2A skills | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
-| `chap-langgraph`            | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | 10/10 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-pydantic-ai`          | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | 17/17 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-ag2`                  | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | 14/14 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-llama-index`          | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | 13/13 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-google-adk`           | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | 15/15 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-langgraph`            | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | Bridge test suite passing | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-pydantic-ai`          | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | Bridge test suite passing | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-ag2`                  | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | Bridge test suite passing | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-llama-index`          | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | Bridge test suite passing | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-google-adk`           | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | Bridge test suite passing | Beta | Apache-2.0 | Brightbeam AI |
 
 ## Notes by implementation
 

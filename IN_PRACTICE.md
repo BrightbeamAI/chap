@@ -37,16 +37,17 @@ Run a single-binary coordinator on your laptop with SQLite under the hood. The c
 ```ts
 import { Coordinator } from "@brightbeamai/chap-coordinator";
 
-const coord = new Coordinator({ storage: "sqlite:./chap.db" });
+import { SqliteStore } from "@brightbeamai/chap-coordinator/storage/sqlite";
+const coord = new Coordinator({ store: new SqliteStore("./chap.db") });
 coord.dispatch({
   jsonrpc: "2.0", id: "init",
   method: "workspace.create",
-  params: { workspace_id: "wsp_my_reviews", profiles: ["core/1.0", "review/1.0"] }
+  params: { workspace: "wsp_my_reviews", profiles: ["core/1.0", "review/1.0"] }
 });
 coord.dispatch({
   jsonrpc: "2.0", id: "j1",
   method: "participant.join",
-  params: { workspace_id: "wsp_my_reviews", uri: "human:me@local", type: "human" }
+  params: { workspace: "wsp_my_reviews", from: "human:me@local", type: "human", role: "owner" }
 });
 ```
 
@@ -57,7 +58,7 @@ coord.dispatch({
   jsonrpc: "2.0", id: nextId(),
   method: "task.create",
   params: {
-    workspace_id: "wsp_my_reviews",
+    workspace: "wsp_my_reviews",
     kind: "code_review",
     assignee: "human:me@local",
     artefact: cursorReview  // whatever Cursor returned
@@ -77,7 +78,7 @@ When you reject a comment, that becomes a `decide.reject` with a category. When 
     "intent_preserved": true,
     "diff": [
       { "op": "replace", "path": "/comments/0/severity",
-        "from": "warning", "to": "info" }
+        "value": "info" }
     ],
     "rationale": "Bot flags unused parameter on every event handler. False positive in this codebase: handlers conform to a framework signature.",
     "tags": ["false-positive", "framework-pattern-misread"]
@@ -88,7 +89,7 @@ When you reject a comment, that becomes a `decide.reject` with a category. When 
 Two months in you run the override analyser:
 
 ```bash
-$ npx @brightbeamai/analyze-overrides wsp_my_reviews
+$ npx tsx reference/core-plus-review/analyze-overrides.ts wsp_my_reviews
 
 Override Learning Report (wsp_my_reviews)
 =========================================
@@ -121,8 +122,7 @@ With Core and `review/1.0`, every brief is a task. The agent's first draft is an
     "intent_preserved": true,
     "diff": [
       { "op": "replace", "path": "/sections/0/text",
-        "from": "Industry-leading solutions for forward-thinking teams.",
-        "to": "We help teams ship faster. Here's how." }
+        "value": "We help teams ship faster. Here's how." }
     ],
     "rationale": "Opener was generic corporate boilerplate.",
     "tags": ["opener-rewritten", "tone-corporate-to-warm"]
@@ -149,7 +149,7 @@ const audit = await coord.dispatch({
   jsonrpc: "2.0", id: "a1",
   method: "audit.read",
   params: {
-    workspace_id: "wsp_support",
+    workspace: "wsp_support",
     filter: { task_id: "tsk_ticket_chargeback_8821" }
   }
 });
@@ -193,7 +193,7 @@ const assignments = await coord.dispatch({
   jsonrpc: "2.0", id: "q1",
   method: "audit.read",
   params: {
-    workspace_id: "wsp_support",
+    workspace: "wsp_support",
     filter: {
       method: "handoff.accept",
       from: "group:emea-shift",
@@ -207,7 +207,7 @@ for (const a of assignments.result.entries) {
   const task = await coord.dispatch({
     jsonrpc: "2.0", id: nextId(),
     method: "task.describe",
-    params: { workspace_id: "wsp_support", task_id: taskId }
+    params: { workspace: "wsp_support", task_id: taskId }
   });
   // task carries the original handoff note, the routing hints,
   // the current state, the policy reference in effect.
@@ -247,7 +247,7 @@ const dismissals = await coord.dispatch({
   jsonrpc: "2.0", id: "sec-q1",
   method: "audit.read",
   params: {
-    workspace_id: "wsp_eng_reviews",
+    workspace: "wsp_eng_reviews",
     filter: {
       method: "decide.reject",
       since: "2026-01-01T00:00:00Z",
@@ -286,7 +286,7 @@ It is 18:00 on a Tuesday. The MSA needs to ship by 21:00. The junior approves wh
     "intent_preserved": false,
     "diff": [
       { "op": "replace", "path": "/clauses/liability/cap",
-        "from": "12_months_fees", "to": "24_months_fees" },
+        "value": "24_months_fees" },
       { "op": "add", "path": "/clauses/liability/carve_outs",
         "value": "IP-indemnity-uncapped" }
     ],
@@ -304,7 +304,7 @@ const misses = await coord.dispatch({
   jsonrpc: "2.0", id: "tr-q1",
   method: "audit.read",
   params: {
-    workspace_id: "wsp_legal_review",
+    workspace: "wsp_legal_review",
     filter: {
       method: "decide.override",
       tags: ["junior-escalation-miss"],
@@ -357,7 +357,7 @@ async function generateDSAStatement(taskId: string): Promise<string> {
   const chain = await coord.dispatch({
     jsonrpc: "2.0", id: nextId(),
     method: "audit.read",
-    params: { workspace_id: "wsp_ts", filter: { task_id: taskId } }
+    params: { workspace: "wsp_ts", filter: { task_id: taskId } }
   });
 
   const decision = chain.result.entries.find(
@@ -398,13 +398,13 @@ The signing flow on the client side, simplified:
 // They click through, see the final artefact, click Approve.
 // The browser signs the approval envelope with the OIDC-bound key.
 
-import { signEnvelope } from "@brightbeamai/client";
+import { signEnvelope } from "@brightbeamai/chap-coordinator";
 
 const envelope = {
   jsonrpc: "2.0", id: nextId(),
   method: "decide.approve",
   params: {
-    workspace_id: "wsp_agency_acme_q4",
+    workspace: "wsp_agency_acme_q4",
     task_id: "tsk_campaign_q4_launch",
     from: clientOidcSubject,
     based_on_artefact_id: "art_final_v7_...",
@@ -436,7 +436,7 @@ The pattern that helps is `whisper/1.0`. When the bot is uncertain, it asks the 
     "to": ["group:hr-team"],
     "question": "Employee is asking about parental-leave eligibility for adoption. Policy doc doesn't explicitly say. Do we treat adoption same as biological?",
     "options": ["yes-same", "no-different", "needs-case-by-case"],
-    "default_if_no_answer": "needs-case-by-case",
+    "default_if_lapsed": "needs-case-by-case",
     "deadline": "2026-05-17T17:00:00Z"
   }
 }
@@ -522,15 +522,19 @@ Eight hours later, after investigation, the QP signs the release:
 When the inspector visits in October, the audit-SCITT receipt for that envelope is verifiable independently of the site. The compliance officer's prep is a single query:
 
 ```python
-import chap
+from chap_coordinator import Coordinator
 
-ws = chap.connect("https://coordinator.site.example/chap", workspace="wsp_site_fill_finish_b3")
+coord = Coordinator()   # or a client for your deployment's transport
 
 # Pull the whole story for batch BX-48219
-chain = ws.audit_read(
-    logical_id="lgl_batch_BX_48219_disposition",
-    include_referenced=True   # pull the deviation_flag chain too
-)
+chain = coord.dispatch({
+    "jsonrpc": "2.0", "id": "q1", "method": "audit.read",
+    "params": {
+        "workspace": "wsp_site_fill_finish_b3",
+        "from": "human:compliance@site.example",
+        "filter": {"logical_id": "lgl_batch_BX_48219_disposition"},
+    },
+})["result"]["entries"]
 
 for entry in chain:
     print(entry.ts, entry.method, entry.from_, "->", entry.summary)
@@ -583,7 +587,7 @@ The vulnerability flag forces senior-handler routing within four hours regardles
     "logical_id": "lgl_claim_MTR-2026-198421",
     "intent_preserved": true,
     "diff": [
-      { "op": "replace", "path": "/settlement/amount", "from": 4200, "to": 4800 },
+      { "op": "replace", "path": "/settlement/amount", "value": 4800 },
       { "op": "add", "path": "/settlement/goodwill",
         "value": { "amount": 200, "reason": "bereavement_acknowledgement" } }
     ],
