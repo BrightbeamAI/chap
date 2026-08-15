@@ -133,6 +133,12 @@ async function bootstrap(): Promise<void> {
     jsonrpc: "2.0", id: "boot-4", method: "participant.join",
     params: { workspace: WORKSPACE_ID, from: BOT_URI, type: "agent", role: "drafter", display_name: "Triage Bot" },
   });
+  // The coordinator service submits tasks on the bot's behalf; it must be a
+  // member now that task.create enforces a membership floor.
+  coord.dispatch({
+    jsonrpc: "2.0", id: "boot-5", method: "participant.join",
+    params: { workspace: WORKSPACE_ID, from: "service:coord@local", type: "service", role: "coordinator", display_name: "Coordinator" },
+  });
 
   // Kick off the bot processing every ticket. This runs in the
   // background so the server can start serving immediately.

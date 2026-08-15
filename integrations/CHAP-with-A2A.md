@@ -300,7 +300,7 @@ For the wire-level details, see [`SPECIFICATION.md`](../SPECIFICATION.md)
 ## 8. Code
 
 The patterns above describe the **semantic** integration: how an A2A
-exchange shows up in a CHAP audit trail. CHAP 0.2.4 ships a
+exchange shows up in a CHAP audit trail. CHAP ships a
 **transport** integration that goes the other way too: a CHAP
 Coordinator can present itself **as** an A2A agent, so any
 A2A-aware orchestrator (Azure AI Foundry, Amazon Bedrock AgentCore,

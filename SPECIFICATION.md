@@ -1472,8 +1472,9 @@ Inward composition is a transport binding, not a wire-format change.
 A Coordinator that does and does not expose an inward MCP or A2A
 interface produces byte-identical audit chains for the same envelope
 sequence. The inward adapter packaged in this repository targets
-MCP **2025-11-25**, A2A **0.3.0** (via the TypeScript SDK), and A2A
-**1.0** (via the Python SDK). See the implementation notes in
+MCP **2026-07-28** while continuing to serve MCP **2025-11-25**
+clients, A2A **0.3.0** (via the TypeScript SDK), and A2A **1.0** (via
+the Python SDK). See the implementation notes in
 [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md) §10
 and [`integrations/CHAP-with-A2A.md`](./integrations/CHAP-with-A2A.md) §8.
 

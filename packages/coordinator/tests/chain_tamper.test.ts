@@ -3,7 +3,7 @@
  *
  * The chain must detect tampering of any entry, including the last, and must
  * not let an entry opt out of verification by dropping its prev_hash.
- * Regression guard for the two bugs fixed in 0.2.7.
+ * Regression guard for the two bugs fixed in 0.2.9.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

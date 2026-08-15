@@ -3,7 +3,7 @@ Tamper-evidence regression tests for audit.verify_chain.
 
 The chain must detect tampering of any entry, including the last one, and
 must not let an entry opt out of verification by dropping its prev_hash.
-Regression guard for the two bugs fixed in 0.2.7 (missing head comparison
+Regression guard for the two bugs fixed in 0.2.9 (missing head comparison
 and the prev_hash opt-out).
 """
 from __future__ import annotations

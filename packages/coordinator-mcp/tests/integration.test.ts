@@ -29,7 +29,7 @@ async function setup(): Promise<ConnectedPair> {
     ],
   });
 
-  const server = makeChapMcpServer(coord, { name: "chap-test", version: "0.2.3" });
+  const server = makeChapMcpServer(coord, { name: "chap-test", version: "0.2.9" });
   const client = new Client({ name: "test-client", version: "1.0.0" });
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

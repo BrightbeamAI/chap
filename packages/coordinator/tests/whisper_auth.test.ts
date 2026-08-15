@@ -1,6 +1,6 @@
 /**
  * Regression: whisper.answer may only be answered by an addressed askee (a
- * broadcast scope is satisfied by any member). Guards the 0.2.7 fix.
+ * broadcast scope is satisfied by any member). Guards the 0.2.9 fix.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

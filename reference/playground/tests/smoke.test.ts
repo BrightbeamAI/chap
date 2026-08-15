@@ -32,6 +32,7 @@ function setupCoordinator(): Coordinator {
     params: { workspace: WS, profiles: ["core/1.0", "review/1.0", "routing/1.0"] } });
   for (const [uri, type, role] of [
     [BOT, "agent", "drafter"], [MAYA, "human", "front-line"], [SAM, "human", "senior"],
+    ["service:coord@local", "service", "coordinator"],
   ] as const) {
     coord.dispatch({ jsonrpc: "2.0", id: `j-${uri}`, method: "participant.join",
       params: { workspace: WS, from: uri, type, role } });
@@ -179,7 +180,7 @@ test("audit chain has expected length and ordering", async () => {
   const ws = coord.getWorkspace(WS)!;
   // Expected envelopes appended to the chain:
   //   1 workspace.create
-  //   3 participant.join (bot, Maya, Sam)
+  //   4 participant.join (bot, Maya, Sam, coordinator service)
   //   1 task.create
   //   1 task.update (in_progress)
   //   1 task.complete
@@ -187,13 +188,14 @@ test("audit chain has expected length and ordering", async () => {
   //   1 escalate.auto     (routing/1.0 decision, recorded in audit)
   //   1 review.request
   //   1 decide.approve
-  // Total: 11
-  assert.equal(ws.audit.length, 11, `expected 11 audit entries, got ${ws.audit.length}`);
+  // Total: 12
+  assert.equal(ws.audit.length, 12, `expected 12 audit entries, got ${ws.audit.length}`);
 
   // Methods in order
   const methods = ws.audit.map((e) => e.envelope.method);
   assert.deepEqual(methods, [
     "workspace.create",
+    "participant.join",
     "participant.join",
     "participant.join",
     "participant.join",

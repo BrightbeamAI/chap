@@ -5,14 +5,17 @@ JSON-RPC + MCP boundary.
 
 Mirrors ``packages/coordinator-mcp/tests/integration.test.ts`` so the
 two implementations stay aligned.
+
+``Client`` drives the server over in-memory streams and negotiates the
+stateless 2026-07-28 revision, so these exercise the modern path end to
+end. The handshake era is covered separately in ``test_mcp_discover.py``.
 """
 from __future__ import annotations
 
 import json
 
 import pytest
-from mcp import ClientSession
-from mcp.shared.memory import create_connected_server_and_client_session
+from mcp.client.client import Client
 
 from chap_coordinator.coordinator import Coordinator, CoordinatorOptions
 from chap_coordinator.transports.mcp_server import make_chap_mcp_server
@@ -33,7 +36,7 @@ def _make_coord() -> Coordinator:
 
 def _unwrap(result) -> object:
     """Pull the JSON body out of a CallToolResult's text content."""
-    if result.isError:
+    if result.is_error:
         text = result.content[0].text if result.content else "(no content)"
         raise AssertionError(f"Tool call errored: {text}")
     block = result.content[0]
@@ -46,7 +49,7 @@ def _unwrap(result) -> object:
 async def test_list_tools_returns_every_method() -> None:
     coord = _make_coord()
     server = make_chap_mcp_server(coord)
-    async with create_connected_server_and_client_session(server) as client:
+    async with Client(server) as client:
         result = await client.list_tools()
         assert len(result.tools) == len(TOOL_NAMES), \
             f"should expose all {len(TOOL_NAMES)} methods, got {len(result.tools)}"
@@ -61,7 +64,7 @@ async def test_list_tools_returns_every_method() -> None:
 async def test_workspace_create_through_mcp() -> None:
     coord = _make_coord()
     server = make_chap_mcp_server(coord)
-    async with create_connected_server_and_client_session(server) as client:
+    async with Client(server) as client:
         result = await client.call_tool("chap.workspace.create", {"workspace": "wsp_mcp_test"})
         body = _unwrap(result)
         assert body["workspace"] == "wsp_mcp_test"
@@ -72,9 +75,9 @@ async def test_workspace_create_through_mcp() -> None:
 async def test_chap_error_surfaces_as_tool_error() -> None:
     coord = _make_coord()
     server = make_chap_mcp_server(coord)
-    async with create_connected_server_and_client_session(server) as client:
+    async with Client(server) as client:
         result = await client.call_tool("chap.workspace.describe", {"workspace": "wsp_missing"})
-        assert result.isError
+        assert result.is_error
         body = json.loads(result.content[0].text)
         assert body["chap_error"] == -32602
 
@@ -83,7 +86,7 @@ async def test_chap_error_surfaces_as_tool_error() -> None:
 async def test_full_workflow_through_mcp() -> None:
     coord = _make_coord()
     server = make_chap_mcp_server(coord)
-    async with create_connected_server_and_client_session(server) as client:
+    async with Client(server) as client:
 
         _unwrap(await client.call_tool("chap.workspace.create",
             {"workspace": "wsp_flow"}))
@@ -143,7 +146,7 @@ async def test_full_workflow_through_mcp() -> None:
 async def test_routing_decisions_through_mcp() -> None:
     coord = _make_coord()
     server = make_chap_mcp_server(coord)
-    async with create_connected_server_and_client_session(server) as client:
+    async with Client(server) as client:
         _unwrap(await client.call_tool("chap.workspace.create", {"workspace": "wsp_rt"}))
         _unwrap(await client.call_tool("chap.participant.join",
             {"workspace": "wsp_rt", "from": "human:alice", "type": "human", "role": "owner"}))
@@ -175,7 +178,7 @@ async def test_routing_decisions_through_mcp() -> None:
 async def test_deliberation_through_mcp() -> None:
     coord = _make_coord()
     server = make_chap_mcp_server(coord)
-    async with create_connected_server_and_client_session(server) as client:
+    async with Client(server) as client:
         _unwrap(await client.call_tool("chap.workspace.create", {"workspace": "wsp_d"}))
         for u in ("human:a", "human:b", "human:c"):
             _unwrap(await client.call_tool("chap.participant.join",
@@ -204,7 +207,7 @@ async def test_deliberation_through_mcp() -> None:
 async def test_audit_verify_chain_through_mcp() -> None:
     coord = _make_coord()
     server = make_chap_mcp_server(coord)
-    async with create_connected_server_and_client_session(server) as client:
+    async with Client(server) as client:
         _unwrap(await client.call_tool("chap.workspace.create", {"workspace": "wsp_a"}))
         _unwrap(await client.call_tool("chap.participant.join",
             {"workspace": "wsp_a", "from": "human:alice", "type": "human", "role": "owner"}))

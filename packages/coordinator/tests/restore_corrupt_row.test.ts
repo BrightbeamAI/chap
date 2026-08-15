@@ -1,6 +1,6 @@
 /**
  * Regression: a single unreadable row must not discard every other workspace.
- * SqliteStore.load() skips a corrupt row and returns the rest. Guards the 0.2.7
+ * SqliteStore.load() skips a corrupt row and returns the rest. Guards the 0.2.9
  * fix. Skipped when better-sqlite3 is unavailable.
  */
 import { test, describe } from "node:test";

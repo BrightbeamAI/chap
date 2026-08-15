@@ -212,7 +212,8 @@ workspace without any CHAP-specific code:
 
 - `@brightbeamai/chap-coordinator-mcp` (TypeScript) and
   `chap_coordinator.transports.mcp_server` (Python) target MCP
-  **2025-11-25**. All 39 CHAP methods become MCP tools named
+  **2026-07-28** and serve MCP **2025-11-25** clients as well. All 39
+  CHAP methods become MCP tools named
   `chap.<method>`. Reference stdio servers ship in
   `reference/mcp-server-{ts,py}/`.
 - `@brightbeamai/chap-coordinator-a2a` (TypeScript) and

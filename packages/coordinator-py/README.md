@@ -38,7 +38,8 @@ the same wheel under optional extras:
 - `chap_coordinator.transports.mcp_server` wraps a Coordinator as an
   MCP server. Every CHAP method becomes an MCP tool named
   `chap.<method>`. Reference stdio server at
-  `reference/mcp-server-py/`. Spec target: MCP 2025-11-25.
+  `reference/mcp-server-py/`. Spec target: MCP 2026-07-28, serving
+  2025-11-25 clients as well.
 - `chap_coordinator.transports.a2a_server` wraps a Coordinator as an
   A2A agent. Every CHAP method becomes an `AgentSkill` on the
   Agent Card. Reference FastAPI server at `reference/a2a-server-py/`.

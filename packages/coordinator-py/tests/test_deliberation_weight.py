@@ -1,7 +1,7 @@
 """
 Regression: a weighted_vote tally uses the weights the opener set at
 deliberate.open, not a weight the voter puts on their own vote. A voter not in
-the opener's map counts as 1.0. Guards the 0.2.7 fix.
+the opener's map counts as 1.0. Guards the 0.2.9 fix.
 """
 from __future__ import annotations
 

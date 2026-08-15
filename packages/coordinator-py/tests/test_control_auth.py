@@ -2,7 +2,7 @@
 Regression: every control/1.0 operation requires workspace membership.
 Without it a non-member could defeat the governance "emergency brake"
 (resume a paused workspace, raise the mode ceiling, cancel tasks).
-Guards the 0.2.7 fix.
+Guards the 0.2.9 fix.
 """
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 """
 Regression: a single unreadable row must not discard every other workspace.
 SqliteStore.load() skips a corrupt row and returns the rest, so one bad blob does
-not wipe the store on restart. Guards the 0.2.7 fix.
+not wipe the store on restart. Guards the 0.2.9 fix.
 """
 from __future__ import annotations
 

@@ -2,7 +2,7 @@
  * Regression: participant.join must not replace an existing member. A re-join
  * keeps the member's role, scopes and keys, refreshes only the verified identity
  * binding, and never accepts self-asserted jwks for an already-admitted URI.
- * Guards the 0.2.7 fix.
+ * Guards the 0.2.9 fix.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

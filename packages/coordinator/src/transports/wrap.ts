@@ -11,7 +11,7 @@
  * happened outside CHAP, wrap it so the audit log carries a faithful,
  * citable record.
  *
- * Spec target: CHAP 0.2. MCP 2025-11-25. A2A 1.0.
+ * Spec target: CHAP 0.2. MCP 2026-07-28. A2A 1.0.
  */
 
 import { contentHash } from "../canonical.js";

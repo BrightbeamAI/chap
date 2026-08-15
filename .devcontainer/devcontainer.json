@@ -1,0 +1,41 @@
+{
+  "name": "CHAP",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20-bookworm",
+
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "forwardPorts": [8080, 9090],
+  "portsAttributes": {
+    "8080": {
+      "label":     "CHAP Playground",
+      "onAutoForward": "openBrowser"
+    },
+    "9090": {
+      "label": "CHAP A2A reference server"
+    }
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "ms-python.python",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  "remoteEnv": {
+    "CHAP_NO_LLM": "1"
+  }
+}

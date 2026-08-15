@@ -320,7 +320,7 @@ For the wire-level details, see [`SPECIFICATION.md`](../SPECIFICATION.md)
 ## 10. Code
 
 The patterns above describe the **semantic** integration: how an MCP
-tool call shows up in a CHAP audit trail. CHAP 0.2.3 also ships a
+tool call shows up in a CHAP audit trail. CHAP also ships a
 **transport** integration that goes in the other direction: a CHAP
 Coordinator can present itself **as** an MCP server, so any MCP
 client (Claude Desktop, Cursor, Claude Code, the rest) can drive a
@@ -337,7 +337,7 @@ CHAP workspace from natural language.
 - `reference/mcp-server-ts/` and `reference/mcp-server-py/`. Runnable
   stdio servers you can point an MCP client at directly.
 
-Spec target: MCP **2025-11-25**.
+Spec target: MCP **2026-07-28**, serving MCP **2025-11-25** clients as well.
 
 ### What gets exposed
 
@@ -404,7 +404,7 @@ different roles for it.
 
 ### Wrap helper for inward citations
 
-CHAP 0.2.4 also ships a small library utility that codifies the
+CHAP also ships a small library utility that codifies the
 inward citation pattern from §2:
 
 - TypeScript: `wrapMcpToolCall(coord, workspace, options)` from

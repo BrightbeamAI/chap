@@ -1,7 +1,7 @@
 """
 Regression: decide.override records the artefact under review as its base, not a
 caller-supplied based_on_artefact. A fabricated "before" is ignored. Guards the
-0.2.7 fix.
+0.2.9 fix.
 """
 from __future__ import annotations
 

@@ -1,0 +1,79 @@
+name: 'CHAP Conformance'
+description: 'Run the CHAP conformance harness against an HTTP CHAP coordinator endpoint and fail the job if any vector does not match.'
+author: 'Brightbeam AI'
+branding:
+  icon: 'check-circle'
+  color: 'orange'
+
+inputs:
+  url:
+    description: "URL of the CHAP coordinator endpoint to test against (e.g. http://localhost:8080/chap). The endpoint must accept JSON-RPC 2.0 POSTs."
+    required: true
+  ref:
+    description: "Git ref of the BrightbeamAI/chap repository to source the harness from. Defaults to v0.2.5."
+    required: false
+    default: 'v0.2.5'
+  profiles:
+    description: "Comma-separated list of profiles to test. Default is the v0.2 conformance set: core,review,whisper,deliberation,handoff,control,routing."
+    required: false
+    default: 'core,review,whisper,deliberation,handoff,control,routing'
+  node-version:
+    description: "Node version to use."
+    required: false
+    default: '20'
+
+outputs:
+  passed:
+    description: "Number of vectors that passed."
+    value: ${{ steps.harness.outputs.passed }}
+  failed:
+    description: "Number of vectors that failed."
+    value: ${{ steps.harness.outputs.failed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Check out CHAP conformance harness
+      uses: actions/checkout@v4
+      with:
+        repository: BrightbeamAI/chap
+        ref: ${{ inputs.ref }}
+        path: .chap-conformance
+        sparse-checkout: |
+          conformance
+          schemas
+          packages/coordinator/src
+
+    - name: Install harness deps
+      shell: bash
+      run: |
+        cd .chap-conformance/conformance/harness
+        npm install --no-audit --no-fund
+
+    - name: Run conformance harness
+      id: harness
+      shell: bash
+      run: |
+        cd .chap-conformance/conformance/harness
+        set +e
+        npx tsx harness.ts \
+          --url='${{ inputs.url }}' \
+          --profiles='${{ inputs.profiles }}' \
+        | tee harness-output.txt
+        rc=${PIPESTATUS[0]}
+        set -e
+
+        passed=$(grep -oE '[0-9]+ tests passed' harness-output.txt | tail -1 | grep -oE '[0-9]+' || echo 0)
+        failed=$(grep -oE '[0-9]+ tests failed' harness-output.txt | tail -1 | grep -oE '[0-9]+' || echo 0)
+        echo "passed=$passed" >> "$GITHUB_OUTPUT"
+        echo "failed=$failed" >> "$GITHUB_OUTPUT"
+
+        if [ "$rc" -ne 0 ]; then
+          echo "::error::Conformance harness failed: $failed vector(s) did not match."
+          exit "$rc"
+        fi

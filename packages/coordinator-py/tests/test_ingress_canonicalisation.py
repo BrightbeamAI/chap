@@ -2,7 +2,7 @@
 Regression: dispatch must reject an envelope it cannot canonicalise instead of
 letting a handler run and then raising while linking the audit chain. A
 non-integer or unsafe-integer number is refused with PARAMS, before any state
-changes. Guards the 0.2.7 fix.
+changes. Guards the 0.2.9 fix.
 """
 from __future__ import annotations
 

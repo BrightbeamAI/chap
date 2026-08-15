@@ -2,7 +2,7 @@
  * Regression: escalate.raise requires the caller to be a workspace member and
  * refuses a terminal task. Per SPECIFICATION.md the transition is "any
  * non-terminal -> escalated", with terminal states completed/cancelled/superseded.
- * Guards the 0.2.7 fix.
+ * Guards the 0.2.9 fix.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

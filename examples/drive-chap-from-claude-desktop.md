@@ -12,7 +12,8 @@ syntax; the CHAP server side is identical.
 ## Prerequisites
 
 - An MCP client. This walkthrough assumes Claude Desktop, but any
-  client that speaks the MCP 2025-11-25 stdio transport will work.
+  client that speaks the MCP 2026-07-28 or 2025-11-25 stdio transport
+  will work.
 - Either Node.js 18+ (for the TypeScript reference) or Python 3.10+
   (for the Python reference). Pick whichever you'd rather debug in;
   both expose the same 39 tools and behave identically over the wire.

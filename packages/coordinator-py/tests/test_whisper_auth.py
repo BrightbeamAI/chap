@@ -1,7 +1,7 @@
 """
 Regression: whisper.answer may only be answered by a participant the whisper
 was addressed to (its askee set); a broadcast scope is satisfied by any
-member. Guards the 0.2.7 fix against an arbitrary party answering a directed
+member. Guards the 0.2.9 fix against an arbitrary party answering a directed
 whisper.
 """
 from __future__ import annotations

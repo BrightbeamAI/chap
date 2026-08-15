@@ -2,7 +2,7 @@
  * Regression: read-only methods (audit.read, workspace.describe,
  * audit.verify_chain, audit.verify_receipt) do not append to the audit chain.
  * Recording a read grew and re-linked the chain each time it was inspected.
- * Guards the 0.2.7 fix.
+ * Guards the 0.2.9 fix.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

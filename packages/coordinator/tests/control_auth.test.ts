@@ -1,7 +1,7 @@
 /**
  * Regression: every control/1.0 operation requires workspace membership.
  * Without it a non-member could defeat the governance "emergency brake".
- * Guards the 0.2.7 fix.
+ * Guards the 0.2.9 fix.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -1,7 +1,7 @@
 /**
  * Regression: a revoked signing key must not be usable by backdating the
  * envelope's self-asserted `ts` to before the revocation. Revocation is
- * checked against the coordinator's trusted clock. Guards the 0.2.7 fix.
+ * checked against the coordinator's trusted clock. Guards the 0.2.9 fix.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

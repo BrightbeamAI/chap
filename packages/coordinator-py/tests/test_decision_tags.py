@@ -1,7 +1,7 @@
 """
 Regression: decision tags must be a list of strings, per the schema
 (schemas/core/chap-task.schema.json). A non-string tag is rejected with PARAMS.
-Guards the 0.2.7 fix.
+Guards the 0.2.9 fix.
 """
 from __future__ import annotations
 

@@ -17,15 +17,15 @@ and whether they pass the published conformance harness.
 
 | Name                        | Language    | CHAP version | Profile surface | Conformance | Status      | License      | Authors            |
 | --------------------------- | ----------- | ------------ | --------------- | ----------- | ----------- | ------------ | ------------------ |
-| `@brightbeamai/chap-coordinator`         | TypeScript  | 0.2.7        | Full v0.2 (39 methods) | 23/23 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
-| `chap-coordinator` (Python) | Python 3.10+ | 0.2.7       | Full v0.2 (39 methods) | 23/23 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
-| `@brightbeamai/chap-coordinator-mcp`     | TypeScript  | 0.2.7        | All 39 methods as MCP tools | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
-| `@brightbeamai/chap-coordinator-a2a`     | TypeScript  | 0.2.7        | All 39 methods as A2A skills | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
-| `chap-langgraph`            | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 10/10 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-pydantic-ai`          | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 17/17 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-ag2`                  | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 14/14 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-llama-index`          | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 13/13 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-google-adk`           | Python 3.10+ | 0.2.7       | Bridge: HIL path (`review`/`decide`) | 15/15 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/chap-coordinator`         | TypeScript  | 0.2.9        | Full v0.2 (39 methods) | 23/23 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
+| `chap-coordinator` (Python) | Python 3.10+ | 0.2.9        | Full v0.2 (39 methods) | 23/23 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/chap-coordinator-mcp`     | TypeScript  | 0.2.9        | All 39 methods as MCP tools | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/chap-coordinator-a2a`     | TypeScript  | 0.2.9        | All 39 methods as A2A skills | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
+| `chap-langgraph`            | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | 10/10 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-pydantic-ai`          | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | 17/17 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-ag2`                  | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | 14/14 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-llama-index`          | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | 13/13 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-google-adk`           | Python 3.10+ | 0.2.9        | Bridge: HIL path (`review`/`decide`) | 15/15 bridge tests | Beta | Apache-2.0 | Brightbeam AI |
 
 ## Notes by implementation
 
@@ -56,9 +56,9 @@ reference.
 ### `@brightbeamai/chap-coordinator-mcp` (MCP transport adapter)
 
 Wraps a Coordinator as an MCP server. Every CHAP method becomes an
-MCP tool named `chap.<method>`. Spec target: MCP 2025-11-25. Stateless
-adapter; correctness is fully inherited from the underlying
-Coordinator.
+MCP tool named `chap.<method>`. Spec target: MCP 2026-07-28, serving
+2025-11-25 clients as well. Stateless adapter; correctness is fully
+inherited from the underlying Coordinator.
 
 Package: [`packages/coordinator-mcp/`](./packages/coordinator-mcp/) ·
 Walkthrough: [`examples/drive-chap-from-claude-desktop.md`](./examples/drive-chap-from-claude-desktop.md).

@@ -2,7 +2,7 @@
 Regression: audit.verify_chain must not report a clean log as tampered when the
 workspace has no chain. An unchained workspace is refused, and a workspace whose
 chain was enabled mid-life replays only from its first chained entry. Guards the
-0.2.7 fix.
+0.2.9 fix.
 """
 from __future__ import annotations
 

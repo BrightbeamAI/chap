@@ -100,7 +100,12 @@ export function registerWhisper(coord: Coordinator): void {
     prompt.answer_option = answerOption;
     prompt.answer_text = answerText;
     prompt.comment = p.comment as string | undefined;
-    return { result: { answered: true, whisper_id: prompt.id } };
+    // Echo the whisper's task_id onto the recorded envelope so a
+    // task-filtered audit.read returns the answer alongside the ask. The
+    // value comes from the stored whisper, not the caller, so an answer
+    // cannot be filed against a different task.
+    p.task_id = prompt.task_id;
+    return { result: { answered: true, whisper_id: prompt.id, task_id: prompt.task_id } };
   });
 
   // Expose the lapse-check function on the coordinator instance.
@@ -126,6 +131,11 @@ export function registerWhisper(coord: Coordinator): void {
           ts: coord.now(),
           kind: "whisper_lapsed",
           whisper_id: prompt.id,
+          // Carry the task so a task-filtered audit.read surfaces the
+          // lapse. A lapsed whisper applies its default with no human
+          // input, so it is the case most in need of being visible on
+          // the task's thread.
+          task_id: prompt.task_id,
           default_applied: prompt.default_if_lapsed,
         },
       };

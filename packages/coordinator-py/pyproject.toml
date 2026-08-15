@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chap-coordinator"
-version = "0.2.8"
+version = "0.2.9"
 description = "Python reference implementation of the Collaborative Human-Agent Protocol (CHAP)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,14 +31,14 @@ dependencies = []
 
 [project.optional-dependencies]
 crypto = ["cryptography>=42"]
-mcp = ["mcp>=1.28"]
+mcp = ["mcp>=2,<3"]
 a2a = ["a2a-sdk>=1.1", "fastapi>=0.110", "uvicorn>=0.27"]
 dev = [
     "pytest>=7",
     "pytest-asyncio>=0.21",
     "pytest-cov>=4",
     "cryptography>=42",
-    "mcp>=1.28",
+    "mcp>=2,<3",
     "a2a-sdk>=1.1",
     "fastapi>=0.110",
     "uvicorn>=0.27",

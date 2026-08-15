@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs on the same branch when a new commit lands.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typescript:
+    name: TypeScript (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+
+      - name: Install workspace deps
+        run: npm install --no-audit --no-fund
+
+      - name: Build all TS packages (required before downstream typecheck)
+        run: npm run build
+
+      - name: Typecheck all packages
+        run: npm run typecheck --workspaces --if-present
+
+      - name: Schema drift check
+        run: npm run check:schemas
+
+      - name: Test all TS packages
+        run: npm test --workspaces --if-present
+
+      - name: Playground smoke tests
+        working-directory: reference/playground
+        run: npx tsx --test tests/smoke.test.ts
+
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: 'pip'
+
+      - name: Install chap-coordinator
+        run: pip install -e ./packages/coordinator-py
+
+      - name: Install the framework bridges
+        run: |
+          for bridge in chap-langgraph chap-pydantic-ai chap-llama-index chap-ag2 chap-google-adk; do
+            pip install -e "./packages/$bridge"
+          done
+
+      - name: Install test deps
+        # The dev extra carries pytest-asyncio (required by asyncio_mode =
+        # "auto") and the optional mcp and a2a SDKs the transport tests import.
+        # Without it the async and transport suites fail at collection.
+        run: pip install -e "./packages/coordinator-py[dev]"
+
+      - name: Test chap-coordinator
+        working-directory: packages/coordinator-py
+        run: pytest tests/ -q
+
+      - name: Test the framework bridges
+        run: |
+          for bridge in chap-langgraph chap-pydantic-ai chap-llama-index chap-ag2 chap-google-adk; do
+            pytest "packages/$bridge/tests/" -q
+          done
+
+  conformance:
+    name: Cross-language conformance
+    runs-on: ubuntu-latest
+    needs: [typescript, python]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install everything
+        run: |
+          npm install --no-audit --no-fund
+          pip install -e ./packages/coordinator-py
+          cd conformance/harness && npm install --no-audit --no-fund
+
+      - name: Build TS packages
+        run: npm run build
+
+      - name: Conformance against Python reference
+        run: |
+          python3 reference/python/server.py --port 8775 &
+          SERVER=$!
+          sleep 2
+          cd conformance/harness
+          npx tsx harness.ts --url=http://localhost:8775/chap
+          kill $SERVER 2>/dev/null || true
+
+      - name: Conformance against TypeScript reference
+        run: |
+          PORT=8776 npx tsx reference/core-plus-review/server.ts &
+          SERVER=$!
+          sleep 3
+          cd conformance/harness
+          npx tsx harness.ts --url=http://localhost:8776/chap
+          kill $SERVER 2>/dev/null || true
+
+  link-and-style:
+    name: Docs (em-dashes, link integrity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Em-dash check
+        run: |
+          OFFENDERS=$(find . -name "*.md" -not -path "./node_modules/*" -not -path "*/dist/*" -exec grep -l "—" {} \; 2>/dev/null)
+          if [ -n "$OFFENDERS" ]; then
+            echo "::error::Em-dashes found in: $OFFENDERS"
+            for f in $OFFENDERS; do
+              echo "--- $f ---"
+              grep -n "—" "$f"
+            done
+            exit 1
+          fi
+
+      - name: Markdown link integrity
+        run: |
+          python3 << 'PYEOF'
+          import re, os, sys
+          broken = 0
+          checked = 0
+          for root, dirs, files in os.walk('.'):
+              if any(x in root for x in ['node_modules', '.git', '/dist/']):
+                  continue
+              for f in files:
+                  if not f.endswith('.md'):
+                      continue
+                  path = os.path.join(root, f)
+                  for m in re.finditer(r'\]\(([^)]+)\)', open(path).read()):
+                      link = m.group(1).split('#')[0].strip()
+                      if not link or link.startswith(('http://', 'https://', 'mailto:')):
+                          continue
+                      checked += 1
+                      t = (os.path.normpath(os.path.join(os.path.dirname(path), link))
+                           if not link.startswith('/')
+                           else os.path.join('.', link.lstrip('/')))
+                      if not os.path.exists(t):
+                          broken += 1
+                          print(f'::error file={path}::Broken link: {link}')
+          print(f'{checked} links checked, {broken} broken')
+          sys.exit(1 if broken else 0)
+          PYEOF

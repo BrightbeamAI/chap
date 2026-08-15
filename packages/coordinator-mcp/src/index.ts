@@ -4,7 +4,8 @@
  * MCP server adapter for a CHAP Coordinator. Wraps a Coordinator
  * instance and exposes every CHAP method as an MCP tool.
  *
- * Spec target: MCP 2025-11-25 (current stable). CHAP 0.2.
+ * Spec target: MCP 2026-07-28 (current), serving MCP 2025-11-25
+ * clients as well. CHAP 0.2.
  *
  * Usage (stdio):
  *
@@ -13,7 +14,7 @@
  *   import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
  *
  *   const coord = new Coordinator({ ... });
- *   const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.7" });
+ *   const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.9" });
  *   await server.connect(new StdioServerTransport());
  *
  * Usage (Streamable HTTP): see reference/mcp-server-ts/server.ts.
@@ -44,22 +45,57 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ErrorCode,
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import type { Coordinator, Envelope } from "@brightbeamai/chap-coordinator";
 
 import { SCHEMAS, TOOL_NAMES, methodForTool, coerceToolArgs } from "./schemas.js";
 import { TOOL_DESCRIPTIONS } from "./tools.js";
+import { classifyEnvelope, ProtocolError, SUPPORTED_PROTOCOL_VERSIONS, type ProtocolEra } from "./envelope.js";
 
 export { SCHEMAS, TOOL_NAMES, schemaFor, methodForTool, coerceToolArgs } from "./schemas.js";
 export { TOOL_DESCRIPTIONS } from "./tools.js";
 export type { JsonSchema } from "./schemas.js";
 
+export {
+  ProtocolError,
+  MODERN_PROTOCOL_VERSIONS,
+  SUPPORTED_PROTOCOL_VERSIONS,
+  UNSUPPORTED_PROTOCOL_VERSION,
+  META_PROTOCOL_VERSION,
+  META_CLIENT_INFO,
+  META_CLIENT_CAPABILITIES,
+  classifyEnvelope,
+} from "./envelope.js";
+export type { ProtocolEra } from "./envelope.js";
+
+/** `_meta` key carrying server identity (MCP 2026-07-28, SEP-2575). */
+export const META_SERVER_INFO = "io.modelcontextprotocol/serverInfo";
+
+/** Freshness hint for cacheable list results. The CHAP tool surface is
+ *  fixed at construction, so a long TTL is safe. */
+const LIST_TTL_MS = 3_600_000;
+
+/**
+ * Request schema for `server/discover` (MCP 2026-07-28, SEP-2575).
+ *
+ * Hand-written because the pinned SDK major predates the 2026 era. The
+ * shape is permissive on `params` so a probe carrying `_meta`
+ * (protocolVersion, clientInfo, clientCapabilities) validates, and a
+ * bare probe with no params validates too.
+ */
+export const ServerDiscoverRequestSchema = z.object({
+  method: z.literal("server/discover"),
+  params: z.optional(z.object({ _meta: z.optional(z.record(z.string(), z.unknown())) }).loose()),
+});
+
 export interface ChapMcpOptions {
   /** Server name advertised to MCP clients. Default: "chap". */
   name?: string;
-  /** Server version. Default: "0.2.7". */
+  /** Server version. Default: "0.2.9". */
   version?: string;
   /** Override the list of CHAP methods to expose. Default: all 39. */
   toolFilter?: (toolName: string) => boolean;
@@ -74,11 +110,13 @@ export interface ChapMcpOptions {
  * start serving.
  */
 export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = {}): Server {
+  const serverInfo = {
+    name:    options.name    ?? "chap",
+    version: options.version ?? "0.2.9",
+  };
+
   const server = new Server(
-    {
-      name:    options.name    ?? "chap",
-      version: options.version ?? "0.2.7",
-    },
+    serverInfo,
     {
       capabilities: {
         tools: {},
@@ -99,20 +137,76 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
       inputSchema: SCHEMAS[name] as Tool["inputSchema"],
     }));
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: enabledTools,
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async (request) => {
+    // Rejects a malformed or unsupported envelope before any work is done.
+    const era = classifyEnvelope(request.params);
+    if (era === "legacy") return { tools: enabledTools };
+
+    // 2026-07-28 requires every result to be typed, and makes list results
+    // cacheable. These fields are 2026 vocabulary, so they are emitted only
+    // to a caller that asked in 2026 terms; a handshake-era session gets the
+    // result shape its own revision defines.
+    return {
+      tools:      enabledTools,
+      resultType: "complete",
+      ttlMs:      LIST_TTL_MS,
+      cacheScope: "public",
+      _meta:      { [META_SERVER_INFO]: serverInfo },
+    };
+  });
+
+  // server/discover (MCP 2026-07-28, SEP-2575). Servers MUST implement it;
+  // clients MAY call it for up-front version selection, and on stdio a
+  // client that supports both eras SHOULD probe with it first. Answering
+  // the probe is what keeps this server usable by 2026-era clients: a
+  // server that stays silent is only reachable through timeout-based
+  // fallback to the legacy initialize handshake.
+  //
+  // Registered against a hand-written schema because the pinned SDK
+  // (1.x) predates the 2026 era and does not export one yet. When the
+  // SDK ships its own ServerDiscover types this can be swapped for them
+  // without changing the wire behaviour.
+  server.setRequestHandler(ServerDiscoverRequestSchema, async (request) => {
+    // `server/discover` is 2026 vocabulary. A request that carries no
+    // per-request envelope belongs to the handshake era, where the method
+    // does not exist; answering it anyway would tell a dual-era client that
+    // a legacy connection can speak 2026. Mirrors the Python SDK, which
+    // returns MethodNotFound in the same situation.
+    if (classifyEnvelope(request.params) === "legacy") {
+      // `data` carries the method name, matching what the Python SDK emits,
+      // so a client sees the same error either side.
+      throw new ProtocolError(ErrorCode.MethodNotFound, "Method not found", "server/discover");
+    }
+    return {
+    resultType:       "complete",
+    supportedVersions: SUPPORTED_PROTOCOL_VERSIONS,
+    capabilities:     { tools: {} },
+    instructions:
+      "CHAP Coordinator exposed as MCP tools. Every tool call is recorded " +
+      "on the CHAP audit log; governed methods enforce membership and " +
+      "review rules server-side.",
+    ttlMs:      LIST_TTL_MS,
+    cacheScope: "public",
+    _meta:      { [META_SERVER_INFO]: serverInfo },
+    };
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
+    const era = classifyEnvelope(request.params);
+    // `resultType` is 2026 vocabulary: emitted to a modern caller, withheld
+    // from a handshake-era one whose revision does not define the field.
+    const terminal = <T extends object>(result: T): T =>
+      (era === "modern" ? { resultType: "complete", ...result } : result) as T;
+
     const toolName = request.params.name;
     const rawArgs = (request.params.arguments ?? {}) as Record<string, unknown>;
     const method = methodForTool(toolName);
 
     if (!method) {
-      return {
+      return terminal({
         isError: true,
         content: [{ type: "text", text: `Unknown CHAP tool: ${toolName}` }],
-      };
+      });
     }
 
     // Normalise stringified-JSON arguments (a common MCP-client
@@ -131,14 +225,14 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
       response = coord.dispatch(envelope);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      return {
+      return terminal({
         isError: true,
         content: [{ type: "text", text: `CHAP dispatch threw: ${msg}` }],
-      };
+      });
     }
 
     if (response.error) {
-      return {
+      return terminal({
         isError: true,
         content: [{
           type: "text",
@@ -148,15 +242,15 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
             ...(response.error.data !== undefined ? { data: response.error.data } : {}),
           }, null, 2),
         }],
-      };
+      });
     }
 
-    return {
+    return terminal({
       content: [{
         type: "text",
         text: JSON.stringify(response.result, null, 2),
       }],
-    };
+    });
   });
 
   return server;

@@ -28,7 +28,7 @@ MCP client config (Claude Desktop, ~/Library/Application Support/Claude/claude_d
 The coordinator runs in-memory in this process. State is lost when
 the process exits.
 
-Spec target: MCP 2025-11-25. CHAP 0.2.
+Spec target: MCP 2026-07-28, serving 2025-11-25 clients as well. CHAP 0.2.
 """
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ async def main() -> None:
         ],
     ))
 
-    server = make_chap_mcp_server(coord, name="chap", version="0.2.3")
+    server = make_chap_mcp_server(coord, name="chap", version="0.2.9")
 
     # Log to stderr; stdout is reserved for the MCP protocol stream.
     print("CHAP MCP reference server starting on stdio.", file=sys.stderr)

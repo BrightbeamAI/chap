@@ -2,7 +2,7 @@
  * Regression: deliberation/1.0 open/close require workspace membership, so a
  * non-member cannot open a deliberation or close it to finalize the tally
  * early. Per-voter eligibility and double-vote checks still apply.
- * Guards the 0.2.7 fix.
+ * Guards the 0.2.9 fix.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

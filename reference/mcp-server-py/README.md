@@ -4,7 +4,7 @@ A stdio MCP server that wraps a CHAP Coordinator. The Python
 counterpart of [`reference/mcp-server-ts/`](../mcp-server-ts/);
 behaviour identical, same 39 tools, different language.
 
-Spec target: MCP 2025-11-25. CHAP 0.2.
+Spec target: MCP 2026-07-28, serving 2025-11-25 clients as well. CHAP 0.2.
 
 ## Install
 

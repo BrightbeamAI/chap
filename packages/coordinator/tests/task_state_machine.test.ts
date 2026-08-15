@@ -1,7 +1,7 @@
 /**
  * Regression: task.complete is only legal from an active state (created or
  * in_progress). It must not revive a terminated task or bypass a pause.
- * Guards the 0.2.7 fix.
+ * Guards the 0.2.9 fix.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

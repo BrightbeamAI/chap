@@ -2,7 +2,7 @@
 Regression: _rehydrate_workspace reconstructs Member.keys as KeyRecord objects
 and Task.review as a ReviewState, so a persisted workspace is usable after a
 restart -- an in-flight review can still be decided instead of raising on a
-raw dict. Guards the 0.2.7 fix.
+raw dict. Guards the 0.2.9 fix.
 """
 from __future__ import annotations
 

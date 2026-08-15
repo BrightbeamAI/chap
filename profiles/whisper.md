@@ -73,12 +73,23 @@ discouraged because it defeats analytical aggregation.
 }
 ```
 
+`task_id` identifies the task the whisper was raised against. The
+Coordinator MUST record the answer against the `task_id` held on the
+whisper identified by `whisper_id`, overwriting any value supplied by
+the caller, and SHOULD echo it in the response. This keeps an
+`audit.read` filtered by `task_id` returning the answer alongside the
+ask, so the thread is recoverable without knowing the whisper id, and
+prevents an answer being filed against a task it did not belong to.
+
 ---
 
 ## 4. Lapse handling
 
 If `deadline_ms` elapses without an answer, the Coordinator MUST
-emit a notification recording the lapse and the applied default:
+emit a notification recording the lapse and the applied default. The
+notification MUST carry the whisper's `task_id`, so a lapse (where the
+default is applied with no human input) is visible on an `audit.read`
+filtered by task:
 
 ```json
 {
@@ -90,6 +101,7 @@ emit a notification recording the lapse and the applied default:
     "ts":        "2026-05-17T14:23:01Z",
     "kind":      "whisper_lapsed",
     "whisper_id": "01HZ…",
+    "task_id":    "tsk_…",
     "default_applied": "confirm_with_customer"
   }
 }

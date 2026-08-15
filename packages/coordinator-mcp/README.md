@@ -5,7 +5,7 @@ instance and exposes every CHAP method as an [MCP](https://modelcontextprotocol.
 tool, so any MCP client (Claude Desktop, Cursor, Claude Code, the
 rest) can drive a CHAP workspace directly.
 
-Spec target: **MCP 2025-11-25** · CHAP 0.2.
+Spec target: **MCP 2026-07-28**, serving MCP 2025-11-25 clients as well · CHAP 0.2.
 
 ## Install
 
@@ -35,7 +35,7 @@ const coord = new Coordinator({
   defaultProfiles: ["core/1.0", "review/1.0", "audit-scitt/1.0"],
 });
 
-const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.7" });
+const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.9" });
 await server.connect(new StdioServerTransport());
 ```
 

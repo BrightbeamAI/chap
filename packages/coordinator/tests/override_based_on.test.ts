@@ -1,7 +1,7 @@
 /**
  * Regression: decide.override records the artefact under review as its base, not
  * a caller-supplied based_on_artefact. A fabricated "before" is ignored. Guards
- * the 0.2.7 fix.
+ * the 0.2.9 fix.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

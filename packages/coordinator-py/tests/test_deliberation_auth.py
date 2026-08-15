@@ -2,7 +2,7 @@
 Regression: deliberation/1.0 open/close/comment require workspace membership,
 so a non-member cannot open a deliberation (setting its rule/participants) or
 close it to finalize the tally early. The per-voter eligibility and
-double-vote checks are separate and still apply. Guards the 0.2.7 fix.
+double-vote checks are separate and still apply. Guards the 0.2.9 fix.
 """
 from __future__ import annotations
 

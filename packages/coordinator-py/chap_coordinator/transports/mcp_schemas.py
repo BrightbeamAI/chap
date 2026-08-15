@@ -14,7 +14,7 @@ written for that audience as well as for validation.
 Mirrors ``packages/coordinator-mcp/src/schemas.ts`` exactly; the two
 implementations must stay in lockstep.
 
-Aligned with CHAP 0.2 (see ``profiles/*.md``) and MCP 2025-11-25.
+Aligned with CHAP 0.2 (see ``profiles/*.md``) and MCP 2026-07-28.
 """
 from __future__ import annotations
 

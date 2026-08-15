@@ -1,7 +1,7 @@
 """
 Regression: task.complete is only legal from an active state (created or
 in_progress). It must not revive a terminated task (cancelled/superseded) or
-bypass a pause. Guards the 0.2.7 fix.
+bypass a pause. Guards the 0.2.9 fix.
 """
 from __future__ import annotations
 

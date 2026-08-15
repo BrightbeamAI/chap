@@ -2,7 +2,7 @@
 Regression: a self-asserted jwks is not co-registered for an identity-bound
 participant. When an OIDC/VC join pins a cnf.jwk, that verifier-attested key is
 the only signing key; a key the joiner also supplied is ignored so it cannot be
-used to sign as that identity. Guards the 0.2.7 fix.
+used to sign as that identity. Guards the 0.2.9 fix.
 """
 from __future__ import annotations
 

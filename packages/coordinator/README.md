@@ -33,7 +33,8 @@ A2A ecosystems:
 - [`@brightbeamai/chap-coordinator-mcp`](https://github.com/BrightbeamAI/chap/tree/main/packages/coordinator-mcp) wraps a Coordinator
   as an MCP server. Every CHAP method becomes an MCP tool named
   `chap.<method>`. Reference stdio server at
-  `reference/mcp-server-ts/`. Spec target: MCP 2025-11-25.
+  `reference/mcp-server-ts/`. Spec target: MCP 2026-07-28, serving
+  2025-11-25 clients as well.
 - [`@brightbeamai/chap-coordinator-a2a`](https://github.com/BrightbeamAI/chap/tree/main/packages/coordinator-a2a) wraps a Coordinator
   as an A2A agent. Every CHAP method becomes an `AgentSkill` on the
   Agent Card. Reference Express server at `reference/a2a-server-ts/`.

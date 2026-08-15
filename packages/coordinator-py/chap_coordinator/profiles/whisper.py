@@ -116,7 +116,14 @@ def register_whisper(coord: "Coordinator") -> None:
         prompt.answer_option = answer_option
         prompt.answer_text = answer_text
         prompt.comment = p.get("comment")
-        return {"result": {"answered": True, "whisper_id": prompt.id}}
+        # Echo the whisper's task_id onto the recorded envelope so a
+        # task-filtered audit.read returns the answer alongside the ask.
+        # The value comes from the stored whisper, not the caller, so an
+        # answer cannot be filed against a different task.
+        p["task_id"] = prompt.task_id
+        return {"result": {"answered": True,
+                           "whisper_id": prompt.id,
+                           "task_id": prompt.task_id}}
 
     def check_lapses(workspace_id: str, now: str | None = None) -> list[dict]:
         """Apply deadlines to all pending whispers in a workspace.
@@ -150,6 +157,11 @@ def register_whisper(coord: "Coordinator") -> None:
                     "ts": coord.now_iso(),
                     "kind": "whisper_lapsed",
                     "whisper_id": prompt.id,
+                    # Carry the task so a task-filtered audit.read surfaces
+                    # the lapse. A lapsed whisper applies its default with
+                    # no human input, so it is the case most in need of
+                    # being visible on the task's thread.
+                    "task_id": prompt.task_id,
                     "default_applied": prompt.default_if_lapsed,
                 },
             }

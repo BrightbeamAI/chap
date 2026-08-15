@@ -26,7 +26,7 @@
  * store on top via `coord.onAudit(...)` and `coord.snapshot()` /
  * `coord.restore()`.
  *
- * Spec target: MCP 2025-11-25. CHAP 0.2.
+ * Spec target: MCP 2026-07-28, serving 2025-11-25 clients as well. CHAP 0.2.
  */
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -44,7 +44,7 @@ const coord = new Coordinator({
 
 const server = makeChapMcpServer(coord, {
   name:    "chap",
-  version: "0.2.3",
+  version: "0.2.9",
 });
 
 // Log to stderr only; stdout is reserved for the MCP protocol stream.
