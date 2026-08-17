@@ -643,6 +643,8 @@ Transitions are triggered by methods:
 | accepted           | `task.start`                  | in_progress       |
 | in_progress        | `task.complete`               | completed         |
 | in_progress        | `review.request`              | review_requested  |
+| review_requested   | `review.request` (same artefact) | review_requested (reviewer set widened) |
+| review_requested   | `review.request` (different artefact) | refused, -32014 |
 | review_requested   | `decide.approve`              | completed         |
 | review_requested   | `decide.reject`               | (back to in_progress or declined per policy) |
 | review_requested   | `decide.override`             | completed (with override artefact) |

@@ -120,7 +120,7 @@ contains:
 | Security           | Threats introduced, mitigated, or unchanged          |
 | Open questions     | Known unresolved items                               |
 
-CEPs are submitted as a pull request to `heps/CEP-NNN.md`. The
+CEPs are submitted as a pull request to `ceps/CEP-NNN.md`. The
 Editor assigns the number and triages.
 
 ### 3.3 Discussion period

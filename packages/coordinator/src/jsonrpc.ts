@@ -20,6 +20,7 @@ export const E = {
   NOT_AUTHORISED: -32011,
   PATCH_FAILED:   -32012,
   REVIEW_LAPSED:  -32013,
+  REVIEW_ALREADY_OPEN: -32014,
 
   // whisper/1.0 profile (profiles/whisper.md S6)
   WHISPER_ALREADY_ANSWERED:    -32020,
@@ -52,6 +53,7 @@ export const E = {
   SIG_KEY_NOT_FOUND:         -32071,
   SIG_KEY_REVOKED:           -32072,
   SIG_ROTATION_KEY_MISMATCH: -32073,
+  SIG_ARTEFACT_DIGEST_MISMATCH: -32074,
 
   // audit-scitt/1.0 profile (profiles/audit-scitt.md S8)
   SCITT_UNREACHABLE:        -32080,

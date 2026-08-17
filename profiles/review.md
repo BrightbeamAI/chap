@@ -71,10 +71,68 @@ task whose `review.required` was true.
 Supported `rule` values: `any_one_approves`, `all_approve`.
 The `deliberation` profile adds richer rules (`quorum:N`, weighted).
 
+**Re-request on an open review.** A review already open on the task
+constrains what a second `review.request` may do.
+
+- If the `artefact` is byte-identical under JCS to the one already
+  under review, the request is an **amendment**: the reviewers in `to`
+  are added to the existing set, decisions already cast are preserved,
+  and the result carries `"amended": true` with the resulting
+  `requested_to`. This is how a reviewer is added to a review in
+  flight.
+- If the `artefact` differs, the Coordinator MUST refuse with `-32014`
+  and change nothing. Replacing the artefact underneath an open review
+  would let a reviewer decide on content they never saw, and would
+  discard decisions already cast while their envelopes remain in the
+  audit log, so a quorum could appear to have been assembled across two
+  different artefacts. To review new content, first close the open
+  review with a decision, an abstention, an escalation, or
+  `control.cancel`.
+- A request that would change the `rule` of an open review MUST also be
+  refused with `-32014`. The rule under which reviewers agreed to
+  decide is fixed for the life of that review.
+
 ### 3.2 `decide.approve` · `decide.reject`
 
 Straightforward. The reviewer's identity, comment, and tags are
 preserved as a `decision` artefact.
+
+**Binding the decision to the content (`approved_artefact_digest`).**
+A decision names `task_id`, which identifies *which* review it settles
+but not *what* was decided. A relying party consuming the decision as
+evidence therefore cannot tell, from the envelope alone, which content
+the human actually approved.
+
+`decide.approve`, `decide.reject` and `decide.override` accept an
+optional `approved_artefact_digest`: SHA-256 over the RFC 8785 (JCS)
+canonicalisation of the artefact under review, in the same
+`sha256:<hex>` form the evidence chain already uses. The reviewer's
+client computes it from the artefact the human was shown at
+`review.request`.
+
+Because the digest sits in `params`, it falls inside whatever the
+envelope signature covers under `security-signed/1.0`. The decision
+then attests content rather than a task reference, and a relying party
+can verify it against the artefact without trusting the Coordinator
+that produced the decision.
+
+When present, the Coordinator MUST compute the digest of the artefact
+under review and compare. On mismatch it MUST refuse with `-32074`,
+record no decision, and change no state. When absent, behaviour is
+exactly as it was: the field is optional and additive.
+
+```json
+{
+  "method": "decide.approve",
+  "params": {
+    "workspace":  "wsp_demo",
+    "from":       "human:alice@example.org",
+    "task_id":    "tsk_…",
+    "approved_artefact_digest": "sha256:9f2c…",
+    "comment":    "Reads well, ship it."
+  }
+}
+```
 
 **Eligibility.** The actor (`from`) of any review decision MUST be a
 joined workspace member (Core §6.3.1) **and** MUST be one of the
@@ -285,6 +343,7 @@ piece of the protocol is plumbing.
 | `-32011`  | Actor is not authorised: not a workspace member, or a member who was not an addressed reviewer for this task. |
 | `-32012`  | JSON Patch application failed (with path in `data`).   |
 | `-32013`  | Review deadline has lapsed.                            |
+| `-32014`  | A review is already open on this task with different content, or the request would change the decision rule of an open review. |
 
 ---
 

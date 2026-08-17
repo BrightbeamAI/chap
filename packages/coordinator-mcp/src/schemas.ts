@@ -23,6 +23,8 @@ export interface JsonSchema {
   additionalProperties?: boolean | JsonSchema;
   oneOf?: JsonSchema[];
   default?: unknown;
+  /** JSON Schema `pattern`, used where a string has a fixed wire shape. */
+  pattern?: string;
 }
 
 // Common reusable fragments.
@@ -197,6 +199,11 @@ export const SCHEMAS: Record<string, JsonSchema> = {
     type: "object",
     properties: {
       workspace: WORKSPACE_ID, from: PARTICIPANT_URI, task_id: TASK_ID,
+      approved_artefact_digest: {
+        type: "string",
+        pattern: "^sha256:[0-9a-f]{64}$",
+        description: "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, as `sha256:<hex>`. Binds the decision to the exact content reviewed; refused with -32074 on mismatch.",
+      },
       comment: { type: "string" },
       tags:    { type: "array", items: { type: "string" } },
     },
@@ -207,6 +214,11 @@ export const SCHEMAS: Record<string, JsonSchema> = {
     type: "object",
     properties: {
       workspace: WORKSPACE_ID, from: PARTICIPANT_URI, task_id: TASK_ID,
+      approved_artefact_digest: {
+        type: "string",
+        pattern: "^sha256:[0-9a-f]{64}$",
+        description: "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, as `sha256:<hex>`. Binds the decision to the exact content reviewed; refused with -32074 on mismatch.",
+      },
       comment: { type: "string" },
       tags:    { type: "array", items: { type: "string" } },
       request_revision: { type: "boolean", description: "If true, task returns to in_progress instead of declined." },
@@ -217,6 +229,11 @@ export const SCHEMAS: Record<string, JsonSchema> = {
   "chap.decide.override": {
     type: "object",
     properties: {
+      approved_artefact_digest: {
+        type: "string",
+        pattern: "^sha256:[0-9a-f]{64}$",
+        description: "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, as `sha256:<hex>`. Binds the decision to the exact content reviewed; refused with -32074 on mismatch.",
+      },
       workspace: WORKSPACE_ID, from: PARTICIPANT_URI, task_id: TASK_ID,
       diff: {
         type: "array",

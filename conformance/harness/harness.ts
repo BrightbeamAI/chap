@@ -17,6 +17,8 @@
  *   2  invalid arguments or harness error
  */
 
+import { createHash } from "node:crypto";
+
 interface Args {
   url:        string;
   workspace:  string;
@@ -484,6 +486,107 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
     });
     assertEq(result?.state, "completed", "addressed reviewer should still be able to approve");
   });
+
+  // ---- CEP-001: binding a decision to the content it decided on ----
+
+  await test("Review profile", "rv-09", "approve with a matching approved_artefact_digest is accepted", async () => {
+    const artefact = { subject: "digest", body: "bound body", severity: "low" };
+    const { result: t } = await client.call("task.create", {
+      workspace: ws, from: "human:alice@example.org", to: "agent:reviewer-test-bot",
+      ts: new Date().toISOString(), kind: "review_test", assignee: "agent:reviewer-test-bot",
+      input: { test: true },
+    });
+    await client.call("task.update", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: "human:alice@example.org",
+      ts: new Date().toISOString(), task_id: t.task_id, state: "in_progress",
+    });
+    await client.call("review.request", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: ["human:alice@example.org"],
+      ts: new Date().toISOString(), task_id: t.task_id, artefact, rule: "any_one_approves",
+    });
+    const { result } = await client.call("decide.approve", {
+      workspace: ws, from: "human:alice@example.org", to: "service:coordinator@example.org",
+      ts: new Date().toISOString(), task_id: t.task_id,
+      approved_artefact_digest: contentDigest(artefact),
+    });
+    assertEq(result?.state, "completed", "a matching digest should approve as normal");
+  });
+
+  await test("Review profile", "rv-10", "approve with a mismatched digest is refused with -32074 and changes nothing", async () => {
+    const artefact = { subject: "digest", body: "the reviewed body", severity: "low" };
+    const { result: t } = await client.call("task.create", {
+      workspace: ws, from: "human:alice@example.org", to: "agent:reviewer-test-bot",
+      ts: new Date().toISOString(), kind: "review_test", assignee: "agent:reviewer-test-bot",
+      input: { test: true },
+    });
+    await client.call("task.update", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: "human:alice@example.org",
+      ts: new Date().toISOString(), task_id: t.task_id, state: "in_progress",
+    });
+    await client.call("review.request", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: ["human:alice@example.org"],
+      ts: new Date().toISOString(), task_id: t.task_id, artefact, rule: "any_one_approves",
+    });
+    const { error } = await client.call("decide.approve", {
+      workspace: ws, from: "human:alice@example.org", to: "service:coordinator@example.org",
+      ts: new Date().toISOString(), task_id: t.task_id,
+      approved_artefact_digest: contentDigest({ ...artefact, body: "swapped body" }),
+    });
+    assert(error?.code === -32074, `mismatched digest should fail with -32074, got ${JSON.stringify(error)}`);
+    // Nothing recorded: the addressed reviewer can still decide normally.
+    const { result } = await client.call("decide.approve", {
+      workspace: ws, from: "human:alice@example.org", to: "service:coordinator@example.org",
+      ts: new Date().toISOString(), task_id: t.task_id,
+    });
+    assertEq(result?.state, "completed", "a refused decision must leave the review open");
+  });
+
+  await test("Review profile", "rv-11", "review.request with different content on an open review is refused with -32014", async () => {
+    const artefact = { subject: "swap", body: "first body", severity: "low" };
+    const { result: t } = await client.call("task.create", {
+      workspace: ws, from: "human:alice@example.org", to: "agent:reviewer-test-bot",
+      ts: new Date().toISOString(), kind: "review_test", assignee: "agent:reviewer-test-bot",
+      input: { test: true },
+    });
+    await client.call("task.update", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: "human:alice@example.org",
+      ts: new Date().toISOString(), task_id: t.task_id, state: "in_progress",
+    });
+    await client.call("review.request", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: ["human:alice@example.org"],
+      ts: new Date().toISOString(), task_id: t.task_id, artefact, rule: "any_one_approves",
+    });
+    const { error } = await client.call("review.request", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: ["human:alice@example.org"],
+      ts: new Date().toISOString(), task_id: t.task_id,
+      artefact: { ...artefact, body: "substituted body" }, rule: "any_one_approves",
+    });
+    assert(error?.code === -32014, `artefact substitution should fail with -32014, got ${JSON.stringify(error)}`);
+    // The identical artefact is an amendment, not a substitution.
+    const { result } = await client.call("review.request", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: ["human:bystander@example.org"],
+      ts: new Date().toISOString(), task_id: t.task_id, artefact, rule: "any_one_approves",
+    });
+    assertEq(result?.amended, true, "an identical artefact should amend the reviewer set");
+  });
+}
+
+
+/**
+ * The digest construction CEP-001 uses: SHA-256 over RFC 8785 (JCS)
+ * canonicalisation, in CHAP's `sha256:<hex>` wire form. Implemented here so the
+ * harness stays dependency-free and checks the servers rather than a shared
+ * library.
+ */
+function contentDigest(value: unknown): string {
+  return "sha256:" + createHash("sha256").update(jcs(value), "utf-8").digest("hex");
+}
+
+function jcs(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(jcs).join(",") + "]";
+  const keys = Object.keys(value as Record<string, unknown>).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return "{" + keys.map(k => JSON.stringify(k) + ":" + jcs((value as Record<string, unknown>)[k])).join(",") + "}";
 }
 
 // ============================================================
