@@ -1,0 +1,37 @@
+name: Documentation problem
+description: A document is wrong, out of date, or a sample does not run.
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This includes samples that do not run. Several documents carry worked
+        examples, and an example that has drifted from the API is a real defect,
+        not a cosmetic one.
+  - type: input
+    id: file
+    attributes:
+      label: File
+      placeholder: IN_PRACTICE.md §4, or packages/coordinator/README.md
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - A sample does not run
+        - Statement is factually wrong
+        - Out of date with the current release
+        - Broken link or wrong section reference
+        - Unclear or missing explanation
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: Detail
+      description: What it says, and what it should say. If a sample fails, include the error.
+      render: markdown
+    validations:
+      required: true

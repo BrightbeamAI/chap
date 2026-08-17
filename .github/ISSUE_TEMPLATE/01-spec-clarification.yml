@@ -1,0 +1,38 @@
+name: Specification clarification
+description: Spec text is unclear or ambiguous, with no semantic change implied.
+labels: ["clarification"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when the specification could be read two ways and you want it
+        pinned down. If the spec is instead wrong, or disagrees with a reference
+        implementation, use **Specification defect** instead.
+  - type: input
+    id: location
+    attributes:
+      label: Where
+      description: Document and section, for example `SPECIFICATION.md` §10.1, or `profiles/review.md` §3.
+      placeholder: SPECIFICATION.md §10.1
+    validations:
+      required: true
+  - type: textarea
+    id: text
+    attributes:
+      label: The text in question
+      description: Quote it, so the issue stays readable after the document changes.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: ambiguity
+    attributes:
+      label: The two readings
+      description: What are the competing interpretations, and what would each imply for an implementation?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested wording
+      description: Optional. Wording that would settle it.

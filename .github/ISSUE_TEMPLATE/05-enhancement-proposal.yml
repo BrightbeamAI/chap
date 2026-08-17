@@ -1,0 +1,79 @@
+name: Enhancement proposal (pre-CEP)
+description: Propose a substantive addition or change to the protocol.
+labels: ["enhancement-proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Substantive changes go through a CHAP Enhancement Proposal, described in
+        [GOVERNANCE.md](https://github.com/BrightbeamAI/chap/blob/main/GOVERNANCE.md)
+        §3.2. This issue is the discussion step before a CEP, so an idea can be
+        shaped in public before anyone writes the document.
+
+        Two design principles get asked about early, so they are asked here:
+        adding to Core requires an extraordinary case, and a new profile must
+        justify not using an existing standard.
+  - type: input
+    id: summary
+    attributes:
+      label: One-sentence summary
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: What layer does this touch?
+      options:
+        - Core (envelope, wire format, or one of the seven Core methods)
+        - An existing profile
+        - A new profile
+        - A transport binding (MCP, A2A, or new)
+        - Tooling or conformance only
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What problem does this solve, and who is asking for it? Concrete situations carry more weight than hypotheticals.
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Sketch of the design
+      description: Wire-level specifics as far as you have them. Method names, params, error codes, schema deltas. A rough sketch is fine at this stage.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: existing
+    attributes:
+      label: Existing standards
+      description: >
+        What existing standard does this map to, and if you are proposing
+        something new, why does that standard not fit? See
+        RELATIONSHIP-TO-OTHER-STANDARDS.md.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility
+      description: What breaks? Is there a migration path? Wire-breaking changes need a major version and a documented migration period.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security
+      description: Threats introduced, mitigated, or unchanged.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Understood
+      options:
+        - label: I have read GOVERNANCE.md §3 and understand this needs a CEP and a public comment period before it can be accepted.
+          required: true

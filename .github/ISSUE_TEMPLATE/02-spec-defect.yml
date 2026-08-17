@@ -1,0 +1,52 @@
+name: Specification defect
+description: The spec states something that is wrong, contradicts itself, or disagrees with the reference implementations.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the highest-value report we get. A spec that disagrees with the
+        implementations means anyone building from it produces something the
+        references reject.
+
+        Security-sensitive findings do not belong here. See
+        [SECURITY.md](https://github.com/BrightbeamAI/chap/blob/main/SECURITY.md)
+        and use private vulnerability reporting.
+  - type: input
+    id: location
+    attributes:
+      label: Where
+      description: Document and section.
+      placeholder: SPECIFICATION.md §10.1
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: What the spec says
+      description: Quote it.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What is actually the case
+      description: >
+        What the implementations do, or why the statement cannot hold. If you
+        have observed the difference, include the envelope sequence and the
+        outputs.
+      render: markdown
+    validations:
+      required: true
+  - type: dropdown
+    id: observed
+    attributes:
+      label: How did you find it?
+      options:
+        - Reading the specification
+        - Building an independent implementation
+        - Running against a reference implementation
+        - Running the conformance harness
+    validations:
+      required: true

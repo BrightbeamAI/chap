@@ -1,0 +1,69 @@
+name: Implementation bug
+description: A published package or reference server behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a defect in the specification text itself, use **Specification
+        defect**. For a security issue, do not open a public issue: see
+        [SECURITY.md](https://github.com/BrightbeamAI/chap/blob/main/SECURITY.md).
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      options:
+        - "@brightbeamai/chap-coordinator (TypeScript)"
+        - "@brightbeamai/chap-coordinator-mcp (TypeScript, MCP adapter)"
+        - "@brightbeamai/chap-coordinator-a2a (TypeScript, A2A adapter)"
+        - "chap-coordinator (Python)"
+        - "chap-langgraph"
+        - "chap-pydantic-ai"
+        - "chap-llama-index"
+        - "chap-ag2"
+        - "chap-google-adk"
+        - "reference/ server or playground"
+        - "conformance harness"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: 0.2.9
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      description: Node or Python version, and OS. Node 20 is the floor; Python 3.10 is the floor.
+      placeholder: Node 22.11.0, macOS 15
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        Smallest thing that shows it. For a protocol issue, the envelope
+        sequence is usually enough, and is more useful than prose.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected versus actual
+      description: Include the error code if one was returned.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I am on the latest released version, or have said which version I am on and why.
+          required: true
+        - label: This is not a security issue. Security issues go through private reporting.
+          required: true

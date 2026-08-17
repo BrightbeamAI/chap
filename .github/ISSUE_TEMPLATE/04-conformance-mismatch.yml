@@ -1,0 +1,67 @@
+name: Conformance or interoperability mismatch
+description: Two implementations disagree, or a conformance vector fails against one of them.
+labels: ["bug", "conformance"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Cross-implementation divergence is the failure mode CHAP exists to
+        prevent, so these get triaged first. Byte-level detail beats prose:
+        canonical bytes, hashes and error codes are what settle it.
+  - type: input
+    id: method
+    attributes:
+      label: Method or vector
+      description: The CHAP method, or the conformance vector id.
+      placeholder: decide.override, or vector rv-08
+    validations:
+      required: true
+  - type: input
+    id: impl_a
+    attributes:
+      label: First implementation
+      description: Name and version. Include your own if it is a third-party implementation.
+      placeholder: chap-coordinator 0.2.9 (Python)
+    validations:
+      required: true
+  - type: input
+    id: impl_b
+    attributes:
+      label: Second implementation
+      placeholder: "@brightbeamai/chap-coordinator 0.2.9 (TypeScript)"
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Input
+      description: The envelope, or the sequence of envelopes.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: divergence
+    attributes:
+      label: What each returned
+      description: >
+        Both outputs, verbatim. For canonicalisation or chain issues include the
+        canonical bytes and the digests, since a difference is often invisible
+        in the rendered JSON.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Canonicalisation (JCS)
+        - Evidence chain linkage
+        - Signatures
+        - Error codes
+        - Authorisation floors
+        - Task or review state machine
+        - Transport adapter (MCP or A2A)
+        - Other
+    validations:
+      required: true
