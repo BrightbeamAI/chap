@@ -6,11 +6,14 @@
  *   - SqliteStore round-trip: workspaces, tasks, audit, chain head
  *   - In-memory SQLite (`:memory:`) for tests that need isolation
  *
- * Skips the SqliteStore tests when better-sqlite3 is not installed,
- * so the suite stays green on minimal CI environments.
+ * Skips the SqliteStore tests when better-sqlite3 is genuinely not installed,
+ * so the suite stays green on minimal environments. Set CHAP_REQUIRE_SQLITE to
+ * turn that skip into a failure, which is what CI does, so this coverage
+ * cannot be lost silently again.
  */
 
 import { test, describe } from "node:test";
+import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -93,11 +96,26 @@ describe("Coordinator persistence", () => {
 
 // ---- SqliteStore (skipped if better-sqlite3 unavailable) -----------
 
+// `require` is not defined under `tsx --test`, so a bare require() here threw
+// ReferenceError and the catch marked SQLite unavailable on every machine,
+// silently skipping these suites forever. createRequire is the ESM-correct
+// probe. CHAP_REQUIRE_SQLITE makes an unavailable driver a failure rather than
+// a skip, so CI cannot lose this coverage again without saying so.
+const require_ = createRequire(import.meta.url);
 let sqliteAvailable = true;
+let sqliteError = "";
 try {
-  require("better-sqlite3");
-} catch {
+  // Opening a database, not merely resolving the module. The JS wrapper
+  // resolves even when the native bindings were never built, so a require
+  // alone reports available and every test then fails on the bindings.
+  const Database = require_("better-sqlite3");
+  new Database(":memory:").close();
+} catch (e) {
   sqliteAvailable = false;
+  sqliteError = e instanceof Error ? e.message.split("\n")[0] : String(e);
+}
+if (!sqliteAvailable && process.env.CHAP_REQUIRE_SQLITE) {
+  throw new Error(`better-sqlite3 is required when CHAP_REQUIRE_SQLITE is set: ${sqliteError}`);
 }
 
 describe("SqliteStore", { skip: !sqliteAvailable }, () => {

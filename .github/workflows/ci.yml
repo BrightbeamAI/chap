@@ -41,6 +41,13 @@ jobs:
         run: npm run check:schemas
 
       - name: Test all TS packages
+        # The SQLite store suites skipped silently on every machine for months
+        # because their availability probe was broken. Strict mode makes an
+        # unavailable driver a failure, so the coverage cannot vanish quietly
+        # again. If better-sqlite3 ever stops building on the runner, this is
+        # the check that will say so.
+        env:
+          CHAP_REQUIRE_SQLITE: "1"
         run: npm test --workspaces --if-present
 
       - name: Playground smoke tests

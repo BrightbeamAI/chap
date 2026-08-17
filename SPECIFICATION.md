@@ -963,7 +963,45 @@ can replay the chain and confirm:
 A `audit.verify` request returns the result of this replay over a
 specified range.
 
-### 10.3 Checkpoints
+**What verification does not establish.** A successful replay proves the
+entries a verifier holds are internally consistent. It does not prove they
+are **complete**. A chain that lost entries, and was then re-linked from an
+earlier head, verifies exactly as a chain that never lost any: every
+`prev_hash` matches, every signature verifies, and the result is `ok`.
+
+This is inherent to a self-referential hash chain. Detecting absence needs a
+witness outside the chain, which is what `audit-scitt/1.0` provides: a
+transparency-service receipt for an entry is evidence it existed at a point
+in time, independent of whatever the Coordinator now holds. Deployments that
+need completeness and not merely integrity SHOULD anchor externally rather
+than rely on `audit.verify_chain` alone.
+
+The practical way to lose entries is to run more than one Coordinator
+instance against a shared store; see the single-writer requirement in
+§10.3.
+
+### 10.3 Single-writer requirement
+
+A Coordinator is a **single-writer** component. Its dispatch is serial, it
+holds workspace state in memory, and it computes each chain link from the
+head it holds. The store interface is a persistence mechanism, not a
+concurrency-control mechanism: `Store.save` is an unconditional write.
+
+Running two or more Coordinator instances against one shared store is
+therefore **not supported**. A stale instance's write replaces a newer one
+wholesale, so entries written by the other instance are lost, the chain is
+re-linked from the surviving instance's head, and `audit.verify_chain`
+reports `ok` on the result. The loss is silent and CHAP's own verification
+will not reveal it.
+
+Deployments needing more than one instance MUST serialise writes above the
+Coordinator, by partitioning workspaces across instances so that no
+workspace is ever written by two, or by an external lock. Enforcing this in
+the protocol, by making `Store.save` a compare-and-swap and dispatch
+re-runnable against reloaded state, is a larger change than it appears and
+is out of scope for 0.2.
+
+### 10.4 Checkpoints
 
 The Coordinator SHOULD emit periodic **checkpoint** entries
 (default: every 1000 entries) signed with its long-lived key. A
@@ -972,7 +1010,7 @@ params include the current head, the entry count, and the
 Coordinator's signature over both. Verifiers MAY anchor checkpoints
 to external transparency logs.
 
-### 10.4 External anchoring
+### 10.5 External anchoring
 
 For deployments requiring stronger tamper-evidence, workspaces MAY
 periodically publish their chain head to:
@@ -984,7 +1022,7 @@ periodically publish their chain head to:
 Anchoring is referenced from the workspace descriptor's `anchors[]`
 array; the format of each anchor reference is anchor-specific.
 
-### 10.5 Retention and redaction
+### 10.6 Retention and redaction
 
 Evidence entries are immutable. To remove a message's content
 (e.g. for compliance reasons), the Coordinator SHALL emit a

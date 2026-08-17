@@ -26,6 +26,7 @@
  * can fall back to MemoryStore or another implementation.
  */
 
+import { createRequire } from "node:module";
 import type { Store, WorkspaceRecord } from "./store.js";
 
 // better-sqlite3 has no published types in its own package, but the
@@ -61,14 +62,20 @@ export class SqliteStore implements Store {
   constructor(path: string, options: SqliteStoreOptions = {}) {
     let Database: new (path: string) => SqliteDatabase;
     try {
-      // require() is used so the dependency stays optional. ESM consumers
-      // can still load this file; the actual import is dynamic.
-      Database = require("better-sqlite3");
+      // Resolved at construction so the dependency stays optional: importing
+      // this module costs nothing if you never build a SqliteStore.
+      //
+      // createRequire rather than a bare require(). A bare one is undefined in
+      // an ES module, so from source it threw ReferenceError and this catch
+      // reported the dependency as missing when it was installed. The bundled
+      // build masked it by shimming require, which is why it went unnoticed.
+      Database = createRequire(import.meta.url)("better-sqlite3");
     } catch (err) {
+      const detail = err instanceof Error ? `: ${err.message.split("\n")[0]}` : "";
       throw new Error(
         "SqliteStore requires the `better-sqlite3` package. " +
         "Install it with `npm install better-sqlite3` " +
-        "or use MemoryStore for non-persistent workloads.",
+        `or use MemoryStore for non-persistent workloads${detail}`,
       );
     }
 

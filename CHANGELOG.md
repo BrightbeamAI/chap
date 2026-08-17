@@ -11,6 +11,40 @@ incremented under the same rules.
 
 ## Unreleased
 
+### Storage contract and verification limits (#69)
+
+- **The store contract no longer claims optimistic concurrency.**
+  `WorkspaceRecord.version` was documented as "monotonically increasing for
+  optimistic concurrency" in both languages while every `save` was an
+  unconditional upsert, and `sqlite.py` two files away described the same
+  component as single-writer. The field is recorded but not enforced, and the
+  docstrings now say so.
+
+- **The single-writer requirement is written down.** SPECIFICATION.md §10.3
+  states that running more than one Coordinator against a shared store is
+  unsupported, what happens if you do, and how to serialise writes above the
+  Coordinator instead.
+
+- **Verification proves consistency, not completeness.** §10.2 now records
+  that a chain which lost entries and was re-linked verifies exactly as one
+  that lost none, so `audit.verify_chain` returning `ok` does not mean nothing
+  is missing. Detecting absence needs a witness outside the chain, which is
+  what `audit-scitt/1.0` anchoring provides.
+
+- **The SQLite store suites now actually run.** Their availability probe used
+  a bare `require`, which is undefined under the ESM test runner, so the
+  `ReferenceError` was caught and read as "driver missing" on every machine
+  including CI. The probe now uses `createRequire` and opens a database rather
+  than only resolving the module, and `CHAP_REQUIRE_SQLITE`, set in CI, turns
+  an unavailable driver into a failure instead of a silent skip.
+
+- **`SqliteStore` had the same defect in its own loader**, so from source it
+  reported the dependency as missing when it was installed. The bundled build
+  masked it by shimming `require`, which is why it went unnoticed.
+
+- Characterisation tests pin the multi-writer behaviour and the verification
+  limit, so a future change to either has to be made deliberately.
+
 ### Review decisions bind the content they decided on (CEP-001)
 
 Reported by Iman Schrock (EMILIA) from a source-pinned CHAP-to-AEB
