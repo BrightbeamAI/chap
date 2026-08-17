@@ -166,3 +166,77 @@ def test_persistence_failures_do_not_break_dispatch():
     })
     assert "result" in r
     assert r["result"]["workspace"] == "wsp_brk"
+
+
+# ---- Single-writer limitation (#69) ---------------------------------
+#
+# These characterise a documented limitation rather than desired behaviour.
+# The Coordinator is single-writer; the store interface performs no
+# compare-and-swap. If that ever changes, these tests should fail and be
+# rewritten deliberately, which is the point of pinning it here.
+
+def test_multi_writer_silently_loses_entries():
+    """Two Coordinators on one store: the stale writer wins and entries vanish."""
+    store = MemoryStore()
+
+    def coord():
+        return Coordinator(CoordinatorOptions(
+            deterministic_ids=True, deterministic_clock=True,
+            enable_chain=True, store=store))
+
+    a = coord()
+    a.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w"}})
+    a.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:alice",
+                           "type": "human", "role": "owner"}})
+
+    b = coord()   # loads A's snapshot
+    b.dispatch({"jsonrpc": "2.0", "id": "3", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:bob",
+                           "type": "human", "role": "reviewer"}})
+
+    # A still holds its older snapshot and writes again: last write wins.
+    a.dispatch({"jsonrpc": "2.0", "id": "4", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:carol",
+                           "type": "human", "role": "reviewer"}})
+
+    survivor = coord()
+    audit = survivor.get_workspace("w").audit
+    assert not any("human:bob" in str(e.envelope) for e in audit), (
+        "bob's join is expected to be lost under multi-writer; if this now "
+        "survives, the store contract has gained real concurrency control and "
+        "SPECIFICATION.md section 10.3 needs updating"
+    )
+
+
+def test_verification_cannot_detect_the_loss():
+    """The surviving chain is internally consistent, so verify reports ok."""
+    store = MemoryStore()
+
+    def coord():
+        return Coordinator(CoordinatorOptions(
+            deterministic_ids=True, deterministic_clock=True,
+            enable_chain=True, store=store))
+
+    a = coord()
+    a.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w"}})
+    a.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:alice",
+                           "type": "human", "role": "owner"}})
+    b = coord()
+    b.dispatch({"jsonrpc": "2.0", "id": "3", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:bob",
+                           "type": "human", "role": "reviewer"}})
+    a.dispatch({"jsonrpc": "2.0", "id": "4", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:carol",
+                           "type": "human", "role": "reviewer"}})
+
+    survivor = coord()
+    r = survivor.dispatch({"jsonrpc": "2.0", "id": "5", "method": "audit.verify_chain",
+                           "params": {"workspace": "w", "from": "human:alice"}})
+    assert r["result"]["ok"] is True, (
+        "verification proves internal consistency, not completeness; this is "
+        "why external anchoring via audit-scitt/1.0 exists"
+    )
