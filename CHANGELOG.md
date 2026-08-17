@@ -11,6 +11,19 @@ incremented under the same rules.
 
 ## Unreleased
 
+### Unreleased features are marked as such
+
+`main` documents `approved_artefact_digest`, the open-review guard, and error
+codes `-32014` and `-32074` across five documents. None of them exist in any
+published package: the newest release is 0.2.9, which predates all of it. A
+reader following the specification while running the published packages would
+have found the behaviour missing and had no way to tell why.
+
+Those sections now carry an explicit unreleased marker, including the
+conformance vectors `rv-09` to `rv-11`, which a coordinator built from 0.2.9
+cannot pass and should not be expected to. The markers come out when the work
+ships.
+
 ### Documentation consistency
 
 - **The 0.2.7 changelog section is restored.** 218 lines covering the four

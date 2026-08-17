@@ -71,6 +71,10 @@ task whose `review.required` was true.
 Supported `rule` values: `any_one_approves`, `all_approve`.
 The `deliberation` profile adds richer rules (`quorum:N`, weighted).
 
+> **Unreleased.** Implemented on `main` and not in a published release.
+> The newest published packages are 0.2.9, which predate it. See
+> [`ceps/CEP-001.md`](../ceps/CEP-001.md).
+
 **Re-request on an open review.** A review already open on the task
 constrains what a second `review.request` may do.
 
@@ -96,6 +100,10 @@ constrains what a second `review.request` may do.
 
 Straightforward. The reviewer's identity, comment, and tags are
 preserved as a `decision` artefact.
+
+> **Unreleased.** Implemented on `main` and not in a published release.
+> The newest published packages are 0.2.9, which predate it. See
+> [`ceps/CEP-001.md`](../ceps/CEP-001.md).
 
 **Binding the decision to the content (`approved_artefact_digest`).**
 A decision names `task_id`, which identifies *which* review it settles
@@ -343,7 +351,7 @@ piece of the protocol is plumbing.
 | `-32011`  | Actor is not authorised: not a workspace member, or a member who was not an addressed reviewer for this task. |
 | `-32012`  | JSON Patch application failed (with path in `data`).   |
 | `-32013`  | Review deadline has lapsed.                            |
-| `-32014`  | A review is already open on this task with different content, or the request would change the decision rule of an open review. |
+| `-32014`  | A review is already open on this task with different content, or the request would change the decision rule of an open review. **Unreleased.** |
 
 ---
 
