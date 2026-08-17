@@ -152,6 +152,18 @@ jobs:
             exit 1
           fi
 
+      - name: No build artefacts or local config tracked
+        # .gitignore only protects untracked files. This catches anything that
+        # slipped in before a rule existed, or was added with -f.
+        run: |
+          OFFENDERS=$(git ls-files | grep -E '(^|/)(dist|build|node_modules|htmlcov|coverage|\.venv|venv|\.tox|\.mypy_cache|\.ruff_cache|\.pytest_cache)/|\.(pyc|tgz|whl|log)$|\.egg-info/|(^|/)\.coverage$|tsup\.config\.bundled|(^|/)\.(pypirc|npmrc|env)$|\.db$' || true)
+          if [ -n "$OFFENDERS" ]; then
+            echo "::error::Build artefacts or local config are tracked in git:"
+            echo "$OFFENDERS"
+            exit 1
+          fi
+          echo "No build artefacts tracked."
+
       - name: Markdown link integrity
         run: |
           python3 << 'PYEOF'

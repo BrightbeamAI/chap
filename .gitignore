@@ -1,9 +1,48 @@
+# Python
 __pycache__/
-*.pyc
-.DS_Store
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+coverage/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Build output. Both ecosystems build on demand; nothing here belongs in git.
 dist/
 build/
-*.egg-info/
-__pycache__/
-*.pyc
-node_modules/
+*.tgz
+*.whl
+# tsup writes this next to the config while bundling and does not always
+# remove it.
+tsup.config.bundled_*.mjs
+
+# Virtual environments, in case one is created inside the checkout.
+.venv/
+venv/
+ENV/
+
+# Local credentials and configuration. Never commit these.
+.env
+.env.*
+.pypirc
+.npmrc
+
+# Runtime state written by the SQLite store and the demos.
+*.db
+*.db-shm
+*.db-wal
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
