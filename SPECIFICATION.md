@@ -643,8 +643,8 @@ Transitions are triggered by methods:
 | accepted           | `task.start`                  | in_progress       |
 | in_progress        | `task.complete`               | completed         |
 | in_progress        | `review.request`              | review_requested  |
-| review_requested   | `review.request` (same artefact) | review_requested (reviewer set widened) |
-| review_requested   | `review.request` (different artefact) | refused, -32014 |
+| review_requested   | `review.request` (same artefact) | review_requested (reviewer set widened). **Unreleased** |
+| review_requested   | `review.request` (different artefact) | refused, -32014. **Unreleased** |
 | review_requested   | `decide.approve`              | completed         |
 | review_requested   | `decide.reject`               | (back to in_progress or declined per policy) |
 | review_requested   | `decide.override`             | completed (with override artefact) |
@@ -1236,45 +1236,56 @@ Error responses carry an `error` object:
 
 Error codes follow JSON-RPC conventions with CHAP-specific extensions:
 
-| Range              | Meaning                                          |
-|--------------------|--------------------------------------------------|
-| -32700             | Parse error                                      |
-| -32600 to -32603   | JSON-RPC standard errors                         |
-| -32400 to -32499   | CHAP envelope and identity errors                 |
-| -32500 to -32599   | CHAP policy and mode errors                       |
-| -32600 to -32699   | CHAP task and lifecycle errors                    |
-| -32700 to -32799   | CHAP evidence and audit errors                    |
-| -32800 to -32899   | CHAP composition errors (MCP/A2A bridge)          |
-| -32900 to -32999   | Implementation-defined                           |
+| Range                      | Meaning                                     |
+|----------------------------|---------------------------------------------|
+| -32700, -32600 to -32603   | JSON-RPC 2.0 standard errors                |
+| -32010 to -32099           | Profile errors, one decade per profile      |
+| -32400 to -32499           | Identity profile errors                     |
+| -32500 to -32599           | Routing and policy errors                   |
+| -32900 to -32999           | Implementation-defined                      |
+
+The JSON-RPC band is fixed by that specification and CHAP does not reuse it.
+Each profile owns one decade, so a code identifies its profile on sight:
+
+| Decade   | Profile              | Decade   | Profile              |
+|----------|----------------------|----------|----------------------|
+| -3201x   | `review/1.0`         | -3206x   | `control/1.0`        |
+| -3202x   | `whisper/1.0`        | -3207x   | `security-signed/1.0`|
+| -3203x   | `deliberation/1.0`   | -3208x   | `audit-scitt/1.0`    |
+| -3204x   | `modes/1.0`          | -3240x   | `identity-oidc/1.0`  |
+| -3205x   | `handoff/1.0`        | -3241x   | `identity-vc/1.0`    |
+|          |                      | -3251x   | `routing/1.0`        |
 
 ### 13.3 Standard error codes
 
-| Code   | Symbol                          | Meaning                                              |
-|--------|---------------------------------|------------------------------------------------------|
-| -32700 | `parse_error`                   | Invalid JSON.                                        |
-| -32600 | `invalid_request`               | Envelope does not conform to schema.                 |
-| -32601 | `method_not_found`              | Unknown method name.                                 |
-| -32602 | `invalid_params`                | Params do not conform to method schema.              |
-| -32603 | `internal_error`                | Implementation defect.                               |
-| -32400 | `signature_invalid`             | Signature failed verification.                       |
-| -32401 | `temporal_order_violation`      | Non-monotonic timestamp from origin.                 |
-| -32402 | `step_up_required`              | Privileged op without recent auth.                   |
-| -32403 | `unknown_participant`           | `from` or `to` is not a workspace member.            |
-| -32404 | `key_revoked`                   | Signing key has been revoked.                        |
-| -32405 | `version_unsupported`           | `chap` version not recognised.                        |
-| -32500 | `policy_denied`                 | Caller's role does not permit the method.            |
-| -32040 | `mode_ceiling_exceeded`         | Task mode exceeds workspace ceiling.                 |
-| -32502 | `scope_missing`                 | Recipient has not declared the required scope.       |
-| -32600 | `task_state_invalid`            | Method illegal in task's current state.              |
-| -32601 | `review_rule_unmet`             | Decision cannot terminate the review under the rule. |
-| -32602 | `deadline_exceeded`             | Operation arrived after the task deadline.           |
-| -32700 | `evidence_break`                | `prev_hash` does not match chain head.               |
-| -32701 | `id_reused`                     | `id` already present in chain.                       |
-| -32800 | `mcp_tool_failed`               | Cited MCP tool invocation reported failure.          |
-| -32801 | `a2a_peer_unreachable`          | Bridge to an A2A peer failed.                        |
+The five JSON-RPC 2.0 codes carry their standard meanings:
 
-Implementations MUST use these codes for the stated conditions and
-MAY define implementation-specific codes in the -32900 range.
+| Code   | Symbol             | Meaning                                     |
+|--------|--------------------|---------------------------------------------|
+| -32700 | `parse_error`      | Invalid JSON.                               |
+| -32600 | `invalid_request`  | Envelope does not conform to schema.        |
+| -32601 | `method_not_found` | Unknown method name.                        |
+| -32602 | `invalid_params`   | Params do not conform to the method schema. |
+| -32603 | `internal_error`   | Implementation defect.                      |
+
+Every other code belongs to the profile that defines it, and **each
+profile's own error table is authoritative**: `profiles/review.md` §5,
+`profiles/whisper.md` §6, `profiles/deliberation.md` §5,
+`profiles/modes.md` §6, `profiles/handoff.md` §6, `profiles/control.md` §6,
+`profiles/security-signed.md` §7, `profiles/audit-scitt.md` §8,
+`profiles/identity-oidc.md` §8, `profiles/identity-vc.md` §8, and
+`profiles/routing.md` §3 to §5. The decade map in §13.2 says which profile a
+code belongs to.
+
+Codes are not restated here. A duplicated registry drifts from the profiles
+it mirrors, which is what happened to the table this section replaces: it
+assigned `-32600`, `-32601` and `-32602` two meanings each, gave
+`mode_ceiling_exceeded` a code no implementation used, and named errors that
+neither reference implementation has ever returned.
+
+Implementations MUST use the codes their profiles define, MUST NOT reuse the
+JSON-RPC band, and MAY define implementation-specific codes in the -32900
+range.
 
 ---
 

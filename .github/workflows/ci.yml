@@ -148,8 +148,17 @@ jobs:
           python-version: '3.12'
 
       - name: Em-dash check
+        # Was markdown only, which let em-dashes accumulate in shipped UI copy,
+        # schema descriptions and package descriptions. This workflow is
+        # excluded because it contains the character it searches for.
         run: |
-          OFFENDERS=$(find . -name "*.md" -not -path "./node_modules/*" -not -path "*/dist/*" -exec grep -l "—" {} \; 2>/dev/null)
+          OFFENDERS=$(find . \
+            \( -name "*.md" -o -name "*.ts" -o -name "*.js" -o -name "*.py" \
+               -o -name "*.json" -o -name "*.html" -o -name "*.css" -o -name "*.tape" \) \
+            -not -path "./node_modules/*" -not -path "*/node_modules/*" \
+            -not -path "*/dist/*" -not -path "./.github/workflows/ci.yml" \
+            -not -name "package-lock.json" \
+            -exec grep -l "—" {} \; 2>/dev/null)
           if [ -n "$OFFENDERS" ]; then
             echo "::error::Em-dashes found in: $OFFENDERS"
             for f in $OFFENDERS; do
@@ -170,6 +179,22 @@ jobs:
             exit 1
           fi
           echo "No build artefacts tracked."
+
+      - name: No bare require() in ES modules
+        # Three separate faults this release traced to the same mistake: a
+        # bare require() in an ES module, which is undefined at runtime.
+        # ids.ts took down Node 18, and two in the storage layer hid the
+        # SQLite suites for months. createRequire is the ESM-correct form.
+        run: |
+          OFFENDERS=$(grep -rn --include="*.ts" -E "(^|[^.[:alnum:]_])require\(" \
+            packages/*/src packages/*/tests reference/*/*.ts conformance/harness 2>/dev/null \
+            | grep -v "createRequire" || true)
+          if [ -n "$OFFENDERS" ]; then
+            echo "::error::Bare require() found in ES module sources. Use createRequire(import.meta.url):"
+            echo "$OFFENDERS"
+            exit 1
+          fi
+          echo "No bare require() in ES module sources."
 
       - name: Markdown link integrity
         run: |

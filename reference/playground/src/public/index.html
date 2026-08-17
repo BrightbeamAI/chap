@@ -24,10 +24,10 @@
 </header>
 
 <!-- =========================================================
-     STATUS BAR — always visible once in a role; protocol heartbeat
+     STATUS BAR, always visible once in a role; protocol heartbeat
      ========================================================= -->
 <div class="statusbar" id="statusbar" hidden>
-  <div class="status-item" title="Workspace mode — affects whether bot output reaches customers">
+  <div class="status-item" title="Workspace mode, affects whether bot output reaches customers">
     <span class="status-label">Mode</span>
     <span class="status-value mode-pill mode-production" id="status-mode">production</span>
   </div>
@@ -76,7 +76,7 @@
     <div class="picker-tour-offer">
       <div class="picker-tour-text">
         <strong>First time here?</strong>
-        Take a 90-second guided walkthrough — the protocol drives itself
+        Take a 90-second guided walkthrough, the protocol drives itself
         through one full ticket and explains each step as it happens.
       </div>
       <button class="picker-tour-btn" id="start-walkthrough">Take the guided tour →</button>
@@ -122,7 +122,7 @@
       <div class="footer-block">
         <div class="footer-label">What's real</div>
         <ul>
-          <li>Real CHAP coordinator on localhost — protocol code is <span class="kbd">@brightbeamai/chap-coordinator</span></li>
+          <li>Real CHAP coordinator on localhost, protocol code is <span class="kbd">@brightbeamai/chap-coordinator</span></li>
           <li>Real Ollama-backed agent (<span class="kbd" id="model-label">gemma3:4b</span>)</li>
           <li>Real RFC 6902 JSON Patch on overrides</li>
           <li>Real evidence chain, persisted to disk</li>
@@ -140,7 +140,7 @@
   </section>
 
   <!-- =========================================================
-       MAYA's UI — front-line review queue
+       MAYA's UI, front-line review queue
        ========================================================= -->
   <section class="role-view" id="view-maya" hidden>
     <div class="role-view-grid">
@@ -159,7 +159,7 @@
           <p>Bot drafts will appear here as <span class="kbd">gemma3:4b</span> finishes them.</p>
         </div>
         <div id="maya-editor" hidden>
-          <!-- Guided tour bar — auto-dismisses after first override -->
+          <!-- Guided tour bar, auto-dismisses after first override -->
           <div class="tour-bar" id="maya-tour" data-step="1">
             <div class="tour-step-indicator">
               <span class="tour-dot active" data-step="1"></span>
@@ -167,7 +167,7 @@
               <span class="tour-dot" data-step="3"></span>
             </div>
             <div class="tour-text">
-              <span class="tour-step-text" data-step="1">← Read the ticket. The bot has drafted a reply below — read both before editing.</span>
+              <span class="tour-step-text" data-step="1">← Read the ticket. The bot has drafted a reply below, read both before editing.</span>
               <span class="tour-step-text" data-step="2" hidden>Now edit the draft. The diff is computed live and shown under the textarea.</span>
               <span class="tour-step-text" data-step="3" hidden>Pick at least one tag, write a brief rationale, then click <strong>Override &amp; send</strong>. The override becomes a signed envelope on the chain.</span>
             </div>
@@ -182,8 +182,8 @@
             </div>
             <div class="ticket-badges">
               <span class="badge" id="maya-crit-badge">criticality</span>
-              <span class="badge badge-confidence" id="maya-conf-badge">conf —</span>
-              <span class="badge badge-model" id="maya-model-badge">model —</span>
+              <span class="badge badge-confidence" id="maya-conf-badge">conf -</span>
+              <span class="badge badge-model" id="maya-model-badge">model -</span>
             </div>
           </header>
 
@@ -200,18 +200,18 @@
 
           <div class="override-meta">
             <label>
-              <span>Tags <small class="meta-help">— what kind of correction is this?</small></span>
+              <span>Tags <small class="meta-help">- what kind of correction is this?</small></span>
               <div class="tag-picker" id="maya-tags">
                 <button data-tag="tone-softened"      title="Bot was too harsh or too apologetic for the situation">tone-softened</button>
-                <button data-tag="severity-upgraded"  title="Bot under-classified — this is more urgent than it judged">severity-upgraded</button>
-                <button data-tag="severity-downgraded" title="Bot over-classified — this is less urgent than it judged">severity-downgraded</button>
+                <button data-tag="severity-upgraded"  title="Bot under-classified, this is more urgent than it judged">severity-upgraded</button>
+                <button data-tag="severity-downgraded" title="Bot over-classified, this is less urgent than it judged">severity-downgraded</button>
                 <button data-tag="factual-fix"        title="Bot invented or got a fact wrong (policy, dates, numbers)">factual-fix</button>
                 <button data-tag="length-reduced"     title="Bot was too long-winded; cut to essentials">length-reduced</button>
                 <button data-tag="scope-redirected"   title="Bot tried to help with something out-of-scope; redirected">scope-redirected</button>
               </div>
             </label>
             <label>
-              <span>Rationale <small class="meta-help">— required; this is what teaches the bot</small></span>
+              <span>Rationale <small class="meta-help">- required; this is what teaches the bot</small></span>
               <textarea class="rationale-input" id="maya-rationale" rows="2" placeholder="Why this change? (required for override)"></textarea>
             </label>
           </div>
@@ -234,7 +234,7 @@
             <p><strong>What is this?</strong></p>
             <p>Each time you override the bot, your tags accumulate here. After enough overrides, this becomes a tuning signal: <em>which kinds of mistakes does the bot make most?</em></p>
             <p class="dividend-empty-counter">
-              <span id="maya-dividend-progress">0 / 2</span> overrides — chart appears after 2.
+              <span id="maya-dividend-progress">0 / 2</span> overrides, chart appears after 2.
             </p>
           </div>
           <div class="dividend-chart" id="maya-dividend" hidden></div>
@@ -244,7 +244,7 @@
   </section>
 
   <!-- =========================================================
-       SAM's UI — escalation queue
+       SAM's UI, escalation queue
        ========================================================= -->
   <section class="role-view" id="view-sam" hidden>
     <div class="role-view-grid">
@@ -262,12 +262,12 @@
           <h2>Nothing escalated yet.</h2>
           <p>
             Items appear here automatically when the routing policy decides they
-            need senior eyes — <span class="kbd">criticality=critical</span>, or
+            need senior eyes, <span class="kbd">criticality=critical</span>, or
             <span class="kbd">criticality=high</span> with bot confidence under 0.6.
           </p>
         </div>
         <div id="sam-editor" hidden>
-          <!-- Guided tour bar for Sam — auto-dismisses after first action -->
+          <!-- Guided tour bar for Sam, auto-dismisses after first action -->
           <div class="tour-bar" id="sam-tour" data-step="1">
             <div class="tour-step-indicator">
               <span class="tour-dot active" data-step="1"></span>
@@ -312,18 +312,18 @@
 
           <div class="override-meta">
             <label>
-              <span>Tags <small class="meta-help">— Sam-level: policy, legal, retention, fraud signals</small></span>
+              <span>Tags <small class="meta-help">- Sam-level: policy, legal, retention, fraud signals</small></span>
               <div class="tag-picker" id="sam-tags">
                 <button data-tag="policy-clarification" title="Clarifies a company policy that wasn't applied correctly">policy-clarification</button>
                 <button data-tag="legal-review-needed"  title="This needs legal sign-off before going out">legal-review-needed</button>
                 <button data-tag="commit-authority"     title="Sam has the authority to commit (refunds, credits, exceptions); Maya doesn't">commit-authority</button>
                 <button data-tag="customer-retention"   title="Customer is at risk of churning; intervene to keep them">customer-retention</button>
-                <button data-tag="fraud-confirmed"      title="This is fraud — handle accordingly, not as customer service">fraud-confirmed</button>
-                <button data-tag="maya-undershot"       title="Maya's revision didn't go far enough — Sam strengthens it">maya-undershot</button>
+                <button data-tag="fraud-confirmed"      title="This is fraud, handle accordingly, not as customer service">fraud-confirmed</button>
+                <button data-tag="maya-undershot"       title="Maya's revision didn't go far enough, Sam strengthens it">maya-undershot</button>
               </div>
             </label>
             <label>
-              <span>Rationale <small class="meta-help">— required if overriding Maya's revision</small></span>
+              <span>Rationale <small class="meta-help">- required if overriding Maya's revision</small></span>
               <textarea class="rationale-input" id="sam-rationale" rows="2" placeholder="Required if overriding Maya's revision"></textarea>
             </label>
           </div>
@@ -344,9 +344,9 @@
         <div class="pane-body">
           <div class="dividend-empty" id="sam-dividend-empty">
             <p><strong>What is this?</strong></p>
-            <p>When you override Maya's revision, your tags accumulate here. The pattern reveals what front-line review consistently misses — that's where to update training, policy, or staffing.</p>
+            <p>When you override Maya's revision, your tags accumulate here. The pattern reveals what front-line review consistently misses, that's where to update training, policy, or staffing.</p>
             <p class="dividend-empty-counter">
-              <span id="sam-dividend-progress">0 / 2</span> overrides — chart appears after 2.
+              <span id="sam-dividend-progress">0 / 2</span> overrides, chart appears after 2.
             </p>
           </div>
           <div class="dividend-chart" id="sam-dividend" hidden></div>
@@ -358,14 +358,14 @@
 </main>
 
 <!-- =========================================================
-     WIRE STRIP — collapsed-by-default ticker at the bottom of the
+     WIRE STRIP, collapsed-by-default ticker at the bottom of the
      viewport. Click to expand into the full chain view.
      ========================================================= -->
 <aside class="wire-strip" id="wire-strip" hidden>
   <div class="wire-strip-pill" id="wire-strip-pill">
     <span class="wire-strip-label">Last envelope</span>
-    <span class="wire-strip-seq" id="wire-strip-seq">—</span>
-    <span class="wire-strip-method" id="wire-strip-method">—</span>
+    <span class="wire-strip-seq" id="wire-strip-seq">-</span>
+    <span class="wire-strip-method" id="wire-strip-method">-</span>
     <span class="wire-strip-spacer"></span>
     <span class="wire-strip-cta">Click to open chain view ↑</span>
   </div>
@@ -393,7 +393,7 @@
 </aside>
 
 <!-- =========================================================
-     WALKTHROUGH PANEL — the guided 90-second tour. Hidden by default.
+     WALKTHROUGH PANEL, the guided 90-second tour. Hidden by default.
      Steps are fired from playground.js. The protocol is driven for real.
      ========================================================= -->
 <aside class="walkthrough" id="walkthrough" hidden>
@@ -421,7 +421,7 @@
   </div>
 </aside>
 
-<!-- Glow highlight overlay — positioned absolutely over a target element -->
+<!-- Glow highlight overlay, positioned absolutely over a target element -->
 <div class="glow-target" id="glow-target" hidden></div>
 
 <script src="/playground.js"></script>

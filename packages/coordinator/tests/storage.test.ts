@@ -96,7 +96,7 @@ describe("Coordinator persistence", () => {
 
 // ---- SqliteStore (skipped if better-sqlite3 unavailable) -----------
 
-// `require` is not defined under `tsx --test`, so a bare require() here threw
+// A bare `require` is not defined under `tsx --test`, so the old probe threw
 // ReferenceError and the catch marked SQLite unavailable on every machine,
 // silently skipping these suites forever. createRequire is the ESM-correct
 // probe. CHAP_REQUIRE_SQLITE makes an unavailable driver a failure rather than

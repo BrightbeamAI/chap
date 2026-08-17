@@ -153,10 +153,21 @@ from the workspace.
 | Code      | Meaning                                                |
 |-----------|--------------------------------------------------------|
 | `-32410`  | VP signature verification failed.                      |
-| `-32411`  | VC issuer not trusted by this workspace.               |
+| `-32411`  | Holder binding (proof of possession) failed.           |
 | `-32412`  | VC has been revoked.                                   |
-| `-32413`  | Required credential claim not disclosed.               |
-| `-32414`  | Holder binding (proof of possession) failed.           |
+| `-32413`  | Credential schema not recognised by this workspace.    |
+
+Two further conditions are described by this profile but are **not yet
+implemented** by either reference implementation, so no code is assigned:
+an issuer the workspace does not trust, and a required credential claim
+that was not disclosed. Implementations encountering them today reject the
+presentation as invalid (`-32410`). Assigning codes is left to a revision of
+this profile.
+
+Earlier drafts of this table assigned -32411 to issuer trust, -32413 to
+claim disclosure, and -32414 to holder binding. No implementation ever
+used that mapping; the table above is what both reference coordinators
+return.
 
 ---
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chap.dev/schemas/0.2/chap-methods.schema.json",
   "title": "CHAP Method Catalogue",
-  "description": "Authoritative catalogue of methods defined by CHAP v0.2 across Core and the profile suite. Every method declares `since` (the layer that introduces it — `core/1.0` or `<profile>/<version>`) and `implementation_status` (`implemented` if present in at least one v0.2 reference implementation under `reference/`, otherwise `spec-only`). Note: the v0.2 reference implementations use simplified `task.create` + `task.update` calls in place of the full `task.assign / accept / decline / start / progress` lifecycle described in SPECIFICATION.md §12.3; the catalogue records both — the spec methods are the canonical surface, the *_create/update variants are reference-only simplifications.",
+  "description": "Authoritative catalogue of methods defined by CHAP v0.2 across Core and the profile suite. Every method declares `since` (the layer that introduces it: `core/1.0` or `<profile>/<version>`) and `implementation_status` (`implemented` if present in at least one v0.2 reference implementation under `reference/`, otherwise `spec-only`). Note: the v0.2 reference implementations use simplified `task.create` + `task.update` calls in place of the full `task.assign / accept / decline / start / progress` lifecycle described in SPECIFICATION.md §12.3; the catalogue records both: the spec methods are the canonical surface, the *_create/update variants are reference-only simplifications.",
   "type": "object",
   "required": ["version", "methods"],
   "properties": {

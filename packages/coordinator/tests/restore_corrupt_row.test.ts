@@ -5,15 +5,27 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// Same fault as tests/storage.test.ts had: `require` is undefined under
+// `tsx --test`, so the ReferenceError was caught and read as "driver
+// missing", skipping this suite on every machine. Opening a database is the
+// real probe, since the wrapper resolves even with no native bindings.
+const require_ = createRequire(import.meta.url);
 let sqliteAvailable = true;
+let sqliteError = "";
 try {
-  require("better-sqlite3");
-} catch {
+  const Probe = require_("better-sqlite3");
+  new Probe(":memory:").close();
+} catch (e) {
   sqliteAvailable = false;
+  sqliteError = e instanceof Error ? e.message.split("\n")[0] : String(e);
+}
+if (!sqliteAvailable && process.env.CHAP_REQUIRE_SQLITE) {
+  throw new Error(`better-sqlite3 is required when CHAP_REQUIRE_SQLITE is set: ${sqliteError}`);
 }
 
 describe("SqliteStore corrupt-row recovery", { skip: !sqliteAvailable }, () => {
@@ -24,7 +36,7 @@ describe("SqliteStore corrupt-row recovery", { skip: !sqliteAvailable }, () => {
     for (const w of ["w1", "w2", "w3"]) {
       store.save({ id: w, data: { id: w }, version: 1, updated_at: "t" });
     }
-    const Database = require("better-sqlite3");
+    const Database = require_("better-sqlite3");
     const raw = new Database(join(tmp, "c.db"));
     raw.prepare("UPDATE chap_workspaces SET data = ? WHERE id = ?").run("{bad json", "w2");
     raw.close();

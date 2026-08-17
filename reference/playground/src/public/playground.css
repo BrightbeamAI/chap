@@ -1,4 +1,4 @@
-/* CHAP Playground — Brightbeam brand styling.
+/* CHAP Playground, Brightbeam brand styling.
    Tokens match demo/index.html so the two pages feel cohesive.
 */
 
@@ -176,7 +176,7 @@ button {
 .footer-block li { margin: 3px 0; }
 
 /* ============================================================
-   ROLE VIEWS — three-column layout
+   ROLE VIEWS, three-column layout
    ============================================================ */
 .role-view { max-width: 1500px; margin: 0 auto; padding: 22px; }
 .role-view-grid {
@@ -398,10 +398,10 @@ button {
 /* ============================================================
    WIRE PANEL
    ============================================================ */
-/* Wire panel — see v2 section below for the canonical styles. */
+/* Wire panel, see v2 section below for the canonical styles. */
 
 /* ====================================================================
-   v2 IMPROVEMENTS — status bar, tour, chain view, strip, dividend prog.
+   v2 IMPROVEMENTS, status bar, tour, chain view, strip, dividend prog.
    ==================================================================== */
 
 /* -------- Status bar (under topbar, always visible in a role) ------ */
@@ -598,7 +598,7 @@ button {
   100% { background: var(--black); }
 }
 
-/* -------- Wire panel (expanded chain view) — overrides earlier rules */
+/* -------- Wire panel (expanded chain view), overrides earlier rules */
 .wire-panel {
   position: fixed;
   left: 0;
@@ -692,7 +692,7 @@ button {
   background: #1a1a1c;
 }
 
-/* Restructured wire entry — chain visualisation */
+/* Restructured wire entry, chain visualisation */
 .wire-entry {
   background: #232325;
   border-left: 3px solid var(--grey-2);
@@ -790,7 +790,7 @@ button {
 .wire-entry:hover .wire-hash { display: block; }
 
 /* ====================================================================
-   GUIDED WALKTHROUGH — floating panel, glow highlights, role-picker CTA
+   GUIDED WALKTHROUGH, floating panel, glow highlights, role-picker CTA
    ==================================================================== */
 
 /* -------- Role-picker tour offer ---------------------------------- */

@@ -162,7 +162,7 @@
         },
         "logical_id": {
           "type": "string",
-          "description": "Optional. Stable identifier for the thing the artefact is about — durable across revisions. Two artefacts that share a logical_id are two versions of the same underlying item. Producers SHOULD assign on first creation and reuse on every revision, override or supersession. CHAP itself reads only `id`; logical_id is for higher-layer version-graph projection.",
+          "description": "Optional. Stable identifier for the thing the artefact is about: durable across revisions. Two artefacts that share a logical_id are two versions of the same underlying item. Producers SHOULD assign on first creation and reuse on every revision, override or supersession. CHAP itself reads only `id`; logical_id is for higher-layer version-graph projection.",
           "pattern": "^lgl_[0-9A-HJKMNP-TV-Z]{26}$"
         },
         "instance_id": {
