@@ -27,7 +27,7 @@ import datetime as _dt
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .canonical import ZERO_HASH, canonicalize, sha256_hex
+from .canonical import ZERO_HASH, canonicalize, content_hash, sha256_hex
 from .ids import IdFactory
 from .jsonrpc import E, is_valid_envelope, make_response, rpc_error
 from .patch import PatchError, apply_json_patch
@@ -1047,12 +1047,48 @@ class Coordinator:
         if not reviewers:
             return {"error": rpc_error(E.PARAMS, "review.request needs 'to'")}
         now = self.now_iso()
+        rule = p.get("rule") or "any_one_approves"
+
+        # A review already open on this task. Replacing the artefact underneath
+        # it would let a reviewer decide on content they never saw, and would
+        # discard decisions already cast while their envelopes remain in the
+        # audit log, so a quorum could appear to have been assembled across two
+        # different artefacts. Re-requesting the *same* artefact is a different
+        # thing: it widens the reviewer set on an open review, which is
+        # legitimate and preserves what has been decided so far.
+        if task.state == "review_requested" and task.review is not None:
+            if content_hash(task.pending_artefact) != content_hash(p["artefact"]):
+                return {"error": rpc_error(
+                    E.REVIEW_ALREADY_OPEN,
+                    "A review is already open on this task with different content. "
+                    "Decide, abstain, escalate or cancel it before requesting "
+                    "review of a new artefact.",
+                )}
+            if rule != task.review.rule:
+                return {"error": rpc_error(
+                    E.REVIEW_ALREADY_OPEN,
+                    f"Cannot change the decision rule of an open review "
+                    f"(currently {task.review.rule})",
+                )}
+            for r in reviewers:
+                if r not in task.review.requested_to:
+                    task.review.requested_to.append(r)
+            if p.get("deadline") is not None:
+                task.review.deadline = p["deadline"]
+            task.updated_at = now
+            return {"result": {
+                "state": "review_requested",
+                "review_id": task.id,
+                "amended": True,
+                "requested_to": list(task.review.requested_to),
+            }}
+
         task.state = "review_requested"
         task.updated_at = now
         task.review = ReviewState(
             requested_at=now,
             requested_to=list(reviewers),
-            rule=p.get("rule") or "any_one_approves",
+            rule=rule,
             deadline=p.get("deadline"),
         )
         task.history.append(TaskHistoryEntry(
@@ -1060,6 +1096,36 @@ class Coordinator:
         ))
         task.pending_artefact = p["artefact"]
         return {"result": {"state": "review_requested", "review_id": task.id}}
+
+    def _check_artefact_digest(self, p: dict, task: "Task") -> "dict | None":
+        """Verify an optional ``approved_artefact_digest`` (review/1.0 S3.2).
+
+        The digest sits in params, so it is inside whatever the envelope
+        signature covers: the decision then attests the content the reviewer
+        saw rather than a task reference, and a relying party can check it
+        without trusting the Coordinator that produced it. Absent, behaviour is
+        exactly as before.
+
+        On mismatch nothing is recorded and no state changes, so a client that
+        computes the wrong digest refuses only its own decision.
+        """
+        declared = p.get("approved_artefact_digest")
+        if declared is None:
+            return None
+        if not isinstance(declared, str):
+            return {"error": rpc_error(
+                E.PARAMS, "approved_artefact_digest must be a string")}
+        if task.pending_artefact is None:
+            return {"error": rpc_error(
+                E.PARAMS, "No artefact under review to bind a digest to")}
+        actual = content_hash(task.pending_artefact)
+        if declared != actual:
+            return {"error": rpc_error(
+                E.SIG_ARTEFACT_DIGEST_MISMATCH,
+                "approved_artefact_digest does not match the artefact under review",
+                {"declared": declared, "actual": actual},
+            )}
+        return None
 
     def _op_decide(self, p: dict, kind: str) -> dict:
         miss = _missing(p, ["workspace", "from", "task_id"])
@@ -1084,6 +1150,9 @@ class Coordinator:
         not_reviewer = self._require_reviewer(task, p.get("from"))
         if not_reviewer:
             return not_reviewer
+        digest_error = self._check_artefact_digest(p, task)
+        if digest_error:
+            return digest_error
         now = self.now_iso()
         assert task.review is not None
         task.review.decisions.append({
@@ -1127,6 +1196,9 @@ class Coordinator:
         not_reviewer = self._require_reviewer(task, p.get("from"))
         if not_reviewer:
             return not_reviewer
+        digest_error = self._check_artefact_digest(p, task)
+        if digest_error:
+            return digest_error
         # The override is of the artefact under review; use the coordinator's
         # record, not a caller-supplied "before" that could be fabricated.
         base = task.pending_artefact

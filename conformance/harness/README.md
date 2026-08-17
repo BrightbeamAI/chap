@@ -16,7 +16,7 @@ success.
 - Filter correctness: `audit.read` filters work.
 - Member enforcement: assigning to non-members fails.
 
-**Review profile (optional)**: 8 vectors covering:
+**Review profile (optional)**: 11 vectors covering:
 
 - `review.request` transitions task to `review_requested`.
 - `decide.override` applies the RFC 6902 JSON Patch and produces an

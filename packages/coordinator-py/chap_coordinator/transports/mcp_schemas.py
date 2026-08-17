@@ -181,6 +181,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "workspace": _WORKSPACE_ID, "from": _PARTICIPANT_URI, "task_id": _TASK_ID,
+            "approved_artefact_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "description": "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, as `sha256:<hex>`. Binds the decision to the exact content reviewed; refused with -32074 on mismatch.",
+            },
             "comment": {"type": "string"},
             "tags":    {"type": "array", "items": {"type": "string"}},
         },
@@ -190,6 +195,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "workspace": _WORKSPACE_ID, "from": _PARTICIPANT_URI, "task_id": _TASK_ID,
+            "approved_artefact_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "description": "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, as `sha256:<hex>`. Binds the decision to the exact content reviewed; refused with -32074 on mismatch.",
+            },
             "comment": {"type": "string"},
             "tags":    {"type": "array", "items": {"type": "string"}},
             "request_revision": {"type": "boolean"},
@@ -199,6 +209,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "chap.decide.override": {
         "type": "object",
         "properties": {
+            "approved_artefact_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "description": "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, as `sha256:<hex>`. Binds the decision to the exact content reviewed; refused with -32074 on mismatch.",
+            },
             "workspace": _WORKSPACE_ID, "from": _PARTICIPANT_URI, "task_id": _TASK_ID,
             "diff": {
                 "type": "array",

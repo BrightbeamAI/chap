@@ -14,6 +14,7 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
 
 // ============================================================
 //   Types
@@ -146,7 +147,45 @@ const E = {
   NOT_AUTHORISED:   -32011,
   PATCH_FAILED:     -32012,
   REVIEW_LAPSED:    -32013,
+  REVIEW_ALREADY_OPEN: -32014,
+  // security-signed codes used by review decisions (CEP-001)
+  SIG_ARTEFACT_DIGEST_MISMATCH: -32074,
 } as const;
+
+/**
+ * JCS canonicalisation and the `sha256:<hex>` content digest, implemented
+ * locally: this server is a from-scratch reference and deliberately shares no
+ * code with the packages, which is what makes it useful as an interop check.
+ */
+function jcs(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(jcs).join(",") + "]";
+  const keys = Object.keys(value as Record<string, unknown>).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return "{" + keys.map(k => JSON.stringify(k) + ":" + jcs((value as Record<string, unknown>)[k])).join(",") + "}";
+}
+
+function contentDigest(value: unknown): string {
+  return "sha256:" + createHash("sha256").update(jcs(value), "utf-8").digest("hex");
+}
+
+/** CEP-001: an optional digest binds a decision to the artefact under review. */
+function checkArtefactDigest(p: Params, task: any): ReturnType<typeof err> | null {
+  const declared = p.approved_artefact_digest;
+  if (declared === undefined || declared === null) return null;
+  if (typeof declared !== "string") {
+    return err(E.PARAMS, "approved_artefact_digest must be a string");
+  }
+  if (task.pending_artefact === undefined) {
+    return err(E.PARAMS, "No artefact under review to bind a digest to");
+  }
+  const actual = contentDigest(task.pending_artefact);
+  if (declared !== actual) {
+    return err(E.SIG_ARTEFACT_DIGEST_MISMATCH,
+      "approved_artefact_digest does not match the artefact under review",
+      { declared, actual });
+  }
+  return null;
+}
 
 function err(code: number, message: string, data?: unknown) {
   return { code, message, ...(data !== undefined ? { data } : {}) };
@@ -430,12 +469,34 @@ const handlers: Record<string, Handler> = {
     if (!task) return { error: err(E.PARAMS, `Unknown task`) };
 
     const reviewers = Array.isArray(p.to) ? (p.to as string[]) : [p.to as string];
+    const rule = (p.rule as string) ?? "any_one_approves";
+
+    // CEP-001: an open review may be widened, not swapped underneath.
+    if (task.state === "review_requested" && task.review) {
+      if (contentDigest((task as any).pending_artefact) !== contentDigest(p.artefact)) {
+        return { error: err(E.REVIEW_ALREADY_OPEN,
+          "A review is already open on this task with different content. " +
+          "Decide, abstain, escalate or cancel it before requesting review of a new artefact.") };
+      }
+      if (rule !== task.review.rule) {
+        return { error: err(E.REVIEW_ALREADY_OPEN,
+          `Cannot change the decision rule of an open review (currently ${task.review.rule})`) };
+      }
+      for (const r of reviewers) {
+        if (!task.review.requested_to.includes(r)) task.review.requested_to.push(r);
+      }
+      if (p.deadline !== undefined) task.review.deadline = p.deadline as string;
+      task.updated_at = new Date().toISOString();
+      return { result: { state: "review_requested", review_id: task.id, amended: true,
+                         requested_to: [...task.review.requested_to] } };
+    }
+
     task.state = "review_requested";
     task.updated_at = new Date().toISOString();
     task.review = {
       requested_at: task.updated_at,
       requested_to: reviewers,
-      rule:         (p.rule as string) ?? "any_one_approves",
+      rule,
       deadline:     p.deadline as string,
       decisions:    [],
     };
@@ -467,6 +528,8 @@ const handlers: Record<string, Handler> = {
     }
     const notReviewer = requireReviewer(task, p.from);
     if (notReviewer) return { error: notReviewer };
+    const digestError = checkArtefactDigest(p, task);
+    if (digestError) return { error: digestError };
 
     const baseArtefact = p.based_on_artefact ?? (task as any).pending_artefact;
     if (baseArtefact === undefined) {
@@ -594,6 +657,8 @@ function decide(p: Params, kind: "approve" | "reject"): { result?: unknown; erro
   }
   const notReviewer = requireReviewer(task, p.from);
   if (notReviewer) return { error: notReviewer };
+  const digestError = checkArtefactDigest(p, task);
+  if (digestError) return { error: digestError };
 
   const now = new Date().toISOString();
   task.review!.decisions.push({

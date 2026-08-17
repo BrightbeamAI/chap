@@ -105,6 +105,25 @@ differs but the bytes look almost right, check (in order):
 
 ---
 
+## 2a. Binding a decision to its content (CEP-001)
+
+Three vectors cover the artefact digest and the open-review guard. They are
+listed here because they are the first vectors that assert on a *refusal* that
+leaves state untouched, which is easy to implement as a refusal that quietly
+does not.
+
+| Vector  | Sends                                                        | Expects                                   |
+|---------|--------------------------------------------------------------|-------------------------------------------|
+| `rv-09` | `decide.approve` with `approved_artefact_digest` equal to `sha256:` + SHA-256 over the JCS form of the artefact under review | approval proceeds, task `completed`       |
+| `rv-10` | the same with a digest of different content                   | `-32074`, no decision recorded, and the review still open so the reviewer can decide afterwards |
+| `rv-11` | `review.request` on an open review carrying different content  | `-32014`; then the identical artefact returns `amended: true` |
+
+`rv-10` deliberately decides again after the refusal. A Coordinator that
+recorded the refused decision, or that closed the review, fails on the second
+call rather than the first.
+
+---
+
 ## 3. Evidence-chain linkage
 
 The chain is a sequence of entries. Each entry carries the chain head

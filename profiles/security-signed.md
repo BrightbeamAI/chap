@@ -166,6 +166,7 @@ the revocation. Messages dated after are rejected with `-32070`.
 | `-32071`  | No known key matching `from` + `kid` + `ts`.     |
 | `-32072`  | Key has been revoked.                            |
 | `-32073`  | Rotation message not signed with old key.        |
+| `-32074`  | `approved_artefact_digest` does not match the artefact under review. |
 
 ---
 

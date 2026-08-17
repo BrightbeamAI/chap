@@ -20,7 +20,7 @@
  *   - identity-oidc/1.0 + identity-vc/1.0 (binding hooks at join)
  */
 
-import { canonicalize, sha256Hex, ZERO_HASH } from "./canonical.js";
+import { canonicalize, contentHash, sha256Hex, ZERO_HASH } from "./canonical.js";
 import { publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
@@ -1008,18 +1008,87 @@ export class Coordinator {
     const reviewers: string[] = Array.isArray(to) ? (to as string[]) : typeof to === "string" ? [to] : [];
     if (!reviewers.length) return { error: rpcError(E.PARAMS, "review.request needs 'to'") };
     const now = this.now();
+    const rule = (p.rule as string) || "any_one_approves";
+
+    // A review already open on this task. Replacing the artefact underneath
+    // it would let a reviewer decide on content they never saw, and would
+    // discard decisions already cast while their envelopes remain in the
+    // audit log, so a quorum could appear to have been assembled across two
+    // different artefacts. Re-requesting the *same* artefact is a different
+    // thing: it widens the reviewer set on an open review, which is legitimate
+    // and preserves what has been decided so far.
+    if (task.state === "review_requested" && task.review) {
+      if (contentHash(task.pending_artefact) !== contentHash(p.artefact)) {
+        return { error: rpcError(
+          E.REVIEW_ALREADY_OPEN,
+          "A review is already open on this task with different content. " +
+          "Decide, abstain, escalate or cancel it before requesting review of a new artefact.",
+        ) };
+      }
+      if (rule !== task.review.rule) {
+        return { error: rpcError(
+          E.REVIEW_ALREADY_OPEN,
+          `Cannot change the decision rule of an open review (currently ${task.review.rule})`,
+        ) };
+      }
+      // Union, preserving order and the decisions already recorded.
+      for (const r of reviewers) {
+        if (!task.review.requested_to.includes(r)) task.review.requested_to.push(r);
+      }
+      if (p.deadline !== undefined) task.review.deadline = p.deadline as string;
+      task.updated_at = now;
+      return { result: {
+        state: "review_requested",
+        review_id: task.id,
+        amended: true,
+        requested_to: [...task.review.requested_to],
+      } };
+    }
+
     task.state = "review_requested";
     task.updated_at = now;
     task.review = {
       requested_at: now,
       requested_to: reviewers,
-      rule: (p.rule as string) || "any_one_approves",
+      rule,
       deadline: p.deadline as string | undefined,
       decisions: [],
     };
     task.history.push({ ts: now, from: p.from as ParticipantUri, state: "review_requested" });
     task.pending_artefact = p.artefact;
     return { result: { state: "review_requested", review_id: task.id } };
+  }
+
+  /**
+   * Verify an optional `approved_artefact_digest` against the artefact under
+   * review (review/1.0 S3.2).
+   *
+   * The digest sits in params, so it is inside whatever the envelope signature
+   * covers: the decision then attests the content the reviewer saw rather than
+   * a task reference, and a relying party can check it without trusting the
+   * Coordinator that produced it. Absent, behaviour is exactly as before.
+   *
+   * On mismatch nothing is recorded and no state changes, so a client that
+   * computes the wrong digest refuses only its own decision.
+   */
+  private checkArtefactDigest(p: Record<string, unknown>, task: Task): ReturnType<Handler> | null {
+    const declared = p.approved_artefact_digest;
+    if (declared === undefined || declared === null) return null;
+    if (typeof declared !== "string") {
+      return { error: rpcError(E.PARAMS, "approved_artefact_digest must be a string") };
+    }
+    if (task.pending_artefact === undefined) {
+      return { error: rpcError(E.PARAMS, "No artefact under review to bind a digest to") };
+    }
+    const actual = contentHash(task.pending_artefact);
+    if (declared !== actual) {
+      return { error: rpcError(
+        E.SIG_ARTEFACT_DIGEST_MISMATCH,
+        "approved_artefact_digest does not match the artefact under review",
+        { declared, actual },
+      ) };
+    }
+    return null;
   }
 
   private opDecide(p: Record<string, unknown>, kind: "approve" | "reject"): ReturnType<Handler> {
@@ -1038,6 +1107,8 @@ export class Coordinator {
     }
     const notReviewer = this.requireReviewer(task, p.from);
     if (notReviewer) return notReviewer;
+    const digestError = this.checkArtefactDigest(p, task);
+    if (digestError) return digestError;
     const now = this.now();
     task.review!.decisions.push({
       reviewer: p.from as ParticipantUri,
@@ -1073,6 +1144,8 @@ export class Coordinator {
     }
     const notReviewer = this.requireReviewer(task, p.from);
     if (notReviewer) return notReviewer;
+    const digestError = this.checkArtefactDigest(p, task);
+    if (digestError) return digestError;
     // The override is of the artefact under review; use the coordinator's
     // record, not a caller-supplied "before" that could be fabricated.
     const base = task.pending_artefact;

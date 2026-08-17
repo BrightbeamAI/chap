@@ -9,6 +9,44 @@ incremented under the same rules.
 
 ---
 
+## Unreleased
+
+### Review decisions bind the content they decided on (CEP-001)
+
+Reported by Iman Schrock (EMILIA) from a source-pinned CHAP-to-AEB
+interoperability profile, and tracked as #71 and #72. Proposal in
+[`ceps/CEP-001.md`](./ceps/CEP-001.md).
+
+- **Optional `approved_artefact_digest` on `decide.approve`, `decide.reject`
+  and `decide.override`.** SHA-256 over the RFC 8785 (JCS) canonicalisation of
+  the artefact under review, in the `sha256:<hex>` form the evidence chain
+  already uses. The Coordinator verifies it against the artefact under review
+  and refuses a mismatch with `-32074`, recording no decision and changing no
+  state. Absent, behaviour is unchanged.
+
+  The field sits in `params`, so it falls inside whatever the envelope
+  signature covers. A decision then attests content rather than a task
+  reference, and a relying party can verify it without trusting the
+  Coordinator that produced it. Previously a plain approval bound `task_id`
+  and no content, so a consumer could not tell what had been approved.
+
+- **`review.request` on an open review no longer replaces the artefact.**
+  An identical artefact is an amendment: the reviewers in `to` are added to the
+  existing set, decisions already cast are preserved, and the result carries
+  `amended: true`. A different artefact is refused with `-32014`, as is a
+  request that would change the decision rule mid-review.
+
+  Both implementations previously accepted the re-request and overwrote the
+  pending artefact, so a reviewer could decide on content they never saw. Under
+  a quorum rule the effect was worse: the replacement built a fresh review with
+  an empty decision list, discarding decisions already cast while their
+  envelopes remained in the audit log.
+
+- Conformance vectors `rv-09`, `rv-10` and `rv-11`, passing against both
+  reference servers.
+
+---
+
 ## 0.2.9: complete package publish and consolidated 0.2.x hardening
 
 First release with the full set on npm and PyPI: the MCP and A2A coordinators
