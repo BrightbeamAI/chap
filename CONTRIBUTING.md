@@ -48,16 +48,16 @@ before publishing.
 |-----------------------------------|--------------------------------------------------------|
 | Typo or editorial fix             | Pull request directly                                  |
 | New worked example                | Pull request directly                                  |
-| New transport binding             | RFC-style proposal (see below)                         |
-| New method or namespace           | RFC-style proposal (see below)                         |
-| Breaking change to envelope or identity | RFC-style proposal + working-group review          |
+| New transport binding             | CEP (see below)                                        |
+| New method or namespace           | CEP (see below)                                        |
+| Breaking change to envelope or identity | CEP + working-group review                         |
 | Security-sensitive change         | See [SECURITY.md](./SECURITY.md), do not open public issue |
 | New conformance test vector       | Pull request directly                                  |
 | New integration document          | Pull request directly                                  |
 
 ---
 
-## 2. Proposal format ("CHAP Improvement Proposals")
+## 2. Proposal format: CHAP Enhancement Proposals (CEPs)
 
 For substantive changes, write a proposal that includes:
 
@@ -68,6 +68,11 @@ For substantive changes, write a proposal that includes:
 5. **Security considerations.** Threat impact, key-handling impact.
 6. **Alternatives considered.** Why this design over the alternatives?
 7. **Open questions.**
+
+Submit a CEP as a pull request adding `ceps/CEP-NNN.md`; the Editor assigns
+the number. [`ceps/CEP-001.md`](./ceps/CEP-001.md) is a worked example, and
+[`GOVERNANCE.md`](./GOVERNANCE.md) §3.2 defines the required sections and the
+public comment period.
 
 Proposals are reviewed in a public forum and require **rough consensus**
 of the working group before they merge into a draft.

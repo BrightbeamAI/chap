@@ -1,5 +1,5 @@
 /**
- * CHAP Playground — browser client.
+ * CHAP Playground, browser client.
  *
  * Every user action becomes a real JSON-RPC envelope sent to POST /rpc.
  * The server's coordinator processes it, appends it to the evidence
@@ -141,7 +141,7 @@ function startSse() {
 }
 
 // ============================================================
-//   RFC 6902 JSON Patch — compute diff in the browser
+//   RFC 6902 JSON Patch, compute diff in the browser
 //   (mirrors packages/coordinator/src/patch.ts diffJsonPatch)
 // ============================================================
 function diffJsonPatch(from, to, basePath = "") {
@@ -242,9 +242,9 @@ function renderMaya() {
   list.innerHTML = "";
   for (const t of queue) {
     const selected = t.id === state.selectedTaskId;
-    const ticketId = t.input?.ticket_id ?? "—";
+    const ticketId = t.input?.ticket_id ?? "-";
     const subject = t.input?.subject ?? t.kind;
-    const crit = t.routing_hints?.criticality ?? "—";
+    const crit = t.routing_hints?.criticality ?? "-";
     const item = el("div", { class: `queue-item${selected ? " selected" : ""}`,
                             onclick: () => selectTask(t.id) },
       el("div", { class: "queue-item-id" }, ticketId),
@@ -283,21 +283,21 @@ function renderMayaEditor(task) {
   $("maya-empty").hidden  = true;
   $("maya-editor").hidden = false;
 
-  const ticketId = task.input?.ticket_id ?? "—";
+  const ticketId = task.input?.ticket_id ?? "-";
   $("maya-ticket-id").textContent = ticketId;
   $("maya-ticket-subject").textContent = task.input?.subject ?? "";
-  $("maya-ticket-from").textContent = `from ${task.input?.customer ?? "—"}`;
+  $("maya-ticket-from").textContent = `from ${task.input?.customer ?? "-"}`;
   $("maya-ticket-body").textContent = task.input?.body ?? "";
 
-  const crit = task.routing_hints?.criticality ?? "—";
+  const crit = task.routing_hints?.criticality ?? "-";
   const critBadge = $("maya-crit-badge");
   critBadge.textContent = `criticality: ${crit}`;
   critBadge.className   = `badge badge-crit-${crit}`;
 
   const conf = task.artefact_routing_hints?.confidence;
-  $("maya-conf-badge").textContent = `conf ${typeof conf === "number" ? conf.toFixed(2) : "—"}`;
+  $("maya-conf-badge").textContent = `conf ${typeof conf === "number" ? conf.toFixed(2) : "-"}`;
 
-  const modelId = task.artefact_routing_hints?.model_id ?? "—";
+  const modelId = task.artefact_routing_hints?.model_id ?? "-";
   $("maya-model-badge").textContent = `model ${modelId}`;
 
   const escalateBtn = $("maya-escalate");
@@ -350,9 +350,9 @@ function renderSam() {
   list.innerHTML = "";
   for (const t of queue) {
     const selected = t.id === state.selectedTaskId;
-    const ticketId = t.input?.ticket_id ?? "—";
+    const ticketId = t.input?.ticket_id ?? "-";
     const subject = t.input?.subject ?? t.kind;
-    const crit = t.routing_hints?.criticality ?? "—";
+    const crit = t.routing_hints?.criticality ?? "-";
     const item = el("div", { class: `queue-item${selected ? " selected" : ""}`,
                             onclick: () => selectTask(t.id) },
       el("div", { class: "queue-item-id" }, ticketId),
@@ -382,13 +382,13 @@ function renderSamEditor(task) {
   $("sam-empty").hidden  = true;
   $("sam-editor").hidden = false;
 
-  const ticketId = task.input?.ticket_id ?? "—";
+  const ticketId = task.input?.ticket_id ?? "-";
   $("sam-ticket-id").textContent = ticketId;
   $("sam-ticket-subject").textContent = task.input?.subject ?? "";
-  $("sam-ticket-from").textContent = `from ${task.input?.customer ?? "—"}`;
+  $("sam-ticket-from").textContent = `from ${task.input?.customer ?? "-"}`;
   $("sam-ticket-body").textContent = task.input?.body ?? "";
 
-  const crit = task.routing_hints?.criticality ?? "—";
+  const crit = task.routing_hints?.criticality ?? "-";
   const critBadge = $("sam-crit-badge");
   critBadge.textContent = `criticality: ${crit}`;
   critBadge.className   = `badge badge-crit-${crit}`;
@@ -487,7 +487,7 @@ async function sendOverride(role) {
     diff:         ops,
     rationale,
     tags,
-    // CHAP 0.2.1 — surface the new artefact-identity fields. The
+    // CHAP 0.2.1, surface the new artefact-identity fields. The
     // playground uses the task id as the durable logical handle (one
     // logical artefact per task) and defaults intent_preserved to true
     // because the UI is set up for tone/severity tone-tweak overrides,
@@ -588,7 +588,7 @@ function renderDividend(role) {
 }
 
 // ============================================================
-//   Wire panel — chain-style with routing/override classification
+//   Wire panel, chain-style with routing/override classification
 // ============================================================
 
 /** Classify a method name into one of: 'routing' | 'override' | 'default'. */
@@ -613,7 +613,7 @@ function summariseEnvelope(env) {
   }
   if (m === "task.complete" && p.routing_hints) {
     const c = p.routing_hints.confidence;
-    return c != null ? `confidence=${Number(c).toFixed(2)} · model=${p.routing_hints.model_id ?? "—"}` : "";
+    return c != null ? `confidence=${Number(c).toFixed(2)} · model=${p.routing_hints.model_id ?? "-"}` : "";
   }
   if (m === "decide.override") {
     const tags = Array.isArray(p.tags) ? p.tags.join(", ") : "";
@@ -688,7 +688,7 @@ function renderAllWireEntries() {
 }
 
 // ============================================================
-//   Status bar — mode pill, chain length, queue size, Ollama dot
+//   Status bar, mode pill, chain length, queue size, Ollama dot
 // ============================================================
 function updateStatusBar() {
   const ws = state.workspace;
@@ -752,7 +752,7 @@ async function pollHealth() {
 setInterval(() => { if (state.role) pollHealth(); }, 10000);
 
 // ============================================================
-//   Tour bar — guided 3-step walkthrough per role
+//   Tour bar, guided 3-step walkthrough per role
 // ============================================================
 function setTourStep(role, step) {
   if (role === "maya") state.mayaTourStep = step;
@@ -815,8 +815,8 @@ async function init() {
     state.wireEntries = [];
     state.lastChainLen = 0;
     $("wire-body").innerHTML = "";
-    $("wire-strip-seq").textContent = "—";
-    $("wire-strip-method").textContent = "—";
+    $("wire-strip-seq").textContent = "-";
+    $("wire-strip-method").textContent = "-";
     refreshWorkspace();
   });
 
@@ -896,7 +896,7 @@ async function init() {
 }
 
 // ============================================================
-//   GUIDED WALKTHROUGH — 6-step narrative tour
+//   GUIDED WALKTHROUGH, 6-step narrative tour
 //
 //   The walkthrough drives the protocol for real: it fires actual
 //   JSON-RPC envelopes against /rpc and watches them appear in the
@@ -919,7 +919,7 @@ const WALKTHROUGH_STEPS = [
 
   // ----------- Step 1: orient the user -----------
   {
-    title: "Welcome — this is a live CHAP workspace.",
+    title: "Welcome, this is a live CHAP workspace.",
     text: `
       <p>The bar at the top is the protocol's heartbeat. <em>Mode</em>
       tells you the workspace is in production. <em>Chain</em> counts
@@ -938,9 +938,9 @@ const WALKTHROUGH_STEPS = [
     title: "A ticket becomes a Task.",
     text: `
       <p>I just sent a <code>task.create</code> envelope on the wire.
-      The customer's question — <em>"where is my order?"</em> — is now
+      The customer's question, <em>"where is my order?"</em>, is now
       a structured Task with <code>routing_hints.criticality: low</code>.</p>
-      <p>Watch the protocol view at the bottom — the envelope landed at
+      <p>Watch the protocol view at the bottom, the envelope landed at
       the head of the chain. The whole audit trail starts here.</p>`,
     highlight: "#wire-panel",
     nextLabel: "Next: the bot drafts →",
@@ -956,7 +956,7 @@ const WALKTHROUGH_STEPS = [
       <p>The bot has completed the task. Its draft is now in Maya's
       queue (left), and it carried <em>measurement signals</em> back
       to the protocol: confidence, model_id, latency.</p>
-      <p>These aren't free text — they're typed fields in
+      <p>These aren't free text, they're typed fields in
       <code>Artefact.routing_hints</code>. The protocol will use them
       next.</p>`,
     highlight: "#maya-queue",
@@ -970,7 +970,7 @@ const WALKTHROUGH_STEPS = [
   {
     title: "Routing decisions fire automatically.",
     text: `
-      <p>Look at the protocol view below — two amber-bordered entries
+      <p>Look at the protocol view below, two amber-bordered entries
       just appeared on the chain: <code>review.depth</code> and
       <code>escalate.auto</code>. The routing policy read the hints
       and decided: low criticality + high confidence → spot-check; no
@@ -1005,7 +1005,7 @@ const WALKTHROUGH_STEPS = [
   {
     title: "Now a high-stakes ticket.",
     text: `
-      <p>I just fired a <em>second</em> ticket — an urgent fraud query
+      <p>I just fired a <em>second</em> ticket, an urgent fraud query
       with <code>criticality: critical</code>. Watch the wire panel:
       the routing policy auto-escalated to Sam without any human
       intervention.</p>
@@ -1014,7 +1014,7 @@ const WALKTHROUGH_STEPS = [
       <p><strong>That's CHAP.</strong> Wire format you can inspect,
       decisions you can audit, a chain you can prove.</p>`,
     highlight: "#wire-panel",
-    nextLabel: "Done — free play",
+    nextLabel: "Done, free play",
     auto: false,
     onEnter: () => walkthroughFireDemoTicket("INC-48224", "critical").then(() => {
       walkthroughCompleteAsBot("critical");
@@ -1023,7 +1023,7 @@ const WALKTHROUGH_STEPS = [
 ];
 
 async function walkthroughStart() {
-  // Make sure tickets are loaded — the walkthrough's step 2 needs to
+  // Make sure tickets are loaded, the walkthrough's step 2 needs to
   // look up the demo ticket by ID. If the user clicked fast before
   // init() finished, state.tickets might still be empty.
   if (!state.tickets || state.tickets.length === 0) {
@@ -1041,7 +1041,7 @@ async function walkthroughStart() {
     const ok = confirm(
       "The guided walkthrough works best from a clean workspace. " +
       "Reset the chain and tasks to start fresh? " +
-      "(Cancel to leave existing state alone — the walkthrough will still run, " +
+      "(Cancel to leave existing state alone, the walkthrough will still run, " +
       "but the wire will already be populated.)"
     );
     if (ok) {
@@ -1049,8 +1049,8 @@ async function walkthroughStart() {
       state.wireEntries = [];
       state.lastChainLen = 0;
       $("wire-body").innerHTML = "";
-      $("wire-strip-seq").textContent = "—";
-      $("wire-strip-method").textContent = "—";
+      $("wire-strip-seq").textContent = "-";
+      $("wire-strip-method").textContent = "-";
       await refreshWorkspace();
     }
   }
@@ -1194,7 +1194,7 @@ async function walkthroughFireDemoTicket(ticketId, criticality) {
     console.warn(`walkthrough: ticket ${ticketId} not found in state.tickets (length=${state.tickets.length})`);
     // Surface the failure to the user instead of silently advancing.
     $("walkthrough-text").innerHTML +=
-      `<p style="color:var(--ember-d); margin-top:8px;">⚠ Could not load ticket ${ticketId} — try clicking "↻ Guided tour" again after the page finishes loading.</p>`;
+      `<p style="color:var(--ember-d); margin-top:8px;">⚠ Could not load ticket ${ticketId}, try clicking "↻ Guided tour" again after the page finishes loading.</p>`;
     return;
   }
   const env = {
@@ -1230,7 +1230,7 @@ async function walkthroughFireDemoTicket(ticketId, criticality) {
 
 /**
  * Have "the bot" complete the most recent walkthrough task. This is
- * a stand-in for the Ollama agent — the walkthrough can't depend on a
+ * a stand-in for the Ollama agent, the walkthrough can't depend on a
  * model being installed, so we simulate the bot's task.complete with a
  * canned response. The protocol surface is identical to what the real
  * agent would emit.
@@ -1277,7 +1277,7 @@ async function walkthroughCompleteAsBot(criticality) {
 }
 
 /**
- * Hook from sendOverride — if the walkthrough is awaiting a user
+ * Hook from sendOverride, if the walkthrough is awaiting a user
  * override, this advances it to step 6.
  */
 function walkthroughOnUserOverride() {
@@ -1295,7 +1295,7 @@ init().catch((e) => console.error("init failed", e));
 window.addEventListener("error", (e) => {
   const msg = `${e.message} (${e.filename?.split("/").pop()}:${e.lineno})`;
   console.error("[playground]", e.error || e.message);
-  // Drop a one-line banner at top — non-intrusive but visible
+  // Drop a one-line banner at top, non-intrusive but visible
   if (!document.getElementById("err-banner")) {
     const b = document.createElement("div");
     b.id = "err-banner";

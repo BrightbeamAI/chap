@@ -11,6 +11,48 @@ incremented under the same rules.
 
 ## Unreleased
 
+### Documentation consistency
+
+- **The 0.2.7 changelog section is restored.** 218 lines covering the four
+  framework bridges, the scenarios directory and the cross-implementation
+  fixes were lost between 9e7af2b and the 0.2.9 work, and recovered verbatim.
+  A 0.2.8 entry is added; that release published the 0.2.7 line and carried no
+  change of its own.
+
+- **The error registry matches the implementations.** SPECIFICATION.md §13.2
+  assigned overlapping bands, which produced §13.3 giving `-32600`, `-32601`
+  and `-32602` two meanings each and naming errors neither coordinator
+  returns. §13.2 now allocates one decade per profile with no overlap, and
+  §13.3 carries only the five JSON-RPC codes, treating each profile's own
+  table as authoritative rather than mirroring 49 codes that would drift again.
+
+- **`identity-vc/1.0` error codes corrected.** The profile assigned `-32411`
+  to issuer trust and `-32413` to claim disclosure, while both implementations
+  use them for holder binding and unknown schema. The table now matches what
+  is returned, and the two conditions that exist only on paper are recorded as
+  unimplemented rather than deleted.
+
+- **One name for the proposal process.** CONTRIBUTING called it "CHAP
+  Improvement Proposals" in one place and "RFC-style proposal" in three
+  others, while GOVERNANCE defines CEPs. All now say CEP, and CONTRIBUTING
+  points at `ceps/` and the governing section.
+
+- **`MAINTAINERS.md` exists.** SECURITY, GOVERNANCE and CODE_OF_CONDUCT all
+  referred readers to a file that was not there. It records the present
+  position plainly: two maintainers, with protocol decisions resting with
+  Arsalan Shahid, and the Steering Committee and Working Groups in
+  GOVERNANCE §2 described as the structure intended for standards-track
+  promotion rather than today.
+
+- **Em-dashes removed from shipped non-markdown files**, and the CI check
+  widened past `*.md` to the source, schema and UI files where they had
+  accumulated.
+
+- **A CI guard for bare `require()` in ES modules.** Three faults this release
+  had the same cause, and the guard immediately found a fourth: the
+  corrupt-row recovery suite had been skipping silently for the same reason as
+  the storage suites.
+
 ### Storage contract and verification limits (#69)
 
 - **The store contract no longer claims optimistic concurrency.**
@@ -204,6 +246,237 @@ or rejects each request independently.
 
 - npm packages under the `@brightbeamai/` scope; the full nine-package set now
   published on npm and PyPI. Stopped tracking Python bytecode caches. (#60)
+
+---
+
+## 0.2.8: publish of the 0.2.7 line
+
+A packaging release. `chap-coordinator` on PyPI and
+`@brightbeamai/chap-coordinator` on npm were published from this tag; the
+other seven packages remained unpublished until 0.2.9.
+
+The protocol and implementation changes it carried are recorded under 0.2.7
+below, whose entry was expanded rather than duplicated at the time. No
+change is unique to 0.2.8.
+
+---
+
+## 0.2.7: framework adopters, the scenarios directory, and cross-implementation fixes
+
+Adds four framework bridges and a runnable `scenarios/` directory, and
+hardens the two reference implementations for their first registry
+publish. Most of this release is additive, but it also includes a
+normative canonicalisation change (numbers restricted to safe integers, to
+guarantee byte-identical hashing across implementations) and a JSON Patch
+prototype-pollution fix; see Changed and Security below. Both changes can
+affect envelopes that carried non-integer numbers, so read those sections
+before upgrading.
+
+### Added
+
+- **Four framework adopters**, joining `chap-langgraph` (shipped in 0.2.5).
+  Each bridges a real agent framework's human-in-the-loop mechanism to
+  CHAP's `review`/`decide` methods, so an approval, edit, or denial in the
+  framework becomes a `decide.approve` / `decide.override` /
+  `decide.reject` on the audit chain:
+  - **`chap-pydantic-ai`** (`ChapApprovalBridge`): bridges
+    [Pydantic AI](https://ai.pydantic.dev)'s deferred-tool approval flow.
+    An edit before approval records an override with the diff; per-call
+    rationale and tags come from the tool-result metadata.
+  - **`chap-ag2`** (`ChapTurnBridge`): bridges
+    [AG2](https://github.com/ag2ai/ag2) (AutoGen) agent turns.
+  - **`chap-llama-index`** (`ChapHitlBridge`): bridges
+    [LlamaIndex Workflows](https://developers.llamaindex.ai/python/framework/understanding/workflows/)
+    human-in-the-loop events.
+  - **`chap-google-adk`**: bridges
+    [Google ADK](https://google.github.io/adk-docs/) human-in-the-loop
+    tool confirmations.
+
+  All four join both the agent and the reviewer, address the review to the
+  approver, and decide from the approver, so they satisfy the actor
+  membership and reviewer-set eligibility rules added in 0.2.6. Each ships
+  with tests that run against the reference coordinator with authorisation
+  enforcement active, plus a runnable example. The frameworks themselves
+  are optional dependencies; the bridges and their tests do not require
+  them installed.
+
+- **`scenarios/` directory**: runnable, community-contributed domain
+  narratives on CHAP core, one self-contained folder per scenario, kept
+  distinct from `examples/` (capability walkthroughs) and the adapters'
+  own `examples/` (framework demos). Includes a catalog README (all twelve
+  `IN_PRACTICE.md` scenarios with status, labels, layout, and a
+  definition-of-done) and the first three worked examples:
+  - **`01-solo-dev-overrides/`** in two tiers: a zero-dependency
+    `scenario.py` (core/1.0 + review/1.0 + audit-scitt/1.0) that records a
+    mix of decisions, verifies the hash-linked chain, reconstructs one
+    override, and prints an override learning report; and a `system/`
+    implementation driving the same story through a real Pydantic AI agent
+    whose review action is approval-gated, offline and reproducible, with a
+    documented one-line path to a live model.
+  - **`02-marketing-copy/`**: one drafter, one editor; overrides tagged and
+    aggregated into an opener-rewrite report.
+  - **`03-founder-inbox/`**: a support inbox reconstructed from the chain,
+    with a repeated wrong-policy pattern surfaced across tickets.
+
+### Changed
+
+- **Canonicalisation now restricts numbers to safe integers.** A number in
+  a CHAP envelope or artefact must be an integer with absolute value at
+  most 2^53 - 1; non-integers and larger magnitudes are rejected and must
+  be represented as strings (for example `"8.2"`). This makes the Python
+  and TypeScript canonicalisers produce byte-identical output by
+  construction, so a chain or signature written by one implementation
+  verifies against the other. Previously each implementation formatted some
+  numbers differently (for example `1e-7`), which could break
+  cross-implementation verification. **Potentially breaking:** an envelope
+  that carried a non-integer number as a JSON number is now rejected;
+  carry it as a string. Integer-only payloads are unaffected. See the
+  number-format note in `SPECIFICATION.md` and the shared vectors in
+  `conformance/canonical-number-vectors.json`.
+- **`confidence` accepts a string as well as a number.** Because a
+  confidence score is typically a decimal and is recorded in the audit
+  envelope, it follows the canonical-number rule: pass a decimal as a
+  string (`"0.9"`). The routing engine coerces it to a number for its
+  thresholds, so routing behaviour is unchanged.
+- **JSON Patch (`decide.override`) is now full RFC 6902 in both
+  implementations.** The TypeScript coordinator previously supported only
+  `add`/`replace`/`remove` and threw on `move`/`copy`/`test`, auto-created
+  missing intermediate objects on `add`, and silently ignored array append
+  (`/-`) and out-of-range operations. It now matches the Python reference
+  exactly (all six operations, correct array insert/append, out-of-range
+  operations raise). Pinned by `conformance/json-patch-vectors.json`.
+- `IMPLEMENTATIONS.md` updated: the four new bridges added to the registry
+  with their test counts, and the `chap-langgraph` row bumped to 0.2.7.
+- **Canonicalisation is enforced at the dispatch boundary.** An inbound
+  envelope that fails to canonicalise (for example, one carrying a
+  non-integer JSON number) is rejected with `-32602` at dispatch rather
+  than being accepted and failing later when its audit entry is hashed.
+- **`participant.join` is idempotent for re-joins.** When an existing member
+  re-joins, newly attested keys and OIDC/VC identity fields are merged into
+  the existing member record rather than replacing it, so a participant can
+  rotate or add a signing key without dropping prior keys.
+- **Non-object JSON-RPC `params` are rejected as `-32602` (Invalid
+  params)** in both implementations, rather than being passed to a handler
+  (which previously could raise an opaque internal error). CHAP methods use
+  by-name params, so a non-object `params` is always invalid.
+- **Clarified reviewer scoping for `group:` targets.** A review addressed
+  to a `group:` URI is satisfied by any workspace member: the coordinator
+  does not model group membership, so it cannot restrict a decision to a
+  named group on its own. Deployments that need true group restriction must
+  enforce it externally. This is now stated explicitly in the code and
+  `SPECIFICATION.md`; a future profile may add a first-class group model.
+  (Behaviour is unchanged; this is a documentation correction.)
+
+### Security
+
+- **`task.complete` now enforces its legal source states (both
+  implementations).** Completion previously rejected only `completed` and
+  `declined` tasks, so a `cancelled` or `superseded` task could be revived
+  by completing it, and a `paused` task could be completed to bypass the
+  pause. Completion is now allowed only from `created` or `in_progress`
+  (an allowlist, so any other state is rejected). The `task.status`
+  transition table already enforced this for status changes; this closes
+  the equivalent hole on the dedicated completion path.
+- **`whisper/1.0` answers now require the answerer to be an addressed askee
+  (both implementations).** `whisper.answer` previously accepted an answer
+  from any caller, so a party the question was not directed at could answer
+  a directed whisper and have it recorded as authoritative. Only a
+  participant in the whisper's `askee` set may now answer; a broadcast
+  scope (`workspace:`/`group:`) is satisfied by any member, consistent with
+  reviewer scoping. The existing already-answered, lapsed, and
+  option-in-set checks are unchanged.
+- **`handoff/1.0` methods now require workspace membership (both
+  implementations).** The ownership check (proposer must be the current
+  assignee of each task, `HANDOFF_TASKS_NOT_ASSIGNED_TO_PROPOSER`) and the
+  recipient-membership check were already enforced; the added floor closes
+  a gap where a non-member could call `handoff.decline` to write decline
+  metadata onto a handoff.
+- **`deliberation/1.0` open/close/comment now require workspace membership
+  (both implementations).** These methods previously performed no
+  membership check, so a non-member could open a deliberation (choosing its
+  rule, participants, weights, and veto set) or call `deliberate.close` to
+  finalize the tally early. Membership is now enforced at dispatch for all
+  `deliberate.*` methods. The existing per-voter eligibility
+  (`DELIB_VOTER_NOT_IN_LIST`) and double-vote (`DELIB_ALREADY_VOTED`) checks
+  are unchanged and continue to apply.
+- **`control/1.0` operations now require workspace membership (both
+  implementations).** None of the control methods
+  (`pause`/`resume`/`cancel`/`snapshot`/`rollback`/`supersede`/`set_mode_ceiling`)
+  previously performed any authorization check, so a non-member could
+  defeat the governance "emergency brake" -- for example resume a workspace
+  a governor had paused, raise the mode ceiling to escalate autonomy, or
+  cancel in-flight tasks. All `control.*` methods now enforce the
+  membership floor at dispatch. (Deployments needing a stricter role gate
+  than membership layer it on top via an identity-* profile or application
+  check; `control.rollback` remains append-only and does not truncate the
+  audit chain.)
+- **Signature verification now fails closed (`security-signed/1.0`, both
+  implementations).** When `require_signatures` is enabled and a signature
+  is present but cannot be verified (missing `from`/`workspace`, or an
+  unknown workspace), the request is now rejected rather than silently
+  skipped. Previously these cases returned "no error", so a request with an
+  unverifiable signature could proceed; notably `workspace.create` accepted
+  a garbage signature because the workspace did not yet exist at
+  verification time. `workspace.create` (like `participant.join`) is now an
+  explicit bootstrap exemption -- it runs before any signing key is
+  registered and so is not signature-verified -- while every other method
+  must present a verifiable signature.
+- **Signed-request key revocation can no longer be bypassed by backdating
+  (`security-signed/1.0`, both implementations).** Signature verification
+  previously selected the key and evaluated revocation using the envelope's
+  own `ts`, which the signer controls; a holder of a revoked key could set
+  `ts` to before the revocation and still be accepted. Revocation is now
+  evaluated against the coordinator's trusted clock, so a revoked key is
+  rejected for any live request regardless of the claimed `ts`. (Historical
+  verification against the validity window still uses `ts`.)
+- **Audit chain verification now detects tampering of every entry
+  (`audit.verify_chain`, both implementations).** Two flaws previously let
+  a modified chain pass verification: the replayed chain head was never
+  compared against the stored `chain_head` (so tampering the final entry,
+  which no stored `prev_hash` covers, went undetected), and an entry could
+  opt out of its own check by dropping its `prev_hash`. Verification now
+  recomputes every link, requires each stored `prev_hash` to match, and
+  compares the replayed head to the stored head. This closes a
+  tamper-evidence gap in the audit chain. Verification is scoped to the
+  chained region: leading un-chained entries (from before chaining was
+  enabled on the workspace) are skipped, and verifying a workspace with no
+  chain enabled returns a clear error rather than a false pass.
+- **JSON Patch prototype-pollution fix (TypeScript).** A crafted
+  `decide.override` diff with a path through `__proto__`, `constructor`, or
+  `prototype` could pollute `Object.prototype` in the coordinator process.
+  Both implementations now reject those path segments. Since an override
+  diff comes from a reviewer, this closes an injection vector reachable
+  from ordinary protocol input.
+- **Internal errors no longer echo raw exception text on the wire.** The
+  JSON-RPC internal-error response (`-32603`) previously included the raw
+  exception message, which could disclose internal detail to callers. The
+  wire message is now generic; specifics are carried in the error `data`
+  field for operators.
+
+### Packaging
+
+- Publish-readiness fixes across all packages: author contact set to
+  `oss@brightbeam.com`; an Apache-2.0 `LICENSE` file added to every
+  package; the SPDX `license` expression adopted (deprecated classifier
+  removed); package `__version__` now derives from installed metadata
+  instead of a hardcoded string that had drifted; the npm scope is
+  `@brightbeamai`; bridge READMEs and dependency pins corrected.
+- The four newer bridges are wired for release the same way
+  `chap-langgraph` is [pending: see the release-workflow decision]. Any
+  bridge not yet published to PyPI ships as source in the repo and runs
+  from a clone.
+
+### Tests
+
+- New bridge suites, all green against the coordinator with authorisation
+  enforcement: `chap-pydantic-ai` 17, `chap-ag2` 14, `chap-llama-index` 13,
+  `chap-google-adk` 15.
+- New cross-implementation conformance suites for canonicalisation and JSON
+  Patch, asserting byte-identical output and matching rejection between the
+  Python and TypeScript references.
+- TypeScript coordinator 103, MCP 17, A2A 14, playground 7; Python
+  coordinator 172, langgraph 10. Conformance harness 23/23 on both
+  reference implementations.
 
 ---
 

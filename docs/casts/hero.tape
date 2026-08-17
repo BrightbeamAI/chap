@@ -1,4 +1,4 @@
-# hero.tape — generates docs/img/hero.gif
+# hero.tape, generates docs/img/hero.gif
 #
 # This drives the CHAP playground demo and records a ~30s walkthrough
 # showing: agent drafts -> human overrides -> chain replays.
