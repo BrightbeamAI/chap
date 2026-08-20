@@ -50,7 +50,7 @@ async def main() -> None:
         ],
     ))
 
-    server = make_chap_mcp_server(coord, name="chap", version="0.2.9")
+    server = make_chap_mcp_server(coord, name="chap", version="0.2.10")
 
     # Log to stderr; stdout is reserved for the MCP protocol stream.
     print("CHAP MCP reference server starting on stdio.", file=sys.stderr)

@@ -9,7 +9,50 @@ incremented under the same rules.
 
 ---
 
-## Unreleased
+## 0.2.10: MCP registry entry, and two verdicts that changed
+
+Published 2026-08-20. **Two calls behave differently from 0.2.9 and `^0.2.9`
+resolves this release automatically.** If you pin that way, read the next two
+paragraphs before upgrading.
+
+`review.request` on a task that already has an open review with different
+content now returns `-32014` instead of quietly replacing the artefact under
+review. `audit.verify_chain` now returns `ok: false` with `status:
+"not_evaluated"` where it previously returned `ok: true`, whenever any part
+of the log lies outside the chain. Both were reported as defects, both fail
+closed, and both are described in full below.
+
+The profile identifier stays `audit-scitt/1.0`. That is a deliberate choice
+rather than an oversight: profile surfaces are expected to move before 1.0
+and 0.2.9 changed this same profile without a bump, so a bump now would imply
+a stability guarantee the 0.x line does not offer.
+
+### The MCP server is launchable
+
+`@brightbeamai/chap-coordinator-mcp` exported `makeChapMcpServer` and had no
+`bin`, so it was a library that `npx` could not start. Directories and the
+official registry list servers a client can launch, so listing it required an
+entrypoint.
+
+`npx -y @brightbeamai/chap-coordinator-mcp` now starts a stdio server exposing
+all 39 CHAP methods as MCP tools. Two environment variables: `CHAP_DB_PATH`
+for a SQLite file, and `CHAP_PROFILES` to override the profile set. Without
+`CHAP_DB_PATH` the coordinator runs in memory and workspaces are lost when the
+client exits, which suits a trial and does not suit real decisions. If the
+path is set and the store cannot be opened, the server exits with the reason
+rather than starting in memory and silently discarding what it was asked to
+keep.
+
+The package's peer dependencies became real dependencies. Peers are correct
+for a library and wrong for something `npx` launches, where neither the
+coordinator nor the MCP SDK would resolve.
+
+New workspaces get `audit-scitt/1.0` by default, so their chain starts at the
+first entry. A workspace that adds the profile later can never chain-verify
+what came before it.
+
+`server.json` at the repository root carries the registry metadata.
+
 
 ### `audit.verify_chain` no longer passes over what it did not check
 

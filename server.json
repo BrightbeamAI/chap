@@ -1,0 +1,42 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.brightbeamai/chap",
+  "title": "CHAP Coordinator",
+  "description": "Auditable records of human decisions over AI agent work. Approvals, edits, overrides, escalations.",
+  "version": "0.2.10",
+  "websiteUrl": "https://github.com/BrightbeamAI/chap",
+  "repository": {
+    "url": "https://github.com/BrightbeamAI/chap",
+    "source": "github",
+    "subfolder": "packages/coordinator-mcp"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@brightbeamai/chap-coordinator-mcp",
+      "version": "0.2.10",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "CHAP_DB_PATH",
+          "description": "Path to a SQLite file. Without it the coordinator runs in memory and workspaces are lost when the client restarts.",
+          "format": "filepath",
+          "isRequired": false,
+          "isSecret": false,
+          "placeholder": "~/chap.db"
+        },
+        {
+          "name": "CHAP_PROFILES",
+          "description": "Comma-separated CHAP profiles enabled on new workspaces. Defaults to Core plus review, whisper, deliberation, handoff, control, routing, modes and audit-scitt.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false,
+          "placeholder": "core/1.0,review/1.0,audit-scitt/1.0"
+        }
+      ]
+    }
+  ]
+}

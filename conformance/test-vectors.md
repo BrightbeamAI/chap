@@ -105,10 +105,6 @@ differs but the bytes look almost right, check (in order):
 
 ---
 
-> **Unreleased.** These three vectors exercise behaviour on `main` that is
-> not in a published release. A coordinator built from 0.2.9 will not pass
-> them, and should not be expected to.
-
 ## 2a. Binding a decision to its content (CEP-001)
 
 Three vectors cover the artefact digest and the open-review guard. They are
