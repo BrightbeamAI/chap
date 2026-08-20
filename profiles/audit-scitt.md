@@ -145,6 +145,25 @@ append-only store), the recommended procedure:
 The historical entries remain auditable both via their original
 provenance and via SCITT receipts. New entries are SCITT-only.
 
+### 6.1 Adopting the profile mid-life
+
+Adding `audit-scitt/1.0` to a live workspace turns on the local
+`prev_hash` chain from that point. Entries already in the log stay
+outside it: no stored hash reaches back to them, so the chain says
+nothing either way about whether they were altered.
+
+`audit.verify_chain` reports this rather than passing over it. Until the
+historical entries have receipts of their own, the verdict for the whole
+log is `not_evaluated` with `reason: "unchained_prefix"` and `ok: false`,
+alongside `entries_checked` and `entries_unchecked` naming the covered
+range. The verdict becomes `verified` once coverage is complete, which for
+an imported log means completing the procedure above rather than waiting.
+
+The enabling call is itself audited, so coverage begins at the
+`workspace.set_profiles` entry that switched the chain on.
+
+See SPECIFICATION.md §10.2 for the normative rule.
+
 ---
 
 ## 7. Anchoring

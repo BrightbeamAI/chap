@@ -88,6 +88,12 @@ export function registerAuditScitt(coord: Coordinator): void {
     if (!(ws.chain_enabled || coord.options.enableChain)) {
       return { error: rpcError(E.PARAMS, "Chain not enabled for this workspace") };
     }
+    // Coverage begins at the first entry carrying a prev_hash. A workspace
+    // may enable chaining part-way through its life, in which case every
+    // earlier entry is outside the chain and cannot be evaluated against
+    // anything. Those entries are not evidence of tampering and not
+    // evidence of integrity: they were never checked, and the verdict
+    // below has to say so rather than pass over them.
     let start = ws.audit.findIndex(e => e.prev_hash != null);
     if (start < 0) start = ws.audit.length;
     const errors: string[] = [];
@@ -110,10 +116,34 @@ export function registerAuditScitt(coord: Coordinator): void {
     if (errors.length) {
       return { error: rpcError(E.PARAMS, errors.join("; ")) };
     }
+    const entriesTotal     = ws.audit.length;
+    const entriesChecked   = entriesTotal - start;
+    const entriesUnchecked = start;
+    // Three terminal verdicts, mutually exclusive: a broken chain returned
+    // above as an error, an unevaluated range here, and a pass only when
+    // coverage is complete. `not_evaluated` never rides alongside ok:true;
+    // a reader that looks at ok alone fails closed rather than reading a
+    // pass over entries nothing was checked against.
+    if (entriesUnchecked > 0) {
+      return { result: {
+        status:            "not_evaluated",
+        ok:                false,
+        reason:            "unchained_prefix",
+        entries_total:     entriesTotal,
+        entries_checked:   entriesChecked,
+        entries_unchecked: entriesUnchecked,
+        checked_from_seq:  entriesChecked > 0 ? ws.audit[start].seq : null,
+        chain_head:        storedHead,
+      }};
+    }
     return { result: {
-      ok: true,
-      entries_checked: ws.audit.length - start,
-      chain_head: storedHead,
+      status:            "verified",
+      ok:                true,
+      entries_total:     entriesTotal,
+      entries_checked:   entriesChecked,
+      entries_unchecked: 0,
+      checked_from_seq:  entriesChecked > 0 ? ws.audit[start].seq : null,
+      chain_head:        storedHead,
     }};
   });
 }

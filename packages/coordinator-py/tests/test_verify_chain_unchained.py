@@ -27,7 +27,7 @@ def test_unchained_workspace_is_not_reported_tampered():
     assert "Chain not enabled" in r["error"]["message"]
 
 
-def test_chain_enabled_midlife_verifies_from_first_chained_entry():
+def test_chain_enabled_midlife_reports_the_uncovered_prefix_not_a_pass():
     c = Coordinator(CoordinatorOptions(deterministic_ids=True))
     s = _send(c)
     s("workspace.create", workspace="w", profiles=["core/1.0"])
@@ -37,7 +37,11 @@ def test_chain_enabled_midlife_verifies_from_first_chained_entry():
     s("workspace.set_profiles", workspace="w", **{"from": "human:a"},
       profiles=["core/1.0", "audit-scitt/1.0"])
     s("task.create", workspace="w", **{"from": "human:a"}, kind="k2", input={}, assignee="agent:b")
-    assert s("audit.verify_chain", workspace="w")["result"]["ok"] is True
+    v = s("audit.verify_chain", workspace="w")["result"]
+    assert v["status"] == "not_evaluated", "entries predate the chain"
+    assert v["ok"] is False
+    assert v["reason"] == "unchained_prefix"
+    assert v["entries_unchecked"] > 0
 
 
 def test_chained_workspace_still_detects_tampering():
@@ -46,6 +50,10 @@ def test_chained_workspace_still_detects_tampering():
     s("workspace.create", workspace="w")
     s("participant.join", workspace="w", **{"from": "agent:b"}, type="agent")
     s("task.create", workspace="w", **{"from": "agent:b"}, task="t1")
-    assert s("audit.verify_chain", workspace="w")["result"]["ok"] is True
+    # Chained from genesis, so coverage is complete and a pass is correct.
+    v = s("audit.verify_chain", workspace="w")["result"]
+    assert v["status"] == "verified"
+    assert v["ok"] is True
+    assert v["entries_unchecked"] == 0
     c.get_workspace("w").audit[-1].envelope["params"]["task"] = "TAMPERED"
     assert "error" in s("audit.verify_chain", workspace="w")

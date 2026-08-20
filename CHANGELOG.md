@@ -11,6 +11,50 @@ incremented under the same rules.
 
 ## Unreleased
 
+### `audit.verify_chain` no longer passes over what it did not check
+
+A workspace can enable chaining part-way through its life. Verification then
+replayed from the first chained entry, which is correct, and reported `ok:
+true` with a smaller `entries_checked` beside it, which is not. Four entries
+with three written before chaining returned a pass having checked one. The
+coverage number was present and sat next to the pass, so a reader took the
+pass.
+
+The verdict is now one of three terminal outcomes, mutually exclusive. A
+broken chain stays a JSON-RPC error. A log with entries outside coverage
+returns `status: "not_evaluated"` with `ok: false` and `reason:
+"unchained_prefix"`. `verified` requires complete coverage. `ok` is `true`
+only alongside `verified`, so a caller reading `ok` alone now fails closed
+where it previously passed.
+
+The result also carries `entries_total`, `entries_unchecked` and
+`checked_from_seq` next to the existing `entries_checked`, so a verdict names
+the range it evaluated instead of leaving the reader to infer it.
+
+Two things this does not change. A workspace that never enabled chaining is
+still refused outright rather than answered, because there is no chain to ask
+about. And tampering in a covered entry is still an error, never downgraded
+to `not_evaluated`.
+
+This came out of the IETF SCITT thread, where Henri Sirkkavaara and Iman
+Schrock converged on `NOT_EVALUATED` as a terminal verdict after 1F916
+Maintainer reported four cases of a row that was never written passing every
+instrument they had. Checking CHAP against that discussion found the same
+gap here. Tracked as
+[#76](https://github.com/BrightbeamAI/chap/issues/76).
+
+Two supporting corrections went with it. The declared TypeScript type
+`AuditVerifyChainResult` described `valid` and `breaks`, neither of which any
+handler has ever returned; it now matches the wire. And the regression test
+`a chain enabled mid-life verifies from the first chained entry` asserted the
+old pass in both languages, so the gap was not an oversight but a documented
+expectation, now corrected in place.
+
+Normative text in SPECIFICATION.md §10.2, adoption guidance in
+`profiles/audit-scitt.md` §6.1, vectors `av-01` to `av-04` in
+`conformance/test-vectors.md`. Both implementations answer the three probe
+cases byte-identically.
+
 ### Unreleased features are marked as such
 
 `main` documents `approved_artefact_digest`, the open-review guard, and error

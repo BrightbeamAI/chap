@@ -980,6 +980,35 @@ The practical way to lose entries is to run more than one Coordinator
 instance against a shared store; see the single-writer requirement in
 §10.3.
 
+**Coverage MUST be part of the verdict.** A workspace MAY enable chaining
+part-way through its life, in which case entries written earlier carry no
+`prev_hash` and lie outside the chain. Those entries are neither evidence of
+tampering nor evidence of integrity: nothing was checked against them. A
+verifier MUST NOT report a pass over a range it did not evaluate.
+
+`audit.verify_chain` therefore returns one of three terminal outcomes, and
+they are mutually exclusive:
+
+| Outcome | Shape | Meaning |
+|---|---|---|
+| Broken | JSON-RPC error | A covered entry failed the replay. |
+| `not_evaluated` | `status: "not_evaluated"`, `ok: false`, `reason` | Part of the log lies outside coverage. |
+| `verified` | `status: "verified"`, `ok: true` | Coverage is complete and the replay passed. |
+
+`ok` MUST be `true` only when `status` is `verified`. A coverage count
+reported beside a pass is not sufficient: the first reader under time
+pressure takes the pass and does not read the count. Implementations MUST
+report the two numbers `entries_checked` and `entries_unchecked`, which MUST
+sum to `entries_total`, and `checked_from_seq`, the `seq` of the first
+covered entry, or `null` when nothing was covered.
+
+The one defined `reason` is `unchained_prefix`. Further reasons MAY be added
+for other mechanisms; a reason is a refinement beneath the verdict and never
+a modifier on it.
+
+A workspace that never enabled chaining is a different case and is refused
+outright, because there is no chain to ask about.
+
 ### 10.3 Single-writer requirement
 
 A Coordinator is a **single-writer** component. Its dispatch is serial, it

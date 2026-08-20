@@ -128,6 +128,34 @@ call rather than the first.
 
 ---
 
+## 2b. Verification coverage (`audit-scitt/1.0`)
+
+Four vectors covering what `audit.verify_chain` may and may not call a pass.
+Each asserts on the verdict a Coordinator gives about a range it did not
+evaluate, which is easy to implement as a pass with a smaller count beside
+it.
+
+| Vector  | Sends                                                        | Expects                                   |
+|---------|--------------------------------------------------------------|-------------------------------------------|
+| `av-01` | `audit.verify_chain` on a workspace chained from creation     | `status: "verified"`, `ok: true`, `entries_unchecked: 0` |
+| `av-02` | the same after `workspace.set_profiles` added `audit-scitt/1.0` to a workspace with existing entries | `status: "not_evaluated"`, `ok: false`, `reason: "unchained_prefix"`, `entries_unchecked` equal to the entries written before the enabling call |
+| `av-03` | the same on a workspace that never enabled chaining           | `-32602`; a refusal, not a verdict        |
+| `av-04` | the same after tampering with a covered entry                 | an error; tampering is never downgraded to `not_evaluated` |
+
+`av-02` is the vector that matters. `ok` must be `false` even though every
+covered entry replayed cleanly, because the question asked was about the
+whole log. `entries_checked` plus `entries_unchecked` must equal
+`entries_total` in every verdict, and `ok` must be `true` only when `status`
+is `verified`.
+
+These four are not yet exercised by the harness, which runs Core and
+`review/1.0` against reference servers that do not enable `audit-scitt/1.0`.
+Both reference implementations are held to them by unit tests
+(`verify_coverage.test.ts` and `test_verify_coverage.py`) and answer them
+identically.
+
+---
+
 ## 3. Evidence-chain linkage
 
 The chain is a sequence of entries. Each entry carries the chain head
