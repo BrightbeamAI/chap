@@ -21,7 +21,7 @@
     "tool",
     "claude"
   ],
-  "mcpName": "io.github.brightbeamai/chap",
+  "mcpName": "io.github.BrightbeamAI/chap",
   "type": "module",
   "engines": {
     "node": ">=20"

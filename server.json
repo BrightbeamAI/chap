@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.brightbeamai/chap",
+  "name": "io.github.BrightbeamAI/chap",
   "title": "CHAP Coordinator",
   "description": "Auditable records of human decisions over AI agent work. Approvals, edits, overrides, escalations.",
   "version": "0.2.10",

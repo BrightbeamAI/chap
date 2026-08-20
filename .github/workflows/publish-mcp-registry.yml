@@ -60,6 +60,29 @@ jobs:
           [ "$MCP_NAME" = "$SERVER_NAME" ] || { echo "::error::mcpName does not match server.json name; the registry rejects this"; fail=1; }
           exit $fail
 
+      - name: Check the published package agrees about who owns this server
+        run: |
+          set -euo pipefail
+          NAME=$(jq -r '.packages[0].identifier' "${GITHUB_WORKSPACE}/server.json")
+          VERSION=$(jq -r '.packages[0].version' "${GITHUB_WORKSPACE}/server.json")
+          SERVER_NAME=$(jq -r '.name' "${GITHUB_WORKSPACE}/server.json")
+          # The registry proves npm ownership by reading mcpName out of the
+          # published package, not out of this checkout. A repository that has
+          # been corrected but not republished still fails, so compare against
+          # what is actually on npm.
+          PUBLISHED=$(npm view "${NAME}@${VERSION}" mcpName 2>/dev/null || true)
+          echo "published mcpName  ${PUBLISHED:-<absent>}"
+          echo "server.json name   ${SERVER_NAME}"
+          if [ -z "$PUBLISHED" ]; then
+            echo "::error::the published package declares no mcpName; the registry cannot verify ownership"
+            exit 1
+          fi
+          if [ "$PUBLISHED" != "$SERVER_NAME" ]; then
+            # Case is the likely difference and the registry may or may not
+            # care. Say so plainly and let the registry give the verdict.
+            echo "::warning::published mcpName differs from server.json name. If publish fails validation, republish the npm package with the corrected mcpName."
+          fi
+
       - name: Check the version is already on npm
         run: |
           set -euo pipefail
