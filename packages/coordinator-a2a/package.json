@@ -7,7 +7,7 @@
   "homepage": "https://github.com/BrightbeamAI/chap",
   "repository": {
     "type": "git",
-    "url": "https://github.com/BrightbeamAI/chap.git",
+    "url": "git+https://github.com/BrightbeamAI/chap.git",
     "directory": "packages/coordinator-a2a"
   },
   "bugs": {
