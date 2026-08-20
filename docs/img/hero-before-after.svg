@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1240" font-family="Arial, Helvetica, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" font-family="Arial, Helvetica, sans-serif">
   <defs>
     <linearGradient id="bgChaos" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#fef3f2"/>
@@ -16,83 +16,74 @@
     </filter>
   </defs>
 
-  <text x="600" y="56" text-anchor="middle" font-size="46" font-weight="700" fill="#0f172a">Same scenario, two stacks</text>
-  <text x="600" y="98" text-anchor="middle" font-size="28" font-weight="500" fill="#334155">a customer disputes a refund the agent decided last month</text>
+  <text x="600" y="44" text-anchor="middle" font-size="34" font-weight="700" fill="#0f172a">Same scenario, two stacks</text>
+  <text x="600" y="76" text-anchor="middle" font-size="20" font-weight="500" fill="#334155">a customer disputes a refund the agent decided last month</text>
 
-  <rect x="30" y="126" width="1140" height="440" rx="16" fill="url(#bgChaos)" stroke="#f87171" stroke-width="2"/>
-  <text x="600" y="176" text-anchor="middle" font-size="32" font-weight="800" fill="#7f1d1d" letter-spacing="3">WITHOUT CHAP</text>
-
-  <g filter="url(#softShadow)">
-    <rect x="55" y="200" width="360" height="110" rx="12" fill="#fff"/>
-    <text x="235" y="246" text-anchor="middle" font-size="32" font-weight="700" fill="#0f172a">OpenAI logs</text>
-    <text x="235" y="284" text-anchor="middle" font-size="26" font-weight="700" fill="#b91c1c">expired after 30 days</text>
-  </g>
-  <g filter="url(#softShadow)">
-    <rect x="425" y="200" width="360" height="110" rx="12" fill="#fff"/>
-    <text x="605" y="246" text-anchor="middle" font-size="32" font-weight="700" fill="#0f172a">Zendesk thread</text>
-    <text x="605" y="284" text-anchor="middle" font-size="26" font-weight="700" fill="#b91c1c">final reply only</text>
-  </g>
-  <g filter="url(#softShadow)">
-    <rect x="795" y="200" width="360" height="110" rx="12" fill="#fff"/>
-    <text x="975" y="246" text-anchor="middle" font-size="32" font-weight="700" fill="#0f172a">Slack #support</text>
-    <text x="975" y="284" text-anchor="middle" font-size="26" font-weight="700" fill="#b91c1c">scrolled past</text>
-  </g>
-  <g filter="url(#softShadow)">
-    <rect x="55" y="324" width="360" height="110" rx="12" fill="#fff"/>
-    <text x="235" y="370" text-anchor="middle" font-size="32" font-weight="700" fill="#0f172a">Linear comments</text>
-    <text x="235" y="408" text-anchor="middle" font-size="26" font-weight="700" fill="#b91c1c">no rationale</text>
-  </g>
-  <g filter="url(#softShadow)">
-    <rect x="425" y="324" width="360" height="110" rx="12" fill="#fff"/>
-    <text x="605" y="370" text-anchor="middle" font-size="32" font-weight="700" fill="#0f172a">webhook tail</text>
-    <text x="605" y="408" text-anchor="middle" font-size="26" font-weight="700" fill="#b91c1c">keys rotated</text>
-  </g>
-  <g filter="url(#softShadow)">
-    <rect x="795" y="324" width="360" height="110" rx="12" fill="#fff"/>
-    <text x="975" y="370" text-anchor="middle" font-size="32" font-weight="700" fill="#0f172a">Notion runbook</text>
-    <text x="975" y="408" text-anchor="middle" font-size="26" font-weight="700" fill="#b91c1c">stale by Tuesday</text>
-  </g>
-
-  <text x="62" y="490" font-size="30" font-weight="600" fill="#1f2937" font-style="italic">"What did the agent draft?</text>
-  <text x="62" y="528" font-size="30" font-weight="600" fill="#1f2937" font-style="italic">Why did we approve it?"</text>
-
-  <rect x="630" y="456" width="510" height="96" rx="12" fill="#7f1d1d"/>
-  <text x="885" y="492" text-anchor="middle" font-size="22" font-weight="700" fill="#fecaca" letter-spacing="3">TIME TO ANSWER</text>
-  <text x="885" y="538" text-anchor="middle" font-size="48" font-weight="800" fill="#fff">~45 minutes</text>
-
-  <rect x="30" y="590" width="1140" height="620" rx="16" fill="url(#bgClean)" stroke="#f97316" stroke-width="2"/>
-  <text x="600" y="640" text-anchor="middle" font-size="32" font-weight="800" fill="#7c2d12" letter-spacing="3">WITH CHAP</text>
-
-  <g filter="url(#softShadow)">
-    <rect x="60" y="676" width="1080" height="84" rx="12" fill="#fff"/>
-    <text x="84" y="730" font-size="30" font-weight="800" fill="#1e293b" font-family="'Courier New', Courier, monospace">task.create</text>
-    <text x="1116" y="730" text-anchor="end" font-size="26" font-weight="600" fill="#334155">customer ticket · agent:triage</text>
-  </g>
-  <line x1="110" y1="762" x2="110" y2="784" stroke="#c2410c" stroke-width="4" marker-end="url(#arrowEmber)"/>
-  <text x="140" y="782" font-size="22" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">prev_hash</text>
-
-  <g filter="url(#softShadow)">
-    <rect x="60" y="790" width="1080" height="84" rx="12" fill="#fff"/>
-    <text x="84" y="844" font-size="30" font-weight="800" fill="#1e293b" font-family="'Courier New', Courier, monospace">artefact</text>
-    <text x="1116" y="844" text-anchor="end" font-size="26" font-weight="600" fill="#334155">draft reply · policy v3</text>
-  </g>
-  <line x1="110" y1="876" x2="110" y2="898" stroke="#c2410c" stroke-width="4" marker-end="url(#arrowEmber)"/>
-  <text x="140" y="896" font-size="22" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">prev_hash</text>
-
-  <g filter="url(#softShadow)">
-    <rect x="60" y="904" width="1080" height="84" rx="12" fill="#fff"/>
-    <text x="84" y="958" font-size="30" font-weight="800" fill="#1e293b" font-family="'Courier New', Courier, monospace">decide.override</text>
-    <text x="1116" y="958" text-anchor="end" font-size="26" font-weight="600" fill="#334155">+ rationale · tags · human:you</text>
-  </g>
+  <rect x="28" y="96" width="560" height="520" rx="14" fill="url(#bgChaos)" stroke="#f87171" stroke-width="2"/>
+  <text x="308" y="138" text-anchor="middle" font-size="24" font-weight="800" fill="#7f1d1d" letter-spacing="2.5">WITHOUT CHAP</text>
 
   <g>
-    <rect x="60" y="1016" width="690" height="150" rx="12" fill="#0f172a"/>
-    <text x="84" y="1062" font-family="'Courier New', Courier, monospace" font-size="28" font-weight="700" fill="#fdba74">await chap.audit.read({</text>
-    <text x="84" y="1102" font-family="'Courier New', Courier, monospace" font-size="28" font-weight="700" fill="#f1f5f9">  task_id: <tspan fill="#86efac">"tsk_ticket_8821"</tspan></text>
-    <text x="84" y="1142" font-family="'Courier New', Courier, monospace" font-size="28" font-weight="700" fill="#fdba74">})</text>
+    <text x="56" y="196" font-size="22" font-weight="700" fill="#0f172a">OpenAI logs</text>
+    <text x="560" y="196" text-anchor="end" font-size="21" font-weight="700" fill="#b91c1c">expired after 30 days</text>
+    <line x1="56" y1="212" x2="560" y2="212" stroke="#fca5a5" stroke-width="1.5"/>
+
+    <text x="56" y="244" font-size="22" font-weight="700" fill="#0f172a">Zendesk thread</text>
+    <text x="560" y="244" text-anchor="end" font-size="21" font-weight="700" fill="#b91c1c">final reply only</text>
+    <line x1="56" y1="260" x2="560" y2="260" stroke="#fca5a5" stroke-width="1.5"/>
+
+    <text x="56" y="292" font-size="22" font-weight="700" fill="#0f172a">Slack #support</text>
+    <text x="560" y="292" text-anchor="end" font-size="21" font-weight="700" fill="#b91c1c">scrolled past</text>
+    <line x1="56" y1="308" x2="560" y2="308" stroke="#fca5a5" stroke-width="1.5"/>
+
+    <text x="56" y="340" font-size="22" font-weight="700" fill="#0f172a">Linear comments</text>
+    <text x="560" y="340" text-anchor="end" font-size="21" font-weight="700" fill="#b91c1c">no rationale</text>
+    <line x1="56" y1="356" x2="560" y2="356" stroke="#fca5a5" stroke-width="1.5"/>
+
+    <text x="56" y="388" font-size="22" font-weight="700" fill="#0f172a">webhook tail</text>
+    <text x="560" y="388" text-anchor="end" font-size="21" font-weight="700" fill="#b91c1c">keys rotated</text>
+    <line x1="56" y1="404" x2="560" y2="404" stroke="#fca5a5" stroke-width="1.5"/>
+
+    <text x="56" y="436" font-size="22" font-weight="700" fill="#0f172a">Notion runbook</text>
+    <text x="560" y="436" text-anchor="end" font-size="21" font-weight="700" fill="#b91c1c">stale by Tuesday</text>
   </g>
 
-  <rect x="780" y="1016" width="360" height="150" rx="12" fill="#7c2d12"/>
-  <text x="960" y="1074" text-anchor="middle" font-size="22" font-weight="700" fill="#fed7aa" letter-spacing="3">TIME TO ANSWER</text>
-  <text x="960" y="1130" text-anchor="middle" font-size="46" font-weight="800" fill="#fff">30 seconds</text>
+  <rect x="56" y="462" width="504" height="88" rx="10" fill="#7f1d1d"/>
+  <text x="308" y="494" text-anchor="middle" font-size="18" font-weight="700" fill="#fecaca" letter-spacing="2.5">TIME TO ANSWER</text>
+  <text x="308" y="536" text-anchor="middle" font-size="42" font-weight="800" fill="#fff">~45 minutes</text>
+
+  <text x="308" y="588" text-anchor="middle" font-size="20" font-weight="600" fill="#1f2937" font-style="italic">"What did the agent draft? Why did we approve it?"</text>
+
+  <rect x="612" y="96" width="560" height="520" rx="14" fill="url(#bgClean)" stroke="#f97316" stroke-width="2"/>
+  <text x="892" y="138" text-anchor="middle" font-size="24" font-weight="800" fill="#7c2d12" letter-spacing="2.5">WITH CHAP</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="640" y="164" width="504" height="58" rx="10" fill="#fff"/>
+    <text x="662" y="201" font-size="23" font-weight="800" fill="#1e293b" font-family="'Courier New', Courier, monospace">task.create</text>
+    <text x="1122" y="201" text-anchor="end" font-size="20" font-weight="600" fill="#334155">agent:triage</text>
+  </g>
+  <line x1="664" y1="226" x2="664" y2="242" stroke="#c2410c" stroke-width="3.5" marker-end="url(#arrowEmber)"/>
+  <text x="688" y="241" font-size="18" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">prev_hash</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="640" y="248" width="504" height="58" rx="10" fill="#fff"/>
+    <text x="662" y="285" font-size="23" font-weight="800" fill="#1e293b" font-family="'Courier New', Courier, monospace">artefact</text>
+    <text x="1122" y="285" text-anchor="end" font-size="20" font-weight="600" fill="#334155">draft reply</text>
+  </g>
+  <line x1="664" y1="310" x2="664" y2="326" stroke="#c2410c" stroke-width="3.5" marker-end="url(#arrowEmber)"/>
+  <text x="688" y="325" font-size="18" font-weight="700" fill="#7c2d12" font-family="'Courier New', Courier, monospace">prev_hash</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="640" y="332" width="504" height="58" rx="10" fill="#fff"/>
+    <text x="662" y="369" font-size="23" font-weight="800" fill="#1e293b" font-family="'Courier New', Courier, monospace">decide.override</text>
+    <text x="1122" y="369" text-anchor="end" font-size="20" font-weight="600" fill="#334155">+ rationale</text>
+  </g>
+
+  <text x="640" y="428" font-size="20" font-weight="700" fill="#7c2d12">One call returns the chain:</text>
+  <text x="640" y="456" font-size="21" font-weight="700" fill="#0f172a" font-family="'Courier New', Courier, monospace">chap.audit.read(task_id)</text>
+
+  <rect x="640" y="476" width="504" height="82" rx="10" fill="#7c2d12"/>
+  <text x="892" y="506" text-anchor="middle" font-size="18" font-weight="700" fill="#fed7aa" letter-spacing="2.5">TIME TO ANSWER</text>
+  <text x="892" y="546" text-anchor="middle" font-size="40" font-weight="800" fill="#fff">30 seconds</text>
+
+  <text x="892" y="590" text-anchor="middle" font-size="20" font-weight="600" fill="#7c2d12" font-style="italic">every link verified, nothing to reconstruct</text>
 </svg>
