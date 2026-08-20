@@ -105,5 +105,5 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "chap.audit.verify_receipt":
         "Verify a SCITT receipt against the configured verifier.",
     "chap.audit.verify_chain":
-        "Verify the local prev-hash chain across a workspace's audit log.",
+        "Verify the local prev-hash chain across a workspace's audit log. Returns status verified only when every entry was checked; status not_evaluated with ok false means part of the log lies outside the chain and was not examined, which is not the same as a failure.",
 }

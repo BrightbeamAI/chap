@@ -216,7 +216,12 @@ task's `assignee`.
 
 Audit entries are hash-linked when the profile is active.
 `audit.verify_chain` replays the chain locally and confirms
-`prev_hash` continuity.
+`prev_hash` continuity. The verdict names the range it covered:
+`status` is `verified` with `ok: true` only when every entry was
+checked, and `not_evaluated` with `ok: false` when part of the log
+lies outside the chain, which happens when the profile is added to a
+workspace that already has entries. A broken chain is an error. Read
+`status`, or read `ok` and fail closed.
 
 `audit.submit_to_scitt` builds a SCITT-shaped signed statement for
 each audit entry in the requested range and passes it to a
