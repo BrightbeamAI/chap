@@ -1,0 +1,96 @@
+name: Publish to MCP Registry
+
+# Registry entry only. The npm packages are published by hand from a local
+# clone, which is the deliberate choice recorded in the 0.2.9 release: the
+# person publishing sees the prepublishOnly suite pass before anything
+# leaves the machine. This workflow closes the gap that leaves behind, which
+# is that the registry entry can drift from the version actually on npm.
+#
+# Order matters. Publish the npm packages first, then push the tag:
+#
+#   npm publish -w packages/coordinator     --access public
+#   npm publish -w packages/coordinator-mcp --access public
+#   npm publish -w packages/coordinator-a2a --access public
+#   git tag v0.2.11 && git push origin v0.2.11
+#
+# The registry validates that the npm version in server.json exists, so a
+# tag pushed first will fail the publish rather than create a bad entry.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      # OIDC proves the claim comes from this repository rather than from an
+      # individual's account, which is the accurate statement of who owns the
+      # server. It also means no public org membership and no stored token.
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Check the tag, server.json and package.json all agree
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          TAG="${TAG#v}"
+          SERVER_VERSION=$(jq -r '.version' server.json)
+          PKG_VERSION=$(jq -r '.version' packages/coordinator-mcp/package.json)
+          NPM_VERSION=$(jq -r '.packages[0].version' server.json)
+          MCP_NAME=$(jq -r '.mcpName' packages/coordinator-mcp/package.json)
+          SERVER_NAME=$(jq -r '.name' server.json)
+
+          echo "tag                        ${TAG}"
+          echo "server.json version        ${SERVER_VERSION}"
+          echo "server.json package        ${NPM_VERSION}"
+          echo "coordinator-mcp version    ${PKG_VERSION}"
+          echo "mcpName                    ${MCP_NAME}"
+          echo "server.json name           ${SERVER_NAME}"
+
+          fail=0
+          [ "$TAG" = "$SERVER_VERSION" ] || { echo "::error::tag does not match server.json version"; fail=1; }
+          [ "$SERVER_VERSION" = "$NPM_VERSION" ] || { echo "::error::server.json version does not match its npm package version"; fail=1; }
+          [ "$NPM_VERSION" = "$PKG_VERSION" ] || { echo "::error::server.json npm version does not match the package manifest"; fail=1; }
+          [ "$MCP_NAME" = "$SERVER_NAME" ] || { echo "::error::mcpName does not match server.json name; the registry rejects this"; fail=1; }
+          exit $fail
+
+      - name: Check the version is already on npm
+        run: |
+          set -euo pipefail
+          NAME=$(jq -r '.packages[0].identifier' server.json)
+          VERSION=$(jq -r '.packages[0].version' server.json)
+          if ! npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "::error::${NAME}@${VERSION} is not on npm. Publish the packages before pushing the tag."
+            exit 1
+          fi
+          echo "${NAME}@${VERSION} is present on npm."
+
+      - name: Check the published package can actually be launched
+        run: |
+          set -euo pipefail
+          NAME=$(jq -r '.packages[0].identifier' server.json)
+          VERSION=$(jq -r '.packages[0].version' server.json)
+          # A registry listing promises a launchable server. Prove it against
+          # the published artefact, not the working tree, before listing it.
+          OUT=$(timeout 90 npx -y "${NAME}@${VERSION}" < /dev/null 2>&1 | head -5 || true)
+          echo "$OUT"
+          echo "$OUT" | grep -q "CHAP MCP server" || {
+            echo "::error::the published package did not start; refusing to list it"
+            exit 1
+          }
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server to MCP Registry
+        run: ./mcp-publisher publish
