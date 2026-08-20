@@ -35,7 +35,7 @@ Usage (stdio)::
     from mcp.server.stdio import stdio_server
 
     coord = Coordinator()
-    server = make_chap_mcp_server(coord, name="chap", version="0.2.9")
+    server = make_chap_mcp_server(coord, name="chap", version="0.2.10")
 
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())
@@ -125,7 +125,7 @@ def make_chap_mcp_server(
     coord: Coordinator,
     *,
     name: str = "chap",
-    version: str = "0.2.9",
+    version: str = "0.2.10",
     tool_filter: Optional[Callable[[str], bool]] = None,
     envelope_id_factory: Optional[Callable[[], Any]] = None,
 ) -> Server:

@@ -146,6 +146,22 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         if not (ws.chain_enabled or coord.options.enable_chain):
             return {"error": rpc_error(E.PARAMS, "Chain not enabled for this workspace")}
+        # Range verification is not implemented. Accepting the parameters and
+        # replaying the whole log anyway would answer a wider question than
+        # the caller asked while reporting counts scoped to the whole log,
+        # which is the failure this method was just fixed to stop making.
+        if p.get("from_seq") is not None or p.get("to_seq") is not None:
+            return {"error": rpc_error(
+                E.PARAMS,
+                "Range verification is not implemented; omit from_seq and to_seq "
+                "to verify the whole log.",
+            )}
+        # Coverage begins at the first entry carrying a prev_hash. A
+        # workspace may enable chaining part-way through its life, in which
+        # case every earlier entry is outside the chain and cannot be
+        # evaluated against anything. Those entries are not evidence of
+        # tampering and not evidence of integrity: they were never checked,
+        # and the verdict below has to say so rather than pass over them.
         start = next((i for i, e in enumerate(ws.audit) if e.prev_hash is not None),
                      len(ws.audit))
         errors: list[str] = []
@@ -159,14 +175,42 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             prev = sha256_hex(canonicalize(e.envelope) + expected_prev.encode("utf-8"))
         # The recomputed head must match the stored head; this is what
         # makes the final entry tamper-evident.
-        stored_head = ws.chain_head or ZERO_HASH
+        # Explicit None check, matching TypeScript. A falsy-but-present
+        # head must not be silently replaced with ZERO_HASH, or the two
+        # implementations return different verdicts for the same state.
+        stored_head = ZERO_HASH if ws.chain_head is None else ws.chain_head
         if prev != stored_head:
             errors.append("chain_head mismatch: replay does not match stored head")
         if errors:
             return {"error": rpc_error(E.PARAMS, "; ".join(errors))}
+        entries_total = len(ws.audit)
+        entries_checked = entries_total - start
+        entries_unchecked = start
+        checked_from_seq = ws.audit[start].seq if entries_checked > 0 else None
+        # Three terminal verdicts, mutually exclusive: a broken chain
+        # returned above as an error, an unevaluated range here, and a pass
+        # only when coverage is complete. "not_evaluated" never rides
+        # alongside ok=True; a reader that looks at ok alone fails closed
+        # rather than reading a pass over entries nothing was checked
+        # against.
+        if entries_unchecked > 0:
+            return {"result": {
+                "status": "not_evaluated",
+                "ok": False,
+                "reason": "unchained_prefix",
+                "entries_total": entries_total,
+                "entries_checked": entries_checked,
+                "entries_unchecked": entries_unchecked,
+                "checked_from_seq": checked_from_seq,
+                "chain_head": stored_head,
+            }}
         return {"result": {
+            "status": "verified",
             "ok": True,
-            "entries_checked": len(ws.audit) - start,
+            "entries_total": entries_total,
+            "entries_checked": entries_checked,
+            "entries_unchecked": 0,
+            "checked_from_seq": checked_from_seq,
             "chain_head": stored_head,
         }}
 

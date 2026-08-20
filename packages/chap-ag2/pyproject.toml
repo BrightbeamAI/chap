@@ -24,7 +24,7 @@ classifiers     = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "chap-coordinator>=0.2.9",
+    "chap-coordinator>=0.2.10",
 ]
 
 [project.optional-dependencies]

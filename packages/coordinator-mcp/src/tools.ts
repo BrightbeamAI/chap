@@ -139,5 +139,5 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "Verify a SCITT receipt against the configured verifier.",
 
   "chap.audit.verify_chain":
-    "Verify the local prev-hash chain across a workspace's audit log.",
+    "Verify the local prev-hash chain across a workspace's audit log. Only status verified with ok true means the log was checked and is intact. Status not_evaluated with ok false means part of the log was never checked, so its integrity is unknown and must not be reported as verified; entries_unchecked says how much. Errors mean the chain is broken or absent.",
 };

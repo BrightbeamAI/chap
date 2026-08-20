@@ -9,7 +9,107 @@ incremented under the same rules.
 
 ---
 
-## Unreleased
+## 0.2.10: MCP registry entry, and two verdicts that changed
+
+Published 2026-08-20. **Two calls behave differently from 0.2.9 and `^0.2.9`
+resolves this release automatically.** If you pin that way, read the next two
+paragraphs before upgrading.
+
+`review.request` on a task that already has an open review with different
+content now returns `-32014` instead of quietly replacing the artefact under
+review. `audit.verify_chain` now returns `ok: false` with `status:
+"not_evaluated"` where it previously returned `ok: true`, whenever any part
+of the log lies outside the chain. Both were reported as defects, both fail
+closed, and both are described in full below.
+
+The profile identifier stays `audit-scitt/1.0`. That is a deliberate choice
+rather than an oversight: profile surfaces are expected to move before 1.0
+and 0.2.9 changed this same profile without a bump, so a bump now would imply
+a stability guarantee the 0.x line does not offer.
+
+### The MCP server is launchable
+
+`@brightbeamai/chap-coordinator-mcp` exported `makeChapMcpServer` and had no
+`bin`, so it was a library that `npx` could not start. Directories and the
+official registry list servers a client can launch, so listing it required an
+entrypoint.
+
+`npx -y @brightbeamai/chap-coordinator-mcp` now starts a stdio server exposing
+all 39 CHAP methods as MCP tools. Two environment variables: `CHAP_DB_PATH`
+for a SQLite file, and `CHAP_PROFILES` to override the profile set. Without
+`CHAP_DB_PATH` the coordinator runs in memory and workspaces are lost when the
+client exits, which suits a trial and does not suit real decisions. If the
+path is set and the store cannot be opened, the server exits with the reason
+rather than starting in memory and silently discarding what it was asked to
+keep.
+
+The package's peer dependencies became real dependencies. Peers are correct
+for a library and wrong for something `npx` launches, where neither the
+coordinator nor the MCP SDK would resolve.
+
+New workspaces get `audit-scitt/1.0` by default, so their chain starts at the
+first entry. A workspace that adds the profile later can never chain-verify
+what came before it.
+
+`server.json` at the repository root carries the registry metadata.
+
+
+### `audit.verify_chain` no longer passes over what it did not check
+
+A workspace can enable chaining part-way through its life. Verification then
+replayed from the first chained entry, which is correct, and reported `ok:
+true` with a smaller `entries_checked` beside it, which is not. Four entries
+with three written before chaining returned a pass having checked one. The
+coverage number was present and sat next to the pass, so a reader took the
+pass.
+
+The verdict is now one of three terminal outcomes, mutually exclusive. A
+broken chain stays a JSON-RPC error. A log with entries outside coverage
+returns `status: "not_evaluated"` with `ok: false` and `reason:
+"unchained_prefix"`. `verified` requires complete coverage. `ok` is `true`
+only alongside `verified`, so a caller reading `ok` alone now fails closed
+where it previously passed.
+
+The result also carries `entries_total`, `entries_unchecked` and
+`checked_from_seq` next to the existing `entries_checked`, so a verdict names
+the range it evaluated instead of leaving the reader to infer it.
+
+Two things this does not change. A workspace that never enabled chaining is
+still refused outright rather than answered, because there is no chain to ask
+about. And tampering in a covered entry is still an error, never downgraded
+to `not_evaluated`.
+
+This came out of the IETF SCITT thread, where Henri Sirkkavaara and Iman
+Schrock converged on `NOT_EVALUATED` as a terminal verdict after 1F916
+Maintainer reported four cases of a row that was never written passing every
+instrument they had. Checking CHAP against that discussion found the same
+gap here. Tracked as
+[#76](https://github.com/BrightbeamAI/chap/issues/76).
+
+Two supporting corrections went with it. The declared TypeScript type
+`AuditVerifyChainResult` described `valid` and `breaks`, neither of which any
+handler has ever returned; it now matches the wire. And the regression test
+`a chain enabled mid-life verifies from the first chained entry` asserted the
+old pass in both languages, so the gap was not an oversight but a documented
+expectation, now corrected in place.
+
+Two related honesty fixes went with it. `from_seq` and `to_seq` are declared
+on the request and honoured by neither implementation; supplying either now
+returns an error rather than silently answering the whole-log question with
+whole-log counts. And a present-but-empty `chain_head`, reachable through a
+store restore, was read as absent in Python and as a value in TypeScript, so
+the two returned different verdicts for the same state; both now treat it as
+a value.
+
+`profiles/audit-scitt.md` §6.1 records what this means for a workspace that
+adopts the profile late: `prev_hash` is written at append time and nothing
+back-fills it, so the verdict for such a log is permanently `not_evaluated`
+and assurance over the historical range has to come from receipts, not from
+the chain.
+
+Normative text in SPECIFICATION.md §10.2, vectors `av-01` to `av-05` in
+`conformance/test-vectors.md`. Nine mirrored unit tests per language, and the
+two implementations answer every probe byte-identically.
 
 ### Unreleased features are marked as such
 

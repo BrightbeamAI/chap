@@ -5,6 +5,7 @@ export default defineConfig({
     index:   "src/index.ts",
     schemas: "src/schemas.ts",
     tools:   "src/tools.ts",
+    cli:     "src/cli.ts",
   },
   format:    ["esm", "cjs"],
   dts:       true,
@@ -13,4 +14,7 @@ export default defineConfig({
   clean:     true,
   target:    "es2022",
   external:  ["@brightbeamai/chap-coordinator", "@modelcontextprotocol/sdk"],
+  // No shebang banner here: tsup preserves the one in src/cli.ts, and adding
+  // a second puts it on line 2 of the bundle, where it is a syntax error
+  // rather than a shebang.
 });

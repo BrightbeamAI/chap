@@ -164,6 +164,8 @@ a profile it does not pass.**
 - [ ] SCITT receipts are returned to participants and verifiable offline against the service's published public key.
 - [ ] The audit log uses SCITT signed statements and receipts (not a bespoke chain format).
 - [ ] Returns `-32080` … `-32082` for SCITT-specific failures.
+- [ ] `audit.verify_chain` returns `ok: true` only with `status: "verified"`, and `status: "not_evaluated"` whenever any entry lies outside the chain (SPECIFICATION.md §10.2, vectors `av-01` … `av-05`).
+- [ ] `entries_checked` + `entries_unchecked` = `entries_total` in every verdict, and `checked_from_seq` is the first covered `seq` or `null`.
 
 ### Profile: `identity-oidc/1.0`
 

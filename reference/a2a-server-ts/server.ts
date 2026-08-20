@@ -53,7 +53,7 @@ const coord = new Coordinator({
 const card = makeChapAgentCard({
   baseUrl,
   name: "CHAP Coordinator",
-  version: "0.2.9",
+  version: "0.2.10",
 });
 
 const executor = makeChapAgentExecutor(coord);

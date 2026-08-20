@@ -330,12 +330,32 @@ export interface AuditVerifyReceiptParams extends WorkspaceParam {
 export interface AuditVerifyReceiptResult { valid: boolean }
 
 export interface AuditVerifyChainParams extends WorkspaceParam {
+  /** Not implemented. Supplying either is refused; see SPECIFICATION.md 10.2. */
   from_seq?: number;
+  /** Not implemented. Supplying either is refused; see SPECIFICATION.md 10.2. */
   to_seq?:   number;
 }
+/**
+ * The verdict of a local prev_hash chain replay.
+ *
+ * `status` is terminal and the three outcomes are mutually exclusive: a
+ * broken chain is a JSON-RPC error, an unevaluated range is
+ * `not_evaluated`, and `verified` requires complete coverage. A caller
+ * reading `ok` alone therefore fails closed on a range that was never
+ * checked, instead of taking a pass over entries no evidence covers.
+ */
 export interface AuditVerifyChainResult {
-  valid:    boolean;
-  breaks?:  number[];
+  status:            "verified" | "not_evaluated";
+  /** True only when `status` is "verified". Never true beside a gap. */
+  ok:                boolean;
+  /** Present only when `status` is "not_evaluated". */
+  reason?:           "unchained_prefix";
+  entries_total:     number;
+  entries_checked:   number;
+  entries_unchecked: number;
+  /** Seq of the first entry inside coverage; null when nothing was checked. */
+  checked_from_seq:  number | null;
+  chain_head:        string;
 }
 
 // ============================================================
