@@ -35,7 +35,31 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Skip if the registry already has this version or newer
+        id: already
+        run: |
+          set -euo pipefail
+          NAME=$(jq -r '.name' "${GITHUB_WORKSPACE}/server.json")
+          WANT=$(jq -r '.version' "${GITHUB_WORKSPACE}/server.json")
+          LIVE=$(curl -fsS --max-time 20 \
+            "https://registry.modelcontextprotocol.io/v0/servers?search=${NAME}" \
+            | jq -r --arg n "$NAME" \
+              '.servers[] | select(.server.name == $n) | .server.version' | head -1 || true)
+          echo "registry has  ${LIVE:-<nothing>}"
+          echo "this tag says ${WANT}"
+          if [ -n "$LIVE" ] && [ "$(printf '%s\n%s\n' "$LIVE" "$WANT" | sort -V | tail -1)" = "$LIVE" ]; then
+            # Re-pushing an old tag, or re-running one that already published,
+            # is not a failure. A red mark on a commit that is already listed
+            # teaches people to ignore the workflow, which costs more than the
+            # noise it saves.
+            echo "::notice::registry already at ${LIVE}, nothing to do for ${WANT}"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check the tag, server.json and package.json all agree
+        if: steps.already.outputs.skip != 'true'
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF#refs/tags/}"
@@ -61,6 +85,7 @@ jobs:
           exit $fail
 
       - name: Check the published package agrees about who owns this server
+        if: steps.already.outputs.skip != 'true'
         run: |
           set -euo pipefail
           NAME=$(jq -r '.packages[0].identifier' "${GITHUB_WORKSPACE}/server.json")
@@ -84,6 +109,7 @@ jobs:
           fi
 
       - name: Check the version is already on npm
+        if: steps.already.outputs.skip != 'true'
         run: |
           set -euo pipefail
           NAME=$(jq -r '.packages[0].identifier' server.json)
@@ -95,6 +121,7 @@ jobs:
           echo "${NAME}@${VERSION} is present on npm."
 
       - name: Check the published package can actually be launched
+        if: steps.already.outputs.skip != 'true'
         run: |
           set -euo pipefail
           NAME=$(jq -r '.packages[0].identifier' "${GITHUB_WORKSPACE}/server.json")
@@ -113,11 +140,14 @@ jobs:
           }
 
       - name: Install mcp-publisher
+        if: steps.already.outputs.skip != 'true'
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
 
       - name: Authenticate to MCP Registry
+        if: steps.already.outputs.skip != 'true'
         run: ./mcp-publisher login github-oidc
 
       - name: Publish server to MCP Registry
+        if: steps.already.outputs.skip != 'true'
         run: ./mcp-publisher publish
