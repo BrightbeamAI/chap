@@ -7,7 +7,7 @@
   "homepage": "https://github.com/BrightbeamAI/chap",
   "repository": {
     "type": "git",
-    "url": "https://github.com/BrightbeamAI/chap.git",
+    "url": "git+https://github.com/BrightbeamAI/chap.git",
     "directory": "packages/coordinator-mcp"
   },
   "bugs": {
@@ -27,7 +27,7 @@
     "node": ">=20"
   },
   "bin": {
-    "chap-mcp-server": "./dist/cli.js"
+    "chap-mcp-server": "dist/cli.js"
   },
   "files": [
     "dist",
