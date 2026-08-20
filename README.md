@@ -14,7 +14,7 @@ In CHAP, it lives in an envelope you can query, replay, and verify six months la
 ---
 
 <p align="center">
-  <img src="docs/img/hero-before-after.svg" alt="Same scenario, two stacks. Without CHAP: six tools holding fragments of one decision (OpenAI logs expired, Zendesk thread, Slack scrolled past, Linear comments, webhook tail, Notion runbook), 45 minutes across four UIs to answer 'what did the bot draft and why did we approve it?'. With CHAP: three hash-linked envelopes (task.create → artefact → decide.override), queryable tags, one audit.read call, 30 seconds." width="100%">
+  <img src="docs/img/hero-before-after.svg" alt="Same scenario, two stacks. Without CHAP: six tools holding fragments of one decision (OpenAI logs expired, Zendesk thread, Slack scrolled past, Linear comments, webhook tail, Notion runbook), 45 minutes across four UIs to answer 'what did the agent draft and why did we approve it?'. With CHAP: three hash-linked envelopes (task.create → artefact → decide.override) joined by prev_hash, one audit.read call, 30 seconds." width="100%">
 </p>
 
 ---
@@ -232,7 +232,7 @@ Your next prompt revision for Cursor cites the pattern by name instead of guessi
 If you read one shape closely, make it the override envelope. Every field has a job:
 
 <p align="center">
-  <img src="docs/img/override-anatomy.svg" alt="Anatomy of an override envelope, with each field annotated: task_id links to the PR review chain, from carries queryable identity, logical_id survives revision, intent_preserved separates refining from substituting overrides, diff is RFC 6902 JSON Patch, rationale is the 'why' alongside the 'what', tags are structured supervision data." width="100%">
+  <img src="docs/img/override-anatomy.svg" alt="Anatomy of a decide.override envelope, with each field annotated: task_id links to the review chain, from carries queryable identity, logical_id survives revision, intent_preserved separates refining from substituting overrides, diff is RFC 6902 JSON Patch, rationale is the 'why' alongside the 'what', tags are structured supervision data." width="100%">
 </p>
 
 The two fields most people miss on first read are `intent_preserved` and `tags`.
