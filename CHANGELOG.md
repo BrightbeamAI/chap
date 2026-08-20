@@ -50,10 +50,23 @@ handler has ever returned; it now matches the wire. And the regression test
 old pass in both languages, so the gap was not an oversight but a documented
 expectation, now corrected in place.
 
-Normative text in SPECIFICATION.md §10.2, adoption guidance in
-`profiles/audit-scitt.md` §6.1, vectors `av-01` to `av-04` in
-`conformance/test-vectors.md`. Both implementations answer the three probe
-cases byte-identically.
+Two related honesty fixes went with it. `from_seq` and `to_seq` are declared
+on the request and honoured by neither implementation; supplying either now
+returns an error rather than silently answering the whole-log question with
+whole-log counts. And a present-but-empty `chain_head`, reachable through a
+store restore, was read as absent in Python and as a value in TypeScript, so
+the two returned different verdicts for the same state; both now treat it as
+a value.
+
+`profiles/audit-scitt.md` §6.1 records what this means for a workspace that
+adopts the profile late: `prev_hash` is written at append time and nothing
+back-fills it, so the verdict for such a log is permanently `not_evaluated`
+and assurance over the historical range has to come from receipts, not from
+the chain.
+
+Normative text in SPECIFICATION.md §10.2, vectors `av-01` to `av-05` in
+`conformance/test-vectors.md`. Nine mirrored unit tests per language, and the
+two implementations answer every probe byte-identically.
 
 ### Unreleased features are marked as such
 

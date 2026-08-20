@@ -88,6 +88,17 @@ export function registerAuditScitt(coord: Coordinator): void {
     if (!(ws.chain_enabled || coord.options.enableChain)) {
       return { error: rpcError(E.PARAMS, "Chain not enabled for this workspace") };
     }
+    // Range verification is not implemented. Accepting the parameters and
+    // replaying the whole log anyway would answer a wider question than the
+    // caller asked while reporting counts scoped to the whole log, which is
+    // the failure this method was just fixed to stop making.
+    if (p.from_seq !== undefined || p.to_seq !== undefined) {
+      return { error: rpcError(
+        E.PARAMS,
+        "Range verification is not implemented; omit from_seq and to_seq to " +
+        "verify the whole log.",
+      ) };
+    }
     // Coverage begins at the first entry carrying a prev_hash. A workspace
     // may enable chaining part-way through its life, in which case every
     // earlier entry is outside the chain and cannot be evaluated against
@@ -109,7 +120,11 @@ export function registerAuditScitt(coord: Coordinator): void {
     }
     // The recomputed head must match the stored head; this is what makes
     // the final entry tamper-evident.
-    const storedHead = ws.chain_head ?? ZERO_HASH;
+    // Explicit null/undefined check, matching Python. A falsy-but-present
+    // head must not be silently replaced with ZERO_HASH, or the two
+    // implementations return different verdicts for the same state.
+    const storedHead = (ws.chain_head === undefined || ws.chain_head === null)
+      ? ZERO_HASH : ws.chain_head;
     if (prev !== storedHead) {
       errors.push("chain_head mismatch: replay does not match stored head");
     }

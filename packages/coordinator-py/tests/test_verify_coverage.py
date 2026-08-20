@@ -33,7 +33,17 @@ def _make(profiles):
 
 
 def _task(s, name):
-    s("task.create", workspace="w", **{"from": "agent:bot"}, task=name, intent=name)
+    """Writes one audited entry, and proves it did.
+
+    The assertion is the point: task.create requires kind and input, and a
+    rejected call appends nothing. Without this check a wrong-shaped call
+    leaves the log short and every assertion below still passes, for the
+    wrong reason.
+    """
+    r = s("task.create", workspace="w", **{"from": "human:a"},
+          kind="review", input={"name": name}, assignee="agent:bot")
+    assert "result" in r, r
+    return r["result"]
 
 
 def _enable_chain_mid_life(s):
@@ -171,3 +181,29 @@ def test_coverage_counts_are_internally_consistent_in_every_verdict():
         assert v["entries_checked"] + v["entries_unchecked"] == v["entries_total"], \
             "checked plus unchecked must account for the whole log"
         assert v["ok"] is (v["status"] == "verified"), "ok and status must never disagree"
+
+
+def test_a_narrowing_range_is_refused_not_silently_widened():
+    # from_seq and to_seq are declared on the params interface but no
+    # implementation honours them. Answering the whole-log question while
+    # the caller asked a narrower one is the same failure this method was
+    # fixed to stop making, so the call is refused instead.
+    c, s = _make(CHAINED)
+    _task(s, "t1")
+    for narrowing in ({"from_seq": 1}, {"to_seq": 2}, {"from_seq": 1, "to_seq": 2}):
+        r = s("audit.verify_chain", workspace="w", **narrowing)
+        assert "error" in r, f"{narrowing} should be refused, got {r}"
+        assert "not implemented" in r["error"]["message"]
+    assert "result" in s("audit.verify_chain", workspace="w"), "no range still works"
+
+
+def test_an_empty_string_head_is_not_treated_as_absent():
+    # Guards a TS/Python divergence: `or ZERO_HASH` and `?? ZERO_HASH`
+    # disagree on "". Both must treat a present-but-empty head as a real
+    # value and reach the same verdict. Only reachable through a restore.
+    c, s = _make(CHAINED)
+    _task(s, "t1")
+    c.workspaces["w"].chain_head = ""
+    r = s("audit.verify_chain", workspace="w")
+    assert "error" in r, "an empty head cannot match a real replay"
+    assert "chain_head mismatch" in r["error"]["message"]

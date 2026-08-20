@@ -146,6 +146,16 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         if not (ws.chain_enabled or coord.options.enable_chain):
             return {"error": rpc_error(E.PARAMS, "Chain not enabled for this workspace")}
+        # Range verification is not implemented. Accepting the parameters and
+        # replaying the whole log anyway would answer a wider question than
+        # the caller asked while reporting counts scoped to the whole log,
+        # which is the failure this method was just fixed to stop making.
+        if p.get("from_seq") is not None or p.get("to_seq") is not None:
+            return {"error": rpc_error(
+                E.PARAMS,
+                "Range verification is not implemented; omit from_seq and to_seq "
+                "to verify the whole log.",
+            )}
         # Coverage begins at the first entry carrying a prev_hash. A
         # workspace may enable chaining part-way through its life, in which
         # case every earlier entry is outside the chain and cannot be
@@ -165,7 +175,10 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             prev = sha256_hex(canonicalize(e.envelope) + expected_prev.encode("utf-8"))
         # The recomputed head must match the stored head; this is what
         # makes the final entry tamper-evident.
-        stored_head = ws.chain_head or ZERO_HASH
+        # Explicit None check, matching TypeScript. A falsy-but-present
+        # head must not be silently replaced with ZERO_HASH, or the two
+        # implementations return different verdicts for the same state.
+        stored_head = ZERO_HASH if ws.chain_head is None else ws.chain_head
         if prev != stored_head:
             errors.append("chain_head mismatch: replay does not match stored head")
         if errors:

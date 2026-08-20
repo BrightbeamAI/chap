@@ -960,8 +960,10 @@ can replay the chain and confirm:
 3. Timestamps are monotonically non-decreasing.
 4. No `id` is reused.
 
-A `audit.verify` request returns the result of this replay over a
-specified range.
+An `audit.verify_chain` request returns the result of this replay over the
+whole log. Range parameters are declared on the request but not honoured by
+either implementation, and are refused rather than silently widened to the
+whole log.
 
 **What verification does not establish.** A successful replay proves the
 entries a verifier holds are internally consistent. It does not prove they
@@ -991,7 +993,7 @@ they are mutually exclusive:
 
 | Outcome | Shape | Meaning |
 |---|---|---|
-| Broken | JSON-RPC error | A covered entry failed the replay. |
+| Broken | JSON-RPC error | The replay contradicted the stored evidence. |
 | `not_evaluated` | `status: "not_evaluated"`, `ok: false`, `reason` | Part of the log lies outside coverage. |
 | `verified` | `status: "verified"`, `ok: true` | Coverage is complete and the replay passed. |
 

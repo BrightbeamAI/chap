@@ -330,7 +330,9 @@ export interface AuditVerifyReceiptParams extends WorkspaceParam {
 export interface AuditVerifyReceiptResult { valid: boolean }
 
 export interface AuditVerifyChainParams extends WorkspaceParam {
+  /** Not implemented. Supplying either is refused; see SPECIFICATION.md 10.2. */
   from_seq?: number;
+  /** Not implemented. Supplying either is refused; see SPECIFICATION.md 10.2. */
   to_seq?:   number;
 }
 /**

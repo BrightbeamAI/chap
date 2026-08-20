@@ -30,8 +30,20 @@ function make(profiles: string[]) {
   return { c, s };
 }
 
+/**
+ * Writes one audited entry, and proves it did.
+ *
+ * The assertion is the point: task.create requires kind and input, and a
+ * rejected call appends nothing. Without this check a wrong-shaped call
+ * leaves the log short and every assertion below still passes, for the
+ * wrong reason.
+ */
 function task(s: (m: string, p: unknown) => unknown, name: string) {
-  s("task.create", { workspace: "w", from: "agent:bot", task: name, intent: name });
+  const r = s("task.create", {
+    workspace: "w", from: "human:a",
+    kind: "review", input: { name }, assignee: "agent:bot",
+  }) as object;
+  assert.ok("result" in r, `task.create should succeed: ${JSON.stringify(r)}`);
 }
 
 /**
@@ -64,7 +76,7 @@ test("a fully covered chain verifies and says so", () => {
   assert.equal(v.ok, true);
   assert.equal(v.entries_unchecked, 0);
   assert.equal(v.entries_checked, v.entries_total);
-  assert.equal(v.reason, undefined, "a pass carries no reason");
+  assert.ok(!("reason" in v), "a pass carries no reason");
 });
 
 test("an unchained prefix is not_evaluated, never a pass", () => {
@@ -153,8 +165,8 @@ test("a broken chain is still an error, not a verdict", () => {
 test("coverage counts are internally consistent in every verdict", () => {
   for (const build of [
     () => { const m = make(CHAINED); task(m.s, "a"); return m; },
-    () => { const m = make(["core/1.0", "review/1.0"]); task(m.s, "a"); enableChainMidLife(m.s); task(m.s, "b"); return m; },
-    () => { const m = make(["core/1.0", "review/1.0"]); task(m.s, "a"); enableChainMidLife(m.s); return m; },
+    () => { const m = make(["core/1.0"]); task(m.s, "a"); enableChainMidLife(m.s); task(m.s, "b"); return m; },
+    () => { const m = make(["core/1.0"]); task(m.s, "a"); enableChainMidLife(m.s); return m; },
   ]) {
     const { s } = build();
     const v = verdict(s);
@@ -165,4 +177,33 @@ test("coverage counts are internally consistent in every verdict", () => {
     );
     assert.equal(v.ok, v.status === "verified", "ok and status must never disagree");
   }
+});
+
+test("a narrowing range is refused, not silently widened", () => {
+  // from_seq and to_seq are declared on the params interface but no
+  // implementation honours them. Answering the whole-log question while
+  // the caller asked a narrower one is the same failure this method was
+  // fixed to stop making, so the call is refused instead.
+  const { s } = make(CHAINED);
+  task(s, "t1");
+  for (const narrowing of [{ from_seq: 1 }, { to_seq: 2 }, { from_seq: 1, to_seq: 2 }]) {
+    const r = s("audit.verify_chain", { workspace: "w", ...narrowing }) as
+      { error?: { message: string } };
+    assert.ok(r.error, `${JSON.stringify(narrowing)} should be refused`);
+    assert.match(r.error.message, /not implemented/);
+  }
+  assert.ok("result" in (s("audit.verify_chain", { workspace: "w" }) as object),
+    "no range still works");
+});
+
+test("an empty string head is not treated as absent", () => {
+  // Guards a TS/Python divergence: `or ZERO_HASH` and `?? ZERO_HASH`
+  // disagree on "". Both must treat a present-but-empty head as a real
+  // value and reach the same verdict. Only reachable through a restore.
+  const { c, s } = make(CHAINED);
+  task(s, "t1");
+  (c.workspaces.get("w") as never as { chain_head: string }).chain_head = "";
+  const r = s("audit.verify_chain", { workspace: "w" }) as { error?: { message: string } };
+  assert.ok(r.error, "an empty head cannot match a real replay");
+  assert.match(r.error.message, /chain_head mismatch/);
 });

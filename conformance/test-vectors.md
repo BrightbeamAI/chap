@@ -141,6 +141,7 @@ it.
 | `av-02` | the same after `workspace.set_profiles` added `audit-scitt/1.0` to a workspace with existing entries | `status: "not_evaluated"`, `ok: false`, `reason: "unchained_prefix"`, `entries_unchecked` equal to the entries written before the enabling call |
 | `av-03` | the same on a workspace that never enabled chaining           | `-32602`; a refusal, not a verdict        |
 | `av-04` | the same after tampering with a covered entry                 | an error; tampering is never downgraded to `not_evaluated` |
+| `av-05` | `audit.verify_chain` with `from_seq` or `to_seq`              | `-32602`; a narrowing range is refused, never widened to the whole log |
 
 `av-02` is the vector that matters. `ok` must be `false` even though every
 covered entry replayed cleanly, because the question asked was about the
@@ -148,10 +149,12 @@ whole log. `entries_checked` plus `entries_unchecked` must equal
 `entries_total` in every verdict, and `ok` must be `true` only when `status`
 is `verified`.
 
-These four are not yet exercised by the harness, which runs Core and
+These five are not yet exercised by the harness, which runs Core and
 `review/1.0` against reference servers that do not enable `audit-scitt/1.0`.
-Both reference implementations are held to them by unit tests
-(`verify_coverage.test.ts` and `test_verify_coverage.py`) and answer them
+Both reference implementations are held to them by unit tests: `av-01`,
+`av-02`, `av-04` and `av-05` in `verify_coverage.test.ts` and
+`test_verify_coverage.py`, and `av-03` in `verify_chain_unchained.test.ts`
+and `test_verify_chain_unchained.py`. The two implementations answer them
 identically.
 
 ---

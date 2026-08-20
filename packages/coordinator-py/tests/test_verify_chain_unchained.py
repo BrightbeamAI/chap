@@ -3,6 +3,12 @@ Regression: audit.verify_chain must not report a clean log as tampered when the
 workspace has no chain. An unchained workspace is refused, and a workspace whose
 chain was enabled mid-life replays only from its first chained entry. Guards the
 0.2.9 fix.
+
+The mid-life case below asserted ok=True until issue #76. Replaying from the
+first chained entry is still correct, but reporting a pass over a log whose
+earlier entries were never evaluated is not: the verdict is now
+"not_evaluated", and the refusal-versus-verdict distinction this file guards
+is unchanged.
 """
 from __future__ import annotations
 
