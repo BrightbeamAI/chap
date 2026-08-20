@@ -1,6 +1,6 @@
 {
   "name": "@brightbeamai/chap-coordinator-mcp",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "MCP server adapter for the CHAP Coordinator. Exposes every CHAP method as an MCP tool.",
   "license": "Apache-2.0",
   "author": "Brightbeam AI <oss@brightbeam.com>",

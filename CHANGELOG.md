@@ -9,6 +9,27 @@ incremented under the same rules.
 
 ---
 
+## 0.2.11: coordinator-mcp only, a namespace casing fix
+
+`@brightbeamai/chap-coordinator-mcp` only. The coordinator and A2A packages
+are unchanged and stay at 0.2.10; republishing identical code to keep version
+numbers in step would be noise.
+
+The MCP Registry grants a GitHub organisation namespace using the
+organisation's own casing, `io.github.BrightbeamAI/*`. `server.json` and
+`mcpName` both used lowercase, so the publish was refused twice: first 403
+for claiming a namespace that was not granted, then 400 once the claim was
+corrected, because the registry proves npm ownership by reading `mcpName`
+out of the published package and 0.2.10 carries the old value. npm does not
+allow a published version to be replaced, so the corrected `mcpName` needs a
+new version.
+
+No behaviour change. The only differences from 0.2.10 are `mcpName`, the
+version, and the version string the server reports in its banner and
+`serverInfo`.
+
+---
+
 ## 0.2.10: MCP registry entry, and two verdicts that changed
 
 Published 2026-08-20. **Two calls behave differently from 0.2.9 and `^0.2.9`
