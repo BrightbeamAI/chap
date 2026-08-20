@@ -74,11 +74,15 @@ jobs:
       - name: Check the published package can actually be launched
         run: |
           set -euo pipefail
-          NAME=$(jq -r '.packages[0].identifier' server.json)
-          VERSION=$(jq -r '.packages[0].version' server.json)
-          # A registry listing promises a launchable server. Prove it against
-          # the published artefact, not the working tree, before listing it.
-          OUT=$(timeout 90 npx -y "${NAME}@${VERSION}" < /dev/null 2>&1 | head -5 || true)
+          NAME=$(jq -r '.packages[0].identifier' "${GITHUB_WORKSPACE}/server.json")
+          VERSION=$(jq -r '.packages[0].version' "${GITHUB_WORKSPACE}/server.json")
+          # Run from outside the checkout. This repository is an npm workspace
+          # root that declares the same package, and npm exec prefers a local
+          # workspace over the registry, so npx here would test an unbuilt
+          # working copy and report a failure that says nothing about what was
+          # published. A user running this command has no such workspace.
+          cd "$(mktemp -d)"
+          OUT=$(timeout 120 npx -y "${NAME}@${VERSION}" < /dev/null 2>&1 || true)
           echo "$OUT"
           echo "$OUT" | grep -q "CHAP MCP server" || {
             echo "::error::the published package did not start; refusing to list it"
