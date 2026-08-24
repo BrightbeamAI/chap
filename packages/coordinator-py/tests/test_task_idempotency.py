@@ -44,3 +44,19 @@ def test_no_key_creates_distinct_tasks():
     b = _create(c)
     assert a["result"]["task_id"] != b["result"]["task_id"]
     assert len(c.workspaces["w"].tasks) == 2
+
+
+def test_idempotency_keys_are_bounded(monkeypatch):
+    import chap_coordinator.coordinator as coord_mod
+    monkeypatch.setattr(coord_mod, "_MAX_IDEMPOTENCY_KEYS", 3)
+    c = _ws()
+    for i in range(5):
+        _create(c, f"k{i}")
+
+    ws = c.workspaces["w"]
+    assert set(ws.idempotency_keys) == {"k2", "k3", "k4"}
+
+    # An evicted key is no longer deduped: its create makes a new task.
+    before = len(ws.tasks)
+    _create(c, "k0")
+    assert len(ws.tasks) == before + 1

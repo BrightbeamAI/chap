@@ -1158,6 +1158,14 @@ Every method has:
 | `task.complete`      | request      | no         | Submit a completed task with its artefact.    |
 | `task.describe`      | request      | no         | Return a task's current state.                |
 
+Reference implementations expose simplified `task.create` and `task.update`
+methods in place of the `task.assign` / `task.accept` / `task.start` /
+`task.progress` lifecycle above. `task.create` accepts an optional
+`idempotency_key`: a repeat carrying a key already seen in the workspace returns
+the original task rather than creating (or recording) a duplicate, so an
+at-least-once transport can retry safely. The key is not part of the task
+descriptor; the Coordinator keeps a bounded per-workspace map of recent keys.
+
 ### 12.4 `review.*`
 
 | Method               | Type         | Privileged | Description                                   |
