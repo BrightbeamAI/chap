@@ -59,3 +59,26 @@ def test_step_up_enforces_min_acr():
 
     ok = _privileged(c, "human:bob")
     assert "error" not in ok or ok["error"]["code"] != -32402
+
+
+def test_min_acr_not_bypassed_by_downgraded_rejoin():
+    fresh = int(time.time())
+
+    def verify(token):
+        return {"sub": "u", "auth_time": fresh,
+                "acr": "mfa" if token == "strong" else "pwd"}
+
+    c = Coordinator(CoordinatorOptions(enforce_step_up=True, verify_oidc_token=verify))
+    c.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w", "min_acr": "mfa"}})
+    c.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:alice", "type": "human",
+                           "role": "admin", "oidc_token": "strong"}})
+    assert _privileged(c, "human:alice").get("error", {}).get("code") != -32402
+
+    # Re-join with a downgraded token: fresh auth_time but a weaker acr. The
+    # stale strong acr must not be retained.
+    c.dispatch({"jsonrpc": "2.0", "id": "3", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:alice", "type": "human",
+                           "oidc_token": "weak"}})
+    assert _privileged(c, "human:alice")["error"]["code"] == -32402

@@ -42,3 +42,19 @@ test("step-up enforces min_acr", () => {
   assert.equal(privileged(c, "human:alice").error?.code, -32402);
   assert.notEqual(privileged(c, "human:bob").error?.code, -32402);
 });
+
+test("min_acr is not bypassed by a downgraded re-join", () => {
+  const fresh = Math.floor(Date.now() / 1000);
+  const c = new Coordinator({ enforceStepUp: true,
+    verifyOidcToken: (t: string) => ({ sub: "u", auth_time: fresh, acr: t === "strong" ? "mfa" : "pwd" }) });
+  c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create",
+    params: { workspace: "w", min_acr: "mfa" }});
+  c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",
+    params: { workspace: "w", from: "human:alice", type: "human", role: "admin", oidc_token: "strong" }});
+  assert.notEqual(privileged(c, "human:alice").error?.code, -32402);
+
+  // Re-join with a downgraded token: fresh auth_time but a weaker acr.
+  c.dispatch({ jsonrpc: "2.0", id: "3", method: "participant.join",
+    params: { workspace: "w", from: "human:alice", type: "human", oidc_token: "weak" }});
+  assert.equal(privileged(c, "human:alice").error?.code, -32402);
+});
