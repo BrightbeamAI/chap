@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="144" viewBox="0 0 560 144" role="img" aria-labelledby="title desc">
+  <title id="title">Star CHAP on GitHub</title>
+  <desc id="desc">Building accountable human-agent systems? Star CHAP to help more implementers find and test the protocol.</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffbeb"/>
+      <stop offset="1" stop-color="#fff7d6"/>
+    </linearGradient>
+    <filter id="shadow" x="-15%" y="-30%" width="130%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#7c4a03" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+  <rect x="0.5" y="0.5" width="559" height="143" rx="10" fill="url(#panel)" stroke="#f1c45d"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif" text-anchor="middle">
+    <text x="280" y="33" font-size="15" font-weight="700" fill="#1f2328">Building accountable human-agent systems?</text>
+    <g filter="url(#shadow)">
+      <rect x="166" y="48" width="228" height="43" rx="7" fill="#f59e0b" stroke="#b77907"/>
+      <text x="280" y="75" font-size="16" font-weight="800" letter-spacing="0.7" fill="#201302">★ STAR CHAP ON GITHUB</text>
+    </g>
+    <text x="280" y="120" font-size="12" fill="#6b4f11">Help more implementers find and test the open protocol.</text>
+  </g>
+</svg>
