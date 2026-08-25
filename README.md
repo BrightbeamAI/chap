@@ -2,12 +2,38 @@
 
 # Collaborative Human-Agent Protocol (CHAP)
 
-**The protocol for humans and agents doing real work together.**
+<p align="center">
+  <a href="https://github.com/BrightbeamAI/chap/releases/latest"><img src="https://img.shields.io/github/v/release/BrightbeamAI/chap?display_name=tag&style=flat-square" alt="Latest release"></a>
+  <a href="https://pypi.org/project/chap-coordinator/"><img src="https://img.shields.io/pypi/v/chap-coordinator?style=flat-square&logo=pypi&logoColor=white&label=PyPI" alt="PyPI package"></a>
+  <a href="https://www.npmjs.com/package/@brightbeamai/chap-coordinator"><img src="https://img.shields.io/npm/v/%40brightbeamai%2Fchap-coordinator?style=flat-square&logo=npm&label=npm" alt="npm package"></a>
+  <a href="https://github.com/BrightbeamAI/chap/tree/main/conformance"><img src="https://img.shields.io/badge/conformance-23%2F23-22c55e?style=flat-square" alt="23 of 23 conformance vectors passing"></a>
+  <a href="https://github.com/BrightbeamAI/chap/blob/main/LICENSE"><img src="https://img.shields.io/badge/spec-CC_BY_4.0-2563eb?style=flat-square" alt="Specification licensed CC BY 4.0"></a>
+  <a href="https://github.com/BrightbeamAI/chap/blob/main/LICENSE"><img src="https://img.shields.io/badge/code-Apache_2.0-7c3aed?style=flat-square" alt="Code licensed Apache 2.0"></a>
+</p>
 
-When an AI agent drafts something and a human edits it, where does that edit live?
-In CHAP, it lives in an envelope you can query, replay, and verify six months later.
+<p align="center">
+  <strong>The open protocol for humans and agents doing accountable work together.</strong>
+</p>
 
-[Install](#install) · [The 90-second tour](#the-90-second-tour) · [Twelve scenarios](./IN_PRACTICE.md) · [About this repo](./ABOUT.md) · [Paper](https://arxiv.org/abs/2606.09751)
+<p align="center">
+  CHAP gives approvals, overrides, handoffs and escalations a shared, auditable shape across MCP and A2A.
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#the-90-second-tour">90-second tour</a> ·
+  <a href="./IN_PRACTICE.md">Scenarios</a> ·
+  <a href="./IMPLEMENTATIONS.md">Implementations</a> ·
+  <a href="https://github.com/BrightbeamAI/chap/wiki">Wiki</a> ·
+  <a href="https://github.com/BrightbeamAI/chap/discussions">Discussions</a> ·
+  <a href="https://arxiv.org/abs/2606.09751">Paper</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/BrightbeamAI/chap">
+    <img src="./docs/img/star-chap-cta.svg" width="560" alt="Star CHAP on GitHub to help more implementers find and test the protocol">
+  </a>
+</p>
 
 </div>
 
