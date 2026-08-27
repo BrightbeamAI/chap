@@ -103,3 +103,22 @@ def test_escalate_raise(coord_with_task):
                        "assignee": "human:senior@x"})
     assert "result" in r
     assert r["result"]["escalated_from"] == tid
+
+
+def test_task_update_cannot_complete_task_awaiting_review(coord_with_task):
+    coord, send, tid = coord_with_task
+    send("review.request", workspace="wsp_r", task_id=tid,
+         **{"from": "agent:bot", "to": "human:alice@x", "artefact": {"text": "draft"}})
+
+    # The drafter tries to self-complete the task under review, with no reviewer
+    # decision. The review gate lives in decide.*/abstain (reviewer-gated); a plain
+    # task.update by a member must not reach a terminal state around it.
+    bypass = send("task.update", workspace="wsp_r", task_id=tid,
+                  **{"from": "agent:bot", "state": "completed"})
+    assert "error" in bypass
+    assert coord.get_workspace("wsp_r").tasks[tid].state == "review_requested"
+
+    # Withdrawing the review request back to in_progress stays legal.
+    withdraw = send("task.update", workspace="wsp_r", task_id=tid,
+                    **{"from": "agent:bot", "state": "in_progress"})
+    assert withdraw["result"]["state"] == "in_progress"

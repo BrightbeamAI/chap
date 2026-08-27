@@ -952,7 +952,7 @@ class Coordinator:
             "created":          ["in_progress", "declined", "paused"],
             "in_progress":      ["in_progress", "completed", "declined",
                                  "review_requested", "paused"],
-            "review_requested": ["in_progress", "completed", "declined"],
+            "review_requested": ["in_progress"],
             "paused":           ["in_progress", "cancelled"],
         }
         if new_state not in legal.get(task.state, []):

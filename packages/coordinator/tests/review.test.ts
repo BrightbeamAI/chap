@@ -89,3 +89,22 @@ test("escalate.raise creates a new task that supersedes the original", () => {
   assert.ok("result" in r && !r.error);
   assert.equal((r.result as { escalated_from: string }).escalated_from, tid);
 });
+
+test("task.update cannot complete a task awaiting review", () => {
+  const { c, send, tid } = setup();
+  send("review.request", { workspace: "wsp_r", from: "agent:bot",
+    to: "human:alice", task_id: tid, artefact: { text: "draft" } });
+
+  // The drafter tries to self-complete the task under review, with no reviewer
+  // decision. The review gate lives in decide.*/abstain (reviewer-gated); a plain
+  // task.update by a member must not reach a terminal state around it.
+  const bypass = send("task.update", { workspace: "wsp_r", from: "agent:bot",
+    task_id: tid, state: "completed" });
+  assert.ok(bypass.error, "task.update must not complete a task awaiting review");
+  assert.equal(c.workspaces.get("wsp_r")!.tasks.get(tid)!.state, "review_requested");
+
+  // Withdrawing the review request back to in_progress stays legal.
+  const withdraw = send("task.update", { workspace: "wsp_r", from: "agent:bot",
+    task_id: tid, state: "in_progress" });
+  assert.equal((withdraw.result as { state: string }).state, "in_progress");
+});
