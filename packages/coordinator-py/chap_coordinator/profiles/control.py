@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..coordinator import mode_le
 from ..jsonrpc import E, rpc_error
 from ..types import SnapshotArtefact, Task, TaskHistoryEntry
 
@@ -234,6 +235,16 @@ def register_control(coord: "Coordinator") -> None:
             return {"error": rpc_error(E.PARAMS,
                                        "successor assignee not in workspace")}
 
+        # The successor is a created task, so it is bound by the same modes/1.0
+        # invariants as task.create: it must not exceed the workspace ceiling,
+        # and a trial-mode task forces review on regardless of its own setting.
+        requested_mode = new_spec.get("mode") or old.mode
+        if not mode_le(requested_mode, ws.mode_ceiling):
+            return {"error": rpc_error(
+                E.MODE_CEILING_EXCEEDED,
+                f"Requested mode {requested_mode} exceeds ceiling {ws.mode_ceiling}",
+            )}
+
         now = coord.now_iso()
         new_id = coord.ids.task_id()
         new_task = Task(
@@ -245,13 +256,17 @@ def register_control(coord: "Coordinator") -> None:
             input=new_spec.get("input") or {},
             created_at=now,
             updated_at=now,
-            mode=new_spec.get("mode") or old.mode,
+            mode=requested_mode,
             supersedes=old.id,
             history=[TaskHistoryEntry(
                 ts=now, from_=p.get("from", ""), state="created",
                 note=f"supersedes {old.id}: {p.get('reason') or ''}",
             )],
         )
+        if new_task.mode == "trial":
+            new_task.review_required = True
+        elif "review_required" in new_spec:
+            new_task.review_required = bool(new_spec["review_required"])
         ws.tasks[new_id] = new_task
 
         old.state = "superseded"

@@ -425,3 +425,52 @@ def test_audit_submit_to_scitt_with_submitter(ready):
              **{"from": "service:coordinator"})
     assert "receipts" in r["result"]
     assert len(r["result"]["receipts"]) > 0
+
+
+def test_supersede_cannot_exceed_mode_ceiling():
+    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
+
+    def send(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
+                               "method": method, "params": params})
+
+    send("workspace.create", workspace="w", mode_ceiling="trial")
+    send("participant.join", workspace="w",
+         **{"from": "human:alice", "type": "human", "role": "owner"})
+    send("participant.join", workspace="w",
+         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
+    tid = send("task.create", workspace="w",
+               **{"from": "human:alice", "kind": "draft", "input": {},
+                  "assignee": "agent:bot", "mode": "trial"})["result"]["task_id"]
+
+    # The successor is a created task, so the ceiling binds it too.
+    r = send("control.supersede", workspace="w", **{"from": "human:alice"},
+             task_id=tid, successor_task={"kind": "draft", "assignee": "agent:bot",
+                                          "mode": "production"})
+    assert r.get("error", {}).get("code") == -32040  # MODE_CEILING_EXCEEDED
+    # Rejected before any mutation: the old task is untouched.
+    assert coord.workspaces["w"].tasks[tid].state != "superseded"
+
+
+def test_supersede_trial_forces_review():
+    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
+
+    def send(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
+                               "method": method, "params": params})
+
+    send("workspace.create", workspace="w", mode_ceiling="production")
+    send("participant.join", workspace="w",
+         **{"from": "human:alice", "type": "human", "role": "owner"})
+    send("participant.join", workspace="w",
+         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
+    tid = send("task.create", workspace="w",
+               **{"from": "human:alice", "kind": "draft", "input": {},
+                  "assignee": "agent:bot", "mode": "production"})["result"]["task_id"]
+
+    # A trial-mode successor forces review on regardless of its own setting.
+    r = send("control.supersede", workspace="w", **{"from": "human:alice"},
+             task_id=tid, successor_task={"kind": "draft", "assignee": "agent:bot",
+                                          "mode": "trial", "review_required": False})
+    new_id = r["result"]["new_task_id"]
+    assert coord.workspaces["w"].tasks[new_id].review_required is True

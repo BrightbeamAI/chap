@@ -369,3 +369,36 @@ test("audit.submit_to_scitt with submitter calls the hook", () => {
   const r = send("audit.submit_to_scitt", { workspace: "wsp_p2", from: "service:coordinator" });
   assert.ok((r.result as { receipts: unknown[] }).receipts.length > 0);
 });
+
+test("control.supersede cannot exceed the mode ceiling", () => {
+  const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
+  const send = (m: string, p: Record<string, unknown>) =>
+    c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
+  send("workspace.create", { workspace: "w", mode_ceiling: "trial" });
+  send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner" });
+  send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
+  const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "draft",
+    input: {}, assignee: "agent:bot", mode: "trial" }).result as { task_id: string }).task_id;
+
+  // The successor is a created task, so the ceiling binds it too.
+  const r = send("control.supersede", { workspace: "w", from: "human:alice", task_id: tid,
+    successor_task: { kind: "draft", assignee: "agent:bot", mode: "production" }});
+  assert.equal(r.error?.code, -32040);  // MODE_CEILING_EXCEEDED
+  assert.notEqual(c.workspaces.get("w")!.tasks.get(tid)!.state, "superseded");
+});
+
+test("control.supersede forces review on a trial successor", () => {
+  const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
+  const send = (m: string, p: Record<string, unknown>) =>
+    c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
+  send("workspace.create", { workspace: "w", mode_ceiling: "production" });
+  send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner" });
+  send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
+  const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "draft",
+    input: {}, assignee: "agent:bot", mode: "production" }).result as { task_id: string }).task_id;
+
+  const r = send("control.supersede", { workspace: "w", from: "human:alice", task_id: tid,
+    successor_task: { kind: "draft", assignee: "agent:bot", mode: "trial", review_required: false }});
+  const newId = (r.result as { new_task_id: string }).new_task_id;
+  assert.equal(c.workspaces.get("w")!.tasks.get(newId)!.review_required, true);
+});
