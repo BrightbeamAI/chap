@@ -10,6 +10,7 @@
     "start:demo":   "tsx server.ts",
     "demo:client":  "tsx client.ts",
     "analyze":      "tsx analyze-overrides.ts",
+    "test":         "tsx --test *.test.ts",
     "demo": "tsx server.ts & sleep 1 && tsx client.ts && tsx analyze-overrides.ts && kill %1"
   },
   "devDependencies": {
