@@ -89,6 +89,11 @@ const READ_ONLY_METHODS = new Set<string>([
   "workspace.describe", "audit.read", "audit.verify_chain", "audit.verify_receipt",
 ]);
 
+// Cap on a workspace's task.create idempotency map. Older keys are evicted, so
+// the dedup window is bounded rather than growing unbounded in a long-lived
+// workspace; a redelivery beyond this many intervening creates is not deduped.
+const MAX_IDEMPOTENCY_KEYS = 10_000;
+
 export interface CoordinatorOptions {
   deterministicIds?: boolean;
   deterministicClock?: boolean;
@@ -920,7 +925,11 @@ export class Coordinator {
     else if ("review_required" in p) task.review_required = !!p.review_required;
 
     ws.tasks.set(taskId, task);
-    if (typeof p.idempotency_key === "string") ws.idempotency_keys[p.idempotency_key] = taskId;
+    if (typeof p.idempotency_key === "string") {
+      ws.idempotency_keys[p.idempotency_key] = taskId;
+      const keys = Object.keys(ws.idempotency_keys);
+      if (keys.length > MAX_IDEMPOTENCY_KEYS) delete ws.idempotency_keys[keys[0]];
+    }
     return { result: { task_id: taskId, state: "created" } };
   }
 

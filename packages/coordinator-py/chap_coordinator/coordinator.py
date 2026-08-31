@@ -77,6 +77,12 @@ _READ_ONLY_METHODS = frozenset({
 })
 
 
+# Cap on a workspace's task.create idempotency map. Older keys are evicted, so
+# the dedup window is bounded rather than growing unbounded in a long-lived
+# workspace; a redelivery beyond this many intervening creates is not deduped.
+_MAX_IDEMPOTENCY_KEYS = 10_000
+
+
 @dataclass
 class CoordinatorOptions:
     """Options controlling Coordinator behaviour."""
@@ -942,6 +948,8 @@ class Coordinator:
         key = p.get("idempotency_key")
         if isinstance(key, str):
             ws.idempotency_keys[key] = task_id
+            if len(ws.idempotency_keys) > _MAX_IDEMPOTENCY_KEYS:
+                del ws.idempotency_keys[next(iter(ws.idempotency_keys))]
         return {"result": {"task_id": task_id, "state": "created"}}
 
     def _op_task_update(self, p: dict) -> dict:
