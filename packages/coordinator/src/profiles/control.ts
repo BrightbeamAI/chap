@@ -11,6 +11,7 @@
  */
 import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
+import { modeLE } from "../types.js";
 import type { Mode, SnapshotArtefact, Task } from "../types.js";
 
 const VALID_MODES = new Set<Mode>(["shadow", "trial", "production"]);
@@ -178,6 +179,14 @@ export function registerControl(coord: Coordinator): void {
     if (!ws.members.has(assignee)) {
       return { error: rpcError(E.PARAMS, "successor assignee not in workspace") };
     }
+    // The successor is a created task, so it is bound by the same modes/1.0
+    // invariants as task.create: it must not exceed the workspace ceiling, and
+    // a trial-mode task forces review on regardless of its own setting.
+    const requestedMode = (newSpec.mode as Mode) ?? old.mode;
+    if (!modeLE(requestedMode, ws.mode_ceiling)) {
+      return { error: rpcError(E.MODE_CEILING_EXCEEDED,
+        `Requested mode ${requestedMode} exceeds ceiling ${ws.mode_ceiling}`) };
+    }
     const now = coord.now();
     const newId = coord.ids.taskId();
     const newTask: Task = {
@@ -189,12 +198,14 @@ export function registerControl(coord: Coordinator): void {
       input: (newSpec.input as Record<string, unknown>) ?? {},
       created_at: now,
       updated_at: now,
-      mode: (newSpec.mode as Mode) ?? old.mode,
+      mode: requestedMode,
       supersedes: old.id,
       history: [{ ts: now, from: p.from as string, state: "created",
                   note: `supersedes ${old.id}: ${(p.reason as string) || ""}` }],
       paused: false,
     };
+    if (newTask.mode === "trial") newTask.review_required = true;
+    else if ("review_required" in newSpec) newTask.review_required = !!newSpec.review_required;
     ws.tasks.set(newId, newTask);
     old.state = "superseded";
     old.superseded_by = newId;
