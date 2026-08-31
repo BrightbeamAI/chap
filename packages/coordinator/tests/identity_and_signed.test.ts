@@ -238,3 +238,39 @@ test("VC invalid presentation returns -32410", () => {
               vc_presentation: { type: "Bogus" }}});
   assert.equal(r.error?.code, -32410);
 });
+
+test("a rotated-out key cannot sign live requests via a backdated ts", () => {
+  const c = new Coordinator({ requireSignatures: true,
+    deterministicIds: true, deterministicClock: true });
+  const k1 = genKeypair();
+  const k2 = genKeypair();
+  const bot = genKeypair();
+  c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create",
+    params: { workspace: "w" }});
+  c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",
+    params: { workspace: "w", from: "human:alice", type: "human", role: "owner",
+              jwks: { keys: [k1.jwk] }, profiles: ["core/1.0", "security-signed/1.0"] }});
+  c.dispatch({ jsonrpc: "2.0", id: "2b", method: "participant.join",
+    params: { workspace: "w", from: "agent:bot", type: "agent", role: "drafter",
+              jwks: { keys: [bot.jwk] }}});
+
+  // Rotate alice's key (signed with the old key); this sets valid_until on k1.
+  const rot: Envelope = { jsonrpc: "2.0", id: "3", method: "participant.rotate_key",
+    params: { workspace: "w", from: "human:alice", old_kid: k1.jwk.kid, new_jwk: k2.jwk }};
+  signed(rot, k1.sk, k1.jwk.kid);
+  assert.ok((c.dispatch(rot).result as { rotated: boolean }).rotated);
+
+  const k1rec = c.workspaces.get("w")!.members.get("human:alice")!
+    .keys.find(k => k.kid === k1.jwk.kid)!;
+  assert.ok(k1rec.valid_until !== undefined);
+
+  // The holder of the rotated-out key backdates ts into the old key's validity
+  // window (valid_from is always inside it) and signs a live request. It must
+  // be rejected: the old key is no longer valid per the trusted clock,
+  // regardless of the self-asserted ts.
+  const env: Envelope = { jsonrpc: "2.0", id: "4", method: "task.create",
+    params: { workspace: "w", from: "human:alice", kind: "draft", input: {},
+              assignee: "agent:bot", ts: k1rec.valid_from }};
+  signed(env, k1.sk, k1.jwk.kid);
+  assert.equal(c.dispatch(env).error?.code, -32071);  // SIG_KEY_NOT_FOUND
+});

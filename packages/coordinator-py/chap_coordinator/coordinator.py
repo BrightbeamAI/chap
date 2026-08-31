@@ -596,6 +596,13 @@ class Coordinator:
         for k in member.keys:
             if k.kid == kid and k.revoked_at is not None and now >= k.revoked_at:
                 return rpc_error(E.SIG_KEY_REVOKED, f"Key {kid} is revoked")
+            # Expiry is present-tense for the same reason: a rotated-out key
+            # (valid_until set to the rotation time, but never explicitly
+            # revoked) must not sign live requests. Selecting it by the
+            # self-asserted `ts` alone lets its holder backdate `ts` to before
+            # valid_until and keep using it. Judge expiry by the trusted clock.
+            if k.kid == kid and k.valid_until is not None and now >= k.valid_until:
+                return rpc_error(E.SIG_KEY_NOT_FOUND, f"Key {kid} is no longer valid")
         key = member.key_for(kid, ts)
         if not key:
             for k in member.keys:

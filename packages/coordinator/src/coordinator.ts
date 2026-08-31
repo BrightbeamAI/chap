@@ -593,6 +593,14 @@ export class Coordinator {
     if (member.keys.some(k => k.kid === kid && k.revoked_at !== undefined && now >= k.revoked_at)) {
       return rpcError(E.SIG_KEY_REVOKED, `Key ${kid} is revoked`);
     }
+    // Expiry is present-tense for the same reason: a rotated-out key
+    // (valid_until set to the rotation time, but never explicitly revoked) must
+    // not sign live requests. Selecting it by the self-asserted `ts` alone lets
+    // its holder backdate `ts` to before valid_until and keep using it. Judge
+    // expiry by the trusted clock.
+    if (member.keys.some(k => k.kid === kid && k.valid_until !== undefined && now >= k.valid_until)) {
+      return rpcError(E.SIG_KEY_NOT_FOUND, `Key ${kid} is no longer valid`);
+    }
 
     const key = this.lookupKey(member, kid, ts);
     if (!key) {

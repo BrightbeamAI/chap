@@ -374,3 +374,43 @@ def test_vc_presentation_invalid_rejected():
                    "vc_presentation": {"type": "Bogus"}},
     })
     assert r["error"]["code"] == -32410  # VC_VP_INVALID
+
+
+def test_rotated_out_key_cannot_sign_live_via_backdated_ts():
+    c = Coordinator(CoordinatorOptions(require_signatures=True,
+                                       deterministic_ids=True, deterministic_clock=True))
+    c.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w"}})
+    sk1, pub1 = _gen_keypair()
+    sk2, pub2 = _gen_keypair()
+    _, pub_bot = _gen_keypair()
+    jwk1 = {"kty": "OKP", "crv": "Ed25519", "kid": "k1", "x": _b64url_nopad(pub1)}
+    jwk2 = {"kty": "OKP", "crv": "Ed25519", "kid": "k2", "x": _b64url_nopad(pub2)}
+    jwk_bot = {"kty": "OKP", "crv": "Ed25519", "kid": "kb", "x": _b64url_nopad(pub_bot)}
+    c.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:alice", "type": "human",
+                           "role": "owner", "jwks": {"keys": [jwk1]},
+                           "profiles": ["core/1.0", "security-signed/1.0"]}})
+    c.dispatch({"jsonrpc": "2.0", "id": "2b", "method": "participant.join",
+                "params": {"workspace": "w", "from": "agent:bot", "type": "agent",
+                           "role": "drafter", "jwks": {"keys": [jwk_bot]}}})
+
+    # Rotate alice's key (signed with the old key); this sets valid_until on k1.
+    rot = {"jsonrpc": "2.0", "id": "3", "method": "participant.rotate_key",
+           "params": {"workspace": "w", "from": "human:alice",
+                      "old_kid": "k1", "new_jwk": jwk2}}
+    _sign_envelope(sk1, rot, "k1")
+    assert c.dispatch(rot)["result"]["rotated"] is True
+
+    k1 = next(k for k in c.workspaces["w"].members["human:alice"].keys if k.kid == "k1")
+    assert k1.valid_until is not None
+
+    # The holder of the rotated-out key backdates ts into the old key's validity
+    # window (valid_from is always inside it) and signs a live request. It must
+    # be rejected: the old key is no longer valid per the trusted clock,
+    # regardless of the self-asserted ts.
+    env = {"jsonrpc": "2.0", "id": "4", "method": "task.create",
+           "params": {"workspace": "w", "from": "human:alice", "kind": "draft",
+                      "input": {}, "assignee": "agent:bot", "ts": k1.valid_from}}
+    _sign_envelope(sk1, env, "k1")
+    assert c.dispatch(env)["error"]["code"] == -32071  # SIG_KEY_NOT_FOUND
