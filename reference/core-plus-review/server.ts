@@ -14,6 +14,7 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
 // ============================================================
@@ -195,7 +196,10 @@ function err(code: number, message: string, data?: unknown) {
 //   Minimal RFC 6902 JSON Patch - apply
 // ============================================================
 
-function applyJsonPatch(doc: unknown, ops: JsonPatchOp[]): unknown {
+// Rejected in every JSON Pointer segment: these enable prototype pollution.
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+export function applyJsonPatch(doc: unknown, ops: JsonPatchOp[]): unknown {
   // Deep-clone the document to avoid mutating the original.
   const target = JSON.parse(JSON.stringify(doc));
 
@@ -206,11 +210,18 @@ function applyJsonPatch(doc: unknown, ops: JsonPatchOp[]): unknown {
     if (parts.length === 0) {
       throw new Error(`Cannot operate on root path`);
     }
+    for (const seg of parts) {
+      if (DANGEROUS_KEYS.has(seg)) {
+        throw new Error(`Refusing unsafe path segment ${JSON.stringify(seg)}`);
+      }
+    }
 
     let parent: any = target;
     for (let i = 0; i < parts.length - 1; i++) {
       const key = Array.isArray(parent) ? parseInt(parts[i], 10) : parts[i];
-      if (parent[key] === undefined) {
+      // hasOwnProperty, not `=== undefined`: an inherited property (e.g. via a
+      // crafted path) must not be treated as a traversable node.
+      if (!Object.prototype.hasOwnProperty.call(parent, key)) {
         throw new Error(`Path not found: ${op.path}`);
       }
       parent = parent[key];
@@ -755,8 +766,12 @@ const server = createServer(async (req, res) => {
   reply(res, response.error ? 400 : 200, response);
 });
 
-const port = parseInt(process.env.PORT ?? "8080", 10);
-server.listen(port, () => {
-  console.log(`CHAP Core+Review reference on http://localhost:${port}/chap`);
-  console.log(`Profiles: core/1.0, review/1.0`);
-});
+// Only start listening when run directly (tsx server.ts), not when the module
+// is imported -- e.g. by the patch test, which exercises applyJsonPatch alone.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const port = parseInt(process.env.PORT ?? "8080", 10);
+  server.listen(port, () => {
+    console.log(`CHAP Core+Review reference on http://localhost:${port}/chap`);
+    console.log(`Profiles: core/1.0, review/1.0`);
+  });
+}
