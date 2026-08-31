@@ -204,7 +204,9 @@ export function registerControl(coord: Coordinator): void {
                   note: `supersedes ${old.id}: ${(p.reason as string) || ""}` }],
       paused: false,
     };
-    if (newTask.mode === "trial") newTask.review_required = true;
+    // Trial forces review only when the workspace opted into modes/1.0,
+    // matching task.create -- mode is inert without the profile.
+    if (ws.profiles.some(pr => pr.startsWith("modes/")) && newTask.mode === "trial") newTask.review_required = true;
     else if ("review_required" in newSpec) newTask.review_required = !!newSpec.review_required;
     ws.tasks.set(newId, newTask);
     old.state = "superseded";

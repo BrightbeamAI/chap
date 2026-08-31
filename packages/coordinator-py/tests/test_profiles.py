@@ -459,7 +459,8 @@ def test_supersede_trial_forces_review():
         return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
                                "method": method, "params": params})
 
-    send("workspace.create", workspace="w", mode_ceiling="production")
+    send("workspace.create", workspace="w", mode_ceiling="production",
+         profiles=["core/1.0", "review/1.0", "modes/1.0"])
     send("participant.join", workspace="w",
          **{"from": "human:alice", "type": "human", "role": "owner"})
     send("participant.join", workspace="w",

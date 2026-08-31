@@ -921,7 +921,9 @@ export class Coordinator {
     };
 
     // modes/1.0: trial mode forces review
-    if (task.mode === "trial") task.review_required = true;
+    // modes/1.0: trial forces review, but only when the workspace opted into
+    // modes/1.0. mode is inert without the profile.
+    if (ws.profiles.some(pr => pr.startsWith("modes/")) && task.mode === "trial") task.review_required = true;
     else if ("review_required" in p) task.review_required = !!p.review_required;
 
     ws.tasks.set(taskId, task);
@@ -973,6 +975,34 @@ export class Coordinator {
     // can neither revive a terminated task nor bypass a pause.
     if (task.state !== "created" && task.state !== "in_progress") {
       return { error: rpcError(E.PARAMS, `Cannot complete task in state: ${task.state}`) };
+    }
+    // review/1.0 S3.1: task.complete on a task whose review is required opens a
+    // review implicitly rather than completing. The submitted output becomes the
+    // artefact under review; only a reviewer decision (decide.*) then takes the
+    // task to completed. Without this a review_required task would reach
+    // completed with unreviewed output and no decision.
+    if (task.review_required) {
+      const now = this.now();
+      task.pending_artefact = p.output;
+      if (!task.review) {
+        // The producer must not satisfy its own review, so the implicit review
+        // is addressed to the other members, excluding the caller and the
+        // assignee. With nobody eligible there is no independent reviewer, so
+        // refuse rather than open a review only its author could approve. (An
+        // explicit review.request keeps its own `to`.)
+        const producer = p.from as string;
+        const eligible = [...ws.members.keys()].filter(uri => uri !== producer && uri !== task.assignee);
+        if (eligible.length === 0) {
+          return { error: rpcError(E.NOT_AUTHORISED,
+            "Task requires review but has no eligible reviewer (needs a member other than its assignee and completer)") };
+        }
+        task.review = { requested_at: now, requested_to: eligible as ParticipantUri[], rule: "any_one_approves", decisions: [] };
+      }
+      task.state = "review_requested";
+      task.updated_at = now;
+      task.history.push({ ts: now, from: p.from as ParticipantUri, state: "review_requested",
+                          note: "review required; opened on task.complete" });
+      return { result: { state: "review_requested", review_id: task.id } };
     }
     task.output = p.output;
     if (typeof p.confidence === "number" || typeof p.confidence === "string") task.confidence = p.confidence;
