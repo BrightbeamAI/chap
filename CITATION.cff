@@ -1,0 +1,63 @@
+cff-version: 1.2.0
+title: Collaborative Human-Agent Protocol (CHAP)
+message: >-
+  If you use CHAP in academic or technical work, please cite the technical
+  report rather than this repository.
+type: software
+authors:
+  - given-names: Arsalan
+    family-names: Shahid
+    email: arsalan.shahid@brightbeam.com
+    affiliation: Brightbeam AI
+  - given-names: Gordon
+    family-names: Suttie
+    affiliation: Brightbeam AI
+  - given-names: Philip
+    family-names: Black
+    affiliation: Brightbeam AI
+repository-code: https://github.com/BrightbeamAI/chap
+url: https://github.com/BrightbeamAI/chap
+abstract: >-
+  An open protocol for recording human decisions over AI agent work.
+  Approvals, edits, overrides and escalations become signed, hash-chained,
+  queryable records rather than fragments spread across application logs,
+  chat threads and ticket comments. Core is seven methods and one envelope
+  over JSON-RPC 2.0, with eleven optional profiles, two reference
+  implementations, and MCP and A2A transports.
+keywords:
+  - human-in-the-loop
+  - ai-agents
+  - audit
+  - provenance
+  - protocol
+  - model-context-protocol
+  - governance
+license:
+  - Apache-2.0
+  - CC-BY-4.0
+version: 0.2.11
+date-released: '2026-08-20'
+preferred-citation:
+  type: report
+  title: >-
+    Collaborative Human-Agent Protocol (CHAP): An open protocol for auditable,
+    structured multi-human and multi-agent collaboration
+  authors:
+    - given-names: Arsalan
+      family-names: Shahid
+      affiliation: Brightbeam AI
+    - given-names: Gordon
+      family-names: Suttie
+      affiliation: Brightbeam AI
+    - given-names: Philip
+      family-names: Black
+      affiliation: Brightbeam AI
+  institution:
+    name: Brightbeam AI
+  year: 2026
+  number: arXiv:2606.09751
+  url: https://arxiv.org/abs/2606.09751
+  identifiers:
+    - type: other
+      value: arXiv:2606.09751
+      description: arXiv preprint identifier
