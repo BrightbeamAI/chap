@@ -935,7 +935,7 @@ export class Coordinator {
     const legal: Record<string, string[]> = {
       created:          ["in_progress", "declined", "paused"],
       in_progress:      ["in_progress", "completed", "declined", "review_requested", "paused"],
-      review_requested: ["in_progress", "completed", "declined"],
+      review_requested: ["in_progress"],
       paused:           ["in_progress", "cancelled"],
     };
     if (!legal[task.state]?.includes(newState)) {
