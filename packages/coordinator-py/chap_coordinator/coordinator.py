@@ -859,7 +859,7 @@ class Coordinator:
 
         existing = ws.members.get(uri)
         if existing is not None:
-            for f in ("oidc_sub", "oidc_auth_time", "vc_holder"):
+            for f in ("oidc_sub", "oidc_auth_time", "oidc_acr", "vc_holder"):
                 v = getattr(member, f)
                 if v is not None:
                     setattr(existing, f, v)
