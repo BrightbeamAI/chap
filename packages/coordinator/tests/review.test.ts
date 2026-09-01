@@ -108,3 +108,50 @@ test("task.update cannot complete a task awaiting review", () => {
     task_id: tid, state: "in_progress" });
   assert.equal((withdraw.result as { state: string }).state, "in_progress");
 });
+
+function ruleSetup() {
+  const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
+  const send = (m: string, p: Record<string, unknown>) =>
+    c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
+  send("workspace.create", { workspace: "w" });
+  for (const who of ["human:a", "human:b", "human:c"])
+    send("participant.join", { workspace: "w", from: who, type: "human", role: "reviewer" });
+  send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
+  const tid = (send("task.create", { workspace: "w", from: "human:a", kind: "draft",
+    input: {}, assignee: "agent:bot" }).result as { task_id: string }).task_id;
+  const st = (r: ReturnType<Coordinator["dispatch"]>) => (r.result as { state: string }).state;
+  return { c, send, tid, st };
+}
+
+test("all_approve requires every named reviewer to approve", () => {
+  const { send, tid, st } = ruleSetup();
+  send("review.request", { workspace: "w", from: "agent:bot",
+    to: ["human:a", "human:b", "human:c"], task_id: tid, artefact: { x: 1 }, rule: "all_approve" });
+  assert.equal(st(send("decide.approve", { workspace: "w", from: "human:a", task_id: tid })), "review_requested");
+  assert.equal(st(send("decide.approve", { workspace: "w", from: "human:b", task_id: tid })), "review_requested");
+  assert.equal(st(send("decide.approve", { workspace: "w", from: "human:c", task_id: tid })), "completed");
+});
+
+test("all_approve ignores a duplicate approval from the same reviewer", () => {
+  const { send, tid, st } = ruleSetup();
+  send("review.request", { workspace: "w", from: "agent:bot",
+    to: ["human:a", "human:b"], task_id: tid, artefact: { x: 1 }, rule: "all_approve" });
+  send("decide.approve", { workspace: "w", from: "human:a", task_id: tid });
+  assert.equal(st(send("decide.approve", { workspace: "w", from: "human:a", task_id: tid })), "review_requested");
+  assert.equal(st(send("decide.approve", { workspace: "w", from: "human:b", task_id: tid })), "completed");
+});
+
+test("quorum completes at N distinct approvers", () => {
+  const { send, tid, st } = ruleSetup();
+  send("review.request", { workspace: "w", from: "agent:bot",
+    to: ["human:a", "human:b", "human:c"], task_id: tid, artefact: { x: 1 }, rule: "quorum:2" });
+  assert.equal(st(send("decide.approve", { workspace: "w", from: "human:a", task_id: tid })), "review_requested");
+  assert.equal(st(send("decide.approve", { workspace: "w", from: "human:b", task_id: tid })), "completed");
+});
+
+test("review.request rejects a rule review/1.0 cannot honor", () => {
+  const { send, tid } = ruleSetup();
+  const r = send("review.request", { workspace: "w", from: "agent:bot",
+    to: ["human:a"], task_id: tid, artefact: { x: 1 }, rule: "weighted_vote:2.0" });
+  assert.equal(r.error?.code, -32602);
+});

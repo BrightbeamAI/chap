@@ -122,3 +122,67 @@ def test_task_update_cannot_complete_task_awaiting_review(coord_with_task):
     withdraw = send("task.update", workspace="wsp_r", task_id=tid,
                     **{"from": "agent:bot", "state": "in_progress"})
     assert withdraw["result"]["state"] == "in_progress"
+
+
+def _rule_coord():
+    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
+
+    def send(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
+                               "method": method, "params": params})
+
+    send("workspace.create", workspace="w")
+    for who in ("human:a", "human:b", "human:c"):
+        send("participant.join", workspace="w",
+             **{"from": who, "type": "human", "role": "reviewer"})
+    send("participant.join", workspace="w",
+         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
+    tid = send("task.create", workspace="w",
+               **{"from": "human:a", "kind": "draft", "input": {},
+                  "assignee": "agent:bot"})["result"]["task_id"]
+    return coord, send, tid
+
+
+def test_all_approve_requires_every_named_reviewer():
+    coord, send, tid = _rule_coord()
+    send("review.request", workspace="w",
+         **{"from": "agent:bot", "to": ["human:a", "human:b", "human:c"]},
+         task_id=tid, artefact={"x": 1}, rule="all_approve")
+    assert send("decide.approve", workspace="w", **{"from": "human:a"},
+                task_id=tid)["result"]["state"] == "review_requested"
+    assert send("decide.approve", workspace="w", **{"from": "human:b"},
+                task_id=tid)["result"]["state"] == "review_requested"
+    assert send("decide.approve", workspace="w", **{"from": "human:c"},
+                task_id=tid)["result"]["state"] == "completed"
+
+
+def test_all_approve_ignores_a_duplicate_approval():
+    coord, send, tid = _rule_coord()
+    send("review.request", workspace="w",
+         **{"from": "agent:bot", "to": ["human:a", "human:b"]},
+         task_id=tid, artefact={"x": 1}, rule="all_approve")
+    send("decide.approve", workspace="w", **{"from": "human:a"}, task_id=tid)
+    # A second approval from the same reviewer must not satisfy all_approve.
+    assert send("decide.approve", workspace="w", **{"from": "human:a"},
+                task_id=tid)["result"]["state"] == "review_requested"
+    assert send("decide.approve", workspace="w", **{"from": "human:b"},
+                task_id=tid)["result"]["state"] == "completed"
+
+
+def test_quorum_completes_at_n_distinct_approvers():
+    coord, send, tid = _rule_coord()
+    send("review.request", workspace="w",
+         **{"from": "agent:bot", "to": ["human:a", "human:b", "human:c"]},
+         task_id=tid, artefact={"x": 1}, rule="quorum:2")
+    assert send("decide.approve", workspace="w", **{"from": "human:a"},
+                task_id=tid)["result"]["state"] == "review_requested"
+    assert send("decide.approve", workspace="w", **{"from": "human:b"},
+                task_id=tid)["result"]["state"] == "completed"
+
+
+def test_review_request_rejects_unhonorable_rule():
+    coord, send, tid = _rule_coord()
+    r = send("review.request", workspace="w",
+             **{"from": "agent:bot", "to": ["human:a"]},
+             task_id=tid, artefact={"x": 1}, rule="weighted_vote:2.0")
+    assert r["error"]["code"] == -32602  # PARAMS: rule review/1.0 can't honor

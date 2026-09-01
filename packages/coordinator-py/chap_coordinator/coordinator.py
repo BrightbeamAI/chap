@@ -239,6 +239,34 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     return ws
 
 
+def _review_rule_supported(rule: str) -> bool:
+    """Rules review/1.0 can evaluate itself, with no external policy weights."""
+    if rule in ("any_one_approves", "all_approve"):
+        return True
+    if rule.startswith("quorum:"):
+        arg = rule.split(":", 1)[1]
+        return arg.isdigit() and int(arg) >= 1
+    return False
+
+
+def _review_satisfied(review) -> bool:
+    """Whether the approvals recorded so far satisfy the review rule."""
+    approvers = {d["reviewer"] for d in review.decisions
+                 if d.get("kind") == "approve"}
+    rule = review.rule or "any_one_approves"
+    if rule == "all_approve":
+        named = [r for r in review.requested_to
+                 if not (r.startswith("workspace:") or r.startswith("group:"))]
+        # A broadcast-only review has no bounded reviewer set to wait on, so it
+        # degrades to first-approve.
+        if not named:
+            return len(approvers) >= 1
+        return all(r in approvers for r in named)
+    if rule.startswith("quorum:"):
+        return len(approvers) >= int(rule.split(":", 1)[1])
+    return len(approvers) >= 1  # any_one_approves (and the default)
+
+
 _MODE_ORDER = {"shadow": 0, "trial": 1, "production": 2}
 
 
@@ -1063,6 +1091,11 @@ class Coordinator:
             return {"error": rpc_error(E.PARAMS, "review.request needs 'to'")}
         now = self.now_iso()
         rule = p.get("rule") or "any_one_approves"
+        if not _review_rule_supported(rule):
+            return {"error": rpc_error(
+                E.PARAMS,
+                f"Unsupported review rule {rule!r}: review/1.0 supports "
+                "any_one_approves, all_approve, quorum:<n>")}
 
         # A review already open on this task. Replacing the artefact underneath
         # it would let a reviewer decide on content they never saw, and would
@@ -1178,8 +1211,12 @@ class Coordinator:
             "tags": p.get("tags") or [],
         })
         if kind == "approve":
-            task.output = task.pending_artefact
-            task.state = "completed"
+            # Complete only when the review rule's approval predicate is met;
+            # otherwise the approval is recorded and the task stays
+            # review_requested awaiting the rest.
+            if _review_satisfied(task.review):
+                task.output = task.pending_artefact
+                task.state = "completed"
         else:
             task.state = "in_progress" if p.get("request_revision") else "declined"
         task.updated_at = now
