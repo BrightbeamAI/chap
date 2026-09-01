@@ -474,3 +474,30 @@ def test_supersede_trial_forces_review():
                                           "mode": "trial", "review_required": False})
     new_id = r["result"]["new_task_id"]
     assert coord.workspaces["w"].tasks[new_id].review_required is True
+
+
+def test_pause_cancel_reject_a_superseded_task():
+    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
+
+    def send(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
+                               "method": method, "params": params})
+
+    send("workspace.create", workspace="w")
+    send("participant.join", workspace="w",
+         **{"from": "human:alice", "type": "human", "role": "owner"})
+    send("participant.join", workspace="w",
+         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
+    tid = send("task.create", workspace="w",
+               **{"from": "human:alice", "kind": "k", "input": {},
+                  "assignee": "agent:bot"})["result"]["task_id"]
+    send("control.supersede", workspace="w", **{"from": "human:alice"},
+         task_id=tid, successor_task={"kind": "k", "assignee": "agent:bot"})
+    assert coord.workspaces["w"].tasks[tid].state == "superseded"
+
+    # superseded is terminal (SPEC §8.1): it cannot be paused or cancelled.
+    assert "error" in send("control.pause", workspace="w",
+                           **{"from": "human:alice"}, task_id=tid)
+    assert "error" in send("control.cancel", workspace="w",
+                           **{"from": "human:alice"}, task_id=tid)
+    assert coord.workspaces["w"].tasks[tid].state == "superseded"
