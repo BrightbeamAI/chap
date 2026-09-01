@@ -92,3 +92,19 @@ test("malformed envelope returns -32600", () => {
   const r = c.dispatch({ not_jsonrpc: true } as never);
   assert.equal(r.error?.code, -32600);
 });
+
+test("an oversized envelope is rejected", () => {
+  const c = new Coordinator({ maxEnvelopeBytes: 200 });
+  const ok = c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create", params: { workspace: "w" } });
+  assert.ok("result" in ok && !ok.error);
+  const big = c.dispatch({ jsonrpc: "2.0", id: "2", method: "workspace.describe",
+    params: { workspace: "w", pad: "x".repeat(500) } } as never);
+  assert.equal(big.error?.code, -32600);
+});
+
+test("workspace.describe publishes max_envelope_bytes", () => {
+  const c = new Coordinator({});
+  c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create", params: { workspace: "w" } });
+  const d = c.dispatch({ jsonrpc: "2.0", id: "2", method: "workspace.describe", params: { workspace: "w" } });
+  assert.equal((d.result as { max_envelope_bytes: number }).max_envelope_bytes, 1048576);
+});

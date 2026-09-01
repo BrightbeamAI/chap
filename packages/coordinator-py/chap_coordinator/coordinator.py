@@ -107,6 +107,10 @@ class CoordinatorOptions:
     default: reads are transport-delegated. Enable for multi-tenant or
     directly-exposed deployments."""
 
+    max_envelope_bytes: int = 1_048_576
+    """Largest envelope accepted, published in the workspace descriptor
+    (SPEC S4.4). Envelopes whose canonical form exceeds this are rejected."""
+
     on_audit: AuditListener | None = None
     """Called after every successfully recorded audit entry."""
 
@@ -380,6 +384,19 @@ class Coordinator:
             return make_response(
                 envelope.get("id") if isinstance(envelope, dict) else None,
                 error=rpc_error(E.REQUEST, "Invalid JSON-RPC 2.0 request"),
+            )
+
+        try:
+            size = len(canonicalize(envelope))
+        except (ValueError, TypeError):
+            size = 0  # not canonicalisable; the ingress check below rejects it
+        if size > self.options.max_envelope_bytes:
+            return make_response(
+                envelope.get("id"),
+                error=rpc_error(
+                    E.REQUEST,
+                    f"Envelope exceeds max_envelope_bytes "
+                    f"({size} > {self.options.max_envelope_bytes})"),
             )
 
         method = envelope.get("method")
@@ -764,6 +781,7 @@ class Coordinator:
             "state": ws.state,
             "mode": ws.mode,
             "mode_ceiling": ws.mode_ceiling,
+            "max_envelope_bytes": self.options.max_envelope_bytes,
             "step_up_window_sec": ws.step_up_window_sec,
             "profiles": ws.profiles,
             "members": [m.to_dict() for m in ws.members.values()],
