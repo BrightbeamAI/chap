@@ -274,3 +274,18 @@ test("a rotated-out key cannot sign live requests via a backdated ts", () => {
   signed(env, k1.sk, k1.jwk.kid);
   assert.equal(c.dispatch(env).error?.code, -32071);  // SIG_KEY_NOT_FOUND
 });
+
+test("a signature that cannot be verified fails closed with SIG_VERIFY_FAILED", () => {
+  const c = new Coordinator({ requireSignatures: true });
+  c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create", params: { workspace: "w" }});
+  // A structurally valid JWK whose x decodes to the wrong length, so building
+  // the public key throws during verification.
+  c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",
+    params: { workspace: "w", from: "human:alice", type: "human",
+              jwks: { keys: [{ kty: "OKP", crv: "Ed25519", kid: "k1", x: "AA" }] },
+              profiles: ["core/1.0", "security-signed/1.0"] }});
+  const env: Envelope = { jsonrpc: "2.0", id: "3", method: "task.create",
+    params: { workspace: "w", from: "human:alice", kind: "k", input: {}, assignee: "human:alice" },
+    sig: "ed25519:k1:AAAA" };
+  assert.equal(c.dispatch(env).error?.code, -32070);  // SIG_VERIFY_FAILED, not INTERNAL
+});
