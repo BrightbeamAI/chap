@@ -16,12 +16,25 @@ exactly the same patches.
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 # Rejected in every JSON Pointer segment. In a JavaScript runtime these
 # enable prototype pollution; CHAP refuses them in both references so a
 # patch refused by one implementation is refused by the other.
 _DANGEROUS_KEYS = frozenset({"__proto__", "constructor", "prototype"})
+
+# An array index is an RFC 6901 array index: "0" or a positive integer with no
+# leading zero. A shared strict rule keeps the two references in step -- JS
+# Number() and Python int() otherwise accept disjoint token sets (e.g. "1e1",
+# "0x0a", "3.0", "", "1_0"), which would apply the same patch differently.
+_ARRAY_INDEX_RE = re.compile(r"^(0|[1-9][0-9]*)$")
+
+
+def _array_index(seg: str) -> int:
+    if not _ARRAY_INDEX_RE.match(seg):
+        raise PatchError(f"Array index expected at {seg!r}")
+    return int(seg)
 
 
 class PatchError(Exception):
@@ -52,11 +65,8 @@ def _navigate(doc: Any, parts: list[str]) -> tuple[Any, str | int]:
     parent = doc
     for i, part in enumerate(parts[:-1]):
         if isinstance(parent, list):
-            try:
-                idx = int(part)
-            except ValueError as exc:
-                raise PatchError(f"Array index expected at {part!r}") from exc
-            if idx < 0 or idx >= len(parent):
+            idx = _array_index(part)
+            if idx >= len(parent):
                 raise PatchError(f"Index out of range at /{'/'.join(parts[:i+1])}")
             parent = parent[idx]
         elif isinstance(parent, dict):
@@ -69,10 +79,7 @@ def _navigate(doc: Any, parts: list[str]) -> tuple[Any, str | int]:
     if isinstance(parent, list):
         if last == "-":
             return parent, "-"  # append marker
-        try:
-            return parent, int(last)
-        except ValueError as exc:
-            raise PatchError(f"Array index expected at {last!r}") from exc
+        return parent, _array_index(last)
     return parent, last
 
 

@@ -45,3 +45,23 @@ def test_prototype_pollution_does_not_leak():
     with pytest.raises(PatchError):
         apply_json_patch({}, [{"op": "add", "path": "/__proto__/polluted", "value": "x"}])
     assert not hasattr(dict, "polluted")
+
+
+@pytest.mark.parametrize("bad", [
+    "/items/1e1", "/items/0x0a", "/items/3.0", "/items/", "/items/1_0", "/items/01",
+])
+def test_non_canonical_array_index_is_rejected(bad):
+    # These tokens are accepted by JS Number() or Python int() but not both;
+    # a strict shared rule must reject them all so the two references agree.
+    with pytest.raises(PatchError):
+        apply_json_patch({"items": [10, 20, 30]},
+                         [{"op": "replace", "path": bad, "value": 99}])
+
+
+def test_canonical_array_index_still_applies():
+    assert apply_json_patch({"items": [10, 20, 30]},
+                            [{"op": "replace", "path": "/items/1", "value": 99}]) \
+        == {"items": [10, 99, 30]}
+    assert apply_json_patch({"items": [10, 20, 30]},
+                            [{"op": "add", "path": "/items/-", "value": 40}]) \
+        == {"items": [10, 20, 30, 40]}
