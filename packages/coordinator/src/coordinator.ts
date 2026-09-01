@@ -467,7 +467,7 @@ export class Coordinator {
     // deliberation to finalize an outcome early. (The per-voter eligibility
     // check in deliberate.vote is separate and still applies. A stricter role
     // gate than membership is layered on top via an identity-* profile.)
-    if (method.startsWith("control.") || method.startsWith("deliberate.") || method.startsWith("handoff.")) {
+    if (method.startsWith("control.") || method.startsWith("deliberate.") || method.startsWith("handoff.") || method.startsWith("whisper.")) {
       const wsId = params.workspace as string | undefined;
       const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
       if (ws) {

@@ -433,7 +433,8 @@ class Coordinator:
         # Deployments needing a stricter role gate than membership layer it on
         # top via an identity-* profile or application check.)
         if (method.startswith("control.") or method.startswith("deliberate.")
-                or method.startswith("handoff.")):
+                or method.startswith("handoff.")
+                or method.startswith("whisper.")):
             ws_id = params.get("workspace") if isinstance(params, dict) else None
             ws = self.workspaces.get(ws_id) if isinstance(ws_id, str) else None
             if ws is not None:

@@ -474,3 +474,26 @@ def test_supersede_trial_forces_review():
                                           "mode": "trial", "review_required": False})
     new_id = r["result"]["new_task_id"]
     assert coord.workspaces["w"].tasks[new_id].review_required is True
+
+
+def test_whisper_ask_requires_membership():
+    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
+
+    def send(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
+                               "method": method, "params": params})
+
+    send("workspace.create", workspace="w")
+    send("participant.join", workspace="w",
+         **{"from": "human:alice", "type": "human", "role": "owner"})
+    send("participant.join", workspace="w",
+         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
+    tid = send("task.create", workspace="w",
+               **{"from": "human:alice", "kind": "k", "input": {},
+                  "assignee": "agent:bot"})["result"]["task_id"]
+    # A non-member cannot ask a whisper (SPEC §6.3.1).
+    r = send("whisper.ask", workspace="w",
+             **{"from": "human:outsider", "to": ["human:alice"]},
+             task_id=tid, question="?", options=[{"id": "y"}],
+             deadline_ms=30000, default_if_lapsed="y")
+    assert r["error"]["code"] == -32011  # NOT_AUTHORISED
