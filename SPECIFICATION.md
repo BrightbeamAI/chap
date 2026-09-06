@@ -641,7 +641,8 @@ Transitions are triggered by methods:
 | assigned           | `task.accept`                 | accepted          |
 | assigned           | `task.decline`                | declined          |
 | accepted           | `task.start`                  | in_progress       |
-| in_progress        | `task.complete`               | completed         |
+| in_progress        | `task.complete` (review not required) | completed |
+| in_progress        | `task.complete` (review required) | review_requested, output held as the artefact under review |
 | in_progress        | `review.request`              | review_requested  |
 | review_requested   | `review.request` (same artefact) | review_requested (reviewer set widened) |
 | review_requested   | `review.request` (different artefact) | refused, -32014 |
@@ -652,6 +653,13 @@ Transitions are triggered by methods:
 | any non-terminal   | `escalate.raise`              | escalated         |
 | any non-terminal   | `control.cancel`              | cancelled         |
 | any state          | `control.supersede`           | superseded        |
+
+A task whose review is required does not complete on `task.complete`. The
+call opens a review instead, holding the submitted output as the artefact
+under review, and only a reviewer decision then reaches `completed`. Review
+is required when the task carries `review_required`, or when it runs in
+`trial` mode on a workspace that has loaded `modes/1.0`. See
+[`profiles/review.md`](./profiles/review.md) §3.1.
 
 ### 8.2 Task descriptor
 

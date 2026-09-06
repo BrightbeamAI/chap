@@ -71,6 +71,30 @@ task whose `review.required` was true.
 Supported `rule` values: `any_one_approves`, `all_approve`.
 The `deliberation` profile adds richer rules (`quorum:N`, weighted).
 
+#### The implicit review
+
+`task.complete` on a task whose review is required does not complete it.
+The call opens a review and the task moves to `review_requested`, with the
+submitted output held as the artefact under review. Only a reviewer
+decision then reaches `completed`. Review is required when the task carries
+`review_required`, or when it runs in `trial` mode on a workspace that has
+loaded `modes/1.0`.
+
+Nobody chose the reviewer set on this path, so the Coordinator picks it:
+every member who is neither the completer nor the task's assignee, with
+`rule: "any_one_approves"`. The producer is excluded deliberately. A review
+its own author can approve records a `decide.approve` that reads as
+oversight and is not, which is worse than recording no review at all.
+
+Where no member qualifies, the Coordinator MUST refuse the completion with
+`-32011` rather than open a review only its author could decide. A task
+that requires review in a workspace with no independent reviewer is a
+misconfiguration the operator needs told about.
+
+An explicit `review.request` keeps whatever `to` it was given. Someone who
+addresses the producer has made a choice, and this profile does not
+override it.
+
 
 **Re-request on an open review.** A review already open on the task
 constrains what a second `review.request` may do.

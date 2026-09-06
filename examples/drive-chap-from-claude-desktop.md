@@ -54,7 +54,7 @@ For another MCP client, configure a local stdio server with:
 
 The client downloads and launches the published package when it needs the
 server. For reproducible deployments, pin the package to a tested version,
-for example `@brightbeamai/chap-coordinator-mcp@0.2.11`.
+for example `@brightbeamai/chap-coordinator-mcp@0.2.12`.
 
 ## Step 2: Choose whether to persist the workspace
 
