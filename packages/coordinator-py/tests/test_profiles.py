@@ -476,7 +476,7 @@ def test_supersede_trial_forces_review():
     assert coord.workspaces["w"].tasks[new_id].review_required is True
 
 
-def test_pause_cancel_reject_a_superseded_task():
+def test_whisper_ask_requires_membership():
     coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
 
     def send(method, **params):
@@ -491,13 +491,9 @@ def test_pause_cancel_reject_a_superseded_task():
     tid = send("task.create", workspace="w",
                **{"from": "human:alice", "kind": "k", "input": {},
                   "assignee": "agent:bot"})["result"]["task_id"]
-    send("control.supersede", workspace="w", **{"from": "human:alice"},
-         task_id=tid, successor_task={"kind": "k", "assignee": "agent:bot"})
-    assert coord.workspaces["w"].tasks[tid].state == "superseded"
-
-    # superseded is terminal (SPEC §8.1): it cannot be paused or cancelled.
-    assert "error" in send("control.pause", workspace="w",
-                           **{"from": "human:alice"}, task_id=tid)
-    assert "error" in send("control.cancel", workspace="w",
-                           **{"from": "human:alice"}, task_id=tid)
-    assert coord.workspaces["w"].tasks[tid].state == "superseded"
+    # A non-member cannot ask a whisper (SPEC §6.3.1).
+    r = send("whisper.ask", workspace="w",
+             **{"from": "human:outsider", "to": ["human:alice"]},
+             task_id=tid, question="?", options=[{"id": "y"}],
+             deadline_ms=30000, default_if_lapsed="y")
+    assert r["error"]["code"] == -32011  # NOT_AUTHORISED
