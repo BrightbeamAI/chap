@@ -84,6 +84,18 @@ jobs:
           [ "$MCP_NAME" = "$SERVER_NAME" ] || { echo "::error::mcpName does not match server.json name; the registry rejects this"; fail=1; }
           exit $fail
 
+      - name: Check the version is already on npm
+        if: steps.already.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          NAME=$(jq -r '.packages[0].identifier' server.json)
+          VERSION=$(jq -r '.packages[0].version' server.json)
+          if ! npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "::error::${NAME}@${VERSION} is not on npm. Publish the packages before pushing the tag."
+            exit 1
+          fi
+          echo "${NAME}@${VERSION} is present on npm."
+
       - name: Check the published package agrees about who owns this server
         if: steps.already.outputs.skip != 'true'
         run: |
@@ -99,7 +111,7 @@ jobs:
           echo "published mcpName  ${PUBLISHED:-<absent>}"
           echo "server.json name   ${SERVER_NAME}"
           if [ -z "$PUBLISHED" ]; then
-            echo "::error::the published package declares no mcpName; the registry cannot verify ownership"
+            echo "::error::${NAME}@${VERSION} is on npm but declares no mcpName, so the registry cannot verify ownership. Republish with mcpName set to ${SERVER_NAME}."
             exit 1
           fi
           if [ "$PUBLISHED" != "$SERVER_NAME" ]; then
@@ -107,18 +119,6 @@ jobs:
             # care. Say so plainly and let the registry give the verdict.
             echo "::warning::published mcpName differs from server.json name. If publish fails validation, republish the npm package with the corrected mcpName."
           fi
-
-      - name: Check the version is already on npm
-        if: steps.already.outputs.skip != 'true'
-        run: |
-          set -euo pipefail
-          NAME=$(jq -r '.packages[0].identifier' server.json)
-          VERSION=$(jq -r '.packages[0].version' server.json)
-          if ! npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
-            echo "::error::${NAME}@${VERSION} is not on npm. Publish the packages before pushing the tag."
-            exit 1
-          fi
-          echo "${NAME}@${VERSION} is present on npm."
 
       - name: Check the published package can actually be launched
         if: steps.already.outputs.skip != 'true'
