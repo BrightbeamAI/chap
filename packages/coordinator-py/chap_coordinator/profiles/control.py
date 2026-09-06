@@ -52,7 +52,7 @@ def register_control(coord: "Coordinator") -> None:
             task = ws.tasks.get(p.get("task_id", ""))
             if not task:
                 return {"error": rpc_error(E.PARAMS, "Unknown task")}
-            if task.state in ("completed", "declined", "cancelled"):
+            if task.state in ("completed", "declined", "cancelled", "superseded"):
                 return {"error": rpc_error(E.CONTROL_NOT_AUTHORISED,
                                            f"Cannot pause {task.state} task")}
             task.paused = True
@@ -126,7 +126,7 @@ def register_control(coord: "Coordinator") -> None:
         task = ws.tasks.get(p.get("task_id", ""))
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
-        if task.state in ("completed", "declined", "cancelled"):
+        if task.state in ("completed", "declined", "cancelled", "superseded"):
             return {"error": rpc_error(E.CONTROL_NOT_AUTHORISED,
                                        f"Cannot cancel {task.state} task")}
         task.state = "cancelled"
@@ -150,7 +150,7 @@ def register_control(coord: "Coordinator") -> None:
         if "open_tasks" in include:
             state["open_tasks"] = [
                 t.to_dict() for t in ws.tasks.values()
-                if t.state not in ("completed", "declined", "cancelled")
+                if t.state not in ("completed", "declined", "cancelled", "superseded")
             ]
         if "mode_ceiling" in include:
             state["mode_ceiling"] = ws.mode_ceiling
@@ -263,7 +263,9 @@ def register_control(coord: "Coordinator") -> None:
                 note=f"supersedes {old.id}: {p.get('reason') or ''}",
             )],
         )
-        if new_task.mode == "trial":
+        # Trial forces review only when the workspace opted into modes/1.0,
+        # matching task.create -- mode is inert without the profile.
+        if ws.has_profile("modes") and new_task.mode == "trial":
             new_task.review_required = True
         elif "review_required" in new_spec:
             new_task.review_required = bool(new_spec["review_required"])

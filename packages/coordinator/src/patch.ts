@@ -20,6 +20,17 @@ export class PatchError extends Error {}
 // Rejected in every JSON Pointer segment: these enable prototype pollution.
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
+// An array index is an RFC 6901 array index: "0" or a positive integer with no
+// leading zero. A shared strict rule keeps the two references in step -- JS
+// Number() and Python int() otherwise accept disjoint token sets (e.g. "1e1",
+// "0x0a", "3.0", "", "1_0"), which would apply the same patch differently.
+const ARRAY_INDEX_RE = /^(0|[1-9][0-9]*)$/;
+
+function arrayIndex(seg: string): number {
+  if (!ARRAY_INDEX_RE.test(seg)) throw new PatchError(`Array index expected at ${JSON.stringify(seg)}`);
+  return Number(seg);
+}
+
 function unescape(token: string): string {
   return token.replace(/~1/g, "/").replace(/~0/g, "~");
 }
@@ -47,8 +58,8 @@ function navigate(doc: any, parts: string[]): [any, string | number] {
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
     if (Array.isArray(parent)) {
-      const idx = Number(part);
-      if (!Number.isInteger(idx) || idx < 0 || idx >= parent.length) {
+      const idx = arrayIndex(part);
+      if (idx >= parent.length) {
         throw new PatchError(`Index out of range at /${parts.slice(0, i + 1).join("/")}`);
       }
       parent = parent[idx];
@@ -64,11 +75,7 @@ function navigate(doc: any, parts: string[]): [any, string | number] {
   const last = parts[parts.length - 1];
   if (Array.isArray(parent)) {
     if (last === "-") return [parent, "-"];
-    const idx = Number(last);
-    if (!Number.isInteger(idx)) {
-      throw new PatchError(`Array index expected at ${JSON.stringify(last)}`);
-    }
-    return [parent, idx];
+    return [parent, arrayIndex(last)];
   }
   return [parent, last];
 }

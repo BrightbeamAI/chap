@@ -723,10 +723,38 @@ function dispatch(env: Envelope): Envelope {
 //   HTTP server
 // ============================================================
 
+const MAX_BODY_BYTES = 1_000_000;
+const MAX_JSON_DEPTH = 64;
+
+// dispatch/clone/canonicalise recurse, so an over-deep envelope is rejected
+// before it reaches them.
+function withinDepth(value: unknown, limit: number): boolean {
+  const stack: Array<[unknown, number]> = [[value, 1]];
+  while (stack.length) {
+    const [node, depth] = stack.pop()!;
+    if (depth > limit) return false;
+    if (Array.isArray(node)) {
+      for (const v of node) stack.push([v, depth + 1]);
+    } else if (node !== null && typeof node === "object") {
+      for (const v of Object.values(node as Record<string, unknown>)) stack.push([v, depth + 1]);
+    }
+  }
+  return true;
+}
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data",  (c) => chunks.push(c));
+    let size = 0;
+    req.on("data", (c) => {
+      size += c.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(new Error("Body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
     req.on("end",   () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);
   });
@@ -760,6 +788,9 @@ const server = createServer(async (req, res) => {
     env = JSON.parse(raw);
   } catch {
     return reply(res, 400, { jsonrpc: "2.0", id: null, error: err(E.PARSE, "Malformed JSON") });
+  }
+  if (!withinDepth(env, MAX_JSON_DEPTH)) {
+    return reply(res, 400, { jsonrpc: "2.0", id: null, error: err(E.PARSE, "Envelope nesting too deep") });
   }
 
   const response = dispatch(env);

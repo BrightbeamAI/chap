@@ -21,6 +21,7 @@
 
 <p align="center">
   <a href="#install">Install</a> ·
+  <a href="./examples/drive-chap-from-claude-desktop.md">MCP quickstart</a> ·
   <a href="#the-90-second-tour">90-second tour</a> ·
   <a href="./IN_PRACTICE.md">Scenarios</a> ·
   <a href="./IMPLEMENTATIONS.md">Implementations</a> ·

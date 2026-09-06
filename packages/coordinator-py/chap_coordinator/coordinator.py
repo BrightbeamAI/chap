@@ -107,6 +107,10 @@ class CoordinatorOptions:
     default: reads are transport-delegated. Enable for multi-tenant or
     directly-exposed deployments."""
 
+    max_envelope_bytes: int = 1_048_576
+    """Largest envelope accepted, published in the workspace descriptor
+    (SPEC S4.4). Envelopes whose canonical form exceeds this are rejected."""
+
     on_audit: AuditListener | None = None
     """Called after every successfully recorded audit entry."""
 
@@ -410,6 +414,19 @@ class Coordinator:
                 error=rpc_error(E.REQUEST, "Invalid JSON-RPC 2.0 request"),
             )
 
+        try:
+            size = len(canonicalize(envelope))
+        except (ValueError, TypeError):
+            size = 0  # not canonicalisable; the ingress check below rejects it
+        if size > self.options.max_envelope_bytes:
+            return make_response(
+                envelope.get("id"),
+                error=rpc_error(
+                    E.REQUEST,
+                    f"Envelope exceeds max_envelope_bytes "
+                    f"({size} > {self.options.max_envelope_bytes})"),
+            )
+
         method = envelope.get("method")
         env_id = envelope.get("id")
 
@@ -461,7 +478,8 @@ class Coordinator:
         # Deployments needing a stricter role gate than membership layer it on
         # top via an identity-* profile or application check.)
         if (method.startswith("control.") or method.startswith("deliberate.")
-                or method.startswith("handoff.")):
+                or method.startswith("handoff.")
+                or method.startswith("whisper.")):
             ws_id = params.get("workspace") if isinstance(params, dict) else None
             ws = self.workspaces.get(ws_id) if isinstance(ws_id, str) else None
             if ws is not None:
@@ -792,6 +810,7 @@ class Coordinator:
             "state": ws.state,
             "mode": ws.mode,
             "mode_ceiling": ws.mode_ceiling,
+            "max_envelope_bytes": self.options.max_envelope_bytes,
             "step_up_window_sec": ws.step_up_window_sec,
             "profiles": ws.profiles,
             "members": [m.to_dict() for m in ws.members.values()],
@@ -966,8 +985,10 @@ class Coordinator:
             history=[TaskHistoryEntry(ts=now, from_=p["from"], state="created")],
         )
 
-        # modes/1.0: trial mode forces review.required
-        if task.mode == "trial":
+        # modes/1.0: trial mode forces review.required -- but only when the
+        # workspace has opted into modes/1.0. mode is inert without the profile,
+        # so a plain core/review workspace does not inherit forced review.
+        if ws.has_profile("modes") and task.mode == "trial":
             task.review_required = True
         elif "review_required" in p:
             task.review_required = bool(p["review_required"])
@@ -1029,6 +1050,38 @@ class Coordinator:
         if task.state not in ("created", "in_progress"):
             return {"error": rpc_error(
                 E.PARAMS, f"Cannot complete task in state: {task.state}")}
+        # review/1.0 S3.1: task.complete on a task whose review is required
+        # opens a review implicitly rather than completing. The submitted output
+        # becomes the artefact under review; only a reviewer decision (decide.*)
+        # then takes the task to completed. Without this a review_required task
+        # would reach completed with unreviewed output and no decision.
+        if task.review_required:
+            now = self.now_iso()
+            task.pending_artefact = p.get("output")
+            if task.review is None:
+                # The producer must not satisfy its own review, so the implicit
+                # review is addressed to the other members, excluding the caller
+                # and the assignee. With nobody eligible there is no independent
+                # reviewer, so refuse rather than open a review only its author
+                # could approve. (An explicit review.request keeps its own `to`.)
+                producer = p.get("from", "")
+                eligible = [uri for uri in ws.members
+                            if uri != producer and uri != task.assignee]
+                if not eligible:
+                    return {"error": rpc_error(
+                        E.NOT_AUTHORISED,
+                        "Task requires review but has no eligible reviewer "
+                        "(needs a member other than its assignee and completer)")}
+                task.review = ReviewState(requested_at=now,
+                                          requested_to=list(eligible))
+            task.state = "review_requested"
+            task.updated_at = now
+            task.history.append(TaskHistoryEntry(
+                ts=now, from_=p.get("from", ""), state="review_requested",
+                note="review required; opened on task.complete",
+            ))
+            return {"result": {"state": "review_requested",
+                               "review_id": task.id}}
         task.output = p.get("output")
         if "confidence" in p:
             # Stored as received (number or string) so it hashes deterministically;

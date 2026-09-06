@@ -94,6 +94,9 @@ const READ_ONLY_METHODS = new Set<string>([
 // workspace; a redelivery beyond this many intervening creates is not deduped.
 const MAX_IDEMPOTENCY_KEYS = 10_000;
 
+// Largest envelope accepted, published in the workspace descriptor (SPEC S4.4).
+const DEFAULT_MAX_ENVELOPE_BYTES = 1_048_576;
+
 export interface CoordinatorOptions {
   deterministicIds?: boolean;
   deterministicClock?: boolean;
@@ -101,6 +104,8 @@ export interface CoordinatorOptions {
   requireSignatures?: boolean;
   enforceStepUp?: boolean;
   requireReadMembership?: boolean;
+  /** Largest envelope accepted (default 1 MiB), published in the descriptor. */
+  maxEnvelopeBytes?: number;
   onAudit?: AuditListener;
   onAutoEscalate?: (task: Task, to: ParticipantUri) => void;
   verifyOidcToken?: TokenVerifier;
@@ -445,6 +450,13 @@ export class Coordinator {
     if (!isValidEnvelope(envelope) || !envelope.method) {
       return reply(envelope, { error: rpcError(E.REQUEST, "Invalid JSON-RPC 2.0 request") });
     }
+    const maxBytes = this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES;
+    let size = 0;
+    try { size = canonicalize(envelope).length; } catch { /* not canonicalisable; rejected by the ingress check below */ }
+    if (size > maxBytes) {
+      return reply(envelope, { error: rpcError(E.REQUEST,
+        `Envelope exceeds max_envelope_bytes (${size} > ${maxBytes})`) });
+    }
     const method = envelope.method;
     // JSON-RPC params, when present, must be a structured value (object).
     // CHAP methods use by-name params; reject non-object params cleanly as
@@ -490,7 +502,7 @@ export class Coordinator {
     // deliberation to finalize an outcome early. (The per-voter eligibility
     // check in deliberate.vote is separate and still applies. A stricter role
     // gate than membership is layered on top via an identity-* profile.)
-    if (method.startsWith("control.") || method.startsWith("deliberate.") || method.startsWith("handoff.")) {
+    if (method.startsWith("control.") || method.startsWith("deliberate.") || method.startsWith("handoff.") || method.startsWith("whisper.")) {
       const wsId = params.workspace as string | undefined;
       const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
       if (ws) {
@@ -647,9 +659,11 @@ export class Coordinator {
         return rpcError(E.SIG_VERIFY_FAILED, "Signature failed verification");
       }
       return null;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return rpcError(E.INTERNAL, `Signature check error: ${msg}`);
+    } catch {
+      // An exception here (malformed key or signature bytes) means the
+      // signature cannot be verified: fail closed with the same generic code
+      // as the Python reference, and do not leak the exception detail.
+      return rpcError(E.SIG_VERIFY_FAILED, "Signature failed verification");
     }
   }
 
@@ -784,6 +798,7 @@ export class Coordinator {
       state: ws.state,
       mode: ws.mode,
       mode_ceiling: ws.mode_ceiling,
+      max_envelope_bytes: this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES,
       step_up_window_sec: ws.step_up_window_sec,
       profiles: ws.profiles,
       members: Array.from(ws.members.values()).map(memberToDict),
@@ -944,7 +959,9 @@ export class Coordinator {
     };
 
     // modes/1.0: trial mode forces review
-    if (task.mode === "trial") task.review_required = true;
+    // modes/1.0: trial forces review, but only when the workspace opted into
+    // modes/1.0. mode is inert without the profile.
+    if (ws.profiles.some(pr => pr.startsWith("modes/")) && task.mode === "trial") task.review_required = true;
     else if ("review_required" in p) task.review_required = !!p.review_required;
 
     ws.tasks.set(taskId, task);
@@ -996,6 +1013,34 @@ export class Coordinator {
     // can neither revive a terminated task nor bypass a pause.
     if (task.state !== "created" && task.state !== "in_progress") {
       return { error: rpcError(E.PARAMS, `Cannot complete task in state: ${task.state}`) };
+    }
+    // review/1.0 S3.1: task.complete on a task whose review is required opens a
+    // review implicitly rather than completing. The submitted output becomes the
+    // artefact under review; only a reviewer decision (decide.*) then takes the
+    // task to completed. Without this a review_required task would reach
+    // completed with unreviewed output and no decision.
+    if (task.review_required) {
+      const now = this.now();
+      task.pending_artefact = p.output;
+      if (!task.review) {
+        // The producer must not satisfy its own review, so the implicit review
+        // is addressed to the other members, excluding the caller and the
+        // assignee. With nobody eligible there is no independent reviewer, so
+        // refuse rather than open a review only its author could approve. (An
+        // explicit review.request keeps its own `to`.)
+        const producer = p.from as string;
+        const eligible = [...ws.members.keys()].filter(uri => uri !== producer && uri !== task.assignee);
+        if (eligible.length === 0) {
+          return { error: rpcError(E.NOT_AUTHORISED,
+            "Task requires review but has no eligible reviewer (needs a member other than its assignee and completer)") };
+        }
+        task.review = { requested_at: now, requested_to: eligible as ParticipantUri[], rule: "any_one_approves", decisions: [] };
+      }
+      task.state = "review_requested";
+      task.updated_at = now;
+      task.history.push({ ts: now, from: p.from as ParticipantUri, state: "review_requested",
+                          note: "review required; opened on task.complete" });
+      return { result: { state: "review_requested", review_id: task.id } };
     }
     task.output = p.output;
     if (typeof p.confidence === "number" || typeof p.confidence === "string") task.confidence = p.confidence;

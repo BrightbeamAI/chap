@@ -391,7 +391,8 @@ test("control.supersede forces review on a trial successor", () => {
   const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
   const send = (m: string, p: Record<string, unknown>) =>
     c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
-  send("workspace.create", { workspace: "w", mode_ceiling: "production" });
+  send("workspace.create", { workspace: "w", mode_ceiling: "production",
+    profiles: ["core/1.0", "review/1.0", "modes/1.0"] });
   send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner" });
   send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
   const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "draft",
@@ -401,4 +402,19 @@ test("control.supersede forces review on a trial successor", () => {
     successor_task: { kind: "draft", assignee: "agent:bot", mode: "trial", review_required: false }});
   const newId = (r.result as { new_task_id: string }).new_task_id;
   assert.equal(c.workspaces.get("w")!.tasks.get(newId)!.review_required, true);
+});
+
+test("whisper.ask requires the asker to be a member", () => {
+  const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
+  const send = (m: string, p: Record<string, unknown>) =>
+    c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
+  send("workspace.create", { workspace: "w" });
+  send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner" });
+  send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
+  const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "k",
+    input: {}, assignee: "agent:bot" }).result as { task_id: string }).task_id;
+  // A non-member cannot ask a whisper (SPEC §6.3.1).
+  const r = send("whisper.ask", { workspace: "w", from: "human:outsider", to: ["human:alice"],
+    task_id: tid, question: "?", options: [{ id: "y" }], deadline_ms: 30000, default_if_lapsed: "y" });
+  assert.equal(r.error?.code, -32011);
 });

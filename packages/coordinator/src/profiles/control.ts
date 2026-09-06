@@ -28,7 +28,7 @@ export function registerControl(coord: Coordinator): void {
     if (scope === "task") {
       const task = ws.tasks.get(p.task_id as string);
       if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
-      if (task.state === "completed" || task.state === "declined" || task.state === "cancelled") {
+      if (task.state === "completed" || task.state === "declined" || task.state === "cancelled" || task.state === "superseded") {
         return { error: rpcError(E.CONTROL_NOT_AUTHORISED, `Cannot pause ${task.state} task`) };
       }
       task.paused = true;
@@ -86,7 +86,7 @@ export function registerControl(coord: Coordinator): void {
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
-    if (task.state === "completed" || task.state === "declined" || task.state === "cancelled") {
+    if (task.state === "completed" || task.state === "declined" || task.state === "cancelled" || task.state === "superseded") {
       return { error: rpcError(E.CONTROL_NOT_AUTHORISED, `Cannot cancel ${task.state} task`) };
     }
     task.state = "cancelled";
@@ -107,7 +107,7 @@ export function registerControl(coord: Coordinator): void {
     }
     if (include.includes("open_tasks")) {
       state.open_tasks = Array.from(ws.tasks.values())
-        .filter(t => t.state !== "completed" && t.state !== "declined" && t.state !== "cancelled")
+        .filter(t => t.state !== "completed" && t.state !== "declined" && t.state !== "cancelled" && t.state !== "superseded")
         .map(t => ({ id: t.id, kind: t.kind, state: t.state, assignee: t.assignee }));
     }
     if (include.includes("mode_ceiling")) state.mode_ceiling = ws.mode_ceiling;
@@ -204,7 +204,9 @@ export function registerControl(coord: Coordinator): void {
                   note: `supersedes ${old.id}: ${(p.reason as string) || ""}` }],
       paused: false,
     };
-    if (newTask.mode === "trial") newTask.review_required = true;
+    // Trial forces review only when the workspace opted into modes/1.0,
+    // matching task.create -- mode is inert without the profile.
+    if (ws.profiles.some(pr => pr.startsWith("modes/")) && newTask.mode === "trial") newTask.review_required = true;
     else if ("review_required" in newSpec) newTask.review_required = !!newSpec.review_required;
     ws.tasks.set(newId, newTask);
     old.state = "superseded";

@@ -46,3 +46,19 @@ test("prototype pollution does not leak to Object.prototype", () => {
   );
   assert.equal(({} as Record<string, unknown>).polluted, undefined);
 });
+
+for (const bad of ["/items/1e1", "/items/0x0a", "/items/3.0", "/items/", "/items/1_0", "/items/01"]) {
+  test(`non-canonical array index ${JSON.stringify(bad)} is rejected`, () => {
+    // Accepted by JS Number() or Python int() but not both; a strict shared
+    // rule must reject them all so the two references agree.
+    assert.throws(() => applyJsonPatch({ items: [10, 20, 30] },
+      [{ op: "replace", path: bad, value: 99 }] as never));
+  });
+}
+
+test("canonical array index still applies", () => {
+  assert.deepEqual(applyJsonPatch({ items: [10, 20, 30] },
+    [{ op: "replace", path: "/items/1", value: 99 }] as never), { items: [10, 99, 30] });
+  assert.deepEqual(applyJsonPatch({ items: [10, 20, 30] },
+    [{ op: "add", path: "/items/-", value: 40 }] as never), { items: [10, 20, 30, 40] });
+});
