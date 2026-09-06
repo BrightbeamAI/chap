@@ -40,6 +40,14 @@ On `workspace.describe`:
 ```
 
 `mode` is the workspace's current default mode for new tasks.
+
+**These semantics apply only where this profile is loaded.** `modes/1.0`
+depends on Core but Core does not depend on it, so a workspace that has not
+declared the profile carries `mode` as an inert descriptor field: it is
+recorded and returned, and it changes no behaviour. In particular, trial
+does not force review on a workspace outside this profile. A Coordinator
+that applied mode semantics regardless would be imposing a profile nobody
+opted into.
 `mode_ceiling` is the highest mode any task in this workspace may
 use; it's a safety bound that requires elevated privilege to raise.
 
@@ -80,6 +88,9 @@ primary input to promotion decisions.
 - The output is delivered.
 - Review is mandatory regardless of any per-task `review.required`
   field, `trial` mode forces review on.
+- Because review is mandatory, `task.complete` opens a review rather
+  than completing the task. A reviewer decision completes it. See
+  [`review.md`](./review.md) §3.1.
 
 This is the "every output gets human eyes" mode. Override rate in
 trial mode is the most important signal for whether to promote.

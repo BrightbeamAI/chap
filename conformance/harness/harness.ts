@@ -128,6 +128,18 @@ function assertEq(actual: unknown, expected: unknown, msg: string): void {
 
 async function runCoreTests(client: HapClient, ws: string): Promise<void> {
 
+  // Create the workspace explicitly, in production mode, before any vector
+  // runs. The vectors below cover Core and review/1.0 and say nothing about
+  // modes/1.0, but they inherit whatever a server's auto-created workspace
+  // defaults to, and those defaults differ between targets: the Python
+  // reference loads every profile and defaults to trial, the Core+Review
+  // TypeScript reference has no modes at all. Under modes/1.0 a trial task
+  // must open a review instead of completing, which is correct behaviour and
+  // makes cm-08 fail on one target and pass on the other. Pinning the mode
+  // here makes the two comparable and keeps the run about what it claims to
+  // test. A server that does not implement modes ignores the field.
+  await client.call("workspace.create", { workspace: ws, mode: "production" });
+
   // -------- Wire format --------
 
   await test("Wire format", "wf-01", "Malformed JSON returns -32700", async () => {

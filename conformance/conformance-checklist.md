@@ -95,6 +95,8 @@ a profile it does not pass.**
 - [ ] Adds `review_requested`, `abstained`, `escalated` task states.
 - [ ] `decide.override`'s `diff` is validated as a well-formed RFC 6902 JSON Patch and applied deterministically.
 - [ ] Review decisions (`decide.*`, `abstain.declare`) require `from` to be one of the reviewers addressed in `review.request`'s `to` set; a member outside that set is rejected with `-32011` (see [`../profiles/review.md`](../profiles/review.md) §3.2). Verified by harness vector `rv-08`.
+- [ ] `task.complete` on a task whose review is required opens a review and moves the task to `review_requested`, holding the submitted output as the artefact under review, rather than completing it (see [`../profiles/review.md`](../profiles/review.md) §3.1).
+- [ ] The implicit review addresses the members who are neither the completer nor the assignee, so a producer cannot approve its own output; with no member eligible the completion is refused with `-32011`.
 - [ ] Override entries preserve `rationale`, `tags`, `policy_refs` as queryable audit data.
 - [ ] `audit.read` filters support `method = decide.override`.
 - [ ] Returns `-32010` … `-32013` for review-specific failures (see [`../profiles/review.md`](../profiles/review.md) §5).
@@ -118,7 +120,8 @@ a profile it does not pass.**
 - [ ] `workspace.describe` exposes `mode` and `mode_ceiling`.
 - [ ] `task.create` rejects tasks whose `mode` exceeds `mode_ceiling` with `-32040`.
 - [ ] `shadow` tasks complete without delivering output.
-- [ ] `trial` tasks force review-required regardless of per-task settings.
+- [ ] `trial` tasks force review-required regardless of per-task settings, so `task.complete` on one opens a review rather than completing it.
+- [ ] Mode semantics apply only when this profile is loaded: on a workspace that has not declared `modes/1.0`, `mode` is an inert descriptor field and trial does not force review.
 - [ ] Mode-ceiling changes require step-up auth when `identity-oidc` is in use.
 
 ### Profile: `handoff/1.0`

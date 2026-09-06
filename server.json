@@ -3,7 +3,7 @@
   "name": "io.github.BrightbeamAI/chap",
   "title": "CHAP Coordinator",
   "description": "Auditable records of human decisions over AI agent work. Approvals, edits, overrides, escalations.",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "websiteUrl": "https://github.com/BrightbeamAI/chap",
   "repository": {
     "url": "https://github.com/BrightbeamAI/chap",
@@ -15,7 +15,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@brightbeamai/chap-coordinator-mcp",
-      "version": "0.2.11",
+      "version": "0.2.12",
       "transport": {
         "type": "stdio"
       },

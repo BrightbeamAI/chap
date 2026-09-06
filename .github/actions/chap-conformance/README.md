@@ -29,7 +29,7 @@ jobs:
           done
 
       # Run the harness against it.
-      - uses: BrightbeamAI/chap/.github/actions/chap-conformance@v0.2.9
+      - uses: BrightbeamAI/chap/.github/actions/chap-conformance@v0.2.12
         with:
           url: http://localhost:8080/chap
 ```

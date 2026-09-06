@@ -92,7 +92,7 @@ def make_chap_agent_card(
         "can discover and drive workspaces, tasks, reviews, deliberations, "
         "handoffs, and audit operations."
     ),
-    version: str = "0.2.10",
+    version: str = "0.2.12",
     skill_filter: Callable[[str], bool] | None = None,
 ) -> AgentCard:
     """Build the AgentCard advertised at ``/.well-known/agent-card.json``.

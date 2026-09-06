@@ -27,7 +27,7 @@ const coord = new Coordinator({
   defaultProfiles: ["core/1.0", "review/1.0", "audit-scitt/1.0"],
 });
 
-const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.9" });
+const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.12" });
 await server.connect(new StdioServerTransport());
 ```
 

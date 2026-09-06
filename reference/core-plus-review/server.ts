@@ -97,6 +97,10 @@ interface Task {
   deadline?:  string;
   created_at: string;
   updated_at: string;
+  /** review/1.0: completion opens a review instead of completing. */
+  review_required?: boolean;
+  /** The artefact under review, set when a review is opened. */
+  pending_artefact?: unknown;
   review?: {
     requested_at: string;
     requested_to: ParticipantUri[];
@@ -394,6 +398,7 @@ const handlers: Record<string, Handler> = {
       input: p.input as Record<string, unknown>,
       deadline: p.deadline as string,
       created_at: now, updated_at: now,
+      review_required: p.review_required === undefined ? undefined : !!p.review_required,
       history: [{ ts: now, from: p.from as string, state: "created" }],
     });
     return { result: { task_id: id, state: "created" } };
@@ -434,6 +439,38 @@ const handlers: Record<string, Handler> = {
     // reviving a terminal task (matches the reference coordinators).
     if (task.state !== "created" && task.state !== "in_progress") {
       return { error: err(E.PARAMS, `Cannot complete task in state: ${task.state}`) };
+    }
+
+    // review/1.0 S3.1: task.complete on a task whose review is required opens a
+    // review implicitly rather than completing. The submitted output becomes the
+    // artefact under review; only a reviewer decision then takes the task to
+    // completed. Without this a review_required task reaches completed with
+    // unreviewed output and no decision recorded.
+    if (task.review_required) {
+      const now = new Date().toISOString();
+      task.pending_artefact = p.output;
+      if (!task.review) {
+        // The producer must not satisfy its own review, so the implicit review
+        // is addressed to the other members, excluding the caller and the
+        // assignee. With nobody eligible there is no independent reviewer, so
+        // refuse rather than open a review only its author could approve. An
+        // explicit review.request keeps its own `to`.
+        const producer = p.from as string;
+        const eligible = [...ws.members.keys()]
+          .filter(uri => uri !== producer && uri !== task.assignee);
+        if (eligible.length === 0) {
+          return { error: err(E.NOT_AUTHORISED,
+            "Task requires review but has no eligible reviewer " +
+            "(needs a member other than its assignee and completer)") };
+        }
+        task.review = { requested_at: now, requested_to: eligible,
+                        rule: "any_one_approves", decisions: [] };
+      }
+      task.state      = "review_requested";
+      task.updated_at = now;
+      task.history.push({ ts: now, from: p.from as string, state: "review_requested",
+                          note: "review required; opened on task.complete" });
+      return { result: { state: "review_requested", review_id: task.id } };
     }
 
     task.output     = p.output;
@@ -484,7 +521,7 @@ const handlers: Record<string, Handler> = {
 
     // CEP-001: an open review may be widened, not swapped underneath.
     if (task.state === "review_requested" && task.review) {
-      if (contentDigest((task as any).pending_artefact) !== contentDigest(p.artefact)) {
+      if (contentDigest(task.pending_artefact) !== contentDigest(p.artefact)) {
         return { error: err(E.REVIEW_ALREADY_OPEN,
           "A review is already open on this task with different content. " +
           "Decide, abstain, escalate or cancel it before requesting review of a new artefact.") };
@@ -513,7 +550,7 @@ const handlers: Record<string, Handler> = {
     };
     task.history.push({ ts: task.updated_at, from: p.from as string, state: "review_requested" });
     // Stash artefact on the task for diff base lookup
-    (task as any).pending_artefact = p.artefact;
+    task.pending_artefact = p.artefact;
     return { result: { state: "review_requested", review_id: task.id } };
   },
 
@@ -542,7 +579,7 @@ const handlers: Record<string, Handler> = {
     const digestError = checkArtefactDigest(p, task);
     if (digestError) return { error: digestError };
 
-    const baseArtefact = p.based_on_artefact ?? (task as any).pending_artefact;
+    const baseArtefact = p.based_on_artefact ?? task.pending_artefact;
     if (baseArtefact === undefined) {
       return { error: err(E.PARAMS, `No base artefact for override`) };
     }
@@ -680,7 +717,7 @@ function decide(p: Params, kind: "approve" | "reject"): { result?: unknown; erro
     tags:     (p.tags as string[]) ?? [],
   });
   if (kind === "approve") {
-    task.output = (task as any).pending_artefact;
+    task.output = task.pending_artefact;
     task.state  = "completed";
   } else {
     if (p.request_revision) task.state = "in_progress";
@@ -695,7 +732,9 @@ function decide(p: Params, kind: "approve" | "reject"): { result?: unknown; erro
 //   Dispatch
 // ============================================================
 
-function dispatch(env: Envelope): Envelope {
+// Exported so the tests can drive the method surface directly, the same way
+// patch.test.ts drives applyJsonPatch, without standing up an HTTP listener.
+export function dispatch(env: Envelope): Envelope {
   if (env.jsonrpc !== "2.0" || typeof env.method !== "string") {
     return { jsonrpc: "2.0", id: env.id ?? null as any, error: err(E.REQUEST, "Invalid JSON-RPC 2.0 request") };
   }
