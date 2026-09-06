@@ -402,3 +402,22 @@ test("control.supersede forces review on a trial successor", () => {
   const newId = (r.result as { new_task_id: string }).new_task_id;
   assert.equal(c.workspaces.get("w")!.tasks.get(newId)!.review_required, true);
 });
+
+test("control.pause/cancel reject a superseded task", () => {
+  const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
+  const send = (m: string, p: Record<string, unknown>) =>
+    c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
+  send("workspace.create", { workspace: "w" });
+  send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner" });
+  send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
+  const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "k",
+    input: {}, assignee: "agent:bot" }).result as { task_id: string }).task_id;
+  send("control.supersede", { workspace: "w", from: "human:alice", task_id: tid,
+    successor_task: { kind: "k", assignee: "agent:bot" } });
+  assert.equal(c.workspaces.get("w")!.tasks.get(tid)!.state, "superseded");
+
+  // superseded is terminal (SPEC §8.1): it cannot be paused or cancelled.
+  assert.ok(send("control.pause", { workspace: "w", from: "human:alice", task_id: tid }).error);
+  assert.ok(send("control.cancel", { workspace: "w", from: "human:alice", task_id: tid }).error);
+  assert.equal(c.workspaces.get("w")!.tasks.get(tid)!.state, "superseded");
+});
