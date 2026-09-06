@@ -62,15 +62,24 @@ jobs:
         if: steps.already.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF#refs/tags/}"
-          TAG="${TAG#v}"
+          # workflow_dispatch runs on a branch, where GITHUB_REF is
+          # refs/heads/main and there is no tag to compare against. Only
+          # enforce the tag match when a tag triggered the run; a manual
+          # re-run still gets every other gate.
+          if [ "${GITHUB_REF}" != "${GITHUB_REF#refs/tags/}" ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            TAG="${TAG#v}"
+          else
+            TAG=""
+            echo "::notice::not a tag ref (${GITHUB_REF}); skipping the tag comparison"
+          fi
           SERVER_VERSION=$(jq -r '.version' server.json)
           PKG_VERSION=$(jq -r '.version' packages/coordinator-mcp/package.json)
           NPM_VERSION=$(jq -r '.packages[0].version' server.json)
           MCP_NAME=$(jq -r '.mcpName' packages/coordinator-mcp/package.json)
           SERVER_NAME=$(jq -r '.name' server.json)
 
-          echo "tag                        ${TAG}"
+          echo "tag                        ${TAG:-<manual run, no tag>}"
           echo "server.json version        ${SERVER_VERSION}"
           echo "server.json package        ${NPM_VERSION}"
           echo "coordinator-mcp version    ${PKG_VERSION}"
@@ -78,7 +87,9 @@ jobs:
           echo "server.json name           ${SERVER_NAME}"
 
           fail=0
-          [ "$TAG" = "$SERVER_VERSION" ] || { echo "::error::tag does not match server.json version"; fail=1; }
+          if [ -n "$TAG" ]; then
+            [ "$TAG" = "$SERVER_VERSION" ] || { echo "::error::tag does not match server.json version"; fail=1; }
+          fi
           [ "$SERVER_VERSION" = "$NPM_VERSION" ] || { echo "::error::server.json version does not match its npm package version"; fail=1; }
           [ "$NPM_VERSION" = "$PKG_VERSION" ] || { echo "::error::server.json npm version does not match the package manifest"; fail=1; }
           [ "$MCP_NAME" = "$SERVER_NAME" ] || { echo "::error::mcpName does not match server.json name; the registry rejects this"; fail=1; }
