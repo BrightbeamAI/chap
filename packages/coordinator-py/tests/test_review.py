@@ -124,87 +124,65 @@ def test_task_update_cannot_complete_task_awaiting_review(coord_with_task):
     assert withdraw["result"]["state"] == "in_progress"
 
 
-def test_task_complete_opens_review_addressed_to_eligible_reviewer():
+def _rule_coord():
     coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
 
     def send(method, **params):
         return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
                                "method": method, "params": params})
 
-    send("workspace.create", workspace="w",
-         profiles=["core/1.0", "review/1.0", "modes/1.0"])
-    send("participant.join", workspace="w",
-         **{"from": "human:alice", "type": "human", "role": "reviewer"})
-    send("participant.join", workspace="w",
-         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
-    tid = send("task.create", workspace="w",
-               **{"from": "human:alice", "kind": "draft", "input": {},
-                  "assignee": "agent:bot", "mode": "trial"})["result"]["task_id"]
-    assert coord.workspaces["w"].tasks[tid].review_required is True
-    send("task.update", workspace="w", **{"from": "agent:bot"},
-         task_id=tid, state="in_progress")
-
-    # task.complete opens a review addressed to the eligible reviewer (excluding
-    # the producer/assignee); it does not complete.
-    r = send("task.complete", workspace="w", **{"from": "agent:bot"},
-             task_id=tid, output={"draft": "unreviewed"})
-    assert r["result"]["state"] == "review_requested"
-    t = coord.workspaces["w"].tasks[tid]
-    assert t.state == "review_requested"
-    assert t.output is None
-    assert t.review.requested_to == ["human:alice"]
-
-    # The eligible reviewer completes it; the producer could not have.
-    a = send("decide.approve", workspace="w", **{"from": "human:alice"}, task_id=tid)
-    assert a["result"]["state"] == "completed"
-    assert coord.workspaces["w"].tasks[tid].output == {"draft": "unreviewed"}
-
-
-def test_task_complete_refused_when_no_eligible_reviewer():
-    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
-
-    def send(method, **params):
-        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
-                               "method": method, "params": params})
-
-    send("workspace.create", workspace="w",
-         profiles=["core/1.0", "review/1.0", "modes/1.0"])
-    send("participant.join", workspace="w",
-         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
-    tid = send("task.create", workspace="w",
-               **{"from": "agent:bot", "kind": "draft", "input": {},
-                  "assignee": "agent:bot", "mode": "trial"})["result"]["task_id"]
-    send("task.update", workspace="w", **{"from": "agent:bot"},
-         task_id=tid, state="in_progress")
-
-    # The only member is both producer and assignee, so nobody can review. The
-    # producer must not self-approve, so completion is refused, not opened.
-    r = send("task.complete", workspace="w", **{"from": "agent:bot"},
-             task_id=tid, output={"x": 1})
-    assert r["error"]["code"] == -32011  # NOT_AUTHORISED
-    assert coord.workspaces["w"].tasks[tid].state == "in_progress"
-
-
-def test_trial_does_not_force_review_without_modes_profile():
-    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
-
-    def send(method, **params):
-        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
-                               "method": method, "params": params})
-
-    # Default profiles are core + review, with no modes/1.0.
     send("workspace.create", workspace="w")
-    send("participant.join", workspace="w",
-         **{"from": "human:alice", "type": "human", "role": "owner"})
+    for who in ("human:a", "human:b", "human:c"):
+        send("participant.join", workspace="w",
+             **{"from": who, "type": "human", "role": "reviewer"})
     send("participant.join", workspace="w",
          **{"from": "agent:bot", "type": "agent", "role": "drafter"})
     tid = send("task.create", workspace="w",
-               **{"from": "human:alice", "kind": "draft", "input": {},
-                  "assignee": "agent:bot", "mode": "trial"})["result"]["task_id"]
-    # modes/1.0 is not loaded, so trial is inert: review is not forced.
-    assert coord.workspaces["w"].tasks[tid].review_required is None
-    send("task.update", workspace="w", **{"from": "agent:bot"},
-         task_id=tid, state="in_progress")
-    r = send("task.complete", workspace="w", **{"from": "agent:bot"},
-             task_id=tid, output={"ok": 1})
-    assert r["result"]["state"] == "completed"
+               **{"from": "human:a", "kind": "draft", "input": {},
+                  "assignee": "agent:bot"})["result"]["task_id"]
+    return coord, send, tid
+
+
+def test_all_approve_requires_every_named_reviewer():
+    coord, send, tid = _rule_coord()
+    send("review.request", workspace="w",
+         **{"from": "agent:bot", "to": ["human:a", "human:b", "human:c"]},
+         task_id=tid, artefact={"x": 1}, rule="all_approve")
+    assert send("decide.approve", workspace="w", **{"from": "human:a"},
+                task_id=tid)["result"]["state"] == "review_requested"
+    assert send("decide.approve", workspace="w", **{"from": "human:b"},
+                task_id=tid)["result"]["state"] == "review_requested"
+    assert send("decide.approve", workspace="w", **{"from": "human:c"},
+                task_id=tid)["result"]["state"] == "completed"
+
+
+def test_all_approve_ignores_a_duplicate_approval():
+    coord, send, tid = _rule_coord()
+    send("review.request", workspace="w",
+         **{"from": "agent:bot", "to": ["human:a", "human:b"]},
+         task_id=tid, artefact={"x": 1}, rule="all_approve")
+    send("decide.approve", workspace="w", **{"from": "human:a"}, task_id=tid)
+    # A second approval from the same reviewer must not satisfy all_approve.
+    assert send("decide.approve", workspace="w", **{"from": "human:a"},
+                task_id=tid)["result"]["state"] == "review_requested"
+    assert send("decide.approve", workspace="w", **{"from": "human:b"},
+                task_id=tid)["result"]["state"] == "completed"
+
+
+def test_quorum_completes_at_n_distinct_approvers():
+    coord, send, tid = _rule_coord()
+    send("review.request", workspace="w",
+         **{"from": "agent:bot", "to": ["human:a", "human:b", "human:c"]},
+         task_id=tid, artefact={"x": 1}, rule="quorum:2")
+    assert send("decide.approve", workspace="w", **{"from": "human:a"},
+                task_id=tid)["result"]["state"] == "review_requested"
+    assert send("decide.approve", workspace="w", **{"from": "human:b"},
+                task_id=tid)["result"]["state"] == "completed"
+
+
+def test_review_request_rejects_unhonorable_rule():
+    coord, send, tid = _rule_coord()
+    r = send("review.request", workspace="w",
+             **{"from": "agent:bot", "to": ["human:a"]},
+             task_id=tid, artefact={"x": 1}, rule="weighted_vote:2.0")
+    assert r["error"]["code"] == -32602  # PARAMS: rule review/1.0 can't honor

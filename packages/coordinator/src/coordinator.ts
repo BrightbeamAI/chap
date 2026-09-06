@@ -152,6 +152,29 @@ function linkHash(envelope: Envelope, prev: string): string {
   return sha256Hex(Buffer.concat([canonicalize(envelope), Buffer.from(prev, "utf-8")]));
 }
 
+function reviewRuleSupported(rule: string): boolean {
+  if (rule === "any_one_approves" || rule === "all_approve") return true;
+  if (rule.startsWith("quorum:")) {
+    const arg = rule.slice("quorum:".length);
+    return /^[0-9]+$/.test(arg) && parseInt(arg, 10) >= 1;
+  }
+  return false;
+}
+
+function reviewSatisfied(review: { requested_to: string[]; rule: string; decisions: { kind: string; reviewer: string }[] }): boolean {
+  const approvers = new Set(review.decisions.filter(d => d.kind === "approve").map(d => d.reviewer));
+  const rule = review.rule || "any_one_approves";
+  if (rule === "all_approve") {
+    // A broadcast-only review has no bounded reviewer set to wait on, so it
+    // degrades to first-approve.
+    const named = review.requested_to.filter(r => !(r.startsWith("workspace:") || r.startsWith("group:")));
+    if (named.length === 0) return approvers.size >= 1;
+    return named.every(r => approvers.has(r));
+  }
+  if (rule.startsWith("quorum:")) return approvers.size >= parseInt(rule.slice("quorum:".length), 10);
+  return approvers.size >= 1;  // any_one_approves (and the default)
+}
+
 function reply(env: Envelope, body: { result?: unknown; error?: { code: number; message: string; data?: unknown } }): Envelope {
   const out: Envelope = { jsonrpc: "2.0", id: env.id };
   if (body.error !== undefined) out.error = body.error;
@@ -1071,6 +1094,9 @@ export class Coordinator {
     if (!reviewers.length) return { error: rpcError(E.PARAMS, "review.request needs 'to'") };
     const now = this.now();
     const rule = (p.rule as string) || "any_one_approves";
+    if (!reviewRuleSupported(rule)) {
+      return { error: rpcError(E.PARAMS, `Unsupported review rule ${JSON.stringify(rule)}: review/1.0 supports any_one_approves, all_approve, quorum:<n>`) };
+    }
 
     // A review already open on this task. Replacing the artefact underneath
     // it would let a reviewer decide on content they never saw, and would
@@ -1180,8 +1206,12 @@ export class Coordinator {
       tags: p.tags as string[] | undefined,
     });
     if (kind === "approve") {
-      task.output = task.pending_artefact;
-      task.state = "completed";
+      // Complete only when the rule's approval predicate is met; otherwise the
+      // approval is recorded and the task stays review_requested.
+      if (reviewSatisfied(task.review!)) {
+        task.output = task.pending_artefact;
+        task.state = "completed";
+      }
     } else {
       task.state = p.request_revision ? "in_progress" : "declined";
     }
