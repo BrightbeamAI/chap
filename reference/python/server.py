@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from chap_coordinator import Coordinator, CoordinatorOptions
@@ -52,6 +53,11 @@ def _parse_error(message: str) -> dict:
 
 
 def make_handler(coord: Coordinator):
+    # The Coordinator is a single-writer, lock-free library, but this server
+    # runs it under ThreadingHTTPServer. Serialise dispatch so concurrent
+    # requests cannot interleave the audit chain's read-link-append.
+    dispatch_lock = threading.Lock()
+
     class Handler(BaseHTTPRequestHandler):
         def _cors(self) -> None:
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -91,7 +97,8 @@ def make_handler(coord: Coordinator):
                 self._write(400, _parse_error("Envelope nesting too deep"))
                 return
 
-            response = coord.dispatch(envelope)
+            with dispatch_lock:
+                response = coord.dispatch(envelope)
             status = 400 if "error" in response else 200
             self._write(status, response)
 
