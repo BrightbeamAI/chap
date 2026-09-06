@@ -102,3 +102,22 @@ def test_unknown_method(coord):
 def test_malformed_envelope(coord):
     r = coord.dispatch({"not_jsonrpc": True})
     assert "error" in r and r["error"]["code"] == -32600
+
+
+def test_oversized_envelope_is_rejected():
+    coord = Coordinator(CoordinatorOptions(max_envelope_bytes=200))
+    ok = coord.dispatch({"jsonrpc": "2.0", "id": "1",
+                         "method": "workspace.create", "params": {"workspace": "w"}})
+    assert "result" in ok
+    big = coord.dispatch({"jsonrpc": "2.0", "id": "2", "method": "workspace.describe",
+                          "params": {"workspace": "w", "pad": "x" * 500}})
+    assert big["error"]["code"] == -32600  # REQUEST
+
+
+def test_describe_publishes_max_envelope_bytes():
+    coord = Coordinator(CoordinatorOptions())
+    coord.dispatch({"jsonrpc": "2.0", "id": "1",
+                    "method": "workspace.create", "params": {"workspace": "w"}})
+    d = coord.dispatch({"jsonrpc": "2.0", "id": "2",
+                        "method": "workspace.describe", "params": {"workspace": "w"}})
+    assert d["result"]["max_envelope_bytes"] == 1048576

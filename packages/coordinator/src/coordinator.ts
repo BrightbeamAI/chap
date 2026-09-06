@@ -94,6 +94,9 @@ const READ_ONLY_METHODS = new Set<string>([
 // workspace; a redelivery beyond this many intervening creates is not deduped.
 const MAX_IDEMPOTENCY_KEYS = 10_000;
 
+// Largest envelope accepted, published in the workspace descriptor (SPEC S4.4).
+const DEFAULT_MAX_ENVELOPE_BYTES = 1_048_576;
+
 export interface CoordinatorOptions {
   deterministicIds?: boolean;
   deterministicClock?: boolean;
@@ -101,6 +104,8 @@ export interface CoordinatorOptions {
   requireSignatures?: boolean;
   enforceStepUp?: boolean;
   requireReadMembership?: boolean;
+  /** Largest envelope accepted (default 1 MiB), published in the descriptor. */
+  maxEnvelopeBytes?: number;
   onAudit?: AuditListener;
   onAutoEscalate?: (task: Task, to: ParticipantUri) => void;
   verifyOidcToken?: TokenVerifier;
@@ -421,6 +426,13 @@ export class Coordinator {
   dispatch(envelope: Envelope): Envelope {
     if (!isValidEnvelope(envelope) || !envelope.method) {
       return reply(envelope, { error: rpcError(E.REQUEST, "Invalid JSON-RPC 2.0 request") });
+    }
+    const maxBytes = this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES;
+    let size = 0;
+    try { size = canonicalize(envelope).length; } catch { /* not canonicalisable; rejected by the ingress check below */ }
+    if (size > maxBytes) {
+      return reply(envelope, { error: rpcError(E.REQUEST,
+        `Envelope exceeds max_envelope_bytes (${size} > ${maxBytes})`) });
     }
     const method = envelope.method;
     // JSON-RPC params, when present, must be a structured value (object).
@@ -763,6 +775,7 @@ export class Coordinator {
       state: ws.state,
       mode: ws.mode,
       mode_ceiling: ws.mode_ceiling,
+      max_envelope_bytes: this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES,
       step_up_window_sec: ws.step_up_window_sec,
       profiles: ws.profiles,
       members: Array.from(ws.members.values()).map(memberToDict),
