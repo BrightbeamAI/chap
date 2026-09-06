@@ -108,3 +108,61 @@ test("task.update cannot complete a task awaiting review", () => {
     task_id: tid, state: "in_progress" });
   assert.equal((withdraw.result as { state: string }).state, "in_progress");
 });
+
+test("task.complete opens a review addressed to the eligible reviewer, not completion", () => {
+  const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
+  const send = (m: string, p: Record<string, unknown>) =>
+    c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
+  send("workspace.create", { workspace: "w", profiles: ["core/1.0", "review/1.0", "modes/1.0"] });
+  send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "reviewer" });
+  send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
+  const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "draft",
+    input: {}, assignee: "agent:bot", mode: "trial" }).result as { task_id: string }).task_id;
+  assert.equal(c.workspaces.get("w")!.tasks.get(tid)!.review_required, true);
+  send("task.update", { workspace: "w", from: "agent:bot", task_id: tid, state: "in_progress" });
+
+  const r = send("task.complete", { workspace: "w", from: "agent:bot", task_id: tid,
+    output: { draft: "unreviewed" } });
+  assert.equal((r.result as { state: string }).state, "review_requested");
+  const t = c.workspaces.get("w")!.tasks.get(tid)!;
+  assert.equal(t.state, "review_requested");
+  assert.equal(t.output, undefined);
+  assert.deepEqual(t.review!.requested_to, ["human:alice"]);
+
+  const a = send("decide.approve", { workspace: "w", from: "human:alice", task_id: tid });
+  assert.equal((a.result as { state: string }).state, "completed");
+  assert.deepEqual(c.workspaces.get("w")!.tasks.get(tid)!.output, { draft: "unreviewed" });
+});
+
+test("task.complete is refused when no eligible reviewer exists", () => {
+  const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
+  const send = (m: string, p: Record<string, unknown>) =>
+    c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
+  send("workspace.create", { workspace: "w", profiles: ["core/1.0", "review/1.0", "modes/1.0"] });
+  send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
+  const tid = (send("task.create", { workspace: "w", from: "agent:bot", kind: "draft",
+    input: {}, assignee: "agent:bot", mode: "trial" }).result as { task_id: string }).task_id;
+  send("task.update", { workspace: "w", from: "agent:bot", task_id: tid, state: "in_progress" });
+
+  // Only member is both producer and assignee: nobody can review, so refuse.
+  const r = send("task.complete", { workspace: "w", from: "agent:bot", task_id: tid, output: { x: 1 } });
+  assert.equal(r.error?.code, -32011);  // NOT_AUTHORISED
+  assert.equal(c.workspaces.get("w")!.tasks.get(tid)!.state, "in_progress");
+});
+
+test("trial does not force review without the modes profile", () => {
+  const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
+  const send = (m: string, p: Record<string, unknown>) =>
+    c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
+  // Default profiles are core + review, with no modes/1.0.
+  send("workspace.create", { workspace: "w" });
+  send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner" });
+  send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
+  const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "draft",
+    input: {}, assignee: "agent:bot", mode: "trial" }).result as { task_id: string }).task_id;
+  // modes/1.0 is not loaded, so trial is inert: review is not forced.
+  assert.equal(c.workspaces.get("w")!.tasks.get(tid)!.review_required, undefined);
+  send("task.update", { workspace: "w", from: "agent:bot", task_id: tid, state: "in_progress" });
+  const r = send("task.complete", { workspace: "w", from: "agent:bot", task_id: tid, output: { ok: 1 } });
+  assert.equal((r.result as { state: string }).state, "completed");
+});

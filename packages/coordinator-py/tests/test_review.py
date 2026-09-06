@@ -122,3 +122,89 @@ def test_task_update_cannot_complete_task_awaiting_review(coord_with_task):
     withdraw = send("task.update", workspace="wsp_r", task_id=tid,
                     **{"from": "agent:bot", "state": "in_progress"})
     assert withdraw["result"]["state"] == "in_progress"
+
+
+def test_task_complete_opens_review_addressed_to_eligible_reviewer():
+    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
+
+    def send(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
+                               "method": method, "params": params})
+
+    send("workspace.create", workspace="w",
+         profiles=["core/1.0", "review/1.0", "modes/1.0"])
+    send("participant.join", workspace="w",
+         **{"from": "human:alice", "type": "human", "role": "reviewer"})
+    send("participant.join", workspace="w",
+         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
+    tid = send("task.create", workspace="w",
+               **{"from": "human:alice", "kind": "draft", "input": {},
+                  "assignee": "agent:bot", "mode": "trial"})["result"]["task_id"]
+    assert coord.workspaces["w"].tasks[tid].review_required is True
+    send("task.update", workspace="w", **{"from": "agent:bot"},
+         task_id=tid, state="in_progress")
+
+    # task.complete opens a review addressed to the eligible reviewer (excluding
+    # the producer/assignee); it does not complete.
+    r = send("task.complete", workspace="w", **{"from": "agent:bot"},
+             task_id=tid, output={"draft": "unreviewed"})
+    assert r["result"]["state"] == "review_requested"
+    t = coord.workspaces["w"].tasks[tid]
+    assert t.state == "review_requested"
+    assert t.output is None
+    assert t.review.requested_to == ["human:alice"]
+
+    # The eligible reviewer completes it; the producer could not have.
+    a = send("decide.approve", workspace="w", **{"from": "human:alice"}, task_id=tid)
+    assert a["result"]["state"] == "completed"
+    assert coord.workspaces["w"].tasks[tid].output == {"draft": "unreviewed"}
+
+
+def test_task_complete_refused_when_no_eligible_reviewer():
+    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
+
+    def send(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
+                               "method": method, "params": params})
+
+    send("workspace.create", workspace="w",
+         profiles=["core/1.0", "review/1.0", "modes/1.0"])
+    send("participant.join", workspace="w",
+         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
+    tid = send("task.create", workspace="w",
+               **{"from": "agent:bot", "kind": "draft", "input": {},
+                  "assignee": "agent:bot", "mode": "trial"})["result"]["task_id"]
+    send("task.update", workspace="w", **{"from": "agent:bot"},
+         task_id=tid, state="in_progress")
+
+    # The only member is both producer and assignee, so nobody can review. The
+    # producer must not self-approve, so completion is refused, not opened.
+    r = send("task.complete", workspace="w", **{"from": "agent:bot"},
+             task_id=tid, output={"x": 1})
+    assert r["error"]["code"] == -32011  # NOT_AUTHORISED
+    assert coord.workspaces["w"].tasks[tid].state == "in_progress"
+
+
+def test_trial_does_not_force_review_without_modes_profile():
+    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
+
+    def send(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
+                               "method": method, "params": params})
+
+    # Default profiles are core + review, with no modes/1.0.
+    send("workspace.create", workspace="w")
+    send("participant.join", workspace="w",
+         **{"from": "human:alice", "type": "human", "role": "owner"})
+    send("participant.join", workspace="w",
+         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
+    tid = send("task.create", workspace="w",
+               **{"from": "human:alice", "kind": "draft", "input": {},
+                  "assignee": "agent:bot", "mode": "trial"})["result"]["task_id"]
+    # modes/1.0 is not loaded, so trial is inert: review is not forced.
+    assert coord.workspaces["w"].tasks[tid].review_required is None
+    send("task.update", workspace="w", **{"from": "agent:bot"},
+         task_id=tid, state="in_progress")
+    r = send("task.complete", workspace="w", **{"from": "agent:bot"},
+             task_id=tid, output={"ok": 1})
+    assert r["result"]["state"] == "completed"

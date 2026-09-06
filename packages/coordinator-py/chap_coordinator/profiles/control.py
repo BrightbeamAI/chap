@@ -263,7 +263,9 @@ def register_control(coord: "Coordinator") -> None:
                 note=f"supersedes {old.id}: {p.get('reason') or ''}",
             )],
         )
-        if new_task.mode == "trial":
+        # Trial forces review only when the workspace opted into modes/1.0,
+        # matching task.create -- mode is inert without the profile.
+        if ws.has_profile("modes") and new_task.mode == "trial":
             new_task.review_required = True
         elif "review_required" in new_spec:
             new_task.review_required = bool(new_spec["review_required"])

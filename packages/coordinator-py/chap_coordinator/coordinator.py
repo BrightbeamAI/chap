@@ -957,8 +957,10 @@ class Coordinator:
             history=[TaskHistoryEntry(ts=now, from_=p["from"], state="created")],
         )
 
-        # modes/1.0: trial mode forces review.required
-        if task.mode == "trial":
+        # modes/1.0: trial mode forces review.required -- but only when the
+        # workspace has opted into modes/1.0. mode is inert without the profile,
+        # so a plain core/review workspace does not inherit forced review.
+        if ws.has_profile("modes") and task.mode == "trial":
             task.review_required = True
         elif "review_required" in p:
             task.review_required = bool(p["review_required"])
@@ -1020,6 +1022,38 @@ class Coordinator:
         if task.state not in ("created", "in_progress"):
             return {"error": rpc_error(
                 E.PARAMS, f"Cannot complete task in state: {task.state}")}
+        # review/1.0 S3.1: task.complete on a task whose review is required
+        # opens a review implicitly rather than completing. The submitted output
+        # becomes the artefact under review; only a reviewer decision (decide.*)
+        # then takes the task to completed. Without this a review_required task
+        # would reach completed with unreviewed output and no decision.
+        if task.review_required:
+            now = self.now_iso()
+            task.pending_artefact = p.get("output")
+            if task.review is None:
+                # The producer must not satisfy its own review, so the implicit
+                # review is addressed to the other members, excluding the caller
+                # and the assignee. With nobody eligible there is no independent
+                # reviewer, so refuse rather than open a review only its author
+                # could approve. (An explicit review.request keeps its own `to`.)
+                producer = p.get("from", "")
+                eligible = [uri for uri in ws.members
+                            if uri != producer and uri != task.assignee]
+                if not eligible:
+                    return {"error": rpc_error(
+                        E.NOT_AUTHORISED,
+                        "Task requires review but has no eligible reviewer "
+                        "(needs a member other than its assignee and completer)")}
+                task.review = ReviewState(requested_at=now,
+                                          requested_to=list(eligible))
+            task.state = "review_requested"
+            task.updated_at = now
+            task.history.append(TaskHistoryEntry(
+                ts=now, from_=p.get("from", ""), state="review_requested",
+                note="review required; opened on task.complete",
+            ))
+            return {"result": {"state": "review_requested",
+                               "review_id": task.id}}
         task.output = p.get("output")
         if "confidence" in p:
             # Stored as received (number or string) so it hashes deterministically;
