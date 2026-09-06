@@ -1,6 +1,6 @@
 {
   "name": "@brightbeamai/mcp-server-ts",
-  "version": "0.2.10",
+  "version": "0.2.12",
   "description": "Reference MCP server that wraps a CHAP Coordinator. Run via stdio for Claude Desktop, Cursor, or any MCP client.",
   "license": "Apache-2.0",
   "type": "module",

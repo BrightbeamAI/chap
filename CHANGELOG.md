@@ -9,6 +9,72 @@ incremented under the same rules.
 
 ---
 
+## 0.2.12: review rules, modes gating, and an envelope ceiling
+
+**BREAKING for `modes/1.0` workspaces.** `task.complete` on a trial-mode task
+no longer completes it. Trial forces review, so the call now opens a review and
+the task moves to `review_requested`; a reviewer decision completes it. Code
+that expected `completed` back from `task.complete` on a trial task has to
+follow the review. Workspaces that never loaded `modes/1.0` are unaffected,
+which is itself part of the fix.
+
+### review_required is enforced, and modes stops leaking outside its profile
+
+`review_required` was written in three places and read by neither coordinator,
+so a task whose review was mandatory completed with unreviewed output and no
+`decide.*` recorded. It is now enforced: `task.complete` opens the review that
+`review.md` §3.1 always described.
+
+Enforcing it exposed the reason nobody had noticed. New workspaces defaulted to
+`mode: "trial"`, and trial forcing ran with no check that `modes/1.0` was
+loaded, so every default workspace, including Core-only ones, silently forced
+review on every task. `modes.md` declares the profile "Depends on: Core" and
+the descriptor examples in SPECIFICATION.md use `"mode": "production"`, so this
+was a defect rather than a default. Mode semantics are now gated on the profile
+being loaded (#93, #97).
+
+The implicit review excludes the task's producer and assignee. Without that, a
+single-member workspace would have the producer approving its own output, and
+the chain would carry a `decide.approve` that looked like oversight. With
+nobody eligible the completion is refused with `-32011` rather than opening a
+review only its author could decide.
+
+`decide.approve` now evaluates `review.rule` rather than completing on the
+first approval regardless (#99).
+
+### The reference server catches up
+
+`reference/core-plus-review` is a from-scratch reimplementation sharing no code
+with the packages, and it had none of the above. It now honours
+`review_required` on `task.create`, opens the review from `task.complete` with
+the same eligible-reviewer rule as the coordinators, and refuses with `-32011`
+when nobody qualifies. `review_required` and `pending_artefact` are declared on
+its `Task` interface; `pending_artefact` was used in five places, four of them
+through `as any` casts, which are now gone.
+
+### The conformance harness pins its workspace mode
+
+The harness never created a workspace, relying on `participant.join` to
+auto-create one, so it inherited each target's defaults. Those differ: the
+Python reference loads every profile and defaults to trial, while the
+Core+Review TypeScript reference has no modes at all. Once trial started
+forcing review, `cm-08` failed against Python and passed against TypeScript,
+and the two targets had not been comparable for some time. The harness now
+creates its workspace in production mode before any vector runs. Both
+references pass all 26.
+
+### Also
+
+A maximum envelope size is enforced and published (#108), with request body
+size and JSON depth capped in the reference TypeScript servers (#111).
+`whisper.*` requires workspace membership (#105). `superseded` is terminal in
+`control.pause` and `control.cancel` (#101). JSON Patch array indices parse
+through one strict shared rule (#103). Signature verification fails closed with
+`SIG_VERIFY_FAILED` on an exception (#116). The threaded Python reference
+server serialises dispatch (#113).
+
+---
+
 ## 0.2.11: coordinator-mcp only, a namespace casing fix
 
 `@brightbeamai/chap-coordinator-mcp` only. The coordinator and A2A packages

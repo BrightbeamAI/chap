@@ -14,6 +14,8 @@ in the audit log, queryable for free.**
 | `server.ts`               | Core + Review server. All 13 methods, in-memory state, JSON-RPC 2.0.  |
 | `client.ts`               | Demo: workspace setup → draft → review request → override.            |
 | `analyze-overrides.ts`    | Reads the audit log and produces the learning-data report.            |
+| `patch.test.ts`           | JSON Patch safety: unsafe pointer segments are refused.               |
+| `review_required.test.ts` | review/1.0 3.1: completion opens a review when one is required.       |
 | `package.json`            | npm scripts.                                                          |
 | `tsconfig.json`           | Strict TS, ES2022, Node 20+.                                          |
 
@@ -86,7 +88,18 @@ The 6 review-profile methods, in implementation order:
 
 1. **`review.request`**: opens a review on a task; takes the
    draft artefact, the rule (`any_one_approves` / `all_approve`),
-   and the deadline.
+   and the deadline. A review also opens **implicitly**: calling
+   `task.complete` on a task created with `review_required: true`
+   moves it to `review_requested` rather than `completed`, with the
+   submitted output as the artefact under review. Only a reviewer
+   decision then completes it.
+
+   The implicit review is addressed to the members who are neither
+   the completer nor the assignee, so a producer cannot approve its
+   own output. If nobody qualifies the completion is refused with
+   `-32011` rather than opening a review only its author could
+   decide. An explicit `review.request` keeps whatever `to` it was
+   given.
 2. **`decide.approve`**: terminal acceptance. Sets task state to
    `completed`.
 3. **`decide.reject`**: terminal rejection, or revision-request
