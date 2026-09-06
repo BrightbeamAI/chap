@@ -414,3 +414,21 @@ def test_rotated_out_key_cannot_sign_live_via_backdated_ts():
                       "input": {}, "assignee": "agent:bot", "ts": k1.valid_from}}
     _sign_envelope(sk1, env, "k1")
     assert c.dispatch(env)["error"]["code"] == -32071  # SIG_KEY_NOT_FOUND
+
+
+def test_unverifiable_signature_fails_closed():
+    c = Coordinator(CoordinatorOptions(require_signatures=True))
+    c.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w"}})
+    # A structurally valid JWK whose x decodes to the wrong length, so building
+    # the public key throws during verification.
+    c.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:alice", "type": "human",
+                           "jwks": {"keys": [{"kty": "OKP", "crv": "Ed25519",
+                                              "kid": "k1", "x": "AA"}]},
+                           "profiles": ["core/1.0", "security-signed/1.0"]}})
+    env = {"jsonrpc": "2.0", "id": "3", "method": "task.create",
+           "params": {"workspace": "w", "from": "human:alice", "kind": "k",
+                      "input": {}, "assignee": "human:alice"},
+           "sig": "ed25519:k1:AAAA"}
+    assert c.dispatch(env)["error"]["code"] == -32070  # SIG_VERIFY_FAILED

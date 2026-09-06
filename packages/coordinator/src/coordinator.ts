@@ -624,9 +624,11 @@ export class Coordinator {
         return rpcError(E.SIG_VERIFY_FAILED, "Signature failed verification");
       }
       return null;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return rpcError(E.INTERNAL, `Signature check error: ${msg}`);
+    } catch {
+      // An exception here (malformed key or signature bytes) means the
+      // signature cannot be verified: fail closed with the same generic code
+      // as the Python reference, and do not leak the exception detail.
+      return rpcError(E.SIG_VERIFY_FAILED, "Signature failed verification");
     }
   }
 
