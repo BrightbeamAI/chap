@@ -192,6 +192,11 @@ export type Handler = (params: Record<string, unknown>) => { result?: unknown; e
 //   Coordinator
 // ============================================================
 
+// States in which a task has been deliberately stopped. review.request and
+// task.complete both refuse these, so neither can revive a terminated task nor
+// bypass a pause.
+const REVIEW_REQUEST_STOPPED: string[] = ["cancelled", "superseded", "paused"];
+
 export class Coordinator {
   readonly workspaces = new Map<WorkspaceId, Workspace>();
   readonly options: CoordinatorOptions;
@@ -1023,16 +1028,22 @@ export class Coordinator {
       const now = this.now();
       task.pending_artefact = p.output;
       if (!task.review) {
-        // The producer must not satisfy its own review, so the implicit review
-        // is addressed to the other members, excluding the caller and the
-        // assignee. With nobody eligible there is no independent reviewer, so
-        // refuse rather than open a review only its author could approve. (An
-        // explicit review.request keeps its own `to`.)
+        // review_required means a person has to see this. The producer must
+        // not satisfy its own review, and neither must another agent: an agent
+        // approving an agent leaves a decide.approve on the chain that reads
+        // as human oversight and is not. So the implicit review is addressed
+        // to the human members other than the completer and the assignee, and
+        // where there are none the completion is refused rather than opening a
+        // review no person can decide. An explicit review.request keeps its
+        // own `to`, so a deliberate agent-reviews-agent flow is still
+        // available.
         const producer = p.from as string;
-        const eligible = [...ws.members.keys()].filter(uri => uri !== producer && uri !== task.assignee);
+        const eligible = [...ws.members.entries()]
+          .filter(([uri, member]) => uri !== producer && uri !== task.assignee && member.type === "human")
+          .map(([uri]) => uri);
         if (eligible.length === 0) {
           return { error: rpcError(E.NOT_AUTHORISED,
-            "Task requires review but has no eligible reviewer (needs a member other than its assignee and completer)") };
+            "Task requires review but has no eligible human reviewer (needs a human member other than its assignee and completer)") };
         }
         task.review = { requested_at: now, requested_to: eligible as ParticipantUri[], rule: "any_one_approves", decisions: [] };
       }
@@ -1089,6 +1100,18 @@ export class Coordinator {
     if (notMember) return notMember;
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
+    // task.complete refuses a task that has been stopped, so that a completion
+    // "can neither revive a terminated task nor bypass a pause". review.request
+    // creates the same kind of state and had no such check, so it revived
+    // cancelled and superseded tasks and pulled paused ones back into play. The
+    // same three states are refused here.
+    //
+    // `completed` is deliberately still allowed. Requesting review on a
+    // completed task is how every framework bridge submits a draft, and
+    // 0.2.12's `review_required` is the route away from that, not this.
+    if (REVIEW_REQUEST_STOPPED.includes(task.state)) {
+      return { error: rpcError(E.NOT_REVIEWABLE, `Cannot request review for task in state: ${task.state}`) };
+    }
     const to = p.to;
     const reviewers: string[] = Array.isArray(to) ? (to as string[]) : typeof to === "string" ? [to] : [];
     if (!reviewers.length) return { error: rpcError(E.PARAMS, "review.request needs 'to'") };

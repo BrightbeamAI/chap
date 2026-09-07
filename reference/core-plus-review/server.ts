@@ -450,18 +450,20 @@ const handlers: Record<string, Handler> = {
       const now = new Date().toISOString();
       task.pending_artefact = p.output;
       if (!task.review) {
-        // The producer must not satisfy its own review, so the implicit review
-        // is addressed to the other members, excluding the caller and the
-        // assignee. With nobody eligible there is no independent reviewer, so
-        // refuse rather than open a review only its author could approve. An
-        // explicit review.request keeps its own `to`.
+        // review_required means a person has to see this. The producer must
+        // not satisfy its own review, and neither must another agent, so the
+        // implicit review is addressed to the human members other than the
+        // completer and the assignee. With none, the completion is refused
+        // rather than opening a review no person can decide. An explicit
+        // review.request keeps its own `to`.
         const producer = p.from as string;
-        const eligible = [...ws.members.keys()]
-          .filter(uri => uri !== producer && uri !== task.assignee);
+        const eligible = [...ws.members.entries()]
+          .filter(([uri, member]) => uri !== producer && uri !== task.assignee && member.type === "human")
+          .map(([uri]) => uri);
         if (eligible.length === 0) {
           return { error: err(E.NOT_AUTHORISED,
-            "Task requires review but has no eligible reviewer " +
-            "(needs a member other than its assignee and completer)") };
+            "Task requires review but has no eligible human reviewer " +
+            "(needs a human member other than its assignee and completer)") };
         }
         task.review = { requested_at: now, requested_to: eligible,
                         rule: "any_one_approves", decisions: [] };
@@ -515,6 +517,11 @@ const handlers: Record<string, Handler> = {
 
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: err(E.PARAMS, `Unknown task`) };
+
+    // A review cannot revive stopped work or step around a pause.
+    if (["cancelled", "superseded", "paused"].includes(task.state)) {
+      return { error: err(E.NOT_REVIEWABLE, `Cannot request review for task in state: ${task.state}`) };
+    }
 
     const reviewers = Array.isArray(p.to) ? (p.to as string[]) : [p.to as string];
     const rule = (p.rule as string) ?? "any_one_approves";

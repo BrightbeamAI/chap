@@ -581,6 +581,42 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
     });
     assertEq(result?.amended, true, "an identical artefact should amend the reviewer set");
   });
+
+  await test("Review profile", "rv-12", "an implicit review is addressed to humans, not to the other agent", async () => {
+    // A task whose review is required opens one on task.complete. Excluding the
+    // producer is not enough: with a second agent in the workspace it would
+    // become an eligible reviewer, and its approval would sit on the chain
+    // looking like human oversight.
+    const { result: t } = await client.call("task.create", {
+      workspace: ws, from: "human:alice@example.org", to: "agent:reviewer-test-bot",
+      ts: new Date().toISOString(), kind: "review_test",
+      assignee: "agent:reviewer-test-bot", input: { test: true },
+      review_required: true,
+    });
+    await client.call("task.update", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: "human:alice@example.org",
+      ts: new Date().toISOString(), task_id: t.task_id, state: "in_progress",
+    });
+    const { result: opened } = await client.call("task.complete", {
+      workspace: ws, from: "agent:reviewer-test-bot", to: "human:alice@example.org",
+      ts: new Date().toISOString(), task_id: t.task_id, output: { draft: "implicit" },
+    });
+    assertEq(opened?.state, "review_requested",
+      "a review_required task must open a review rather than complete");
+
+    const { error } = await client.call("decide.approve", {
+      workspace: ws, from: "agent:test-bot", to: "service:coordinator@example.org",
+      ts: new Date().toISOString(), task_id: t.task_id, comment: "looks fine",
+    });
+    assert(error?.code === -32011,
+      `an agent approved another agent's work, got ${JSON.stringify(error)}`);
+
+    const { result } = await client.call("decide.approve", {
+      workspace: ws, from: "human:alice@example.org", to: "service:coordinator@example.org",
+      ts: new Date().toISOString(), task_id: t.task_id, comment: "fine",
+    });
+    assertEq(result?.state, "completed", "a human the review was addressed to must be able to decide");
+  });
 }
 
 

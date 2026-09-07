@@ -16,15 +16,16 @@ success.
 - Filter correctness: `audit.read` filters work.
 - Member enforcement: assigning to non-members fails.
 
-**Review profile (optional)**: 11 vectors covering:
+**Review profile (optional)**: 12 vectors covering:
 
 - `review.request` transitions task to `review_requested`.
 - `decide.override` applies the RFC 6902 JSON Patch and produces an
   override artefact.
 - Audit log preserves the structured override (diff, rationale, tags,
   policy_refs).
-- `abstain.declare` produces an `abstained` terminal state with a
-  category.
+- `abstain.declare` moves the task to `abstained` with a category.
+- A required review opened by `task.complete` is addressed to humans,
+  and another agent in the workspace cannot decide it.
 - `decide.reject` with `request_revision: true` returns to
   `in_progress`.
 

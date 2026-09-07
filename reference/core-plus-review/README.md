@@ -94,12 +94,11 @@ The 6 review-profile methods, in implementation order:
    submitted output as the artefact under review. Only a reviewer
    decision then completes it.
 
-   The implicit review is addressed to the members who are neither
-   the completer nor the assignee, so a producer cannot approve its
-   own output. If nobody qualifies the completion is refused with
-   `-32011` rather than opening a review only its author could
-   decide. An explicit `review.request` keeps whatever `to` it was
-   given.
+   The implicit review is addressed to the human members who are
+   neither the completer nor the assignee, so neither a producer nor
+   another agent can approve agent output. If nobody qualifies the
+   completion is refused with `-32011`. An explicit `review.request`
+   keeps whatever `to` it was given.
 2. **`decide.approve`**: terminal acceptance. Sets task state to
    `completed`.
 3. **`decide.reject`**: terminal rejection, or revision-request

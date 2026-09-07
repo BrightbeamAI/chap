@@ -30,15 +30,21 @@ If you implement only one profile beyond Core, implement this one.
 The `review` profile adds these states to Core's `task` state machine:
 
 ```
-created ──▶ in_progress ──▶ review_requested ──▶ completed (via decide.approve)
-                                            ──▶ in_progress (via decide.reject)
-                                            ──▶ abstained (via abstain.declare)
-                                            ──▶ escalated (via escalate.raise)
-                                            ──▶ completed (via decide.override, produces override artefact)
+created      ─┐
+in_progress  ─┤
+completed    ─┼──▶ review_requested ──▶ completed   (decide.approve)
+declined     ─┤                      ──▶ completed   (decide.override, with an override artefact)
+abstained    ─┤                      ──▶ declined    (decide.reject)
+escalated    ─┘                      ──▶ in_progress (decide.reject with request_revision)
+                                     ──▶ abstained   (abstain.declare)
 ```
 
-`abstained` is a terminal state for *this* task but typically
-triggers `escalate.raise`, which creates a new task with the
+`review.request` is refused with `-32010` on a task that has been stopped:
+`cancelled`, `superseded` or `paused`. The exhaustive transition table is
+[SPECIFICATION.md §8.1](../SPECIFICATION.md#81-lifecycle).
+
+`abstained` ends *this* reviewer's involvement but not the task, and
+typically triggers `escalate.raise`, which creates a new task with the
 original as `supersedes`.
 
 ---
@@ -47,9 +53,11 @@ original as `supersedes`.
 
 ### 3.1 `review.request`
 
-Open a review on a completed task. Issued either explicitly by the
-task's completer, or implicitly when `task.complete` is called on a
-task whose `review.required` was true.
+Open a review on a task. Issued either explicitly, most often by whoever
+produced the draft, or implicitly when `task.complete` is called on a task
+whose review is required. Refused with `-32010` on a task that has been
+cancelled, superseded or paused, so that a review cannot revive stopped work
+or step around a pause.
 
 ```json
 {
@@ -80,21 +88,23 @@ decision then reaches `completed`. Review is required when the task carries
 `review_required`, or when it runs in `trial` mode on a workspace that has
 loaded `modes/1.0`.
 
-Nobody chose the reviewer set on this path, so the Coordinator picks it:
-every member who is neither the completer nor the task's assignee, with
-`rule: "any_one_approves"`. The producer is excluded deliberately. A review
-its own author can approve records a `decide.approve` that reads as
-oversight and is not, which is worse than recording no review at all.
+Nobody chose the reviewer set on this path, so the Coordinator picks it: the
+members of `type: "human"` who are neither the completer nor the task's
+assignee, with `rule: "any_one_approves"`.
 
-Where no member qualifies, the Coordinator MUST refuse the completion with
-`-32011` rather than open a review only its author could decide. A task
-that requires review in a workspace with no independent reviewer is a
-misconfiguration the operator needs told about.
+Both exclusions serve the same rule: a `decide.approve` on the chain must
+mean a person looked. A review its own author can approve does not, and
+neither does one an agent can approve. A reviewer set the Coordinator selects
+on the operator's behalf MUST NOT widen to include software.
 
-An explicit `review.request` keeps whatever `to` it was given. Someone who
-addresses the producer has made a choice, and this profile does not
-override it.
+Where no human member qualifies, the Coordinator MUST refuse the completion
+with `-32011` rather than open a review nobody can decide. A task requiring
+review in a workspace with no independent human reviewer is a
+misconfiguration, and the operator needs told.
 
+An explicit `review.request` keeps whatever `to` it was given. Addressing the
+producer, or another agent, is a deliberate choice and this profile does not
+override it; that is the route for an agent-reviews-agent flow.
 
 **Re-request on an open review.** A review already open on the task
 constrains what a second `review.request` may do.
@@ -208,7 +218,7 @@ the membership floor alone applies.
 ```
 
 If `request_revision` is true, the task transitions back to
-`in_progress` rather than terminal `rejected`, giving the assignee
+`in_progress` rather than `declined`, giving the assignee
 a chance to revise.
 
 ### 3.3 `decide.override`: the differentiator
@@ -365,7 +375,7 @@ piece of the protocol is plumbing.
 
 | Code      | Meaning                                                |
 |-----------|--------------------------------------------------------|
-| `-32010`  | Task is not in a reviewable state.                     |
+| `-32010`  | Task is not in a reviewable state: no open review for a decision, or a `review.request` on a cancelled, superseded or paused task. |
 | `-32011`  | Actor is not authorised: not a workspace member, or a member who was not an addressed reviewer for this task. |
 | `-32012`  | JSON Patch application failed (with path in `data`).   |
 | `-32013`  | Review deadline has lapsed.                            |

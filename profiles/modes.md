@@ -89,8 +89,11 @@ primary input to promotion decisions.
 - Review is mandatory regardless of any per-task `review.required`
   field, `trial` mode forces review on.
 - Because review is mandatory, `task.complete` opens a review rather
-  than completing the task. A reviewer decision completes it. See
-  [`review.md`](./review.md) §3.1.
+  than completing the task. A reviewer decision completes it.
+- The Coordinator addresses that review to the human members other than
+  the completer and the assignee, and refuses the completion with
+  `-32011` where none qualifies. A trial workspace therefore needs at
+  least one human who is neither. See [`review.md`](./review.md) §3.1.
 
 This is the "every output gets human eyes" mode. Override rate in
 trial mode is the most important signal for whether to promote.

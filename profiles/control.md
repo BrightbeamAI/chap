@@ -136,7 +136,7 @@ enforcement is left to the deployment.
 | Code      | Meaning                                                  |
 |-----------|----------------------------------------------------------|
 | `-32060`  | Step-up authentication required (see `identity-oidc`).   |
-| `-32061`  | Caller is not authorised for control operations.         |
+| `-32061`  | The control operation is refused: the caller is not authorised, or the task is already settled (`completed`, `declined`, `cancelled`, `superseded`). |
 | `-32062`  | Snapshot artefact not found.                             |
 | `-32063`  | Workspace is paused; this operation is blocked.          |
 
