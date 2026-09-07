@@ -59,6 +59,19 @@ incremented under the same rules.
 
 ### Added
 
+- **Every MCP tool parameter carries a description.** 64 of the 192 parameters
+  on the 39 tools had a name and a type and nothing else, so a client deciding
+  whether to call `chap.deliberate.vote` or `chap.control.rollback` had to guess
+  what five of its seven arguments meant. All 195 now say what they are for, and
+  `chap.task.create` gains the `review_required`, `deadline` and
+  `idempotency_key` parameters the coordinator has always accepted but the
+  schema never advertised.
+
+  The Python MCP transport says it mirrors `schemas.ts` exactly and had drifted
+  to 87 differing descriptions. Its table is now generated from the TypeScript
+  one by `scripts/sync-mcp-schemas.mjs`, and CI fails when the committed copy is
+  stale or when any parameter is left undescribed.
+
 - **A front door.** [`START_HERE.md`](./START_HERE.md) and
   [`start-here/`](./start-here/) take a new developer from a clone to one
   recorded human decision with Python 3.10 and nothing else: no install, no

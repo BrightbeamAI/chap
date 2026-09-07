@@ -20,7 +20,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:schemas": "npm run check:schemas --workspace=@brightbeamai/chap-coordinator",
     "conformance:py": "bash scripts/run-conformance.sh python",
-    "conformance:ts": "bash scripts/run-conformance.sh typescript"
+    "conformance:ts": "bash scripts/run-conformance.sh typescript",
+    "check:mcp-schemas": "tsx scripts/sync-mcp-schemas.mjs --check"
   },
   "engines": {
     "node": ">=20"
