@@ -66,6 +66,9 @@ const SITES = [
   ["server.json", /"version": "([^"]+)",\n  "websiteUrl"/, "registry server version"],
   ["server.json", /"identifier": "@brightbeamai\/chap-coordinator-mcp",\n      "version": "([^"]+)"/, "registry npm package version"],
 
+  // -- container images ----------------------------------------------------
+  ["Dockerfile.mcp", /^ARG CHAP_MCP_VERSION=(.+)$/m, "pinned image version"],
+
   // -- versions a running server reports to its client ---------------------
   ["packages/coordinator-mcp/src/cli.ts", /^const VERSION = "([^"]+)";/m, "version the MCP server reports"],
   ["packages/coordinator-mcp/src/index.ts", /version: options\.version \?\? "([^"]+)"/, "default serverInfo.version"],

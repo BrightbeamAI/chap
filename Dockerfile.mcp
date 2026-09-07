@@ -19,7 +19,7 @@ FROM node:20-bookworm-slim
 
 # Pin the release the image serves. Bump on each publish, or override:
 #   docker build -f Dockerfile.mcp --build-arg CHAP_MCP_VERSION=0.2.13 .
-ARG CHAP_MCP_VERSION=0.2.12
+ARG CHAP_MCP_VERSION=0.2.13
 
 # --omit=optional skips better-sqlite3, an optional dependency of the
 # coordinator. A stdio server holds its workspaces in memory for the life of
