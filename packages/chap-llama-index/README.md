@@ -24,7 +24,7 @@ not just *approved/rejected*.
 pip install chap-llama-index
 ```
 
-Depends on `chap-coordinator>=0.2.12`. LlamaIndex is **optional**: the
+Depends on `chap-coordinator>=0.2.13`. LlamaIndex is **optional**: the
 adapter reads events structurally, so the bridge and its tests work
 without it installed. Install the extra to run a live workflow:
 
@@ -94,13 +94,14 @@ Coordinator's authorisation rules.
 
 ## What you get in the audit chain
 
-One paused step with an edit yields:
+One paused step with an edit yields the following, after the workspace and
+the three joins at seq 0 to 3:
 
 ```
-seq=3  task.create     agent:writer#v1
-seq=4  task.complete   agent:writer#v1
-seq=5  review.request  agent:writer#v1   to=human:sam@example.org
-seq=6  decide.override human:sam@example.org  diff=[{op:replace, path:/amount, value:50}]
+seq=4  task.create     agent:writer#v1
+seq=5  task.complete   agent:writer#v1
+seq=6  review.request  agent:writer#v1   to=human:sam@example.org
+seq=7  decide.override human:sam@example.org  diff=[{op:replace, path:/amount, value:50}]
 ```
 
 Every entry carries `prev_hash`, so the chain verifies externally or
@@ -115,7 +116,7 @@ approve, a refining edit, a substituting edit, and a reject against real
 
 ## Compatibility
 
-- `chap-coordinator` 0.2.12
+- `chap-coordinator` 0.2.13
 - `llama-index-workflows` 1.x–2.x (optional; verified against 2.22)
 - Python 3.10, 3.11, 3.12, 3.13
 

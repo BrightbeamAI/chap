@@ -1,6 +1,6 @@
 {
   "name": "chap-monorepo",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "private": true,
   "description": "CHAP monorepo root. Not published; manages workspace builds, tests, and conformance checks across all packages.",
   "license": "Apache-2.0",
@@ -21,7 +21,8 @@
     "check:schemas": "npm run check:schemas --workspace=@brightbeamai/chap-coordinator",
     "conformance:py": "bash scripts/run-conformance.sh python",
     "conformance:ts": "bash scripts/run-conformance.sh typescript",
-    "check:mcp-schemas": "tsx scripts/sync-mcp-schemas.mjs --check"
+    "check:mcp-schemas": "tsx scripts/sync-mcp-schemas.mjs --check",
+    "check:versions": "node scripts/check-versions.mjs"
   },
   "engines": {
     "node": ">=20"

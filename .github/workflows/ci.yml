@@ -47,6 +47,13 @@ jobs:
       - name: MCP tool schemas and descriptions match across the two transports
         run: npm run check:mcp-schemas
 
+      # The release version is written in around sixty places: nine manifests,
+      # their cross-dependency pins, server.json, the version each server
+      # reports to its client, and the docs tables. A partial bump ships a
+      # package that misreports itself, so no tag can carry one.
+      - name: One release version everywhere
+        run: npm run check:versions
+
       - name: Test all TS packages
         # The SQLite store suites skipped silently on every machine for months
         # because their availability probe was broken. Strict mode makes an

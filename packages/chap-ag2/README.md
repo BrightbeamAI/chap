@@ -21,7 +21,7 @@ review; the human's reply is the decision on it.
 pip install chap-ag2
 ```
 
-Depends on `chap-coordinator>=0.2.12`. AG2 is **optional**: the adapter
+Depends on `chap-coordinator>=0.2.13`. AG2 is **optional**: the adapter
 reads the message and reply as plain values, so the bridge and its tests
 work without it installed. Install the extra to run a live conversation:
 
@@ -80,13 +80,14 @@ satisfies the Coordinator's authorisation rules.
 
 ## What you get in the audit chain
 
-One reviewed message with an edit yields:
+One reviewed message with an edit yields the following, after the workspace
+and the three joins at seq 0 to 3:
 
 ```
-seq=3  task.create     agent:assistant#v1
-seq=4  task.complete   agent:assistant#v1
-seq=5  review.request  agent:assistant#v1   to=human:sam@example.org
-seq=6  decide.override human:sam@example.org  diff=[{op:replace, path:, value:"refund $50 to Alice"}]
+seq=4  task.create     agent:assistant#v1
+seq=5  task.complete   agent:assistant#v1
+seq=6  review.request  agent:assistant#v1   to=human:sam@example.org
+seq=7  decide.override human:sam@example.org  diff=[{op:replace, path:, value:"refund $50 to Alice"}]
 ```
 
 Every entry carries `prev_hash`, so the chain verifies externally or
@@ -101,7 +102,7 @@ chain.
 
 ## Compatibility
 
-- `chap-coordinator` 0.2.12
+- `chap-coordinator` 0.2.13
 - `ag2` 0.9+ (optional; verified against 0.14)
 - Python 3.10, 3.11, 3.12, 3.13
 

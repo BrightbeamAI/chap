@@ -11,6 +11,24 @@ incremented under the same rules.
 
 ## Unreleased
 
+---
+
+## 0.2.13: the review gate closed on both routes, and descriptions that match the code
+
+**Behaviour change.** `task.update` with `state: "completed"` is refused with
+`-32602` on a task that requires review. `in_progress → completed` is otherwise
+legal and carried no review check, so the gate `task.complete` enforces could be
+walked around in a single call. Code that completed a review-required task this
+way has to submit through `task.complete` and let a reviewer decide. Tasks that
+need no review are unaffected, as is every other `task.update` transition.
+
+**Schema change.** The MCP parameters `confidence`, `max_cost_usd`, `weights`
+and `weight` were declared `type: "number"`, which no caller could satisfy:
+canonicalisation admits integers only, so any fractional value was refused at
+ingress. They are now `string` or `integer`. A client that was sending
+`confidence: 0.86` was already failing; it now has a schema that says so, and
+`"0.86"` works.
+
 ### Fixed
 
 - **A required review is addressed to people.** `task.complete` on a task whose
@@ -127,6 +145,24 @@ incremented under the same rules.
   and a reviewer surface is responsible for the difference.
 
   The starter adds nothing to the wire format and no new package.
+
+- **One release version, checked.** `scripts/check-versions.mjs` holds the
+  release version to the root `package.json` across the forty-eight places it
+  is written: nine manifests, their cross-dependency pins, `server.json`, the
+  version each server reports to its client, the reference servers and the
+  documentation tables. It found `cli.ts` carrying a version constant of its
+  own. A pattern that stops matching is a failure too, so the check cannot
+  quietly stop covering a file. CI runs it, so no tag can carry a partial bump.
+
+### Packaging
+
+- **`zod` is declared rather than bundled.** `coordinator-mcp` imports `zod` to
+  build one request schema for the MCP SDK, but never declared it, so the
+  bundler inlined the whole library into all four entry points: 598 KB each and
+  a 1 MB tarball. Worse, the inlined copy is a second `zod` instance, and the
+  schemas built with it are handed to the SDK, which validates against its own
+  copy. It is now a dependency on the range the SDK asks for, and external to
+  the bundle. Entry points are 50 KB and the tarball is 205 KB.
 
 ---
 
