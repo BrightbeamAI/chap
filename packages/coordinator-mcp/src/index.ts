@@ -53,11 +53,12 @@ import { z } from "zod";
 import type { Coordinator, Envelope } from "@brightbeamai/chap-coordinator";
 
 import { SCHEMAS, TOOL_NAMES, methodForTool, coerceToolArgs } from "./schemas.js";
-import { TOOL_DESCRIPTIONS } from "./tools.js";
+import { TOOL_DESCRIPTIONS, TOOL_ANNOTATIONS } from "./tools.js";
 import { classifyEnvelope, ProtocolError, SUPPORTED_PROTOCOL_VERSIONS, type ProtocolEra } from "./envelope.js";
 
 export { SCHEMAS, TOOL_NAMES, schemaFor, methodForTool, coerceToolArgs } from "./schemas.js";
-export { TOOL_DESCRIPTIONS } from "./tools.js";
+export { TOOL_DESCRIPTIONS, TOOL_ANNOTATIONS } from "./tools.js";
+export type { ToolAnnotations } from "./tools.js";
 export type { JsonSchema } from "./schemas.js";
 
 export {
@@ -130,12 +131,20 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
 
   const enabledTools: Tool[] = TOOL_NAMES
     .filter((name) => filter(name) && methodForTool(name) !== null)
-    .map((name) => ({
-      name,
-      title: name,
-      description: TOOL_DESCRIPTIONS[name] ?? `CHAP method ${methodForTool(name)}.`,
-      inputSchema: SCHEMAS[name] as Tool["inputSchema"],
-    }));
+    .map((name) => {
+      const ann = TOOL_ANNOTATIONS[name];
+      return {
+        name,
+        // The title was the tool name, which told a reader nothing they could
+        // not already see. The annotation carries a readable one.
+        title: ann?.title ?? name,
+        description: TOOL_DESCRIPTIONS[name] ?? `CHAP method ${methodForTool(name)}.`,
+        inputSchema: SCHEMAS[name] as Tool["inputSchema"],
+        // Behavioural hints. Without these a client has only the prose to go
+        // on when deciding whether a call is safe to make or to retry.
+        ...(ann ? { annotations: ann } : {}),
+      };
+    });
 
   server.setRequestHandler(ListToolsRequestSchema, async (request) => {
     // Rejects a malformed or unsupported envelope before any work is done.
