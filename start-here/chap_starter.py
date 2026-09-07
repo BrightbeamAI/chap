@@ -73,13 +73,21 @@ class _CheckedStore:
     """Surface save errors that the reference coordinator otherwise swallows."""
 
     def __init__(self, path):
+        # Check the file is a database before the store opens it. A store that
+        # fails partway through leaves its connection to be closed whenever the
+        # garbage collector gets to it, and on Windows an open handle keeps the
+        # file locked; this connection is closed on the way out either way.
+        probe = sqlite3.connect(str(path))
         try:
-            self.inner = SqliteStore(str(path))
+            probe.execute("PRAGMA schema_version").fetchone()
         except sqlite3.DatabaseError as exc:
             raise StorageError(
                 f"{path} is not a CHAP database ({exc}). Delete it, or pass "
                 "a different --db."
             ) from exc
+        finally:
+            probe.close()
+        self.inner = SqliteStore(str(path))
         self.failure = None
 
     def load(self):
@@ -169,9 +177,9 @@ class ReviewGate:
             raise ValueError("reviewer must be a human: URI")
         self.workspace, self.agents, self.reviewer = workspace, agents, reviewer
         self._lock = self._store = None
+        path = Path(db).resolve() if db is not None else None
         try:
             if db is not None:
-                path = Path(db).resolve()
                 path.parent.mkdir(parents=True, exist_ok=True)
                 self._lock = _DatabaseLock(path)
                 self._store = _CheckedStore(path)
@@ -189,13 +197,13 @@ class ReviewGate:
                 if not all(profile in ws.profiles for profile in PROFILES):
                     raise StorageError(
                         f"The workspace in this database predates chaining. Delete "
-                        f"{db} and start again, or pass a different --db.")
+                        f"{path} and start again, or pass a different --db.")
                 for uri, kind in members:
                     member = ws.members.get(uri)
                     if member is None or member.type != kind:
                         raise StorageError(
                             f"The workspace in this database has different participants. "
-                            f"Delete {db} and start again, or pass a different --db.")
+                            f"Delete {path} and start again, or pass a different --db.")
             self.verify()
         except BaseException:
             self.close()

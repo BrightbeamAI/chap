@@ -446,14 +446,16 @@ class PersistenceTests(unittest.TestCase):
         self.path.write_text("this is not a database", encoding="utf-8")
         with self.assertRaises(StorageError) as caught:
             ReviewGate(db=self.path)
-        self.assertIn(str(self.path), str(caught.exception))
+        # The gate reports the resolved path; Windows hands out an 8.3 short
+        # form for the temporary directory, so resolve both sides.
+        self.assertIn(str(self.path.resolve()), str(caught.exception))
 
     def test_a_database_from_a_different_setup_says_what_to_do(self):
         with ReviewGate(db=self.path, agents=("agent:demo",)):
             pass
         with self.assertRaises(StorageError) as caught:
             ReviewGate(db=self.path, agents=("agent:something-else",))
-        self.assertIn(str(self.path), str(caught.exception))
+        self.assertIn(str(self.path.resolve()), str(caught.exception))
 
     def test_a_failed_save_blocks_the_result(self):
         with ReviewGate(db=self.path) as gate:

@@ -75,7 +75,8 @@ function taskIn(send: any, state: string): string {
   return id;
 }
 
-const stateOf = (c: any, id: string) => c.workspaces.get("w").tasks.get(id).state;
+const task = (c: any, id: string) => c.workspaces.get("w").tasks.get(id);
+const stateOf = (c: any, id: string) => task(c, id).state;
 
 for (const state of ["created", "in_progress", "completed", "declined", "abstained", "escalated"]) {
   test(`review.request still opens on a ${state} task`, () => {
@@ -104,10 +105,7 @@ test("an open review can still be widened", () => {
   const id = taskIn(send, "review_requested");
   const r = send("review.request", { task_id: id, artefact: ARTEFACT, to: "human:c" });
   assert.equal(r.result.amended, true);
-  assert.deepEqual(
-    [...c.workspaces.get("w").tasks.get(id).review.requested_to].sort(),
-    ["human:a", "human:c"],
-  );
+  assert.deepEqual([...task(c, id).review.requested_to].sort(), ["human:a", "human:c"]);
 });
 
 for (const state of ["cancelled", "superseded", "paused"]) {
