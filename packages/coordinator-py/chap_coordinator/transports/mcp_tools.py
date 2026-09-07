@@ -2,108 +2,97 @@
 chap_coordinator.transports.mcp_tools
 ======================================
 
-One-line descriptions for each CHAP method exposed as an MCP tool.
-These show up in MCP-client UIs and are what the LLM reads when
-deciding whether to call the tool. Tuned for clarity over brevity.
+Tool-level descriptions for each CHAP method exposed over MCP. A client
+shows these in its UI and reads them when choosing a tool.
 
-Mirrors ``packages/coordinator-mcp/src/tools.ts`` exactly.
+Mirrors ``packages/coordinator-mcp/src/tools.ts``. The table below is
+generated from that file by ``scripts/sync-mcp-schemas.mjs``; CI fails if
+the two drift apart.
 """
 from __future__ import annotations
 
 
+# --- BEGIN GENERATED DESCRIPTIONS (scripts/sync-mcp-schemas.mjs) ---
+# Generated from packages/coordinator-mcp/src/tools.ts. Do not edit by
+# hand: edit the TypeScript table and run scripts/sync-mcp-schemas.mjs.
 TOOL_DESCRIPTIONS: dict[str, str] = {
-    # Core
     "chap.workspace.create":
-        "Create a new CHAP workspace where humans and agents can collaborate on tasks. "
-        "Returns the workspace id.",
+        "Create a workspace: the container for the participants, tasks and audit log of one piece of collaborative work. Returns the workspace id, which every later call carries.",
     "chap.workspace.describe":
-        "Get the current state of a workspace: members, profiles, audit length, task and override counts.",
+        "Report the current state of a workspace: its members, enabled profiles, audit length, and task and override counts.",
     "chap.workspace.set_profiles":
-        "Change which CHAP profiles are enabled on a workspace.",
+        "Replace the set of profiles enabled on a workspace. Enabling audit-scitt/1.0 on a workspace that already has entries leaves those entries outside the hash chain.",
     "chap.participant.join":
-        "Add a participant (human, agent, or service) to a workspace.",
+        "Add a participant to a workspace. The type given, human, agent, service, group or workspace, decides whether they are eligible to review work that requires it.",
     "chap.participant.leave":
-        "Remove a participant from a workspace.",
+        "Remove a participant from a workspace. Entries they have already written stay in the audit log.",
     "chap.task.create":
-        "Create a new task in a workspace. Tasks are units of work assigned to a participant. "
-        "Pass routing_hints (criticality, deadline) to inform later routing decisions.",
+        "Create a task: a unit of work assigned to one participant. Set review_required to make the task's completion depend on a reviewer decision rather than on the assignee.",
     "chap.task.update":
-        "Update a task's state (e.g. in_progress, declined, paused). Only legal transitions are accepted.",
+        "Move a task to a new state. Only the transitions in the specification's lifecycle table are accepted, and a task that requires review cannot be completed here.",
     "chap.task.complete":
-        "Mark a task as completed, attaching the output artefact. Use chap.review.request afterwards if review is required.",
+        "Submit a task's output. A task that requires review does not complete: the output is held as the artefact under review, the task moves to review_requested, and a reviewer decision completes it. Any other task completes immediately.",
     "chap.audit.read":
-        "Read entries from a workspace's audit log. Supports a sequence-number range and a filter by method, sender, or task id.",
-    # review/1.0
+        "Read entries from a workspace's audit log, optionally within a sequence range and filtered by method, sender or task.",
     "chap.review.request":
-        "Open a review on a completed task. Pass one or more reviewers in 'to' and the draft artefact. "
-        "The reviewers then call chap.decide.approve / .reject / .override or chap.abstain.declare.",
+        "Open a review on a task and address it to one or more reviewers. They then call chap.decide.approve, chap.decide.reject, chap.decide.override or chap.abstain.declare. Repeating the request with the same artefact adds reviewers to the open review.",
     "chap.decide.approve":
-        "Approve a task that's under review. Resolves the review and marks the task completed.",
+        "Approve the artefact under review. The task completes once the review's rule is satisfied.",
     "chap.decide.reject":
-        "Reject a task that's under review. Pass request_revision: true to send it back to in_progress instead of declined.",
+        "Reject the artefact under review. The task is declined, or returns to in_progress if request_revision is set.",
     "chap.decide.override":
-        "Apply an RFC 6902 JSON Patch to the artefact under review and accept the result. "
-        "Carries a structured override artefact: diff + rationale + tags. "
-        "This is the structured-override-as-learning-signal mechanism that distinguishes CHAP from approve/reject-only workflows.",
+        "Correct the artefact under review with an RFC 6902 JSON Patch and accept the result. The patch, the rationale and any tags are recorded together, so the audit log holds what was changed and why, rather than only that the work was not accepted as written.",
     "chap.abstain.declare":
-        "Decline to review a task with a reason (e.g. conflict_of_interest). The task transitions to abstained.",
+        "Stand aside from a review, giving a reason and a category. The task moves to abstained.",
     "chap.escalate.raise":
-        "Create a new task that supersedes the original, typically assigned to a more senior reviewer. "
-        "Use when the current reviewer cannot decide.",
-    # whisper/1.0
+        "Hand a task upwards. The original moves to escalated and is linked to a new task opened for whoever takes it on. The successor starts with an empty input unless one is supplied.",
     "chap.whisper.ask":
-        "Pose a deadline-bound question to one or more participants. Carries a default that's applied if the deadline lapses. "
-        "Use for quick clarifications that shouldn't block a task indefinitely.",
+        "Put one question to one or more participants, with a deadline and a default. If the deadline passes unanswered the default applies, so a task is never blocked waiting on a reply.",
     "chap.whisper.answer":
-        "Answer a previously asked whisper. If the whisper had options, answer_option must be one of them.",
-    # deliberation/1.0
+        "Answer an open whisper. Where the question carried options, the answer must name one of them.",
     "chap.deliberate.open":
-        "Open a multi-participant deliberation with a voting rule (any_one_approves, all_approve, quorum:N, weighted_vote:T, weighted_vote_with_veto:T).",
+        "Open a deliberation among several participants under a stated voting rule: any_one_approves, all_approve, quorum:N, weighted_vote:T or weighted_vote_with_veto:T.",
     "chap.deliberate.comment":
-        "Add a comment to an open deliberation.",
+        "Record a comment on an open deliberation, so the reasoning is on the audit log alongside the votes.",
     "chap.deliberate.vote":
-        "Cast a vote (yea / nay / abstain) in a deliberation. Each voter votes at most once.",
+        "Cast a yea, nay or abstain in an open deliberation. Each participant votes once.",
     "chap.deliberate.close":
-        "Close a deliberation and compute the outcome based on its voting rule.",
-    # handoff/1.0
+        "Close a deliberation and compute its outcome from the votes cast under its rule.",
     "chap.handoff.propose":
-        "Propose handing off one or more open tasks to another participant. Recipient may be a single URI or a group:... URI.",
+        "Propose handing one or more tasks to another participant or a group, with the context needed to pick them up. Every task must currently be assigned to the proposer.",
     "chap.handoff.accept":
-        "Accept a previously proposed handoff. The accepted tasks are reassigned to the accepting participant.",
+        "Accept a proposed handoff. The accepted tasks are reassigned to the accepting participant.",
     "chap.handoff.decline":
-        "Decline a previously proposed handoff. Optionally suggest a different target.",
-    # control/1.0
+        "Decline a proposed handoff, with a reason and optionally a suggestion of who should take it instead.",
     "chap.control.pause":
-        "Pause work, scoped to a single task, a participant, or the whole workspace.",
+        "Pause work. Scoped to a task it moves that task to paused; to a participant it stops new tasks being assigned to them; to the workspace it refuses every method except describing, reading the audit log, joining, leaving and resuming.",
     "chap.control.resume":
-        "Resume previously paused work.",
+        "Resume work paused at the same scope: a task returns to in_progress, a participant can be assigned tasks again, a workspace returns to active.",
     "chap.control.cancel":
-        "Cancel a task that is not yet terminal.",
+        "Cancel a task. Cancelled is terminal, and a task that has already settled cannot be cancelled.",
     "chap.control.snapshot":
-        "Capture the current workspace state as an artefact (members, open tasks, mode ceiling, etc.). Used as the rollback target.",
+        "Capture the workspace state as an artefact and return its id, which chap.control.rollback takes as its target.",
     "chap.control.rollback":
-        "Roll the workspace back to a previously captured snapshot. Specify what_to_restore to scope the rollback.",
+        "Restore workspace state from a snapshot. The mode ceiling and member roles are restored; the rollback is appended to the audit log rather than rewriting it.",
     "chap.control.supersede":
-        "Mark a task superseded by a new successor task in one envelope. Use when a task needs to be replaced wholesale rather than re-routed.",
+        "Replace a task with a successor in one call. The original moves to superseded and stays linked to its replacement.",
     "chap.control.set_mode_ceiling":
-        "Set the maximum operating mode allowed in the workspace (shadow, trial, production). Tasks requesting higher modes are rejected.",
-    # routing/1.0
+        "Set the highest operating mode tasks in this workspace may request. A task above the ceiling is refused.",
     "chap.task.route":
-        "Pick an assignee for a task from a list of candidates. Produces a route_decision artefact recording the policy used.",
+        "Choose an assignee for a task from a list of candidates and record a route_decision artefact naming the policy, the candidate chosen, and the alternatives it passed over.",
     "chap.review.depth":
-        "Decide the review depth for a task (skip / spot_check / full) based on routing hints. Produces a route_decision artefact.",
+        "Decide how much review a task warrants, skip, spot_check or full, from its routing hints. Records a route_decision artefact giving the rule that produced the answer.",
     "chap.escalate.auto":
-        "Evaluate whether a task should be auto-escalated based on its routing hints (criticality, confidence). Produces a route_decision artefact.",
-    # security-signed/1.0
+        "Evaluate a task's routing hints against the escalation policy and report whether it should be escalated, and to whom. Records a route_decision artefact.",
     "chap.participant.rotate_key":
-        "Rotate a participant's signing key. The old key remains valid for verifying historical envelopes via valid_until.",
+        "Retire a participant's signing key and register its replacement. The old key stays in the key history with a valid_until timestamp, so envelopes it signed still verify.",
     "chap.participant.revoke_key":
-        "Revoke a signing key (e.g. on suspected compromise). Envelopes signed with the revoked key after revoke time are rejected.",
-    # audit-scitt/1.0
+        "Revoke a signing key, for example after a device is lost. Signatures presented with it are refused from then on. Revoking another participant's key requires the admin role.",
     "chap.audit.submit_to_scitt":
-        "Build COSE_Sign1-shaped audit statements for a range of envelopes and submit them to the configured SCITT transparency service.",
+        "Build COSE_Sign1-shaped statements for a range of audit entries and submit them to the configured SCITT transparency service. Where none is configured the statements are returned for submission out of band.",
     "chap.audit.verify_receipt":
-        "Verify a SCITT receipt against the configured verifier.",
+        "Verify a SCITT receipt through the configured verifier. Verification fails closed where no verifier is configured.",
     "chap.audit.verify_chain":
-        "Verify the local prev-hash chain across a workspace's audit log. Only status verified with ok true means the log was checked and is intact. Status not_evaluated with ok false means part of the log was never checked, so its integrity is unknown and must not be reported as verified; entries_unchecked says how much. Errors mean the chain is broken or absent.",
+        "Replay a workspace's prev-hash chain. Only status verified with ok true means the log was checked and is intact. Status not_evaluated with ok false means part of the log was never checked, so its integrity is unknown and must not be reported as verified; entries_unchecked says how much. An error means the chain is broken or absent.",
 }
+# --- END GENERATED DESCRIPTIONS ---

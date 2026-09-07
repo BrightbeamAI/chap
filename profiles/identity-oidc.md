@@ -69,7 +69,7 @@ A CHAP-aware OIDC ID token:
   "auth_time": 1747476000,
   "acr": "urn:example:authn:mfa",
 
-  "email": "[email protected]",
+  "email": "alice@example.org",
   "chap_participant_uri": "human:alice@example.org",
 
   "cnf": {

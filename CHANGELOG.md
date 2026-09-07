@@ -35,6 +35,44 @@ incremented under the same rules.
   its output is how the framework bridges submit a draft. Nothing that worked
   before stops working except reviving stopped work.
 
+- **`task.update` cannot complete a task that requires review.**
+  `in_progress → completed` is a legal transition and carried no review check,
+  so the gate that `task.complete` enforces could be walked around in one call.
+  The task finished carrying no artefact and no `decide.*` reached the chain,
+  which is the single failure `review_required` exists to prevent. The
+  transition is now refused with `-32602` and the message names
+  `task.complete`. Tasks that need no review are unaffected, as is every other
+  `task.update` transition.
+
+- **`review.request` accepts the documented widen path.** Adding a reviewer to
+  an open review requires re-requesting the same artefact. The rule was
+  compared after the default had been applied, so omitting `rule` on the second
+  request read as a change of rule and was refused with `-32014` on any review
+  not opened under `any_one_approves`. Only a rule the caller actually supplied
+  now counts as a change.
+
+- **Tool and parameter descriptions match the implementation.** An audit of the
+  MCP schema table against both coordinators found nineteen descriptions that
+  named behaviour the code does not have. Among them: `control.pause`
+  `in_flight_policy` is recorded and never acted on; `scope: "participant"`
+  blocks new assignment rather than stopping work in flight;
+  `control.rollback` restores only `mode_ceiling` and `members`;
+  `deliberate.vote` `weight` is not read by the tally; `deliberate.open`
+  `deadline` does not close the vote; `audit.read` has no tag filter;
+  `control.snapshot` `label` is not a rollback target; and `escalate.raise`
+  gives the successor an empty input rather than the original's. Each now
+  states what happens, and names the error code where a constraint is enforced.
+
+- **Fractional parameters are typed as decimal strings.** `confidence`,
+  `max_cost_usd`, `weights` and `weight` were declared `type: "number"`, which
+  no caller can satisfy: §7 admits integers only, so any fractional value was
+  refused at ingress with `-32602`. They are now `string` or `integer` as the
+  case requires. The same error ran through the documentation, including a
+  runnable `curl` in the five-minute start and the JCS vector in
+  `conformance/test-vectors.md`, whose sample envelope carried `0.42` and whose
+  stated canonical bytes were neither sorted nor whitespace-free. The vector is
+  recomputed and agrees byte for byte across both implementations.
+
 ### Changed
 
 - **SPECIFICATION.md §8.1 describes the implemented state machine.** The
@@ -70,7 +108,10 @@ incremented under the same rules.
   The Python MCP transport says it mirrors `schemas.ts` exactly and had drifted
   to 87 differing descriptions. Its table is now generated from the TypeScript
   one by `scripts/sync-mcp-schemas.mjs`, and CI fails when the committed copy is
-  stale or when any parameter is left undescribed.
+  stale or when any parameter is left undescribed. The tool-level descriptions
+  in `mcp_tools.py` are generated from `tools.ts` the same way, since they had
+  drifted too: `chap.task.complete` still told callers to follow it with
+  `chap.review.request`, which 0.2.12 made wrong.
 
 - **A front door.** [`START_HERE.md`](./START_HERE.md) and
   [`start-here/`](./start-here/) take a new developer from a clone to one

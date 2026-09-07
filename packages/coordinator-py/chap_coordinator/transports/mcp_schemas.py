@@ -65,7 +65,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "items": {
                     "type": "string",
                 },
-                "description": "Profile identifiers to enable, e.g. ['core/1.0', 'review/1.0'].",
+                "description": "Profile identifiers to enable, e.g. ['core/1.0', 'review/1.0']. Recorded on the workspace. Two profiles change behaviour by being present: modes/1.0, under which a trial-mode task requires review, and audit-scitt/1.0, which turns on the hash-linked chain.",
             },
             "mode": {
                 "type": "string",
@@ -75,7 +75,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "production",
                 ],
                 "default": "trial",
-                "description": "Starting mode for tasks here, under modes/1.0: shadow runs without delivering output, trial delivers under mandatory review, production delivers per policy. Inert unless that profile is loaded.",
+                "description": "Default mode for tasks created here. Under modes/1.0 a trial-mode task has review_required set to true whatever the caller passes. 'shadow' and 'production' are recorded on the task and carry no further behaviour in this implementation.",
             },
             "mode_ceiling": {
                 "type": "string",
@@ -85,7 +85,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "production",
                 ],
                 "default": "production",
-                "description": "Highest mode any task in this workspace may use. Raising it later needs elevated privilege, so it is a safety bound rather than a default.",
+                "description": "Highest mode a task in this workspace may request. A task.create above the ceiling is refused with -32040. The ceiling can be changed afterwards with chap.control.set_mode_ceiling.",
             },
         },
         "additionalProperties": False,
@@ -116,7 +116,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "items": {
                     "type": "string",
                 },
-                "description": "The complete profile set to enable, replacing the current one. Adding audit-scitt/1.0 to a workspace with existing entries leaves those entries unchained and outside chain verification.",
+                "description": "The complete profile set to enable, replacing the current one. Adding audit-scitt/1.0 to a workspace that already has entries leaves those entries unchained and outside chain verification.",
             },
         },
         "required": [
@@ -145,15 +145,15 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "group",
                     "workspace",
                 ],
-                "description": "What kind of participant this is. It is load-bearing: only 'human' members are eligible for the review a required task opens on completion.",
+                "description": "The kind of participant. Only members of type 'human' are eligible for the review that chap.task.complete opens on a task marked review_required, and a completion with no eligible human is refused with -32011.",
             },
             "role": {
                 "type": "string",
-                "description": "Operator-defined role, e.g. 'reviewer' or 'drafter'.",
+                "description": "Operator-defined role, e.g. 'reviewer' or 'drafter'. One value is read by the coordinator: 'admin' permits revoking another member's key.",
             },
             "display_name": {
                 "type": "string",
-                "description": "Human-readable name shown in interfaces. Does not affect authorisation.",
+                "description": "Human-readable name for interfaces. Not used in authorisation.",
             },
         },
         "required": [
@@ -190,15 +190,15 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "from": {
                 "type": "string",
-                "description": "Delegator URI.",
+                "description": "The delegator. Must be a workspace member.",
             },
             "kind": {
                 "type": "string",
-                "description": "Task kind, e.g. 'draft_response' or 'review'.",
+                "description": "Task kind, e.g. 'draft_response' or 'review'. Free text; the coordinator records it without interpreting it.",
             },
             "assignee": {
                 "type": "string",
-                "description": "Who the task is assigned to. Must be a workspace member.",
+                "description": "Who the task is assigned to. Must be a workspace member, and must not be paused: assigning to a paused member is refused with -32063.",
             },
             "input": {
                 "type": "object",
@@ -207,7 +207,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "routing_hints": {
                 "type": "object",
-                "description": "Optional signals the routing/1.0 profile uses to pick an assignee and a review depth. Ignored when that profile is not loaded.",
+                "description": "Signals recorded on the task and read by the routing/1.0 methods: task.route, review.depth and escalate.auto. Recording a hint has no effect on its own; it is consulted only when one of those methods is called.",
                 "properties": {
                     "criticality": {
                         "type": "string",
@@ -217,19 +217,19 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                             "high",
                             "critical",
                         ],
-                        "description": "How much a wrong answer costs. Higher criticality pushes towards a more capable assignee and a fuller review.",
+                        "description": "How costly a wrong answer would be. The default review-depth policy reads it: 'critical' gives a full review, and 'high' with confidence below 0.7 does the same. The default assignee policy does not read it.",
                     },
                     "deadline": {
                         "type": "string",
-                        "description": "When the work is needed by, as an ISO 8601 timestamp.",
+                        "description": "When the work is needed by, as an ISO 8601 timestamp. Recorded on the task; the coordinator does not act on it.",
                     },
                     "risk_tier": {
                         "type": "string",
-                        "description": "Operator-defined risk band, e.g. 'regulated' or 'internal'. Interpreted by your routing policy.",
+                        "description": "Operator-defined risk band, e.g. 'regulated' or 'internal'. No built-in policy reads it; it is available to an operator-supplied routing policy.",
                     },
                     "max_cost_usd": {
-                        "type": "number",
-                        "description": "Budget ceiling for this task in US dollars, for policies that price candidates.",
+                        "type": "string",
+                        "description": "Budget ceiling for this task in US dollars. Written as a decimal string, e.g. \"12.50\". CHAP canonicalisation accepts integers only, so a JSON number with a fractional part is refused with -32602. No built-in policy reads it.",
                     },
                 },
                 "additionalProperties": True,
@@ -241,19 +241,19 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "trial",
                     "production",
                 ],
-                "description": "Mode for this task under modes/1.0, defaulting to the workspace mode. Refused if it exceeds the workspace's mode_ceiling.",
+                "description": "Mode for this task, defaulting to the workspace mode. A mode above the workspace ceiling is refused with -32040.",
             },
             "review_required": {
                 "type": "boolean",
-                "description": "When true, chap.task.complete opens a review instead of completing: the output becomes the artefact under review and only a reviewer decision finishes the task.",
+                "description": "When true, chap.task.complete opens a review instead of completing: the output becomes the artefact under review, and the task reaches 'completed' only on a reviewer decision. chap.task.update cannot complete such a task. Under modes/1.0 a trial-mode task has this set to true whatever is passed here.",
             },
             "deadline": {
                 "type": "string",
-                "description": "When the task is due, as an ISO 8601 timestamp.",
+                "description": "When the task is due, as an ISO 8601 timestamp. Recorded on the task; the coordinator does not act on it.",
             },
             "idempotency_key": {
                 "type": "string",
-                "description": "Caller-chosen key for safe retries. A repeat carrying a key already seen in this workspace returns the original task rather than creating a second one.",
+                "description": "Caller-chosen key for safe retries. A second create carrying a key already seen in this workspace returns the original task and records nothing further. The workspace retains the 10,000 most recent keys.",
             },
         },
         "required": [
@@ -290,7 +290,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "cancelled",
                     "completed",
                 ],
-                "description": "The state to move the task to. Only the transitions in SPECIFICATION.md 8.1 are legal from the task's current state; anything else is refused with -32602.",
+                "description": "The state to move the task to. Only the transitions in SPECIFICATION.md 8.1 are legal from the task's current state; others are refused with -32602. A task marked review_required cannot be moved to 'completed' here: submit the output with chap.task.complete, which opens the review.",
             },
             "progress_note": {
                 "type": "string",
@@ -321,15 +321,15 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "description": "Task identifier returned by chap.task.create.",
             },
             "output": {
-                "description": "The task's output artefact. Pass as a JSON object or array, not a JSON-encoded string.",
+                "description": "The task's output artefact. Pass a JSON object or array. A JSON-encoded string is parsed back to the structured value before dispatch, so patches in chap.decide.override apply against a real object.",
             },
             "confidence": {
-                "type": "number",
-                "description": "Self-reported confidence (0-1), where supported.",
+                "type": "string",
+                "description": "Self-reported confidence in the output, between 0 and 1. Written as a decimal string, e.g. \"0.86\". CHAP canonicalisation accepts integers only, so a JSON number with a fractional part is refused with -32602.",
             },
             "routing_hints": {
                 "type": "object",
-                "description": "Optional signals the routing/1.0 profile uses to pick an assignee and a review depth. Ignored when that profile is not loaded.",
+                "description": "Signals recorded on the task and read by the routing/1.0 methods: task.route, review.depth and escalate.auto. Recording a hint has no effect on its own; it is consulted only when one of those methods is called.",
                 "properties": {
                     "criticality": {
                         "type": "string",
@@ -339,19 +339,19 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                             "high",
                             "critical",
                         ],
-                        "description": "How much a wrong answer costs. Higher criticality pushes towards a more capable assignee and a fuller review.",
+                        "description": "How costly a wrong answer would be. The default review-depth policy reads it: 'critical' gives a full review, and 'high' with confidence below 0.7 does the same. The default assignee policy does not read it.",
                     },
                     "deadline": {
                         "type": "string",
-                        "description": "When the work is needed by, as an ISO 8601 timestamp.",
+                        "description": "When the work is needed by, as an ISO 8601 timestamp. Recorded on the task; the coordinator does not act on it.",
                     },
                     "risk_tier": {
                         "type": "string",
-                        "description": "Operator-defined risk band, e.g. 'regulated' or 'internal'. Interpreted by your routing policy.",
+                        "description": "Operator-defined risk band, e.g. 'regulated' or 'internal'. No built-in policy reads it; it is available to an operator-supplied routing policy.",
                     },
                     "max_cost_usd": {
-                        "type": "number",
-                        "description": "Budget ceiling for this task in US dollars, for policies that price candidates.",
+                        "type": "string",
+                        "description": "Budget ceiling for this task in US dollars. Written as a decimal string, e.g. \"12.50\". CHAP canonicalisation accepts integers only, so a JSON number with a fractional part is refused with -32602. No built-in policy reads it.",
                     },
                 },
                 "additionalProperties": True,
@@ -377,21 +377,21 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "properties": {
                     "from_seq": {
                         "type": "integer",
-                        "description": "Start sequence number (inclusive).",
+                        "description": "Start sequence number, inclusive.",
                     },
                     "to_seq": {
                         "type": "integer",
-                        "description": "End sequence number (exclusive).",
+                        "description": "End sequence number, exclusive.",
                     },
                 },
             },
             "filter": {
                 "type": "object",
-                "description": "Narrow the entries returned. Filters combine with AND.",
+                "description": "Narrows the entries returned. Conditions combine with AND, and are applied within the sequence window rather than before it.",
                 "properties": {
                     "method": {
                         "type": "string",
-                        "description": "Return only entries for this CHAP method, e.g. 'decide.override'.",
+                        "description": "Return only entries for this CHAP method, e.g. 'decide.override'. Matched in full, without the 'chap.' tool-name prefix.",
                     },
                     "from": {
                         "type": "string",
@@ -438,7 +438,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         },
                     },
                 ],
-                "description": "One or more reviewers. A single URI string, or a JSON array of URI strings (not a JSON-encoded string).",
+                "description": "One or more reviewers, as a single URI string or an array of URI strings. Only a workspace member can go on to decide, so a review addressed elsewhere cannot be closed by its recipient.",
             },
             "rule": {
                 "type": "string",
@@ -449,14 +449,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "quorum:3",
                 ],
                 "default": "any_one_approves",
-                "description": "How many of the addressed reviewers must approve before the task completes. Fixed for the life of the review: a later request that changes it is refused with -32014.",
+                "description": "How many of the addressed reviewers must approve before the task completes. quorum:N is accepted for any N of 1 or more. The rule is fixed once the review is open: a later request naming a different one is refused with -32014. Omitting it on a later request leaves the rule alone, which is how reviewers are added to an open review.",
             },
             "artefact": {
-                "description": "The draft being submitted for review. Pass as a JSON object or array, not a JSON-encoded string.",
+                "description": "The draft being submitted for review. Pass a JSON object or array. A JSON-encoded string is parsed back to the structured value before dispatch, so patches in chap.decide.override apply against a real object. Re-requesting with the same artefact widens the reviewer set; a different artefact on an open review is refused with -32014.",
             },
             "deadline": {
                 "type": "string",
-                "description": "When the review is needed by, as an ISO 8601 timestamp.",
+                "description": "When the review is needed by, as an ISO 8601 timestamp. Recorded on the review; the coordinator does not act on it.",
             },
         },
         "required": [
@@ -486,18 +486,18 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "approved_artefact_digest": {
                 "type": "string",
                 "pattern": "^sha256:[0-9a-f]{64}$",
-                "description": "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, as `sha256:<hex>`. Binds the decision to the exact content reviewed; refused with -32074 on mismatch.",
+                "description": "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, in the form `sha256:<hex>`. When present it binds the decision to the exact content reviewed, and a mismatch is refused with -32074.",
             },
             "comment": {
                 "type": "string",
-                "description": "The reviewer's note on this decision, recorded in the audit log alongside it.",
+                "description": "The reviewer's note on this decision. Recorded in the audit entry for the decision.",
             },
             "tags": {
                 "type": "array",
                 "items": {
                     "type": "string",
                 },
-                "description": "Workspace-defined labels for this decision, e.g. ['tone', 'unsupported-claim']. Querying the audit log by tag is how recurring correction patterns are found.",
+                "description": "Workspace-defined labels for this decision, e.g. ['tone', 'unsupported-claim']. Recorded in the audit entry. chap.audit.read does not filter on tags, so grouping by tag is done by the reader.",
             },
         },
         "required": [
@@ -525,22 +525,22 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "approved_artefact_digest": {
                 "type": "string",
                 "pattern": "^sha256:[0-9a-f]{64}$",
-                "description": "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, as `sha256:<hex>`. Binds the decision to the exact content reviewed; refused with -32074 on mismatch.",
+                "description": "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, in the form `sha256:<hex>`. When present it binds the decision to the exact content reviewed, and a mismatch is refused with -32074.",
             },
             "comment": {
                 "type": "string",
-                "description": "The reviewer's note on this decision, recorded in the audit log alongside it.",
+                "description": "The reviewer's note on this decision. Recorded in the audit entry for the decision.",
             },
             "tags": {
                 "type": "array",
                 "items": {
                     "type": "string",
                 },
-                "description": "Workspace-defined labels for this decision, e.g. ['tone', 'unsupported-claim']. Querying the audit log by tag is how recurring correction patterns are found.",
+                "description": "Workspace-defined labels for this decision, e.g. ['tone', 'unsupported-claim']. Recorded in the audit entry. chap.audit.read does not filter on tags, so grouping by tag is done by the reader.",
             },
             "request_revision": {
                 "type": "boolean",
-                "description": "If true, task returns to in_progress instead of declined.",
+                "description": "When true the task returns to 'in_progress' rather than 'declined', so the assignee can revise and resubmit.",
             },
         },
         "required": [
@@ -556,7 +556,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "approved_artefact_digest": {
                 "type": "string",
                 "pattern": "^sha256:[0-9a-f]{64}$",
-                "description": "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, as `sha256:<hex>`. Binds the decision to the exact content reviewed; refused with -32074 on mismatch.",
+                "description": "Optional. SHA-256 over the JCS canonicalisation of the artefact under review, in the form `sha256:<hex>`. When present it binds the decision to the exact content reviewed, and a mismatch is refused with -32074.",
             },
             "workspace": {
                 "type": "string",
@@ -572,7 +572,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "diff": {
                 "type": "array",
-                "description": "RFC 6902 JSON Patch operations applied to the artefact under review.",
+                "description": "RFC 6902 JSON Patch operations applied to the artefact under review. The patched artefact becomes the task output; a patch that does not apply is refused with -32012.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -608,29 +608,29 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "rationale": {
                 "type": "string",
-                "description": "Why the override was applied. Required for the structured-override audit trail.",
+                "description": "Why the correction was made. Required on every override and recorded in the audit entry, since the diff shows what changed but not why.",
             },
             "tags": {
                 "type": "array",
                 "items": {
                     "type": "string",
                 },
-                "description": "Workspace-defined labels for this decision, e.g. ['tone', 'unsupported-claim']. Querying the audit log by tag is how recurring correction patterns are found.",
+                "description": "Workspace-defined labels for this decision, e.g. ['tone', 'unsupported-claim']. Recorded in the audit entry. chap.audit.read does not filter on tags, so grouping by tag is done by the reader.",
             },
             "policy_refs": {
                 "type": "array",
                 "items": {
                     "type": "string",
                 },
-                "description": "Identifiers of the policies or guidelines this correction applies, e.g. ['policy:no-delivery-promises']. Lets an auditor trace a decision back to the rule behind it.",
+                "description": "Identifiers of the policies or guidelines this correction applies, e.g. ['policy:no-delivery-promises']. Recorded in the audit entry.",
             },
             "logical_id": {
                 "type": "string",
-                "description": "Durable handle for the thing being decided, shared across revisions and overrides of the same underlying artefact.",
+                "description": "Caller-chosen identifier for the item being decided, stable across revisions and overrides of the same underlying content. Recorded in the audit entry.",
             },
             "intent_preserved": {
                 "type": "boolean",
-                "description": "True when the edit refines the same decision the draft was making, false when it substitutes a different one. Separates wording fixes from reversals in the override report.",
+                "description": "True when the edit refines the decision the draft was making, false when it substitutes a different one. Recorded in the audit entry.",
             },
         },
         "required": [
@@ -659,7 +659,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "reason": {
                 "type": "string",
-                "description": "Why this reviewer is standing aside, recorded in the audit log.",
+                "description": "Why this reviewer is standing aside. Recorded in the audit entry.",
             },
             "category": {
                 "type": "string",
@@ -669,7 +669,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "out_of_scope",
                     "other",
                 ],
-                "description": "The kind of abstention, so recurring gaps in reviewer coverage can be counted rather than read.",
+                "description": "The kind of abstention. Recorded in the audit entry.",
             },
         },
         "required": [
@@ -693,15 +693,15 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "original_task_id": {
                 "type": "string",
-                "description": "Task identifier returned by chap.task.create.",
+                "description": "The task being escalated. It moves to 'escalated' and is linked to the successor. A completed, cancelled or superseded task cannot be escalated.",
             },
             "new_task": {
                 "type": "object",
-                "description": "The successor task to open for the escalation target. The original is marked escalated and linked to it.",
+                "description": "The successor task to open for the escalation target.",
                 "properties": {
                     "kind": {
                         "type": "string",
-                        "description": "Task kind for the successor, defaulting to the original's kind.",
+                        "description": "Task kind for the successor. Defaults to the original's kind.",
                     },
                     "assignee": {
                         "type": "string",
@@ -710,7 +710,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "input": {
                         "type": "object",
                         "additionalProperties": True,
-                        "description": "Input payload for the successor, typically the original input plus the context that prompted the escalation.",
+                        "description": "Input payload for the successor. It defaults to an empty object rather than the original's input, so anything the new assignee needs has to be restated here.",
                     },
                 },
                 "required": [
@@ -751,7 +751,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "question": {
                 "type": "string",
-                "description": "The single question to put to them, short enough to answer without opening the task.",
+                "description": "The question being put. A whisper is answered on its own, without the recipient opening the task.",
             },
             "options": {
                 "type": "array",
@@ -760,7 +760,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "properties": {
                         "id": {
                             "type": "string",
-                            "description": "Stable identifier the answer refers to.",
+                            "description": "Stable identifier that an answer refers to.",
                         },
                         "label": {
                             "type": "string",
@@ -771,14 +771,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         "id",
                     ],
                 },
-                "description": "Optional multiple-choice options. If present, answer_option must be one of these ids.",
+                "description": "Multiple-choice options. When present, an answer must name one of these ids in answer_option; any other id is refused with -32022.",
             },
             "deadline_ms": {
                 "type": "integer",
-                "description": "Time-to-live in milliseconds from now.",
+                "description": "How long the whisper stays open, in milliseconds from now. Once it passes, the whisper lapses and default_if_lapsed is applied.",
             },
             "default_if_lapsed": {
-                "description": "Value applied if the whisper lapses without an answer.",
+                "description": "The value applied if the deadline passes with no answer. Required, so that a lapsed whisper still has a defined outcome.",
             },
             "urgency": {
                 "type": "string",
@@ -788,7 +788,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "high",
                 ],
                 "default": "low",
-                "description": "How hard to push for an answer before the deadline. Advisory: it does not change the lapse behaviour.",
+                "description": "How urgent the question is. Recorded and passed on to the client; it does not change the deadline or the lapse behaviour.",
             },
         },
         "required": [
@@ -815,19 +815,19 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "whisper_id": {
                 "type": "string",
-                "description": "Identifier returned by chap.whisper.ask.",
+                "description": "Identifier returned by chap.whisper.ask. A whisper that has already been answered is refused with -32020, and one past its deadline with -32021.",
             },
             "answer_option": {
                 "type": "string",
-                "description": "Option id (required when the whisper has options).",
+                "description": "The id of the chosen option. Required when the whisper carried options.",
             },
             "answer": {
                 "type": "string",
-                "description": "Free-text answer (when no options).",
+                "description": "Free-text answer, for a whisper with no options.",
             },
             "comment": {
                 "type": "string",
-                "description": "Anything the answerer wants on the record beyond the answer itself.",
+                "description": "Anything else the answerer wants recorded alongside the answer.",
             },
         },
         "required": [
@@ -854,7 +854,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "Participant URI, e.g. 'human:alice@example.org' or 'agent:bot@local'.",
                 },
-                "description": "Deliberation participants.",
+                "description": "The participants entitled to vote. A vote from anyone else is refused with -32030.",
             },
             "task_id": {
                 "type": "string",
@@ -862,29 +862,29 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "rule": {
                 "type": "string",
-                "description": "Voting rule. Examples: any_one_approves, all_approve, quorum:N, weighted_vote:T, weighted_vote_with_veto:T.",
+                "description": "How the outcome is decided when the deliberation closes: any_one_approves, all_approve, quorum:N, weighted_vote:T or weighted_vote_with_veto:T. An unrecognised rule is refused at open with -32033.",
             },
             "question": {
                 "type": "string",
-                "description": "What the group is deciding, stated so a yea or nay is unambiguous.",
+                "description": "What the group is deciding. State it so that a yea or a nay is unambiguous.",
             },
             "weights": {
                 "type": "object",
                 "additionalProperties": {
-                    "type": "number",
+                    "type": "integer",
                 },
-                "description": "Voter -> weight map (for weighted rules).",
+                "description": "Voter to weight map, read by the weighted rules. A voter with no entry counts as 1. Weights must be integers: a JSON number with a fractional part is refused with -32602.",
             },
             "veto": {
                 "type": "object",
                 "additionalProperties": {
                     "type": "boolean",
                 },
-                "description": "Voter -> can-veto map.",
+                "description": "Voter to can-veto map. A veto is honoured only under weighted_vote_with_veto, and only from a voter listed true here.",
             },
             "deadline": {
                 "type": "string",
-                "description": "When voting closes, as an ISO 8601 timestamp.",
+                "description": "When voting is intended to close, as an ISO 8601 timestamp. Recorded on the deliberation; closing is done by chap.deliberate.close and the coordinator does not close on the deadline.",
             },
         },
         "required": [
@@ -908,11 +908,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "deliberation_id": {
                 "type": "string",
-                "description": "Identifier returned by chap.deliberate.open.",
+                "description": "Identifier returned by chap.deliberate.open. A closed deliberation is refused with -32032.",
             },
             "comment": {
                 "type": "string",
-                "description": "The contribution to record. Comments are part of the audit trail, so the reasoning survives the vote.",
+                "description": "The contribution to record. Comments are kept with the deliberation and in the audit log, so the reasoning survives the vote.",
             },
         },
         "required": [
@@ -936,7 +936,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "deliberation_id": {
                 "type": "string",
-                "description": "Identifier returned by chap.deliberate.open.",
+                "description": "Identifier returned by chap.deliberate.open. A closed deliberation is refused with -32032, and a second vote from the same voter with -32031.",
             },
             "vote": {
                 "type": "string",
@@ -945,19 +945,19 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "nay",
                     "abstain",
                 ],
-                "description": "This voter's position. Abstain is recorded and does not count towards the rule.",
+                "description": "This voter's position. An abstention is recorded but counts as neither a yea nor a nay, so under all_approve or quorum:N it withholds the approval those rules need.",
             },
             "weight": {
-                "type": "number",
-                "description": "Weight to apply, for weighted rules. Defaults to the weight set when the deliberation was opened.",
+                "type": "integer",
+                "description": "Recorded with the vote. The tally uses the weights map given at chap.deliberate.open, not this value.",
             },
             "comment": {
                 "type": "string",
-                "description": "Why the vote went this way, recorded with it.",
+                "description": "Why the vote went this way. Recorded with it.",
             },
             "veto_invoked": {
                 "type": "boolean",
-                "description": "Set by a voter with veto rights to block the outcome regardless of the tally. Only honoured under a veto rule.",
+                "description": "Blocks the outcome regardless of the tally. Honoured only under weighted_vote_with_veto, and only when the voter is listed true in the veto map given at open.",
             },
         },
         "required": [
@@ -981,7 +981,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "deliberation_id": {
                 "type": "string",
-                "description": "Identifier returned by chap.deliberate.open.",
+                "description": "Identifier returned by chap.deliberate.open. Closing computes the outcome from the votes cast; closing an already closed deliberation returns the outcome unchanged.",
             },
         },
         "required": [
@@ -1004,11 +1004,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "to": {
                 "type": "string",
-                "description": "Recipient (URI or 'group:...').",
+                "description": "Recipient, as a participant URI or a group URI such as 'group:support-team'. A recipient who is not a workspace member is refused with -32052.",
             },
             "tasks": {
                 "type": "array",
-                "description": "The work being handed over, one entry per task, each carrying the context the recipient needs to pick it up cold.",
+                "description": "The work being handed over, one entry per task. Every task must currently be assigned to the proposer; otherwise the proposal is refused with -32050.",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -1018,22 +1018,22 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         },
                         "title": {
                             "type": "string",
-                            "description": "Short label for the task, so the recipient can scan the list.",
+                            "description": "Short label for the task.",
                         },
                         "status_summary": {
                             "type": "string",
-                            "description": "Where the work has got to and anything already tried.",
+                            "description": "Where the work has reached, and what has already been tried.",
                         },
                         "next_action": {
                             "type": "string",
-                            "description": "The one thing the recipient should do first.",
+                            "description": "What the recipient should do first.",
                         },
                         "blockers": {
                             "type": "array",
                             "items": {
                                 "type": "string",
                             },
-                            "description": "What is stopping progress, if anything.",
+                            "description": "What is preventing progress, if anything.",
                         },
                     },
                     "required": [
@@ -1074,7 +1074,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "handoff_id": {
                 "type": "string",
-                "description": "Identifier returned by chap.handoff.propose.",
+                "description": "Identifier returned by chap.handoff.propose. A handoff already accepted or declined is refused with -32051.",
             },
             "accepted_task_ids": {
                 "type": "array",
@@ -1082,11 +1082,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "Task identifier returned by chap.task.create.",
                 },
-                "description": "If omitted, all proposed tasks are accepted.",
+                "description": "Which of the proposed tasks are being accepted. If omitted, all of them are.",
             },
             "comment": {
                 "type": "string",
-                "description": "Anything the recipient wants on the record when taking the work on.",
+                "description": "Anything the recipient wants recorded when taking the work on.",
             },
         },
         "required": [
@@ -1109,11 +1109,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "handoff_id": {
                 "type": "string",
-                "description": "Identifier returned by chap.handoff.propose.",
+                "description": "Identifier returned by chap.handoff.propose. A handoff already accepted or declined is refused with -32051.",
             },
             "reason": {
                 "type": "string",
-                "description": "Why the handover is being refused, recorded so the proposer can route it elsewhere.",
+                "description": "Why the handover is refused. Recorded so the proposer can route it elsewhere.",
             },
             "suggested_target": {
                 "type": "string",
@@ -1146,7 +1146,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "workspace",
                 ],
                 "default": "task",
-                "description": "What the control applies to: one task, everything a participant is doing, or the whole workspace.",
+                "description": "What the pause applies to. 'task' moves one task to 'paused'; a task that is completed, declined, cancelled or superseded is refused with -32061. 'participant' stops new tasks being assigned to that member and leaves their existing work running. 'workspace' refuses every method except workspace.create, workspace.describe, control.resume, audit.read, participant.join and participant.leave.",
             },
             "task_id": {
                 "type": "string",
@@ -1154,7 +1154,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "participant_uri": {
                 "type": "string",
-                "description": "Whose work to pause, when scope is 'participant'.",
+                "description": "Whose work to pause, when scope is 'participant'. Must be a workspace member.",
             },
             "in_flight_policy": {
                 "type": "string",
@@ -1162,11 +1162,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "allow_to_complete",
                     "interrupt",
                 ],
-                "description": "What happens to work already under way: let it finish, or stop it where it stands.",
+                "description": "Recorded with the request, and echoed back when scope is 'participant'. The coordinator does not act on it: under either value, work already under way is left alone.",
             },
             "reason": {
                 "type": "string",
-                "description": "Why the pause was applied, recorded in the audit log.",
+                "description": "Why the pause was applied. Recorded in the audit entry.",
             },
         },
         "required": [
@@ -1194,7 +1194,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "workspace",
                 ],
                 "default": "task",
-                "description": "What the control applies to: one task, everything a participant is doing, or the whole workspace.",
+                "description": "What the resume applies to. 'task' returns a paused task to 'in_progress'; a task that is not paused is refused with -32061. 'participant' allows that member to be assigned tasks again. 'workspace' returns the workspace to active.",
             },
             "task_id": {
                 "type": "string",
@@ -1202,7 +1202,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "participant_uri": {
                 "type": "string",
-                "description": "Whose work to resume, when scope is 'participant'.",
+                "description": "Whose work to resume, when scope is 'participant'. Must be a workspace member.",
             },
         },
         "required": [
@@ -1224,11 +1224,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "task_id": {
                 "type": "string",
-                "description": "Task identifier returned by chap.task.create.",
+                "description": "The task to cancel. A task that is completed, declined, cancelled or superseded is refused with -32061.",
             },
             "reason": {
                 "type": "string",
-                "description": "Why the task was cancelled, recorded in the audit log.",
+                "description": "Why the task was cancelled. Recorded in the audit entry.",
             },
         },
         "required": [
@@ -1251,14 +1251,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "label": {
                 "type": "string",
-                "description": "Name for this snapshot, so a later rollback can be described in words rather than an id.",
+                "description": "Name for this snapshot, recorded on the artefact. chap.control.rollback identifies a snapshot by its artefact id, not by label.",
             },
             "include": {
                 "type": "array",
                 "items": {
                     "type": "string",
                 },
-                "description": "Aspects to snapshot, e.g. ['members', 'open_tasks', 'mode_ceiling'].",
+                "description": "Which aspects of the workspace to capture. Recognised values are 'members', 'open_tasks', 'mode_ceiling', 'policy' and 'audit'. Defaults to members, open_tasks and mode_ceiling.",
             },
         },
         "required": [
@@ -1280,18 +1280,18 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "to_snapshot_artefact_id": {
                 "type": "string",
-                "description": "Artefact id returned by chap.control.snapshot, naming the state to restore.",
+                "description": "Artefact id returned by chap.control.snapshot. An id with no matching snapshot is refused with -32062.",
             },
             "what_to_restore": {
                 "type": "array",
                 "items": {
                     "type": "string",
                 },
-                "description": "Which aspects of the snapshot to apply, e.g. ['members', 'mode_ceiling']. Omit to restore everything it captured.",
+                "description": "Which captured aspects to apply. Only 'mode_ceiling' and 'members' are restored; the others are held in the snapshot and not reapplied. Restoring members resets role and scopes on members still present, and does not re-add members who have left. Defaults to the snapshot's include list.",
             },
             "reason": {
                 "type": "string",
-                "description": "Why the rollback was performed. The rollback is itself an audit entry; the state it restores is not rewritten.",
+                "description": "Why the rollback was performed. The rollback is itself an audit entry; earlier entries are not rewritten.",
             },
         },
         "required": [
@@ -1314,24 +1314,24 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "task_id": {
                 "type": "string",
-                "description": "Task identifier returned by chap.task.create.",
+                "description": "The task being replaced. It moves to 'superseded' and is linked to the successor rather than deleted.",
             },
             "successor_task": {
                 "type": "object",
-                "description": "The replacement task. The superseded one stays in the chain, linked to this successor, rather than being deleted.",
+                "description": "The replacement task.",
                 "properties": {
                     "kind": {
                         "type": "string",
-                        "description": "Task kind for the successor.",
+                        "description": "Task kind for the successor. Required.",
                     },
                     "assignee": {
                         "type": "string",
-                        "description": "Who takes the replacement task on. Defaults to the superseded task's assignee.",
+                        "description": "Who takes the replacement on. Defaults to the superseded task's assignee, and must be a workspace member.",
                     },
                     "input": {
                         "type": "object",
                         "additionalProperties": True,
-                        "description": "Input payload for the successor.",
+                        "description": "Input payload for the successor. Defaults to an empty object.",
                     },
                 },
                 "required": [
@@ -1340,7 +1340,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "reason": {
                 "type": "string",
-                "description": "Why the original is being replaced, recorded in the audit log.",
+                "description": "Why the original is being replaced. Recorded in the audit entry.",
             },
         },
         "required": [
@@ -1369,11 +1369,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "trial",
                     "production",
                 ],
-                "description": "The highest mode tasks in this workspace may use from now on. Raising it is a privileged operation and may require step-up authentication.",
+                "description": "The highest mode tasks in this workspace may request from now on. Existing tasks keep the mode they were created with. Where the coordinator is configured to enforce step-up authentication this method is one of the privileged ones and a call without step-up is refused with -32402.",
             },
             "reason": {
                 "type": "string",
-                "description": "Why the ceiling is being changed, recorded in the audit log.",
+                "description": "Why the ceiling is being changed. Recorded in the audit entry.",
             },
         },
         "required": [
@@ -1404,7 +1404,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "Participant URI, e.g. 'human:alice@example.org' or 'agent:bot@local'.",
                 },
-                "description": "Candidate assignees.",
+                "description": "Candidate assignees. An empty list is refused with -32513. Candidates that are not workspace members are dropped, and if none remain the call is refused with -32510. The default policy selects the first remaining candidate; an operator-supplied routing policy may select on any basis.",
             },
         },
         "required": [
@@ -1432,7 +1432,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "artefact_routing_hints": {
                 "type": "object",
-                "description": "Per-artefact signals like confidence, model_id, cost_consumed_usd.",
+                "description": "Per-artefact signals such as confidence, model_id and cost_consumed_usd, merged over the task's routing_hints for this call. The default policy reads criticality and confidence. If the merged set is empty the call is refused with -32514. Fractional values are written as decimal strings, e.g. \"confidence\": \"0.86\".",
                 "additionalProperties": True,
             },
         },
@@ -1460,7 +1460,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "default_escalation_target": {
                 "type": "string",
-                "description": "Participant URI, e.g. 'human:alice@example.org' or 'agent:bot@local'.",
+                "description": "Who to escalate to when the policy decides to escalate and names no target of its own. It must be a workspace member or a group URI; if the policy escalates with no usable target the call is refused with -32516.",
             },
         },
         "required": [
@@ -1483,12 +1483,12 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "old_kid": {
                 "type": "string",
-                "description": "Key id being retired. It stays in the key history so past signatures still verify.",
+                "description": "Key id being retired. It is given a valid_until timestamp and stays in the member's key history, so signatures made before the rotation still verify. A key id that is unknown is refused with -32071, and one already revoked with -32072.",
             },
             "new_jwk": {
                 "type": "object",
                 "additionalProperties": True,
-                "description": "The replacement public key as a JWK. The request must be signed with the old key, which is what proves the rotation is genuine.",
+                "description": "The replacement public key as a JWK. It must carry a 'kid'. Whether the request itself has to be signed with the old key is decided at dispatch, and only where the coordinator is configured to require signatures.",
             },
         },
         "required": [
@@ -1512,15 +1512,15 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "target_uri": {
                 "type": "string",
-                "description": "Whose key is being revoked.",
+                "description": "Whose key is being revoked. Revoking another member's key requires the caller to hold the role 'admin'; otherwise the call is refused with -32011.",
             },
             "kid": {
                 "type": "string",
-                "description": "Key id to revoke. Signatures made with it are refused from now on; entries it already signed stay valid.",
+                "description": "Key id to revoke. It is marked revoked with a timestamp and a reason, and signatures presented with it are refused from then on. A key id that is unknown is refused with -32071.",
             },
             "reason": {
                 "type": "string",
-                "description": "Why the key was revoked, e.g. 'laptop lost'. Recorded in the audit log.",
+                "description": "Why the key was revoked, e.g. 'laptop lost'. Recorded on the key and in the audit entry.",
             },
         },
         "required": [
@@ -1548,17 +1548,17 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "properties": {
                     "from_seq": {
                         "type": "integer",
-                        "description": "Start sequence number (inclusive).",
+                        "description": "Start sequence number, inclusive.",
                     },
                     "to_seq": {
                         "type": "integer",
-                        "description": "End sequence number (exclusive).",
+                        "description": "End sequence number, exclusive.",
                     },
                 },
             },
             "issuer": {
                 "type": "string",
-                "description": "Issuer identifier to put on the SCITT signed statement, identifying who is vouching for the chain.",
+                "description": "Issuer identifier placed on each SCITT signed statement, naming who vouches for the chain. Defaults to 'service:coordinator'. Where no submitter is configured the statements are returned unsigned for the deployment to submit out of band.",
             },
         },
         "required": [
@@ -1580,7 +1580,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "receipt": {
                 "type": "object",
                 "additionalProperties": True,
-                "description": "The SCITT receipt to check, as returned by the transparency service. Verification fails closed when no verifier is configured.",
+                "description": "The SCITT receipt to check, as returned by the transparency service. Verification is delegated to a hook supplied by the deployment, and fails closed with -32082 where no hook is configured.",
             },
         },
         "required": [

@@ -84,7 +84,7 @@ A typical ID token payload from a CHAP-aware IdP:
   "acr": "urn:example:authn:mfa",
   "amr": ["pwd", "totp"],
 
-  "email": "[email protected]",
+  "email": "alice@example.org",
   "preferred_username": "alice",
   "chap_participant_uri": "human:alice@example.org",
 

@@ -430,7 +430,7 @@ const { task_id, input_hash, output_hash } = wrapMcpToolCall(
     tool: "github.create_issue",
     args: { title: "bug", body: "..." },
     result: { issue_url: "https://github.com/example/repo/issues/42" },
-    confidence: 0.95,
+    confidence: "0.95",
   },
 );
 ```
@@ -445,7 +445,7 @@ res = wrap_mcp_tool_call(
     tool="github.create_issue",
     args={"title": "bug", "body": "..."},
     result={"issue_url": "https://github.com/example/repo/issues/42"},
-    confidence=0.95,
+    confidence="0.95",
 )
 ```
 

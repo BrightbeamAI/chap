@@ -53,11 +53,17 @@ function specMachine() {
     const states = froms.trim() === "any state" ? STATES : froms.split(",").map(s => s.trim());
     for (const state of states) {
       assert.ok(STATES.includes(state), `§8.1 names an unknown state: ${state}`);
+      if (refused) {
+        // A refusal row documents a precondition. Its To cell names an
+        // error, not a reachable state, so it contributes nothing to
+        // either map.
+        continue;
+      }
       if (method === "task.update") {
         const set = updateTargets.get(state) ?? new Set<string>();
         for (const t of toCell.split(",")) set.add(t.trim());
         updateTargets.set(state, set);
-      } else if (!refused) {
+      } else {
         permitted.set(method, (permitted.get(method) ?? new Set()).add(state));
       }
     }

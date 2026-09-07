@@ -1029,6 +1029,15 @@ class Coordinator:
             return {"error": rpc_error(
                 E.PARAMS, f"Illegal transition {task.state} -> {new_state}"
             )}
+        # task.complete opens a review rather than completing when one is
+        # required. task.update reaches the same state by another route and
+        # carries no output, so completing here would record a finished task
+        # with nothing reviewed and no decision on the chain.
+        if new_state == "completed" and task.review_required:
+            return {"error": rpc_error(
+                E.PARAMS,
+                "This task requires review. Submit the output with task.complete, "
+                "which opens the review; a reviewer decision completes it.")}
         task.state = new_state
         task.updated_at = self.now_iso()
         task.history.append(TaskHistoryEntry(
@@ -1168,7 +1177,8 @@ class Coordinator:
         if not reviewers:
             return {"error": rpc_error(E.PARAMS, "review.request needs 'to'")}
         now = self.now_iso()
-        rule = p.get("rule") or "any_one_approves"
+        declared_rule = p.get("rule")
+        rule = declared_rule or "any_one_approves"
         if not _review_rule_supported(rule):
             return {"error": rpc_error(
                 E.PARAMS,
@@ -1190,7 +1200,10 @@ class Coordinator:
                     "Decide, abstain, escalate or cancel it before requesting "
                     "review of a new artefact.",
                 )}
-            if rule != task.review.rule:
+            # Only a rule the caller actually supplied can be a change.
+            # Comparing the resolved default instead refused the documented
+            # widen-the-reviewer-set request whenever `rule` was omitted.
+            if declared_rule is not None and declared_rule != task.review.rule:
                 return {"error": rpc_error(
                     E.REVIEW_ALREADY_OPEN,
                     f"Cannot change the decision rule of an open review "
