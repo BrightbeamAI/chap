@@ -18,7 +18,7 @@ This example shows:
 ## 3.1 Agent requests review
 
 The agent's `task.complete` from §2.4 implicitly opens a review because
-the task's `review.required` was `true`. Some implementations send
+the task carried `review_required: true`. Some implementations send
 `review.request` explicitly for clarity; both shapes are valid.
 
 Explicit form:
@@ -175,29 +175,28 @@ reply to INC-48219?" They issue:
 }
 ```
 
-The Coordinator returns the full chain segment for this task, eight
-entries from `task.assign` to the `decide.approve` decision artefact
-, **plus** the resolved citations (the MCP server's audit-log entries
+The Coordinator returns the full chain segment for this task, seven
+entries from `task.create` to the `decide.approve` decision artefact,
+**plus** the resolved citations (the MCP server's audit-log entries
 that match the recorded hashes):
 
 ```json
 {
   "result": {
     "task_id": "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
-    "evidence_range": [142, 149],
+    "evidence_range": [142, 148],
     "entries": [
-      { "seq": 142, "method": "task.assign",   "from": "human:alice@example.org",   "ts": "2026-05-17T09:14:22.184Z" },
-      { "seq": 143, "method": "task.accept",   "from": "agent:triage-bot#v3.2",     "ts": "2026-05-17T09:14:22.612Z" },
-      { "seq": 144, "method": "task.start",    "from": "agent:triage-bot#v3.2",     "ts": "2026-05-17T09:14:22.790Z" },
-      { "seq": 145, "method": "task.progress", "from": "agent:triage-bot#v3.2",     "ts": "2026-05-17T09:14:24.103Z" },
-      { "seq": 146, "method": "task.complete", "from": "agent:triage-bot#v3.2",     "ts": "2026-05-17T09:14:27.012Z" },
-      { "seq": 147, "method": "review.request","from": "agent:triage-bot#v3.2",     "ts": "2026-05-17T09:14:27.105Z" },
-      { "seq": 148, "method": "review.acknowledge","from": "human:alice@example.org","ts": "2026-05-17T09:14:39.221Z" },
-      { "seq": 149, "method": "decide.approve","from": "human:alice@example.org",   "ts": "2026-05-17T09:15:11.014Z" }
+      { "seq": 142, "method": "task.create",   "from": "human:alice@example.org",   "ts": "2026-05-17T09:14:22.184Z" },
+      { "seq": 143, "method": "task.update",   "from": "agent:triage-bot#v3.2",     "ts": "2026-05-17T09:14:22.612Z" },
+      { "seq": 144, "method": "task.update",   "from": "agent:triage-bot#v3.2",     "ts": "2026-05-17T09:14:24.103Z" },
+      { "seq": 145, "method": "task.complete", "from": "agent:triage-bot#v3.2",     "ts": "2026-05-17T09:14:27.012Z" },
+      { "seq": 146, "method": "review.request","from": "agent:triage-bot#v3.2",     "ts": "2026-05-17T09:14:27.105Z" },
+      { "seq": 147, "method": "review.acknowledge","from": "human:alice@example.org","ts": "2026-05-17T09:14:39.221Z" },
+      { "seq": 148, "method": "decide.approve","from": "human:alice@example.org",   "ts": "2026-05-17T09:15:11.014Z" }
     ],
     "citations": [
       {
-        "evidence_seq": 146,
+        "evidence_seq": 145,
         "artefact_id": "art_01HZ9YX7K3X8M2V4N6P8R0T3G",
         "kind": "mcp_tool_invocation",
         "server": "mcp+https://tools.example.org/orders",
@@ -209,7 +208,7 @@ that match the recorded hashes):
         "external_audit_verified": true
       },
       {
-        "evidence_seq": 146,
+        "evidence_seq": 145,
         "artefact_id": "art_01HZ9YX7K3X8M2V4N6P8R0T3G",
         "kind": "mcp_tool_invocation",
         "server": "mcp+https://tools.example.org/shipping",

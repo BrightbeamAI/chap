@@ -37,10 +37,10 @@ keeps both protocols simple.
 
 A request to "delegate this task to a peer at another organisation":
 
-1. The local human or agent emits a normal `task.assign` to
+1. The local human or agent emits a normal `task.create` to
    `service:bridge@example.org`.
-2. The bridge accepts it, translates it into an A2A request, and
-   sends it over A2A to the peer organisation.
+2. The bridge takes the task in progress, translates it into an A2A
+   request, and sends it over A2A to the peer organisation.
 3. The peer organisation does whatever it does, internally, that
    workspace handles the request via its own CHAP flow.
 4. The peer returns an A2A response. The local bridge ingests it,
@@ -70,7 +70,7 @@ A2A as part of its capabilities:
     "max_concurrent": 16,
     "avg_latency_ms": 2400
   },
-  "scopes": ["task.accept", "task.complete", "review.request"],
+  "scopes": ["task.update", "task.complete", "review.request"],
   "metadata": {
     "a2a": {
       "peer_endpoint":   "https://a2a.partner-a.example.com/v1",
@@ -95,7 +95,7 @@ its in-house team doesn't cover. A human delegates a translation
 task to the bridge; the bridge moves the work over A2A; the result
 returns as a CHAP artefact.
 
-### 3.1 Local task.assign
+### 3.1 Local task.create
 
 ```json
 {
@@ -106,40 +106,33 @@ returns as a CHAP artefact.
   "from": "human:liam@example.org",
   "to":   "service:bridge-to-partner-a@example.org",
   "type": "request",
-  "method": "task.assign",
+  "method": "task.create",
   "params": {
-    "task": {
-      "id": "tsk_01HZBF1R0K3X8M2V4N6P8R0TCB",
-      "workspace": "wsp_translation_intake",
-      "kind": "a2a_delegation",
-      "state": "created",
-      "mode": "production",
-      "assignee": "service:bridge-to-partner-a@example.org",
-      "delegator": "human:liam@example.org",
-      "input": {
-        "remote_kind": "translation",
-        "source_lang": "en",
-        "target_lang": "ko",
-        "document_uri": "https://example.org/docs/quarterly-report.pdf",
-        "purpose": "internal-circulation",
-        "deadline": "2026-05-19T17:00:00Z"
-      },
-      "constraints": {
-        "deadline": "2026-05-19T17:00:00Z",
-        "max_a2a_calls": 1
-      },
-      "review": {
-        "required": true,
-        "reviewers": ["human:liam@example.org"],
-        "rule": "any_one_approves"
-      }
-    }
+    "workspace": "wsp_translation_intake",
+    "from": "human:liam@example.org",
+    "kind": "a2a_delegation",
+    "mode": "production",
+    "assignee": "service:bridge-to-partner-a@example.org",
+    "input": {
+      "remote_kind": "translation",
+      "source_lang": "en",
+      "target_lang": "ko",
+      "document_uri": "https://example.org/docs/quarterly-report.pdf",
+      "purpose": "internal-circulation",
+      "deadline": "2026-05-19T17:00:00Z",
+      "max_a2a_calls": 1
+    },
+    "deadline": "2026-05-19T17:00:00Z",
+    "review_required": true
   },
   "evidence": { "prev_hash": "sha256:…", "sig": "ed25519:liam-2026-05-17:…" }
 }
 ```
 
-### 3.2 Bridge accepts (locally) and sends (remotely)
+The Coordinator answers with the minted `task_id`
+(`tsk_01HZBF1R0K3X8M2V4N6P8R0TCB`) in state `created`.
+
+### 3.2 Bridge takes the task (locally) and sends (remotely)
 
 ```json
 {
@@ -150,10 +143,13 @@ returns as a CHAP artefact.
   "from": "service:bridge-to-partner-a@example.org",
   "to":   "human:liam@example.org",
   "type": "request",
-  "method": "task.accept",
+  "method": "task.update",
   "params": {
+    "workspace": "wsp_translation_intake",
+    "from": "service:bridge-to-partner-a@example.org",
     "task_id": "tsk_01HZBF1R0K3X8M2V4N6P8R0TCB",
-    "estimated_completion_ms": 7200000
+    "state": "in_progress",
+    "progress_note": "Queued for the partner; round trip expected within two hours."
   },
   "evidence": { "prev_hash": "sha256:…", "sig": "ed25519:bridge-…:…" }
 }
@@ -169,18 +165,19 @@ A2A request:
   body: { task: 'translation', source: 'en', target: 'ko', doc_uri: '…', deadline: '…' }
 ```
 
-The bridge optionally emits a CHAP `task.progress` notification with
-the correlation id, so local observers see that the bridge is in
-flight:
+The bridge optionally emits a further CHAP `task.update` notification
+carrying the correlation id, so local observers see that the bridge is
+in flight:
 
 ```json
 {
-  "method": "task.progress",
+  "method": "task.update",
   "params": {
+    "workspace": "wsp_translation_intake",
+    "from": "service:bridge-to-partner-a@example.org",
     "task_id": "tsk_01HZBF1R0K3X8M2V4N6P8R0TCB",
-    "stage": "a2a_request_sent",
-    "correlation_id": "a2a_01HZBF1R0K3X8M2V4N6P8R0TCD",
-    "remote_peer": "agent:partner-a-ops@partner-a.example.com"
+    "state": "in_progress",
+    "progress_note": "a2a_request_sent; correlation_id=a2a_01HZBF1R0K3X8M2V4N6P8R0TCD; peer=agent:partner-a-ops@partner-a.example.com"
   }
 }
 ```
@@ -260,13 +257,13 @@ organisations more tightly than most deployments want.
 
 A conformant Coordinator that hosts a bridge SHOULD:
 
-1. Reject any `task.assign` to the bridge whose `params.input` refers
+1. Reject any `task.create` to the bridge whose `params.input` refers
    to a remote endpoint not in the workspace's
    `permitted_a2a_peers` list. Error `-32500` (`policy_denied`).
 2. Enforce the bridge's per-task `max_a2a_calls` budget if declared.
-3. Record A2A failures as `task.progress` notifications with stage
-   `a2a_request_failed` followed by either a retry, a completion
-   citing the failure, or an `abstain.declare`.
+3. Record A2A failures as `task.update` notifications whose progress
+   note carries the `a2a_request_failed` stage, followed by either a
+   retry, a completion citing the failure, or an `abstain.declare`.
 
 ---
 
@@ -275,7 +272,7 @@ A conformant Coordinator that hosts a bridge SHOULD:
 | Scenario                                          | Recommended handling                                            |
 |---------------------------------------------------|-----------------------------------------------------------------|
 | A2A peer unreachable                              | Retry per policy; if exhausted, `abstain.declare` with category `peer_unreachable`. |
-| A2A peer responds with error                      | Emit `task.progress` with the error summary; complete with citation including the error hash, or abstain depending on workspace policy. |
+| A2A peer responds with error                      | Emit `task.update` with the error summary; complete with citation including the error hash, or abstain depending on workspace policy. |
 | A2A response received but doesn't match expected schema | Treat as a failure; do not produce an artefact with bad data. |
 | Local workspace closes during in-flight A2A call  | Bridge completes the A2A round-trip but emits the result into a `closed` workspace as a notification; admin replays if needed. |
 

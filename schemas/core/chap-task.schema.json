@@ -23,9 +23,9 @@
         "state": {
           "type": "string",
           "enum": [
-            "created", "assigned", "accepted", "declined",
-            "in_progress", "review_requested", "completed",
-            "abstained", "escalated", "cancelled", "superseded"
+            "created", "in_progress", "review_requested", "completed",
+            "declined", "abstained", "escalated", "paused",
+            "cancelled", "superseded"
           ]
         },
         "mode": {

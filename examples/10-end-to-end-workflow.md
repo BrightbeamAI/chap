@@ -41,14 +41,14 @@ The customer message:
 Each numbered step is one CHAP message. Signatures and hashes elided.
 
 **(1) Human creates a task and assigns the agent.**
-*Method:* `task.assign` · *From:* `human:alice@example.org` · *To:* `agent:triage-bot#v3.2`
+*Method:* `task.create` · *From:* `human:alice@example.org` · *To:* `agent:triage-bot#v3.2`
 
 The agent is asked to draft a response. Constraints: deadline 09:30,
 max 5 tool calls, permitted tools = order-lookup, customer-history,
 knowledge-base.
 
-**(2) Agent accepts.**
-*Method:* `task.accept` · *From:* `agent:triage-bot#v3.2`
+**(2) Agent takes the task in progress.**
+*Method:* `task.update` (`state: "in_progress"`) · *From:* `agent:triage-bot#v3.2`
 
 **(3) Agent calls MCP tools (order-lookup, customer-history) to gather
 context.** *(Outside CHAP; cited inside the artefact in step 6.)*
@@ -81,7 +81,7 @@ The draft:
 > being with us so long, and I hope we can make the next one
 > right.. Support team."*
 
-**(7) Coordinator opens review.** *(Implicit from `review.required:
+**(7) Coordinator opens review.** *(Implicit from `review_required:
 true` on the original task.)*
 
 **(8) Alice reads the draft and overrides.**
@@ -119,10 +119,10 @@ authorisation flow because it exceeds the customer-support team's
 nay 0.0.
 
 **(13) Coordinator assigns the credit-issuance task.**
-*Method:* `task.assign` · *To:* `agent:credit-issuer#v1.1` · *Input
+*Method:* `task.create` · *To:* `agent:credit-issuer#v1.1` · *Input
 includes a reference to the deliberation decision artefact.*
 
-**(14) Credit agent accepts; calls MCP `customer-credits/issue`;
+**(14) Credit agent takes the task; calls MCP `customer-credits/issue`;
 completes.**
 *Method:* `task.complete` · *Artefact:* `decision` with the credit
 transaction id, amount £75, citation hash of the MCP call.
@@ -139,23 +139,22 @@ sent-message reference).*
 Replayed from the audit:
 
 ```
-seq=2012  task.assign           alice  -> triage-bot     (INC-48910)
-seq=2013  task.accept           triage-bot
-seq=2014  task.start            triage-bot
-seq=2015  whisper.ask           triage-bot -> alice      (refund vs replacement?)
-seq=2016  whisper.answer        alice -> triage-bot      (refund_per_request)
-seq=2017  task.complete         triage-bot               (draft + 3 MCP citations)
-seq=2018  review.request        triage-bot -> alice
-seq=2019  decide.override       alice                    (tone-warmed + credit suggested)
-seq=2020  deliberate.open       coordinator -> [bob, carol]
-seq=2021  deliberate.comment    bob                      (quality team notified)
-seq=2022  deliberate.vote       bob                      (yea, 1.0)
-seq=2023  deliberate.vote       carol                    (yea, 1.0)
-seq=2024  deliberate.close      lee                      (approved)
-seq=2025  task.assign           coordinator -> credit-issuer
-seq=2026  task.accept           credit-issuer
-seq=2027  task.complete         credit-issuer            (decision + MCP citation)
-seq=2028  notify.message        coordinator -> [alice, bob]   (final response sent)
+seq=2012  task.create           alice  -> triage-bot     (INC-48910)
+seq=2013  task.update           triage-bot               (in_progress)
+seq=2014  whisper.ask           triage-bot -> alice      (refund vs replacement?)
+seq=2015  whisper.answer        alice -> triage-bot      (refund_per_request)
+seq=2016  task.complete         triage-bot               (draft + 3 MCP citations)
+seq=2017  review.request        triage-bot -> alice
+seq=2018  decide.override       alice                    (tone-warmed + credit suggested)
+seq=2019  deliberate.open       coordinator -> [bob, carol]
+seq=2020  deliberate.comment    bob                      (quality team notified)
+seq=2021  deliberate.vote       bob                      (yea, 1.0)
+seq=2022  deliberate.vote       carol                    (yea, 1.0)
+seq=2023  deliberate.close      lee                      (approved)
+seq=2024  task.create           coordinator -> credit-issuer
+seq=2025  task.update           credit-issuer            (in_progress)
+seq=2026  task.complete         credit-issuer            (decision + MCP citation)
+seq=2027  notify.message        coordinator -> [alice, bob]   (final response sent)
 ```
 
 Sixteen entries. One customer ticket. Two agents, three humans, three

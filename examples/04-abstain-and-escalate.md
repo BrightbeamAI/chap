@@ -143,8 +143,9 @@ The workspace policy includes an `escalation_chain` for the
 }
 ```
 
-Bob accepts (`task.accept`), reads the original draft and Alice's
-abstention reason, and proceeds to a decision. The chain now links:
+Bob takes the new task in progress (`task.update`), reads the original
+draft and Alice's abstention reason, and proceeds to a decision. The
+chain now links:
 
 ```
 tsk_…T5A (Alice's review)  →  art_…T5C (original draft)

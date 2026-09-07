@@ -178,31 +178,39 @@ A Task is the unit of work. Its state machine is small and explicit.
 }}%%
 stateDiagram-v2
     direction TB
-    [*] --> Created : task.assign
-    Created --> Accepted : accept
-    Created --> Declined : decline
-    Accepted --> InProgress : start
-    InProgress --> ReviewRequested : review
-    InProgress --> Completed : complete
-    ReviewRequested --> Completed : approve
-    ReviewRequested --> InProgress : reject
-    InProgress --> Abstained : abstain
-    InProgress --> Escalated : escalate
-    InProgress --> Cancelled : cancel
-    Accepted --> Cancelled : cancel
-    InProgress --> Superseded : supersede
+    [*] --> Created : task.create
+    Created --> InProgress : task.update
+    Created --> ReviewRequested : review.request
+    Created --> Completed : task.complete
+    InProgress --> ReviewRequested : review.request
+    InProgress --> Completed : task.complete
+    Completed --> ReviewRequested : review.request
+    ReviewRequested --> Completed : decide.approve / decide.override
+    ReviewRequested --> Declined : decide.reject
+    ReviewRequested --> InProgress : decide.reject (request_revision)
+    ReviewRequested --> Abstained : abstain.declare
+    InProgress --> Escalated : escalate.raise
+    InProgress --> Paused : control.pause
+    Paused --> InProgress : control.resume
+    InProgress --> Cancelled : control.cancel
+    InProgress --> Superseded : control.supersede
     Completed --> [*]
-    Declined --> [*]
     Cancelled --> [*]
-    Abstained --> [*]
-    Escalated --> [*]
     Superseded --> [*]
 ```
 
+The exhaustive transition table is
+[SPECIFICATION.md §8.1](./SPECIFICATION.md#81-lifecycle); the diagram above
+shows the common path.
+
 **Things to note.**
 
-- `Declined` is terminal but **non-blocking**: the task can be reassigned
-  by a new `task.assign`. The new assignment produces a new task ID.
+- `Completed` is terminal, but `review.request` accepts a completed task:
+  completing a task and then requesting review of its output is one of the
+  two ways to submit a draft. The other is `review_required` on
+  `task.create`, where `task.complete` opens the review itself.
+- `Declined` is **non-blocking**: the work can go back to a reviewer with
+  another `review.request`, or move on with `escalate.raise`.
 - `Abstained` and `Escalated` are terminal **for this assignee** but
   trigger a new assignment to the escalation target.
 - `Superseded` is the protocol's "redo", the superseded task remains in
@@ -233,8 +241,8 @@ flowchart TB
     classDef anchor fill:#FFE7DD,stroke:#EA4700,stroke-width:2px,color:#5a1500
 
     E0["<b>entry 0</b> · genesis"]:::entry
-    E1["<b>entry 1</b> · task.assign"]:::entry
-    E2["<b>entry 2</b> · task.accept"]:::entry
+    E1["<b>entry 1</b> · task.create"]:::entry
+    E2["<b>entry 2</b> · task.update"]:::entry
     E3["<b>entry 3</b> · task.complete"]:::entry
     E4["<b>entry 4</b> · review.request"]:::entry
     E5["<b>entry 5</b> · decide.approve"]:::entry
@@ -280,7 +288,7 @@ flowchart TB
     classDef ok    fill:#E8F1ED,stroke:#1f5b39,stroke-width:2px,color:#0a3a1c
     classDef block fill:#1a1a1c,stroke:#1a1a1c,stroke-width:2px,color:#ffffff
 
-    IN["task.assign<br/>mode = X"]:::mode
+    IN["task.create<br/>mode = X"]:::mode
     CHK{"X ≤ workspace<br/>mode_ceiling?"}
     YES["dispatch"]:::ok
     NO["reject<br/>-32040<br/>mode_ceiling_exceeded"]:::block

@@ -12,6 +12,7 @@
 >
 > For most newcomers, the right entry points are:
 >
+> - **[START_HERE](./START_HERE.md)**: one recorded decision, in about two minutes.
 > - **[README](./README.md)**: overview and reading paths.
 > - **[Handbook](./HANDBOOK.md)**: practical operator's manual.
 > - **[`core/SPEC.md`](./core/SPEC.md)**: minimal Core specification (weekend-implementable).
@@ -225,7 +226,7 @@ Every CHAP message is a JSON object conforming to
   "from": "human:alice@example.org",
   "to":   "agent:triage-bot#v3.2",
   "type": "request",
-  "method": "task.assign",
+  "method": "task.create",
   "params": { /* method-specific */ },
   "evidence": {
     "prev_hash": "sha256:5f1c4e9b7a8d2f3e1c0a9b8d7e6f5c4b3a29180716054433221100ffeeddccbb",
@@ -575,9 +576,9 @@ conforming to [`schemas/chap-participant.schema.json`](./schemas/core/chap-parti
     "max_concurrent": 32,
     "avg_latency_ms": 480
   },
-  "scopes": ["task.accept", "task.complete", "review.request"],
+  "scopes": ["task.update", "task.complete", "review.request"],
   "supported_methods": [
-    "task.accept", "task.complete", "review.request",
+    "task.update", "task.complete", "review.request",
     "whisper.ask", "abstain.declare"
   ],
   "mcp_servers": [
@@ -622,44 +623,81 @@ that has not declared a scope is not eligible to receive that method.
 A Task moves through a defined state machine:
 
 ```
-created → assigned → accepted → in_progress → (review_requested) → completed
-                  ↘  declined
-                  ↘  abstained
-                  ↘  escalated
-                  ↘  cancelled
-                  ↘  superseded
+created ──▶ in_progress ──▶ review_requested ──▶ completed
+   │             │                  │
+   │             └──────────────────┴──▶ declined
+   │                                └──▶ abstained
+   └──────────────────────────────────▶ escalated
+   └──────────────────────────────────▶ paused ──▶ in_progress
+   └──────────────────────────────────▶ cancelled
+   (any state)                       ──▶ superseded
 ```
 
-Terminal states: `completed`, `cancelled`, `superseded`. Non-terminal
-states are reversible via `control.*` operations subject to policy.
+A Task has ten states: `created`, `in_progress`, `review_requested`,
+`completed`, `declined`, `abstained`, `escalated`, `paused`, `cancelled`
+and `superseded`. Terminal states are `completed`, `cancelled` and
+`superseded`; nothing but `control.supersede` moves a task out of one.
 
-Transitions are triggered by methods:
+The lifecycle is driven by `task.create`, `task.update`, `task.complete`,
+`review.request`, `decide.*`, `abstain.declare`, `escalate.raise` and
+`control.*`. The table below is exhaustive and normative: a transition it
+does not list MUST be refused. The `From` column names states rather than
+categories, because several methods carry preconditions of their own.
 
-| From               | Method                        | To                |
-|--------------------|-------------------------------|-------------------|
-| created            | `task.assign`                 | assigned          |
-| assigned           | `task.accept`                 | accepted          |
-| assigned           | `task.decline`                | declined          |
-| accepted           | `task.start`                  | in_progress       |
-| in_progress        | `task.complete` (review not required) | completed |
-| in_progress        | `task.complete` (review required) | review_requested, output held as the artefact under review |
-| in_progress        | `review.request`              | review_requested  |
-| review_requested   | `review.request` (same artefact) | review_requested (reviewer set widened) |
-| review_requested   | `review.request` (different artefact) | refused, -32014 |
-| review_requested   | `decide.approve`              | completed         |
-| review_requested   | `decide.reject`               | (back to in_progress or declined per policy) |
-| review_requested   | `decide.override`             | completed (with override artefact) |
-| any non-terminal   | `abstain.declare`             | abstained         |
-| any non-terminal   | `escalate.raise`              | escalated         |
-| any non-terminal   | `control.cancel`              | cancelled         |
-| any state          | `control.supersede`           | superseded        |
+| From | Method | To |
+|------|--------|-----|
+| created, in_progress | `task.complete` (review not required) | completed |
+| created, in_progress | `task.complete` (review required) | review_requested, output held as the artefact under review |
+| created | `task.update` | in_progress, declined, paused |
+| in_progress | `task.update` | in_progress, completed, declined, review_requested, paused |
+| review_requested | `task.update` | in_progress |
+| paused | `task.update` | in_progress, cancelled |
+| created, in_progress, completed, declined, abstained, escalated | `review.request` | review_requested |
+| review_requested | `review.request` (same artefact) | review_requested, reviewer set widened |
+| review_requested | `review.request` (different artefact) | refused, -32014 |
+| cancelled, superseded, paused | `review.request` | refused, -32010 |
+| review_requested | `decide.approve` | completed once the review rule is satisfied, otherwise review_requested |
+| review_requested | `decide.reject` | declined, or in_progress with `request_revision` |
+| review_requested | `decide.override` | completed, with an override artefact |
+| review_requested | `abstain.declare` | abstained |
+| created, in_progress, review_requested, declined, abstained, escalated, paused | `escalate.raise` | escalated |
+| created, in_progress, review_requested, abstained, escalated, paused | `control.pause` | paused |
+| paused | `control.resume` | in_progress |
+| created, in_progress, review_requested, abstained, escalated, paused | `control.cancel` | cancelled |
+| any state | `control.supersede` | superseded |
+
+Preconditions that are narrower or wider than "non-terminal":
+
+- **`task.complete` and `review.request` refuse a stopped task**, so that
+  neither revives a terminated task nor steps around a pause.
+  `review.request` accepts `completed`: completing a task and then requesting
+  review of its output is how a draft is commonly submitted, and
+  `review_required` is the alternative to that pattern.
+- **`control.pause` and `control.cancel` treat `declined` as settled** as well
+  as the three terminal states, and answer `-32061`.
+- **`abstain.declare` requires an open review**, not merely a non-terminal
+  task, and answers `-32010` otherwise.
+- **`escalate.raise` accepts any non-terminal state**, including `declined`,
+  `abstained` and `escalated`. A second escalation on an already escalated
+  task replaces its `superseded_by` link with the newer successor.
+- **`control.pause` on a paused task succeeds and changes nothing.**
 
 A task whose review is required does not complete on `task.complete`. The
 call opens a review instead, holding the submitted output as the artefact
 under review, and only a reviewer decision then reaches `completed`. Review
 is required when the task carries `review_required`, or when it runs in
-`trial` mode on a workspace that has loaded `modes/1.0`. See
+`trial` mode on a workspace that has loaded `modes/1.0`.
+
+On that path no `to` was supplied, so the Coordinator selects the reviewer
+set: the members of `type: "human"` other than the completer and the
+assignee. Where none qualifies the completion MUST be refused with `-32011`.
+An explicit `review.request` keeps whatever `to` it was given. See
 [`profiles/review.md`](./profiles/review.md) §3.1.
+
+The finer-grained `task.assign` / `task.accept` / `task.start` /
+`task.progress` lifecycle reserved in [§12.3](#123-task) is not part of this
+state machine, and the states it implies, `assigned` and `accepted`, are not
+task states.
 
 ### 8.2 Task descriptor
 
@@ -1102,7 +1140,8 @@ matching policy entry.
 
 The Coordinator MUST:
 
-- Reject any `task.assign` whose mode exceeds the workspace's ceiling
+- Reject any `task.create` or `control.supersede` whose mode exceeds the
+  workspace's ceiling
   with error `-32040` (`mode_ceiling_exceeded`).
 - Refuse to dispatch shadow-mode artefacts to participants not on
   the workspace's `shadow_observers` list.
@@ -1156,19 +1195,22 @@ Every method has:
 
 ### 12.3 `task.*`
 
-| Method               | Type         | Privileged | Description                                   |
-|----------------------|--------------|------------|-----------------------------------------------|
-| `task.assign`        | request      | no         | Propose a task to an assignee.                |
-| `task.accept`        | response     | no         | Accept an assignment.                         |
-| `task.decline`       | response     | no         | Decline an assignment.                        |
-| `task.start`         | notification | no         | The assignee has begun work.                  |
-| `task.progress`      | notification | no         | Progress update (optional).                   |
-| `task.complete`      | request      | no         | Submit a completed task with its artefact.    |
-| `task.describe`      | request      | no         | Return a task's current state.                |
+| Method               | Type         | Privileged | Status     | Description                                   |
+|----------------------|--------------|------------|------------|-----------------------------------------------|
+| `task.create`        | request      | no         | implemented | Open a task and assign it.                    |
+| `task.update`        | request      | no         | implemented | Move a task between states; carries an optional progress note. |
+| `task.complete`      | request      | no         | implemented | Submit a completed task with its artefact.    |
+| `task.assign`        | request      | no         | reserved   | Propose a task to an assignee.                |
+| `task.accept`        | response     | no         | reserved   | Accept an assignment.                         |
+| `task.decline`       | response     | no         | reserved   | Decline an assignment.                        |
+| `task.start`         | notification | no         | reserved   | The assignee has begun work.                  |
+| `task.progress`      | notification | no         | reserved   | Progress update.                              |
+| `task.describe`      | request      | no         | reserved   | Return a task's current state.                |
 
-Reference implementations expose simplified `task.create` and `task.update`
-methods in place of the `task.assign` / `task.accept` / `task.start` /
-`task.progress` lifecycle above. `task.create` accepts an optional
+The six reserved methods belong to a finer-grained assignment lifecycle that
+no implementation provides. A conforming implementation MUST NOT be expected
+to answer them, and the state machine in §8.1 does not use them.
+`task.create` accepts an optional
 `idempotency_key`: a repeat carrying a key already seen in the workspace returns
 the original task rather than creating (or recording) a duplicate, so an
 at-least-once transport can retry safely. The key is not part of the task
@@ -1617,7 +1659,7 @@ An implementation conforms at the **minimal** level if it:
 - Implements the hash-chained evidence log.
 - Implements at least one transport binding.
 - Implements `workspace.describe`, `participant.describe`,
-  `task.assign`, `task.accept`, `task.complete`, `review.request`,
+  `task.create`, `task.update`, `task.complete`, `review.request`,
   `decide.approve`, `decide.reject`, and `audit.read`.
 - Enforces the mandatory protections of §15.1.
 

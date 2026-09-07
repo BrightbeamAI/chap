@@ -105,18 +105,18 @@ differs but the bytes look almost right, check (in order):
 
 ---
 
-## 2a. Binding a decision to its content (CEP-001)
+## 2a. Refusals that must leave state untouched
 
-Three vectors cover the artefact digest and the open-review guard. They are
-listed here because they are the first vectors that assert on a *refusal* that
-leaves state untouched, which is easy to implement as a refusal that quietly
-does not.
+Four vectors cover the artefact digest, the open-review guard and the reviewer
+set a required review is addressed to. Each asserts on a refusal, which is easy
+to implement as a refusal that quietly does not.
 
 | Vector  | Sends                                                        | Expects                                   |
 |---------|--------------------------------------------------------------|-------------------------------------------|
 | `rv-09` | `decide.approve` with `approved_artefact_digest` equal to `sha256:` + SHA-256 over the JCS form of the artefact under review | approval proceeds, task `completed`       |
 | `rv-10` | the same with a digest of different content                   | `-32074`, no decision recorded, and the review still open so the reviewer can decide afterwards |
 | `rv-11` | `review.request` on an open review carrying different content  | `-32014`; then the identical artefact returns `amended: true` |
+| `rv-12` | `task.complete` on a `review_required` task, then `decide.approve` from a second agent in the workspace | the completion opens a review; the agent's decision is refused with `-32011`; a human the review was addressed to completes it |
 
 `rv-10` deliberately decides again after the refusal. A Coordinator that
 recorded the refused decision, or that closed the review, fails on the second
@@ -126,7 +126,7 @@ call rather than the first.
 
 ## 2b. Verification coverage (`audit-scitt/1.0`)
 
-Four vectors covering what `audit.verify_chain` may and may not call a pass.
+Five vectors covering what `audit.verify_chain` may and may not call a pass.
 Each asserts on the verdict a Coordinator gives about a range it did not
 evaluate, which is easy to implement as a pass with a smaller count beside
 it.
@@ -145,9 +145,9 @@ whole log. `entries_checked` plus `entries_unchecked` must equal
 `entries_total` in every verdict, and `ok` must be `true` only when `status`
 is `verified`.
 
-These five are not yet exercised by the harness, which runs Core and
-`review/1.0` against reference servers that do not enable `audit-scitt/1.0`.
-Both reference implementations are held to them by unit tests: `av-01`,
+The harness runs Core and `review/1.0` against reference servers that do not
+enable `audit-scitt/1.0`, so these five are covered by unit tests in both
+reference implementations instead: `av-01`,
 `av-02`, `av-04` and `av-05` in `verify_coverage.test.ts` and
 `test_verify_coverage.py`, and `av-03` in `verify_chain_unchained.test.ts`
 and `test_verify_chain_unchained.py`. The two implementations answer them

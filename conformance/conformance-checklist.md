@@ -58,8 +58,8 @@ CHAP conformance.
 - [ ] `participant.leave` removes the participant; idempotent.
 - [ ] `task.create` validates that the assignee is a current member; returns `task_id` and `state: "created"`.
 - [ ] Every actor-action method validates that `from` (the actor) is a current member, rejecting a non-member with `-32011` (the spec's `unknown_participant` condition; see SPECIFICATION.md §6.3.1). Verified by harness vectors `rv-07` and `rv-08`.
-- [ ] `task.update` enforces the `created → in_progress → (completed|declined)` state machine; rejects illegal transitions with `-32602`.
-- [ ] `task.complete` is terminal; subsequent transitions on the same `task_id` are rejected with `-32602`.
+- [ ] `task.update` enforces the transition table in [`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1; rejects a transition the table does not list with `-32602`.
+- [ ] `task.complete` is refused on a task in `cancelled`, `superseded`, `paused` or any state the §8.1 table does not list for it, with `-32602`.
 - [ ] `audit.read` supports `range` and at minimum the `method`, `from`, `task_id` filters; returns `entries` and `next_seq`.
 
 ### C4 · Audit log
@@ -96,7 +96,8 @@ a profile it does not pass.**
 - [ ] `decide.override`'s `diff` is validated as a well-formed RFC 6902 JSON Patch and applied deterministically.
 - [ ] Review decisions (`decide.*`, `abstain.declare`) require `from` to be one of the reviewers addressed in `review.request`'s `to` set; a member outside that set is rejected with `-32011` (see [`../profiles/review.md`](../profiles/review.md) §3.2). Verified by harness vector `rv-08`.
 - [ ] `task.complete` on a task whose review is required opens a review and moves the task to `review_requested`, holding the submitted output as the artefact under review, rather than completing it (see [`../profiles/review.md`](../profiles/review.md) §3.1).
-- [ ] The implicit review addresses the members who are neither the completer nor the assignee, so a producer cannot approve its own output; with no member eligible the completion is refused with `-32011`.
+- [ ] The implicit review addresses the **human** members who are neither the completer nor the assignee, so neither a producer nor another agent can approve agent output; with no human eligible the completion is refused with `-32011`. An explicit `review.request` keeps whatever `to` it was given. Verified by harness vector `rv-12`.
+- [ ] `review.request` is refused on a task that has been stopped (`cancelled`, `superseded`, `paused`) with `-32010`, so a review cannot revive terminated work or step around a pause (see [`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1).
 - [ ] Override entries preserve `rationale`, `tags`, `policy_refs` as queryable audit data.
 - [ ] `audit.read` filters support `method = decide.override`.
 - [ ] Returns `-32010` … `-32013` for review-specific failures (see [`../profiles/review.md`](../profiles/review.md) §5).

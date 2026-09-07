@@ -94,7 +94,7 @@ The Coordinator's response:
 }
 ```
 
-The agent's in-flight tasks are allowed to complete; new `task.assign`
+The agent's in-flight tasks are allowed to complete; new `task.create`
 messages for the agent are rejected with error `-32500` (`policy_denied`)
 carrying a `paused` reason. Coordinators MAY support an
 `in_flight_policy` of `cancel` for emergencies.

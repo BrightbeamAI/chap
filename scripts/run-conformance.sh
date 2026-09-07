@@ -5,7 +5,7 @@
 #   bash scripts/run-conformance.sh python
 #   bash scripts/run-conformance.sh typescript
 #
-# Both implementations answer the same 23 vectors. Running one language here
+# Both implementations answer the same 27 vectors. Running one language here
 # and the other in the same checkout is what keeps them honest: a vector that
 # passes on one side and fails on the other is a cross-language divergence,
 # not a local bug.

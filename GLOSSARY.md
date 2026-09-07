@@ -236,14 +236,14 @@ a tool (inward). See
 evidence entry.
 
 **Method.** [normative] The verb of a CHAP request or notification, of the
-form `namespace.verb` (e.g. `task.assign`, `decide.approve`). Catalogued
+form `namespace.verb` (e.g. `task.create`, `decide.approve`). Catalogued
 in [`schemas/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json).
 
 **Mode.** [normative] The operational regime of a workspace or task:
 `shadow`, `trial`, or `production`. See §11 of the specification.
 
 **Mode ceiling.** [normative] The maximum mode a workspace's tasks may
-carry. Enforced by the Coordinator on every `task.assign`.
+carry. Enforced by the Coordinator on every `task.create`.
 
 ---
 
@@ -303,8 +303,10 @@ request's `id`.
 evaluate an artefact and produce a decision under the task's decision
 rule. Opened by `review.request`; closed by `decide.*` operations.
 
-**Reviewer set.** [normative] The reviewers a review was addressed to,
-recorded as the `to` set on `review.request`. Under `review/1.0`, only a
+**Reviewer set.** [normative] The reviewers a review was addressed to: the
+`to` set on `review.request`, or, where a required review was opened by
+`task.complete`, the human members other than the completer and the
+assignee. Under `review/1.0`, only a
 member in the reviewer set may act on the review (`decide.*`,
 `abstain.declare`); a member outside it is rejected with `-32011`. The
 decision rule governs how many of the set must decide; the set governs
@@ -368,8 +370,9 @@ task remains in the chain, linked to its successor.
 ## T
 
 **Task.** [normative] A unit of work proposed, accepted, performed, and
-resolved inside a workspace. Has a lifecycle (created → assigned → … →
-completed/cancelled/superseded). See §8 of the specification.
+resolved inside a workspace. Has a lifecycle (created → in_progress → … →
+completed/cancelled/superseded). See §8.1 of the specification for the
+exhaustive transition table.
 
 **Tags (override).** Workspace-defined categorisations attached to an
 override artefact (e.g. `tone-adjustment`, `compensation-offered`).

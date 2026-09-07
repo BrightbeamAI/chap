@@ -115,7 +115,7 @@ sequenceDiagram
     participant M1 as MCP: orders
     participant M2 as MCP: shipping
 
-    H->>C: task.assign (CHAP)
+    H->>C: task.create (CHAP)
     C->>A: dispatch (CHAP)
     A->>M1: tools/call lookup_order (MCP)
     M1-->>A: order data (MCP)

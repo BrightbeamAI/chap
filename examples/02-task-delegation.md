@@ -2,17 +2,17 @@
 
 **Scenario.** A customer-support agent (human) has a stack of incoming
 tickets and delegates drafting the response for a non-urgent refund query
-to the triage bot. The bot accepts, works on it, and reports back. We
+to the triage bot. The bot picks it up, works on it, and reports back. We
 also show the reverse direction: an agent delegating a follow-up question
 to a human.
 
 This example shows:
 
-- `task.assign` from a human to an agent.
-- `task.accept` and `task.start` from the agent.
-- `task.progress` notifications during the work.
+- `task.create` from a human to an agent.
+- `task.update` from the agent, moving the task to `in_progress`.
+- Further `task.update` notifications carrying progress notes.
 - `task.complete` returning an artefact.
-- `task.assign` from the agent back to a human (e.g. a specialist).
+- `task.create` from the agent back to a human (e.g. a specialist).
 
 ---
 
@@ -27,34 +27,23 @@ This example shows:
   "from": "human:alice@example.org",
   "to":   "agent:triage-bot#v3.2",
   "type": "request",
-  "method": "task.assign",
+  "method": "task.create",
   "params": {
-    "task": {
-      "id": "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
-      "workspace": "wsp_support_triage",
-      "kind": "draft_response",
-      "state": "created",
-      "mode": "production",
-      "assignee": "agent:triage-bot#v3.2",
-      "delegator": "human:alice@example.org",
-      "input": {
-        "ticket_id": "INC-48219",
-        "customer_message": "Hi   my order #ORD-91204 hasn't arrived after 10 days. Tracking just shows 'in transit'. Please advise.",
-        "customer_email": "[email protected]",
-        "language": "en",
-        "intent_hint": "delivery_delay"
-      },
-      "constraints": {
-        "deadline": "2026-05-17T09:30:00Z",
-        "max_tool_calls": 5,
-        "permitted_tools": ["order-lookup", "shipping-status"]
-      },
-      "review": {
-        "required": true,
-        "reviewers": ["human:alice@example.org"],
-        "rule": "any_one_approves"
-      }
-    }
+    "workspace": "wsp_support_triage",
+    "from": "human:alice@example.org",
+    "kind": "draft_response",
+    "mode": "production",
+    "assignee": "agent:triage-bot#v3.2",
+    "input": {
+      "ticket_id": "INC-48219",
+      "customer_message": "Hi   my order #ORD-91204 hasn't arrived after 10 days. Tracking just shows 'in transit'. Please advise.",
+      "customer_email": "[email protected]",
+      "language": "en",
+      "intent_hint": "delivery_delay"
+    },
+    "deadline": "2026-05-17T09:30:00Z",
+    "review_required": true,
+    "idempotency_key": "alice-INC-48219-draft"
   },
   "evidence": {
     "prev_hash": "sha256:d7e8…f9a0",
@@ -63,14 +52,27 @@ This example shows:
 }
 ```
 
-The Coordinator validates: Alice has the `task.delegate` scope; the
-agent has declared `task.accept`; the task mode (`production`) does not
-exceed the workspace ceiling; the permitted tools are a subset of the
-workspace's `permitted_mcp_servers`. All clear, it routes to the agent.
+The Coordinator validates: Alice is a member of the workspace; the
+agent is a member, is not paused, and has declared `task.update`; the
+task mode (`production`) does not exceed the workspace ceiling. All
+clear, it mints the task and routes it to the agent:
+
+```json
+{
+  "result": {
+    "task_id": "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
+    "state":   "created"
+  }
+}
+```
+
+The `idempotency_key` makes the delegation safe to retry: a repeat
+carrying a key the workspace has already seen returns this same
+`task_id` rather than opening a second draft.
 
 ---
 
-## 2.2 Agent accepts
+## 2.2 Agent takes the task
 
 ```json
 {
@@ -81,10 +83,13 @@ workspace's `permitted_mcp_servers`. All clear, it routes to the agent.
   "from": "agent:triage-bot#v3.2",
   "to":   "human:alice@example.org",
   "type": "request",
-  "method": "task.accept",
+  "method": "task.update",
   "params": {
+    "workspace": "wsp_support_triage",
+    "from": "agent:triage-bot#v3.2",
     "task_id": "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
-    "estimated_completion_ms": 4500
+    "state": "in_progress",
+    "progress_note": "Picked up; expecting to draft within 5 seconds."
   },
   "evidence": {
     "prev_hash": "sha256:e9f0…a1b2",
@@ -93,27 +98,15 @@ workspace's `permitted_mcp_servers`. All clear, it routes to the agent.
 }
 ```
 
+The task moves from `created` to `in_progress`. An agent that will not
+take the work sends the same call with `state: "declined"` instead.
+
 ---
 
 ## 2.3 Agent reports progress
 
-The agent starts working. It calls two MCP tools and reports progress
-along the way:
-
-```json
-{
-  "chap": "0.2",
-  "id": "01HZ9YX7K3X8M2V4N6P8R0T3D",
-  "ts": "2026-05-17T09:14:22.790Z",
-  "workspace": "wsp_support_triage",
-  "from": "agent:triage-bot#v3.2",
-  "to":   "workspace:wsp_support_triage",
-  "type": "notification",
-  "method": "task.start",
-  "params": { "task_id": "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B" },
-  "evidence": { "prev_hash": "sha256:a1b2…c3d4", "sig": "ed25519:…" }
-}
-```
+The agent works. It calls two MCP tools and reports progress along the
+way, each report another `task.update` on a task already in progress:
 
 ```json
 {
@@ -124,16 +117,20 @@ along the way:
   "from": "agent:triage-bot#v3.2",
   "to":   "human:alice@example.org",
   "type": "notification",
-  "method": "task.progress",
+  "method": "task.update",
   "params": {
+    "workspace": "wsp_support_triage",
+    "from": "agent:triage-bot#v3.2",
     "task_id": "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
-    "stage": "tool_calls",
-    "pct_complete": 40,
-    "note": "Looked up order; checking shipping status."
+    "state": "in_progress",
+    "progress_note": "Looked up order; checking shipping status."
   },
   "evidence": { "prev_hash": "sha256:c3d4…e5f6", "sig": "ed25519:…" }
 }
 ```
+
+Every note lands in the task's history, so the record of how the draft
+came together survives the draft itself.
 
 ---
 
@@ -209,35 +206,30 @@ task addressed to a human specialist:
   "from": "agent:triage-bot#v3.2",
   "to":   "human:carol@example.org",
   "type": "request",
-  "method": "task.assign",
+  "method": "task.create",
   "params": {
-    "task": {
-      "id": "tsk_01HZ9YZ7K3X8M2V4N6P8R0T3L",
-      "workspace": "wsp_support_triage",
-      "kind": "warranty_review",
-      "state": "created",
-      "mode": "production",
-      "assignee": "human:carol@example.org",
-      "delegator": "agent:triage-bot#v3.2",
-      "input": {
-        "ticket_id": "INC-48227",
-        "product_id": "PROD-WX-220",
-        "purchase_date": "2024-09-04",
-        "issue_summary": "Backlight failure outside standard 12-month warranty; customer cites 18-month statutory protection in their region.",
-        "agent_summary": "Customer's region has consumer-protection rules that may extend the warranty. I am not authorised to grant exceptions.",
-        "regional_consumer_protection_summary": "Per local statute, electronics carry a 2-year defect liability for the seller."
-      },
-      "constraints": {
-        "deadline": "2026-05-17T18:00:00Z"
-      },
-      "review": { "required": false }
-    }
+    "workspace": "wsp_support_triage",
+    "from": "agent:triage-bot#v3.2",
+    "kind": "warranty_review",
+    "mode": "production",
+    "assignee": "human:carol@example.org",
+    "input": {
+      "ticket_id": "INC-48227",
+      "product_id": "PROD-WX-220",
+      "purchase_date": "2024-09-04",
+      "issue_summary": "Backlight failure outside standard 12-month warranty; customer cites 18-month statutory protection in their region.",
+      "agent_summary": "Customer's region has consumer-protection rules that may extend the warranty. I am not authorised to grant exceptions.",
+      "regional_consumer_protection_summary": "Per local statute, electronics carry a 2-year defect liability for the seller."
+    },
+    "deadline": "2026-05-17T18:00:00Z",
+    "review_required": false
   },
   "evidence": { "prev_hash": "sha256:0718…29c3", "sig": "ed25519:…" }
 }
 ```
 
-Carol accepts (`task.accept`) and works on it like any other assignment.
+Carol takes it in progress (`task.update`) and works on it like any
+other assignment.
 The protocol is symmetric: from the wire, an agent-to-human task looks
 identical to a human-to-agent task. Only the URIs reveal who is doing
 what.
@@ -248,13 +240,13 @@ what.
 
 After this exchange:
 
-- **A delegated task with a deadline and bounded tool budget.**
+- **A delegated task with a deadline and a required review.**
 - **A completed artefact with citation hashes**: anyone can later
   fetch the MCP server's audit log and confirm the recorded
   input/output hashes match.
-- **Five evidence entries** (assign, accept, start, progress,
-  complete) forming an auditable record of what happened, by whom,
-  with what tools.
+- **Four evidence entries** (create, the in-progress update, the
+  progress note, complete) forming an auditable record of what
+  happened, by whom, with what tools.
 
 Move on to [`03-review-and-approve.md`](./03-review-and-approve.md) for
 the happy-path review of Alice's draft.

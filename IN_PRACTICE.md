@@ -204,14 +204,15 @@ const assignments = await coord.dispatch({
 
 for (const a of assignments.result.entries) {
   const taskId = a.envelope.params.task_id;
-  const task = await coord.dispatch({
+  const history = await coord.dispatch({
     jsonrpc: "2.0", id: nextId(),
-    method: "task.describe",
-    params: { workspace: "wsp_support", task_id: taskId }
+    method: "audit.read",
+    params: { workspace: "wsp_support", filter: { task_id: taskId } }
   });
-  // task carries the original handoff note, the routing hints,
-  // the current state, the policy reference in effect.
-  console.log(`${task.result.id}: ${task.result.handoff_note}`);
+  // the segment carries the original handoff note, the routing hints,
+  // every state change, the policy reference in effect.
+  const latest = history.result.entries.at(-1);
+  console.log(`${taskId}: ${latest.envelope.method} at ${latest.envelope.ts}`);
 }
 ```
 

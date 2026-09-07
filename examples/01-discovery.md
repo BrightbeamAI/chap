@@ -48,7 +48,7 @@ client credential, and sends a notification:
       "tool_inventory": ["order-lookup", "shipping-status", "knowledge-base"]
     },
     "scopes": [
-      "task.accept", "task.complete", "review.request",
+      "task.update", "task.complete", "review.request",
       "whisper.ask", "abstain.declare"
     ],
     "mcp_servers": [
@@ -200,7 +200,7 @@ operational metadata it has gathered (last heartbeat, current load):
       "tool_inventory": ["order-lookup", "shipping-status", "knowledge-base"]
     },
     "scopes": [
-      "task.accept", "task.complete", "review.request",
+      "task.update", "task.complete", "review.request",
       "whisper.ask", "abstain.declare"
     ],
     "metadata": {

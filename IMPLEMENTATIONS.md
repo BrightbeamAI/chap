@@ -17,8 +17,8 @@ and whether they pass the published conformance harness.
 
 | Name                        | Language    | CHAP version | Profile surface | Conformance | Status      | License      | Authors            |
 | --------------------------- | ----------- | ------------ | --------------- | ----------- | ----------- | ------------ | ------------------ |
-| `@brightbeamai/chap-coordinator`         | TypeScript  | 0.2.12        | Full v0.2 (39 methods) | 26/26 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
-| `chap-coordinator` (Python) | Python 3.10+ | 0.2.12        | Full v0.2 (39 methods) | 26/26 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/chap-coordinator`         | TypeScript  | 0.2.12        | Full v0.2 (39 methods) | 27/27 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
+| `chap-coordinator` (Python) | Python 3.10+ | 0.2.12        | Full v0.2 (39 methods) | 27/27 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
 | `@brightbeamai/chap-coordinator-mcp`     | TypeScript  | 0.2.12        | All 39 methods as MCP tools | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
 | `@brightbeamai/chap-coordinator-a2a`     | TypeScript  | 0.2.12        | All 39 methods as A2A skills | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
 | `chap-langgraph`            | Python 3.10+ | 0.2.12        | Bridge: HIL path (`review`/`decide`) | Bridge test suite passing | Beta | Apache-2.0 | Brightbeam AI |
@@ -39,7 +39,7 @@ audit-scitt/1.0. Zero runtime dependencies for Core. Optional
 `better-sqlite3` for persistent storage.
 
 Package: [`packages/coordinator/`](./packages/coordinator/) ·
-Conformance: passes the 23-vector v0.2 harness on the same JSON-RPC
+Conformance: passes the 27-vector v0.2 harness on the same JSON-RPC
 2.0 wire as the Python reference.
 
 ### `chap-coordinator` (Python reference)
@@ -50,7 +50,7 @@ identical. Includes the same wrap-helper conveniences and the MCP/A2A
 server transport adapters as Python modules.
 
 Package: [`packages/coordinator-py/`](./packages/coordinator-py/) ·
-Conformance: passes the same 23-vector v0.2 harness as the TypeScript
+Conformance: passes the same 27-vector v0.2 harness as the TypeScript
 reference.
 
 ### `@brightbeamai/chap-coordinator-mcp` (MCP transport adapter)

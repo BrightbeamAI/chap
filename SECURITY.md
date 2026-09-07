@@ -147,7 +147,7 @@ The `mode` field on tasks and messages is the protocol's mechanism for
 preventing shadow or trial output from leaking into production effects.
 A conformant Coordinator MUST:
 
-- Reject any `task.assign` whose mode exceeds the workspace's declared
+- Reject any `task.create` whose mode exceeds the workspace's declared
   ceiling.
 - Refuse to dispatch artefacts produced in `shadow` mode to participants
   whose role is not on the workspace's `shadow_observers` list.

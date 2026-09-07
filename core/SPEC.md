@@ -189,14 +189,15 @@ A Task is a finite-state machine over these states:
                                                        │ completed  │
                                                        └────────────┘
               ┌────────────┐                  ┌────────────┐
-              │ created    │──task.update────>│ declined   │  (terminal)
+              │ created    │──task.update────>│ declined   │
               └────────────┘                  └────────────┘
 ```
 
-The three states are: `created`, `in_progress`, `completed` (with
-`declined` as a terminal alternative). Richer states, `review_requested`,
-`abstained`, `escalated`, `superseded`, `cancelled`: exist only
-when the relevant profile is in use.
+Core's states are `created`, `in_progress`, `completed` and `declined`.
+Of those only `completed` is terminal. Richer states, `review_requested`,
+`abstained`, `escalated`, `paused`, `cancelled` and `superseded`, exist only
+when the relevant profile is in use. The full transition table is
+[`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1.
 
 ### 3.2 Audit log
 
@@ -380,8 +381,9 @@ permitted.
 }
 ```
 
-A `task.update` with `state: "declined"` is a terminal transition;
-the task does not progress further.
+A `task.update` with `state: "declined"` ends the assignment. The task is
+not terminal: with `review/1.0` loaded it can go back to a reviewer, or on
+to `escalate.raise`.
 
 ### 4.6 `task.complete`
 
