@@ -85,7 +85,7 @@ from mcp.types import (
 from chap_coordinator.coordinator import Coordinator
 
 from .mcp_schemas import SCHEMAS, TOOL_NAMES, method_for_tool, coerce_tool_args
-from .mcp_tools import TOOL_DESCRIPTIONS
+from .mcp_tools import TOOL_ANNOTATIONS, TOOL_DESCRIPTIONS
 
 
 #: Revisions that may be declared in a per-request ``_meta`` envelope.
@@ -115,6 +115,7 @@ __all__ = [
     "dispatch_tool_call",
     "SCHEMAS",
     "TOOL_NAMES",
+    "TOOL_ANNOTATIONS",
     "TOOL_DESCRIPTIONS",
     "method_for_tool",
     "coerce_tool_args",
@@ -168,12 +169,16 @@ def make_chap_mcp_server(
         if filter_fn(tool_name) and method_for_tool(tool_name) is not None
     ]
 
+    # Behavioural hints travel with each tool. Without them a client has only
+    # the prose to judge whether a call is safe to make or to retry, and the
+    # title was the tool name repeated back, which told a reader nothing.
     tool_list: list[Tool] = [
         Tool(
             name=tool_name,
-            title=tool_name,
+            title=TOOL_ANNOTATIONS.get(tool_name, {}).get("title", tool_name),
             description=TOOL_DESCRIPTIONS.get(tool_name, f"CHAP method {method_for_tool(tool_name)}."),
             inputSchema=SCHEMAS[tool_name],
+            annotations=TOOL_ANNOTATIONS.get(tool_name),
         )
         for tool_name in enabled
     ]

@@ -26,7 +26,7 @@ const TOOLS_BEGIN = "# --- BEGIN GENERATED DESCRIPTIONS (scripts/sync-mcp-schema
 const TOOLS_END = "# --- END GENERATED DESCRIPTIONS ---";
 
 const { SCHEMAS } = await import(resolve(ROOT, "packages/coordinator-mcp/src/schemas.ts"));
-const { TOOL_DESCRIPTIONS } = await import(resolve(ROOT, "packages/coordinator-mcp/src/tools.ts"));
+const { TOOL_DESCRIPTIONS, TOOL_ANNOTATIONS } = await import(resolve(ROOT, "packages/coordinator-mcp/src/tools.ts"));
 
 /** Render a JSON value as Python source. JSON and Python differ on three literals. */
 function py(value, indent) {
@@ -66,6 +66,15 @@ const toolsBlock = [
   "TOOL_DESCRIPTIONS: dict[str, str] = {",
   Object.entries(TOOL_DESCRIPTIONS)
     .map(([tool, text]) => `    ${JSON.stringify(tool)}:\n        ${JSON.stringify(text)},`)
+    .join("\n"),
+  "}",
+  "",
+  "#: Behavioural hints emitted alongside each tool. See tools.ts for how each",
+  "#: field is derived; readOnlyHint in particular is the coordinator's own",
+  "#: READ_ONLY_METHODS set and is held to it by a test.",
+  "TOOL_ANNOTATIONS: dict[str, dict[str, Any]] = {",
+  Object.entries(TOOL_ANNOTATIONS)
+    .map(([tool, a]) => `    ${JSON.stringify(tool)}: ${py(a, 4)},`)
     .join("\n"),
   "}",
   TOOLS_END,
@@ -120,8 +129,14 @@ if (process.argv.includes("--check")) {
     process.exit(1);
   }
 
+  const unannotated = tools.filter(t => !TOOL_ANNOTATIONS[t]);
+  if (unannotated.length) {
+    console.error(`Tools with no annotation in tools.ts: ${unannotated.join(", ")}`);
+    process.exit(1);
+  }
+
   console.log(`Python MCP tables match the TypeScript ones: ${tools.length} tools, ` +
-              `${params} parameters, all described.`);
+              `${params} parameters, all described and annotated.`);
 } else {
   for (const t of targets) writeFileSync(t.path, t.next);
   console.log(`Wrote ${Object.keys(SCHEMAS).length} tool schemas and descriptions to ${TRANSPORTS}`);
