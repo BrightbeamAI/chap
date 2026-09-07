@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>CHAP review desk</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <strong>CHAP review desk</strong>
+    <span id="workspace" class="muted"></span>
+  </div>
+  <div class="status">
+    <span id="verification" class="badge unknown">Chain not checked yet</span>
+    <span id="connection" class="muted">Connecting</span>
+  </div>
+</header>
+
+<p id="notice" hidden></p>
+
+<ol class="steps">
+  <li id="step-propose"><span>1</span> An agent proposes</li>
+  <li id="step-review"><span>2</span> You decide</li>
+  <li id="step-result"><span>3</span> Your code uses the result</li>
+</ol>
+
+<main>
+  <section class="col">
+    <div class="row">
+      <label for="task-select">Review</label>
+      <select id="task-select"></select>
+      <span id="state" class="pill"></span>
+    </div>
+
+    <p id="hint" class="hint" hidden></p>
+
+    <details class="context" open>
+      <summary>What the agent was working from</summary>
+      <pre id="context"></pre>
+    </details>
+
+    <h2>What you are approving</h2>
+    <p id="hidden-warning" class="warning" hidden>
+      This draft contains characters that render as nothing. They are shown
+      below with a label. Read the labelled version, not the raw text: an
+      invisible character can reverse the digits after it.
+    </p>
+    <pre id="draft" class="draft"></pre>
+    <p class="muted small">Digest <code id="digest"></code></p>
+
+    <h2>Your version</h2>
+    <textarea id="editor" spellcheck="false" rows="10"
+              aria-label="The JSON you are approving"></textarea>
+    <p id="changes" class="changes muted small"></p>
+
+    <label for="rationale">Reason <span class="muted">(required to edit or reject)</span></label>
+    <input id="rationale" type="text" autocomplete="off"
+           placeholder="Why are you changing or refusing this?">
+    <label for="tags">Tags <span class="muted">(optional, comma separated)</span></label>
+    <input id="tags" type="text" autocomplete="off" placeholder="unsupported-claim, tone">
+
+    <div class="actions">
+      <button id="approve" type="button">Approve as written</button>
+      <button id="edit" type="button" class="primary">Approve my edit</button>
+      <button id="reject" type="button" class="danger">Reject</button>
+    </div>
+
+    <h2>Result your code receives</h2>
+    <pre id="output" class="output"></pre>
+  </section>
+
+  <section class="col">
+    <h2>The record</h2>
+    <div id="timeline" class="timeline"></div>
+    <div class="actions">
+      <button id="export" type="button">Download evidence</button>
+    </div>
+
+    <h2>Start another review</h2>
+    <div class="actions" id="examples"></div>
+    <details>
+      <summary>Or paste your own agent's JSON</summary>
+      <label for="own-kind">Kind</label>
+      <input id="own-kind" type="text" value="your_workflow" autocomplete="off">
+      <label for="own-draft">Draft, as a JSON object</label>
+      <textarea id="own-draft" rows="6" spellcheck="false">{"text": "Paste what your model or tool produced."}</textarea>
+      <div class="actions"><button id="submit-own" type="button">Send it for review</button></div>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <p class="muted small">
+    Everything here runs on this computer. The coordinator, the decisions, the
+    SQLite storage, the JSON Patches and the chain verification are real CHAP;
+    the drafts are fixtures. This is a local demo, not a deployed service, and
+    a <code>human:</code> URI labels a participant rather than authenticating one.
+  </p>
+</footer>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

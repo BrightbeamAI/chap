@@ -31,7 +31,15 @@ npm run typecheck                            # all TS packages
 npm run check:schemas                        # method-catalogue drift
 python3 -m pytest packages/coordinator-py/   # Python reference
 python3 -m pytest packages/chap-langgraph/   # langgraph bridge
+
+python3 -m unittest discover -s start-here/tests   # the starter
+node --test start-here/tests/render.test.mjs       # the reviewer surface
 ```
+
+The starter uses `unittest` rather than pytest, which is the odd one out on
+purpose. [`START_HERE.md`](./START_HERE.md) promises a new developer that
+Python 3.10 and a clone are the only prerequisites, and a suite that needs a
+`pip install` to run would quietly make that untrue.
 
 Why the build step matters: each TypeScript package publishes from
 `dist/` (not `src/`), so the local file: deps between workspace

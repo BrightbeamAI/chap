@@ -9,6 +9,73 @@ incremented under the same rules.
 
 ---
 
+## Unreleased
+
+### Fixed
+
+- **A required review is addressed to people.** `task.complete` on a task whose
+  review is required opens a review and selects the reviewer set. That set
+  excluded the completer and the assignee but nobody else, so in a workspace
+  with more than one agent the others were eligible and an agent could record a
+  `decide.approve` on another agent's output. The set is now the `human`
+  members other than the completer and the assignee, and a workspace with no
+  eligible human refuses the completion with `-32011`.
+
+  An explicit `review.request` keeps whatever `to` it was given, so an
+  agent-reviews-agent flow remains available where it is asked for. A trial-mode
+  workspace under `modes/1.0` needs at least one human who is neither the
+  completer nor the assignee. Harness vector `rv-12` covers it.
+
+- **`review.request` refuses a stopped task.** It had no precondition on task
+  state, so a request revived a `cancelled` or `superseded` task and pulled a
+  `paused` one back into play. Those three are now refused with `-32010`,
+  matching the allowlist `task.complete` already carried.
+
+  `completed` remains legal: completing a task and then requesting review of
+  its output is how the framework bridges submit a draft. Nothing that worked
+  before stops working except reviving stopped work.
+
+### Changed
+
+- **SPECIFICATION.md §8.1 describes the implemented state machine.** The
+  lifecycle table routed a new task through `task.assign`, `task.accept` and
+  `task.start`, and through the states `assigned` and `accepted`; no
+  coordinator implements those methods and neither state is in `TaskState`. The
+  table also omitted every transition `task.update`, `control.*`,
+  `abstain.declare` and `escalate.raise` perform.
+
+  The replacement is exhaustive over the ten task states, and both coordinators
+  are checked against it by a test that drives a task into each state and
+  attempts every state-changing method: a transition the table permits must
+  work, one it does not list must be refused. `task.assign`, `task.accept`,
+  `task.decline`, `task.start`, `task.progress` and `task.describe` are marked
+  reserved in §12.3. The `assigned` and `accepted` states are removed from
+  `schemas/core/chap-task.schema.json`, which also gains the missing `paused`.
+
+  The lifecycle diagrams in ARCHITECTURE.md, `profiles/review.md`,
+  `core/SPEC.md` and `diagrams/task-lifecycle.mmd` are corrected to match, and
+  the conformance checklist's Core rows now reference the table rather than
+  restating a subset of it.
+
+### Added
+
+- **A front door.** [`START_HERE.md`](./START_HERE.md) and
+  [`start-here/`](./start-here/) take a new developer from a clone to one
+  recorded human decision with Python 3.10 and nothing else: no install, no
+  npm, no Docker, no model, no API key. One command opens a local review desk
+  where an agent's draft can be approved, edited or rejected, with the
+  envelopes, the patch and the chain verdict on screen. The folder also carries
+  a copyable `ReviewGate` helper, three terminal demos and a dependency-free
+  Node client.
+
+  The desk renders bidi and zero-width characters visibly before a reviewer
+  decides. A digest binds a decision to content, not to what the decider saw,
+  and a reviewer surface is responsible for the difference.
+
+  The starter adds nothing to the wire format and no new package.
+
+---
+
 ## 0.2.12: review rules, modes gating, and an envelope ceiling
 
 **BREAKING for `modes/1.0` workspaces.** `task.complete` on a trial-mode task

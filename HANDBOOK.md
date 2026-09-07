@@ -5,8 +5,9 @@ specification answers "what does the wire look like?", this handbook
 answers "how do I actually use it?"
 
 Read this if you're building or operating a CHAP-based system.
-Newcomers should start with the [README](./README.md) and the
-[5-minute start](./examples/00-five-minute-start.md).
+Newcomers should start with the [README](./README.md) and
+[START_HERE.md](./START_HERE.md), which gets you to one recorded
+decision before any of this matters.
 
 ---
 

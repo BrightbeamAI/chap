@@ -17,11 +17,12 @@ shape.
 
 ## How this differs from `examples/` and adapter demos
 
-Three distinct, bounded homes, so the set never explodes into a
+Four distinct, bounded homes, so the set never explodes into a
 scenario × framework × language cross-product:
 
 | Home | Contents | Axis |
 |---|---|---|
+| [`start-here/`](../start-here/) | The first run: one browser review desk and the few lines that gate your own output. Deliberately the only thing of its kind. | exactly **one** |
 | [`examples/*.md`](../examples/) | Curated capability walkthroughs, one per CHAP verb, written as docs. | one per **capability** |
 | `packages/chap-*/examples/` | Adapter demos: the same handshake shown once per framework (LangGraph, Pydantic AI, AG2, LlamaIndex). | one per **adapter** |
 | `scenarios/NN-slug/` (here) | Domain narratives on CHAP **core**: what CHAP records in situation X. One canonical implementation each. | one per **scenario** |

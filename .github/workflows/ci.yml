@@ -94,6 +94,12 @@ jobs:
             pytest "packages/$bridge/tests/" -q
           done
 
+      # The starter is a consumer of the coordinator, so a behaviour change
+      # here breaks the first thing a new developer runs. Cheap, and it belongs
+      # on every Python version rather than behind the starter's paths filter.
+      - name: Test the starter
+        run: python -m unittest discover -s start-here/tests -q
+
   conformance:
     name: Cross-language conformance
     runs-on: ubuntu-latest
@@ -153,8 +159,9 @@ jobs:
         # excluded because it contains the character it searches for.
         run: |
           OFFENDERS=$(find . \
-            \( -name "*.md" -o -name "*.ts" -o -name "*.js" -o -name "*.py" \
-               -o -name "*.json" -o -name "*.html" -o -name "*.css" -o -name "*.tape" \) \
+            \( -name "*.md" -o -name "*.ts" -o -name "*.js" -o -name "*.mjs" \
+               -o -name "*.py" -o -name "*.json" -o -name "*.html" -o -name "*.css" \
+               -o -name "*.tape" \) \
             -not -path "./node_modules/*" -not -path "*/node_modules/*" \
             -not -path "*/dist/*" -not -path "./.github/workflows/ci.yml" \
             -not -name "package-lock.json" \

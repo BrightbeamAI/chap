@@ -1,9 +1,14 @@
 # 5-Minute Start
 
-This is the fastest path from "I've heard of CHAP" to "I've sent
-CHAP envelopes and read back the audit log." It uses the Core
-reference server at [`../reference/core/`](../reference/core/) and
-plain `curl`. No SDK, no client library.
+The shortest path from "I've heard of CHAP" to "I've sent CHAP
+envelopes and read back the audit log", with the envelopes in plain
+sight. It uses the Core reference server at
+[`../reference/core/`](../reference/core/) and plain `curl`. No SDK,
+no client library.
+
+If you want a first decision rather than a first envelope, and would
+rather not install anything, start at
+[`../START_HERE.md`](../START_HERE.md).
 
 If you'd rather watch the same flow run as a scripted client, see
 [`../reference/core/client.ts`](../reference/core/client.ts).

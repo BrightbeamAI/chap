@@ -548,6 +548,7 @@ long-poll. Same envelopes, same JSON-RPC shape, different transport.
 
 ## What's next
 
+- To run something: [`START_HERE.md`](./START_HERE.md).
 - For the operational guide: [`HANDBOOK.md`](./HANDBOOK.md).
 - For the wire-level details: [`core/SPEC.md`](./core/SPEC.md) and
   the profile docs.

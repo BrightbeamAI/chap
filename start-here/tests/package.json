@@ -1,0 +1,7 @@
+{
+  "name": "chap-start-here-tests",
+  "private": true,
+  "description": "Optional: jsdom for the review desk test. The render tests need nothing.",
+  "type": "module",
+  "devDependencies": { "jsdom": "^30.0.1" }
+}

@@ -1,0 +1,204 @@
+name: Starter
+
+# The onboarding path breaks differently from the protocol. Not by failing a
+# vector, but by drifting from what a new developer is told to type. So this
+# workflow runs the literal commands in START_HERE.md and start-here/README.md,
+# drives a real decision through each of them rather than only the do-nothing
+# path, and runs one job against the published wheel, because a pin naming a
+# released version can only rot where the checkout is not on the import path.
+#
+# The Python coordinator is in the trigger paths because the starter is a
+# consumer of it. A behaviour change there breaks the front door, and a filter
+# watching only start-here/ would report that as green. The starter's Python
+# suite also runs in ci.yml on every Python version, unconditionally.
+#
+# Markdown links and em-dashes are checked repository-wide by the Docs job in
+# ci.yml. Neither is repeated here.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'start-here/**'
+      - 'START_HERE.md'
+      - 'packages/coordinator-py/**'
+      - '.github/workflows/start-here.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'start-here/**'
+      - 'START_HERE.md'
+      - 'packages/coordinator-py/**'
+      - '.github/workflows/start-here.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: start-here-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checkout-path:
+    name: From the checkout (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # START_HERE.md promises Python and nothing else. If this job ever needs
+      # a pip install to pass, that promise is broken and the page is wrong.
+      - name: Behaviour tests
+        run: python -m unittest discover -s start-here/tests -v
+
+      - name: Each demo, deciding for real
+        shell: bash
+        working-directory: start-here
+        run: |
+          set -euo pipefail
+
+          printf 'a\n' | python hello.py | tee hello.out
+          grep -q 'Reviewed output' hello.out
+
+          printf 'r\nnot supportable\n' | python hello.py | tee reject.out
+          grep -q 'rejected this proposal' reject.out
+
+          printf 'e\n{"to":"c@example.com","subject":"Your delivery","body":"On its way."}\nno date in tracking\n' \
+            | python guarded_tool.py
+          test -f .data/reviewed-email.json \
+            || { echo "::error::the guarded function never ran on the reviewed arguments"; exit 1; }
+          grep -q 'On its way' .data/reviewed-email.json \
+            || { echo "::error::the outbox holds the draft, not the edit"; exit 1; }
+
+          python resume.py                       # leaves a pending review
+          printf 'a\n' | python resume.py        # finds it again in a new process
+          test -f .data/resume.json \
+            || { echo "::error::the second run did not resume the pending review"; exit 1; }
+
+      - name: Doing nothing authorises nothing
+        shell: bash
+        working-directory: start-here
+        run: |
+          set -euo pipefail
+          rm -rf .data
+          echo "" | python guarded_tool.py | tee pending.out
+          grep -q 'The function was not called' pending.out
+          test ! -f .data/reviewed-email.json \
+            || { echo "::error::a pending review produced an outbox"; exit 1; }
+
+  agent-and-browser:
+    name: The agent and browser paths, end to end
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Backgrounding and signalling differ enough between Git Bash and a POSIX
+      # shell that doing this in the matrix above would test the shell rather
+      # than the starter, so the desk gets one thorough run here instead.
+      - name: An agent proposes, a reviewer decides, the agent gets the result
+        working-directory: start-here
+        run: |
+          set -euo pipefail
+          python start.py --no-browser --port 0 > desk.log 2>&1 &
+          desk=$!
+          trap 'kill "$desk" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do grep -q 'reviewer=' desk.log && break; sleep 1; done
+
+          url=$(grep -o 'http://127.0.0.1:[0-9]*' desk.log | head -1)
+          token=$(grep -o 'reviewer=[A-Za-z0-9_-]*' desk.log | head -1 | cut -d= -f2)
+          test -n "$url" && test -n "$token" \
+            || { cat desk.log; echo "::error::the desk printed no reviewer link"; exit 1; }
+
+          curl -fsS "$url/" > /dev/null
+          curl -fsS -H "X-CHAP-Reviewer: $token" "$url/api/desk" > desk.json
+          python -c "import json;d=json.load(open('desk.json'));assert d['verification']['status']=='verified',d['verification']"
+
+          # agent.mjs proposes over the agent capability and blocks until a
+          # human decides. Nothing else in CI exercises that file.
+          node agent.mjs > agent.log 2>&1 &
+          agent=$!
+          for _ in $(seq 1 30); do grep -q 'Proposed' agent.log && break; sleep 1; done
+          task=$(grep -o 'Proposed [A-Za-z0-9_]*' agent.log | head -1 | cut -d' ' -f2)
+          test -n "$task" || { cat agent.log; echo "::error::agent.mjs proposed nothing"; exit 1; }
+
+          digest=$(curl -fsS -H "X-CHAP-Reviewer: $token" "$url/api/desk?task=$task" \
+                   | python -c "import json,sys;print(json.load(sys.stdin)['task']['digest'])")
+          curl -fsS -X POST -H "X-CHAP-Reviewer: $token" -H "Content-Type: application/json" \
+            -d "{\"action\":\"edit\",\"edited\":{\"text\":\"On its way, no date yet.\"},\"rationale\":\"tracking has no date\",\"expected_digest\":\"$digest\"}" \
+            "$url/api/reviews/$task/decision" > /dev/null
+
+          wait "$agent"
+          cat agent.log
+          grep -q 'On its way, no date yet' agent.log \
+            || { echo "::error::the Node client did not receive the human's edit"; exit 1; }
+
+          test -f .data/agent.json || { echo "::error::no agent connection file"; exit 1; }
+
+      # The chain proves what was decided, not what the decider saw. These
+      # cover the difference.
+      - name: Hidden-character rendering
+        run: node --test start-here/tests/render.test.mjs
+
+      - name: Install jsdom for the review desk test
+        run: npm --prefix start-here/tests install --no-audit --no-fund
+
+      # jsdom has to be present for this to mean anything: desk.test.mjs skips
+      # itself when the import fails, and a skip exits zero. Asserting on
+      # skipped and fail counts, rather than a pass count, so adding a case
+      # does not fail the build with a misleading message.
+      - name: The review desk, in a real DOM
+        run: |
+          set -euo pipefail
+          node --test start-here/tests/desk.test.mjs | tee desk.tap
+          grep -q '^# fail 0' desk.tap
+          grep -q '^# skipped 0' desk.tap \
+            || { echo "::error::a desk test was skipped; jsdom is probably missing"; exit 1; }
+          grep -qE '^# pass [1-9]' desk.tap \
+            || { echo "::error::no desk test ran at all"; exit 1; }
+
+  published-wheel:
+    name: From the published package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Copied outside the repository, so chap_starter.py cannot fall back to
+      # packages/coordinator-py and the installed release is the only CHAP here.
+      - name: Copy the starter out of the checkout
+        run: cp -r start-here "${RUNNER_TEMP}/start-here"
+
+      - name: Install the released coordinator
+        run: python -m pip install --upgrade chap-coordinator
+
+      - name: Prove the checkout is not on the import path
+        working-directory: ${{ runner.temp }}/start-here
+        run: |
+          python - <<'PY'
+          import pathlib, sys
+          import chap_coordinator
+          where = pathlib.Path(chap_coordinator.__file__).resolve()
+          print("coordinator", chap_coordinator.__version__, "from", where)
+          if "coordinator-py" in where.parts:
+              sys.exit("the checkout is still on sys.path; this job proves nothing")
+          PY
+
+      - name: Behaviour tests against the release
+        working-directory: ${{ runner.temp }}/start-here
+        run: python -m unittest discover -s tests -v

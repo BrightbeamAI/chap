@@ -1,0 +1,6 @@
+# Everything the demo writes: the SQLite store, its lock, the agent
+# connection file, and any evidence you export.
+.data/
+
+# jsdom, if you install it for the review desk test.
+package-lock.json

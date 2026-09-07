@@ -131,7 +131,7 @@ Conformance attestations are published as [in-toto attestations](https://github.
 |-------------------------------------------|---------------------------------------------------------------------------------|
 | Evaluating whether CHAP fits             | [`README.md`](./README.md) → [`IN_PRACTICE.md`](./IN_PRACTICE.md) → [`HANDBOOK.md`](./HANDBOOK.md) → [`FAQ.md`](./FAQ.md) |
 | Looking for your use case                | [`IN_PRACTICE.md`](./IN_PRACTICE.md): twelve worked scenarios |
-| Seeing it run                            | [`demo/index.html`](./demo/index.html) (static, offline) → [`reference/playground/`](./reference/playground/) (TypeScript, two humans + local LLM) → [`reference/python/`](./reference/python/) (Python; every profile) |
+| Seeing it run                            | [`START_HERE.md`](./START_HERE.md) (one command, a real decision) → [`demo/index.html`](./demo/index.html) (static, offline) → [`reference/playground/`](./reference/playground/) (TypeScript, two humans + local LLM) → [`reference/python/`](./reference/python/) (Python; every profile) |
 | Implementing in TypeScript               | [`core/SPEC.md`](./core/SPEC.md) → [`packages/coordinator/`](./packages/coordinator/) → [`reference/core/`](./reference/core/) (minimal Core, weekend-buildable) or [`reference/core-plus-review/`](./reference/core-plus-review/) (Core + review) |
 | Implementing in Python                   | [`core/SPEC.md`](./core/SPEC.md) → [`packages/coordinator-py/`](./packages/coordinator-py/) → [`reference/python/`](./reference/python/) |
 | Adding a profile                         | [`profiles/PROFILES.md`](./profiles/PROFILES.md) → the specific profile spec |
@@ -152,6 +152,7 @@ The repo has four kinds of content: top-level Markdown docs (landing, reference,
 chap-protocol/
 │
 ├── README.md                            Landing page.
+├── START_HERE.md                        One command to a first recorded decision.
 ├── ABOUT.md                             You are here.
 ├── IN_PRACTICE.md                       Twelve real-world scenarios.
 ├── HANDBOOK.md                          Operating CHAP in production.
@@ -167,6 +168,8 @@ chap-protocol/
 ├── GOVERNANCE.md                        How the protocol evolves (the CEP process).
 ├── CODE_OF_CONDUCT.md                   Contributor Covenant 2.1.
 ├── CHANGELOG.md                         Release notes.
+├── MAINTAINERS.md                       Who reviews what.
+├── IMPLEMENTATIONS.md                   Known implementations and their conformance.
 ├── LICENSE                              Apache 2.0 (code) + CC-BY 4.0 (spec).
 │
 ├── core/
@@ -229,6 +232,12 @@ chap-protocol/
 │   ├── 08-multi-human-deliberation.md
 │   ├── 09-pause-resume-rollback.md
 │   └── 10-end-to-end-workflow.md
+│
+├── start-here/                          The runnable starter: review desk and helper.
+│
+├── scenarios/                           Runnable domain narratives on Core.
+│
+├── ceps/                                CHAP Enhancement Proposals.
 │
 ├── demo/                                Static single-file HTML walkthrough.
 │   └── index.html
