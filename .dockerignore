@@ -1,0 +1,24 @@
+# Keep the build context small. Nothing here is copied by either Dockerfile,
+# and node_modules in particular is large and platform-specific: the root
+# Dockerfile runs its own npm install inside the image.
+.git
+.github
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Local state written by the demos and the starter.
+**/.data
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.log
+
+# Documentation assets, not needed to build or run either image.
+docs
+diagrams

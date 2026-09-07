@@ -1,0 +1,43 @@
+# The CHAP MCP server, over stdio.
+#
+# This is the image a directory or an MCP client builds to launch and inspect
+# the server. It reproduces what the registry entry advertises,
+#
+#   npx -y @brightbeamai/chap-coordinator-mcp
+#
+# so what an inspector sees here is what a user gets. The root `Dockerfile`
+# builds something else: the playground, a web UI on port 8080. An inspector
+# pointed at that finds an HTTP server rather than a tool list.
+#
+#   docker build -f Dockerfile.mcp -t chap-mcp .
+#   docker run --rm -i chap-mcp
+#
+# The server speaks JSON-RPC on stdin and stdout and logs to stderr, so `-i`
+# matters and `-t` must not be used.
+
+FROM node:20-bookworm-slim
+
+# Pin the release the image serves. Bump on each publish, or override:
+#   docker build -f Dockerfile.mcp --build-arg CHAP_MCP_VERSION=0.2.13 .
+ARG CHAP_MCP_VERSION=0.2.12
+
+# --omit=optional skips better-sqlite3, an optional dependency of the
+# coordinator. A stdio server holds its workspaces in memory for the life of
+# the process and never opens the store, so the native module is dead weight
+# here and its prebuilt binaries are the one thing that could fail the build.
+RUN npm install -g --omit=optional --no-audit --no-fund \
+      "@brightbeamai/chap-coordinator-mcp@${CHAP_MCP_VERSION}" \
+    && npm cache clean --force
+
+# Persist workspaces by mounting a volume here and setting CHAP_DB_PATH.
+# Left unset, the coordinator runs in memory and a restart starts clean.
+ENV CHAP_DB_PATH=""
+
+# Comma-separated profile set for new workspaces. Unset means Core plus
+# review, whisper, deliberation, handoff, control, routing, modes and
+# audit-scitt.
+ENV CHAP_PROFILES=""
+
+USER node
+
+ENTRYPOINT ["chap-mcp-server"]
