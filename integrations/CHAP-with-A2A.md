@@ -205,7 +205,7 @@ in flight:
       "content": {
         "translation_uri": "https://example.org/docs/quarterly-report.ko.pdf",
         "translator_attestation": "Partner A   translation team",
-        "quality_score": 4.6
+        "quality_score": "4.6"
       },
       "citations": [
         {

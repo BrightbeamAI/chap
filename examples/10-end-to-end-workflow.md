@@ -32,7 +32,7 @@ The customer message:
 > "I've been a customer for 8 years. Today is the third time in two
 > months an order has arrived broken. I'd like a refund on this one
 > and frankly some acknowledgement that this isn't working for me."
->, `[email protected]`, ticket `INC-48910`.
+>, `customer@example.com`, ticket `INC-48910`.
 
 ---
 

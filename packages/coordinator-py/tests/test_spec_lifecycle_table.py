@@ -56,10 +56,15 @@ def spec_machine():
             s.strip() for s in froms.split(",")]
         for state in states:
             assert state in STATES, f"§8.1 names an unknown state: {state}"
+            if refused:
+                # A refusal row documents a precondition. Its To cell names
+                # an error, not a reachable state, so it contributes nothing
+                # to either map.
+                continue
             if method == "task.update":
                 update_targets.setdefault(state, set()).update(
                     t.strip() for t in to_cell.split(","))
-            elif not refused:
+            else:
                 permitted.setdefault(method, set()).add(state)
     return permitted, update_targets
 

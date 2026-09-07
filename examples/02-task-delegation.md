@@ -36,8 +36,8 @@ This example shows:
     "assignee": "agent:triage-bot#v3.2",
     "input": {
       "ticket_id": "INC-48219",
-      "customer_message": "Hi   my order #ORD-91204 hasn't arrived after 10 days. Tracking just shows 'in transit'. Please advise.",
-      "customer_email": "[email protected]",
+      "customer_message": "Hi, my order #ORD-91204 hasn't arrived after 10 days. Tracking just shows 'in transit'. Please advise.",
+      "customer_email": "customer@example.com",
       "language": "en",
       "intent_hint": "delivery_delay"
     },
@@ -178,7 +178,7 @@ came together survives the draft itself.
           "output_hash": "sha256:f6071829304152637485960718293041526374859607182930415263748596c6"
         }
       ],
-      "confidence": 0.91,
+      "confidence": "0.91",
       "content_hash": "sha256:071829304152637485960718293041526374859607182930415263748596a4b5"
     }
   },

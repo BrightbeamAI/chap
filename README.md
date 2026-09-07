@@ -51,7 +51,7 @@ You have agents doing real work. Drafting code reviews, triaging tickets, sugges
 
 CHAP gives you one place to put those decisions and one shape to put them in. The agent's draft is an artefact. The human's edit is a structured override with a diff, a rationale, and tags you control. The whole thing chains together by content hash. You query the chain instead of grepping logs across four UIs.
 
-The chain survives key rotation, log expiry, and people leaving; one `audit.read` call returns the whole thing. The overrides your reviewers were already making accumulate into supervision data you'd otherwise have to commission. When approvals must be non-repudiable, `security-signed/1.0` adds OIDC-bound signatures with a `signature_meaning` you define, and `audit-scitt/1.0` anchors the chain in an external transparency log, verifiable without trusting your servers. And CHAP sits beside MCP and A2A rather than replacing them: MCP for tools, A2A for other agents, CHAP for the shared work with humans.
+The chain survives key rotation, log expiry, and people leaving; one `audit.read` call returns the whole thing. The overrides your reviewers were already making accumulate into supervision data you'd otherwise have to commission. When approvals must be non-repudiable, `security-signed/1.0` adds an Ed25519 signature to every envelope, bindable to a real identity with `identity-oidc/1.0`, and `audit-scitt/1.0` anchors the chain in an external transparency log, verifiable without trusting your servers. And CHAP sits beside MCP and A2A rather than replacing them: MCP for tools, A2A for other agents, CHAP for the shared work with humans.
 
 That's the whole pitch.
 
@@ -226,7 +226,7 @@ send("decide.override", {
 
 </td></tr></table>
 
-> **About the surfaces.** TypeScript ships a typed facade (`coord.api.*`) so every method gets full autocomplete and compile-time checks. Python keeps the JSON-RPC envelope shape on the surface (`coord.dispatch({...})`) and consumers wrap it however suits the call site; a `send()` helper is the idiom the Python tests use. Both paths emit identical wire bytes; the audit chain is byte-for-byte the same regardless of which client made the call.
+> **About the surfaces.** TypeScript ships a typed facade (`coord.api.*`) so every method gets full autocomplete and compile-time checks. Python keeps the JSON-RPC envelope shape on the surface (`coord.dispatch({...})`) and consumers wrap it however suits the call site; a `send()` helper is the idiom the Python tests use. Both paths emit the same params and the same envelope shape, so the audit chain reads the same whichever client made the call.
 
 **3. Two months in, analyse what you've been doing.** The reference repo ships an analytics script in both languages that reads the audit chain (over HTTP or straight from your SQLite file) and groups overrides:
 

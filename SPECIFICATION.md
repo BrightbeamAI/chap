@@ -650,6 +650,7 @@ categories, because several methods carry preconditions of their own.
 | created, in_progress | `task.complete` (review required) | review_requested, output held as the artefact under review |
 | created | `task.update` | in_progress, declined, paused |
 | in_progress | `task.update` | in_progress, completed, declined, review_requested, paused |
+| in_progress | `task.update` to completed (review required) | refused, -32602 |
 | review_requested | `task.update` | in_progress |
 | paused | `task.update` | in_progress, cancelled |
 | created, in_progress, completed, declined, abstained, escalated | `review.request` | review_requested |
@@ -681,6 +682,14 @@ Preconditions that are narrower or wider than "non-terminal":
   `abstained` and `escalated`. A second escalation on an already escalated
   task replaces its `superseded_by` link with the newer successor.
 - **`control.pause` on a paused task succeeds and changes nothing.**
+- **`task.update` MUST NOT complete a task that requires review.**
+  `in_progress → completed` is otherwise legal, so without this the review
+  could be skipped: the task would finish carrying no artefact and no
+  `decide.*` would appear on the chain. The refusal is `-32602`, and the
+  route through is `task.complete` followed by a reviewer decision.
+- **`review.request` compares only a rule the caller supplied.** Omitting
+  `rule` on a second request for the same artefact leaves the open review's
+  rule in place and widens the reviewer set; it is not a change to the rule.
 
 A task whose review is required does not complete on `task.complete`. The
 call opens a review instead, holding the submitted output as the artefact
@@ -939,14 +948,18 @@ when the profile is not in use.
 
 Fields:
 
-| Field               | Type    | Constraint                                |
-|---------------------|---------|-------------------------------------------|
-| `confidence`        | number  | in [0, 1]; model-specific calibration     |
-| `model_id`          | string  | recommended whenever `confidence` is set  |
-| `cost_consumed_usd` | number  | non-negative                              |
-| `latency_ms`        | integer | non-negative                              |
+| Field               | Type            | Constraint                                |
+|---------------------|-----------------|-------------------------------------------|
+| `confidence`        | decimal string  | in [0, 1]; model-specific calibration     |
+| `model_id`          | string          | recommended whenever `confidence` is set  |
+| `cost_consumed_usd` | decimal string  | non-negative                              |
+| `latency_ms`        | integer         | non-negative                              |
 
-**Calibration caveat.** Two `confidence: 0.83` values from different
+`confidence` and `cost_consumed_usd` are fractional, so per §7 they are
+carried as decimal strings (`"0.62"`, not `0.62`). A JSON number with a
+fractional part is rejected at ingress.
+
+**Calibration caveat.** Two `confidence: "0.83"` values from different
 models are not comparable without calibration data. CHAP makes no
 claim about cross-model comparability and recommends restricting
 routing rules that consult `confidence` to a single `model_id` or

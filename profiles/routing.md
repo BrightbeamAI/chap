@@ -27,6 +27,14 @@ CHAP's discipline: **the protocol carries the evidence; the
 operator runs the policy.** This profile gives the policy a wire
 format so its decisions become evidence too.
 
+The fractional hints, `confidence`, `max_cost_usd` and
+`cost_consumed_usd`, are carried as decimal strings (`"0.62"`, not
+`0.62`). Envelope numbers are integers, so that canonicalisation and
+therefore the audit hash agree across implementations; see
+[SPECIFICATION.md §7](../SPECIFICATION.md). A JSON number with a
+fractional part is rejected at ingress with `-32602`. Policy code reads
+the string and parses it.
+
 ---
 
 ## 2. New methods
@@ -236,7 +244,7 @@ structure:
     "policy_id":     "review-depth-v2",
     "hints_observed": {
       "criticality": "low",
-      "confidence":  0.91,
+      "confidence":  "0.91",
       "model_id":    "draft-bot:2026-05"
     },
     "rationale": "criticality=low + confidence>0.85: sampled at 10%."
@@ -311,7 +319,7 @@ profile does not dictate this; the operator's policy does.
 
 ## 9. Confidence calibration: a caveat
 
-Two `confidence: 0.83` values from different models are not
+Two `confidence: "0.83"` values from different models are not
 comparable without calibration data. CHAP does not standardise
 calibration. Operators using `confidence` for routing SHOULD:
 
@@ -372,9 +380,9 @@ The careful agent produces a draft with measured hints:
 ```json
 {
   "routing_hints": {
-    "confidence":         0.62,
+    "confidence":         "0.62",
     "model_id":           "careful-draft-v2:2026-05",
-    "cost_consumed_usd":  3.40,
+    "cost_consumed_usd":  "3.40",
     "latency_ms":         2810
   }
 }

@@ -7,14 +7,47 @@ rest) can drive a CHAP workspace directly.
 
 Spec target: **MCP 2026-07-28**, serving MCP 2025-11-25 clients as well · CHAP 0.2.
 
+## Run it as a server
+
+The package ships a stdio server, so an MCP client can use CHAP without any
+code. Point the client at it:
+
+```json
+{
+  "mcpServers": {
+    "chap": {
+      "command": "npx",
+      "args": ["-y", "@brightbeamai/chap-coordinator-mcp"],
+      "env": { "CHAP_DB_PATH": "~/chap.db" }
+    }
+  }
+}
+```
+
+All 39 methods arrive as tools named `chap.<method>`. Two environment
+variables configure it:
+
+| Variable | Effect |
+|----------|--------|
+| `CHAP_DB_PATH` | Path to a SQLite file. Without it the coordinator runs in memory and every workspace is lost when the client restarts. |
+| `CHAP_PROFILES` | Comma-separated profiles for new workspaces. Defaults to Core plus review, whisper, deliberation, handoff, control, routing, modes and audit-scitt, so the audit chain is on from the first entry. |
+
+Persistence needs `better-sqlite3`, an optional native dependency of the
+coordinator. If `CHAP_DB_PATH` is set and it cannot be loaded the server says
+so and exits rather than starting in memory and discarding the decisions it
+was asked to keep.
+
+The server is also listed in the [MCP registry](https://registry.modelcontextprotocol.io)
+as `io.github.BrightbeamAI/chap`.
+
 ## Install
 
 ```bash
 npm install @brightbeamai/chap-coordinator-mcp
 ```
 
-Node 20+ required. Runtime dependencies: `@brightbeamai/chap-coordinator` and
-`@modelcontextprotocol/sdk`.
+Node 20+ required. Runtime dependencies: `@brightbeamai/chap-coordinator`,
+`@modelcontextprotocol/sdk` and `zod`. The binary is `chap-mcp-server`.
 
 ## Quick start
 
@@ -27,7 +60,7 @@ const coord = new Coordinator({
   defaultProfiles: ["core/1.0", "review/1.0", "audit-scitt/1.0"],
 });
 
-const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.12" });
+const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.13" });
 await server.connect(new StdioServerTransport());
 ```
 

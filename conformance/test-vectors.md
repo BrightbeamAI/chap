@@ -60,8 +60,10 @@ representation. The CHAP rules:
 - No insignificant whitespace.
 - UTF-8 encoding.
 - Strings use minimal JSON escaping.
-- Numbers in I-JSON-compatible form (integers if integer; otherwise
-  shortest round-trip decimal).
+- Numbers are integers within the safe-integer range. A non-integer
+  number is rejected rather than canonicalised, so a fractional value
+  travels as a decimal string. See SPECIFICATION.md §7 and the
+  machine-readable cases in `canonical-number-vectors.json`.
 - The `evidence.sig` field is **removed** before canonicalisation
   for signing (and reinserted after).
 
@@ -73,11 +75,11 @@ representation. The CHAP rules:
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2A",
   "ts": "2026-05-17T09:00:00.000Z",
   "workspace": "wsp_test",
-  "from": "human:[email protected]",
-  "to": "service:[email protected]",
+  "from": "human:alice@example.org",
+  "to": "service:coordinator@example.org",
   "type": "notification",
   "method": "participant.heartbeat",
-  "params": { "load": 0.42, "status": "ready" },
+  "params": { "load": "0.42", "status": "ready" },
   "evidence": { "prev_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000" }
 }
 ```
@@ -85,13 +87,13 @@ representation. The CHAP rules:
 ### Expected canonical form (exact bytes)
 
 ```
-{"evidence":{"prev_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000"},"from":"human:[email protected]","chap": "0.2","id":"01HZ9YWQ7K3X8M2V4N6P8R0T2A","method":"participant.heartbeat","params":{"load":0.42,"status":"ready"},"to":"service:[email protected]","ts":"2026-05-17T09:00:00.000Z","type":"notification","workspace":"wsp_test"}
+{"chap":"0.2","evidence":{"prev_hash":"sha256:0000000000000000000000000000000000000000000000000000000000000000"},"from":"human:alice@example.org","id":"01HZ9YWQ7K3X8M2V4N6P8R0T2A","method":"participant.heartbeat","params":{"load":"0.42","status":"ready"},"to":"service:coordinator@example.org","ts":"2026-05-17T09:00:00.000Z","type":"notification","workspace":"wsp_test"}
 ```
 
 ### Expected SHA-256 of the canonical bytes
 
 ```
-sha256:3e2ca14b18d9c883ac22cc66c6b4b2a28012912212c5dd49b07b1fea8c1f52df
+sha256:d07ac6c9ca7a88ac8578b342ac9845875750e298b613f1cef768bece1a8faf51
 ```
 
 If your JCS implementation produces those exact bytes and that

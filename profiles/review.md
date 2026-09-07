@@ -126,6 +126,20 @@ constrains what a second `review.request` may do.
 - A request that would change the `rule` of an open review MUST also be
   refused with `-32014`. The rule under which reviewers agreed to
   decide is fixed for the life of that review.
+- Only a `rule` the caller actually supplied counts as a change.
+  Omitting it leaves the open review's rule in place, so the amendment
+  above does not require the caller to restate a rule to add a
+  reviewer. Comparing the resolved default instead would refuse every
+  amendment to a review opened under anything but
+  `any_one_approves`.
+
+**Completing round the review.** `task.update` reaches `completed` by
+another route and carries no output, so a task requiring review MUST NOT
+be completed through it. The Coordinator refuses with `-32602` and names
+`task.complete` in the message. Without this the review is skipped
+outright: the task finishes with no artefact recorded and no `decide.*`
+on the chain, which is the single failure `review_required` exists to
+prevent. See [SPECIFICATION.md §8.1](../SPECIFICATION.md#81-lifecycle).
 
 ### 3.2 `decide.approve` · `decide.reject`
 

@@ -13,8 +13,9 @@ surface, so the two interoperate on the same JSON-RPC 2.0 wire.
 npm install @brightbeamai/chap-coordinator
 ```
 
-Node 20+ required. Zero external runtime dependencies; uses Node's
-built-in `crypto` for Ed25519 and JCS.
+Node 20+ required. No required runtime dependencies; uses Node's built-in
+`crypto` for Ed25519 and JCS. `better-sqlite3` is an optional dependency,
+needed only for `SqliteStore`.
 
 ## Companion packages
 
@@ -85,7 +86,7 @@ console.log(resp.result);  // { task_id: "tsk_...", state: "created" }
 
 | Profile               | Methods (per profile spec)                                                                |
 |-----------------------|-------------------------------------------------------------------------------------------|
-| `core/1.0`            | `workspace.create`, `workspace.describe`, `workspace.set_profiles`, `participant.join`, `participant.leave`, `task.create`, `task.update`, `task.complete`, `audit.read` |
+| `core/1.0`            | `workspace.create`, `workspace.describe`, `workspace.set_profiles`, `participant.join`, `participant.leave`, `task.create`, `task.update`, `task.complete`, `audit.read`; a task created with `review_required` completes only on a reviewer decision |
 | `review/1.0`          | `review.request`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`, `escalate.raise` |
 | `whisper/1.0`         | `whisper.ask`, `whisper.answer`; lapse hook via `coord.checkWhisperLapses(workspaceId, now?)` |
 | `deliberation/1.0`    | `deliberate.open`, `deliberate.comment`, `deliberate.vote`, `deliberate.close` |
@@ -99,6 +100,15 @@ console.log(resp.result);  // { task_id: "tsk_...", state: "created" }
 | `identity-vc/1.0`     | `participant.join` binding via `verifyVc`; holder-key pinning |
 
 **39 method handlers in total**, matching the Python reference exactly.
+
+**The review gate.** A task carrying `review_required` does not complete on
+`task.complete`. The call opens a review, holding the submitted output as the
+artefact under review, and only a `decide.*` reaches `completed`. `task.update`
+cannot complete such a task either, and answers `-32602` naming the route
+through. Where no reviewer was named, the set is the human members other than
+the completer and the assignee; a workspace with no eligible human refuses the
+completion rather than opening a review nobody can decide. Under `modes/1.0` a
+trial-mode task has `review_required` set for it.
 
 ## Architecture
 
@@ -171,7 +181,7 @@ Key lifecycle:
 - `participant.revoke_key` is an admin operation; envelopes signed
   with the revoked key after revocation are rejected.
 
-Helpers exported from `@brightbeamai/chap-coordinator/crypto`:
+Helpers exported from `@brightbeamai/chap-coordinator`:
 
 ```typescript
 import {

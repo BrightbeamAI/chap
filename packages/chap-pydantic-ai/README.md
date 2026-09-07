@@ -24,7 +24,7 @@ An edited argument is recorded as an RFC 6902 diff, so the chain captures
 pip install chap-pydantic-ai
 ```
 
-Depends on `chap-coordinator>=0.2.12`. Pydantic AI is **optional**: the
+Depends on `chap-coordinator>=0.2.13`. Pydantic AI is **optional**: the
 adapter reads the resolution objects structurally, so the bridge and its
 tests work without it installed. Install the extra to run a live agent:
 
@@ -113,13 +113,14 @@ that approver to the workspace before recording.
 
 ## What you get in the audit chain
 
-One run with an edited approval yields:
+One run with an edited approval yields the following, after the workspace
+and the three joins at seq 0 to 3:
 
 ```
-seq=3  task.create     agent:assistant#v1
-seq=4  task.complete   agent:assistant#v1
-seq=5  review.request  agent:assistant#v1   to=human:sam@example.org
-seq=6  decide.override human:sam@example.org  diff=[{op:replace, path:/args/amount, value:50}]
+seq=4  task.create     agent:assistant#v1
+seq=5  task.complete   agent:assistant#v1
+seq=6  review.request  agent:assistant#v1   to=human:sam@example.org
+seq=7  decide.override human:sam@example.org  diff=[{op:replace, path:/args/amount, value:50}]
 ```
 
 Every entry carries `prev_hash`, so the chain verifies externally or
@@ -134,7 +135,7 @@ and prints the resulting chain.
 
 ## Compatibility
 
-- `chap-coordinator` 0.2.12
+- `chap-coordinator` 0.2.13
 - `pydantic-ai` 1.x–2.x (optional; verified against 2.0)
 - Python 3.10, 3.11, 3.12, 3.13
 

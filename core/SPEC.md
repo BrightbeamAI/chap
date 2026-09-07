@@ -117,9 +117,9 @@ Method-specific fields are documented in §4.
   `@authority` (DNS-style) and `#version` suffix. Examples:
 
 ```
-human:[email protected]
+human:alice@example.org
 agent:triage-bot#v3.2
-service:[email protected]
+service:coordinator@example.org
 group:on-call@example.org
 workspace:wsp_demo
 ```
@@ -402,9 +402,9 @@ Mark a task as completed and deliver its output.
     "task_id":   "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
     "output": {
       "subject": "Re: order ORD-91204 delivery delay",
-      "body":    "Hi   I checked the carrier tracking…"
+      "body":    "Hi, I checked the carrier tracking…"
     },
-    "confidence": 0.91
+    "confidence": "0.91"
   }
 }
 ```

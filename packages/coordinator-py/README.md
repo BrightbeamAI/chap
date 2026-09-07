@@ -93,7 +93,7 @@ This package implements **CHAP Core plus every profile**:
 
 | Profile               | Methods (per profile spec)                                                  |
 |-----------------------|------------------------------------------------------------------------------|
-| `core/1.0`            | `workspace.create`, `workspace.describe`, `workspace.set_profiles`, `participant.join`, `participant.leave`, `task.create`, `task.update`, `task.complete`, `audit.read` |
+| `core/1.0`            | `workspace.create`, `workspace.describe`, `workspace.set_profiles`, `participant.join`, `participant.leave`, `task.create`, `task.update`, `task.complete`, `audit.read`; a task created with `review_required` completes only on a reviewer decision |
 | `review/1.0`          | `review.request`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`, `escalate.raise` |
 | `whisper/1.0`         | `whisper.ask`, `whisper.answer`; lapse hook via `coord.check_whisper_lapses(workspace_id, now)` |
 | `deliberation/1.0`    | `deliberate.open`, `deliberate.comment`, `deliberate.vote`, `deliberate.close` |
@@ -107,6 +107,15 @@ This package implements **CHAP Core plus every profile**:
 | `identity-vc/1.0`     | `participant.join` binding via `options.verify_vc`; holder-key pinning |
 
 **39 method handlers in total.**
+
+**The review gate.** A task carrying `review_required` does not complete on
+`task.complete`. The call opens a review, holding the submitted output as the
+artefact under review, and only a `decide.*` reaches `completed`. `task.update`
+cannot complete such a task either, and answers `-32602` naming the route
+through. Where no reviewer was named, the set is the human members other than
+the completer and the assignee; a workspace with no eligible human refuses the
+completion rather than opening a review nobody can decide. Under `modes/1.0` a
+trial-mode task has `review_required` set for it.
 
 ## Architecture
 

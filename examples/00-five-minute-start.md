@@ -200,7 +200,7 @@ curl -s -X POST http://localhost:8080/chap \
         \"subject\": \"Re: order status\",
         \"body\":    \"Order ORD-91204 is delayed by the carrier; new ETA Wed.\"
       },
-      \"confidence\": 0.91
+      \"confidence\": \"0.91\"
     }
   }" | jq
 ```

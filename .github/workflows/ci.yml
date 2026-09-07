@@ -40,6 +40,20 @@ jobs:
       - name: Schema drift check
         run: npm run check:schemas
 
+      # The Python MCP transport says it mirrors schemas.ts exactly. Two
+      # hand-maintained copies of 195 parameter descriptions do not stay
+      # identical, so the Python table is generated and this fails when the
+      # committed copy is stale or when any parameter lacks a description.
+      - name: MCP tool schemas and descriptions match across the two transports
+        run: npm run check:mcp-schemas
+
+      # The release version is written in around sixty places: nine manifests,
+      # their cross-dependency pins, server.json, the version each server
+      # reports to its client, and the docs tables. A partial bump ships a
+      # package that misreports itself, so no tag can carry one.
+      - name: One release version everywhere
+        run: npm run check:versions
+
       - name: Test all TS packages
         # The SQLite store suites skipped silently on every machine for months
         # because their availability probe was broken. Strict mode makes an

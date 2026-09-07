@@ -419,6 +419,14 @@ const handlers: Record<string, Handler> = {
     if (!legal[task.state]?.includes(newState)) {
       return { error: err(E.PARAMS, `Illegal transition ${task.state} → ${newState}`) };
     }
+    // task.complete opens a review rather than completing when one is
+    // required. task.update reaches the same state by another route and
+    // carries no output, so completing here would record a finished task with
+    // nothing reviewed and no decision on the chain.
+    if (newState === "completed" && task.review_required) {
+      return { error: err(E.PARAMS,
+        "This task requires review. Submit the output with task.complete, which opens the review; a reviewer decision completes it.") };
+    }
 
     task.state      = newState;
     task.updated_at = new Date().toISOString();
@@ -524,7 +532,8 @@ const handlers: Record<string, Handler> = {
     }
 
     const reviewers = Array.isArray(p.to) ? (p.to as string[]) : [p.to as string];
-    const rule = (p.rule as string) ?? "any_one_approves";
+    const declaredRule = p.rule as string | undefined;
+    const rule = declaredRule ?? "any_one_approves";
 
     // CEP-001: an open review may be widened, not swapped underneath.
     if (task.state === "review_requested" && task.review) {
@@ -533,7 +542,8 @@ const handlers: Record<string, Handler> = {
           "A review is already open on this task with different content. " +
           "Decide, abstain, escalate or cancel it before requesting review of a new artefact.") };
       }
-      if (rule !== task.review.rule) {
+      // Only a rule the caller actually supplied can be a change.
+      if (declaredRule !== undefined && declaredRule !== task.review.rule) {
         return { error: err(E.REVIEW_ALREADY_OPEN,
           `Cannot change the decision rule of an open review (currently ${task.review.rule})`) };
       }

@@ -995,6 +995,14 @@ export class Coordinator {
     if (!legal[task.state]?.includes(newState)) {
       return { error: rpcError(E.PARAMS, `Illegal transition ${task.state} -> ${newState}`) };
     }
+    // task.complete opens a review rather than completing when one is required.
+    // task.update reaches the same state by another route and carries no
+    // output, so completing here would record a finished task with nothing
+    // reviewed and no decision on the chain.
+    if (newState === "completed" && task.review_required) {
+      return { error: rpcError(E.PARAMS,
+        "This task requires review. Submit the output with task.complete, which opens the review; a reviewer decision completes it.") };
+    }
     task.state = newState;
     task.updated_at = this.now();
     task.history.push({
@@ -1116,7 +1124,8 @@ export class Coordinator {
     const reviewers: string[] = Array.isArray(to) ? (to as string[]) : typeof to === "string" ? [to] : [];
     if (!reviewers.length) return { error: rpcError(E.PARAMS, "review.request needs 'to'") };
     const now = this.now();
-    const rule = (p.rule as string) || "any_one_approves";
+    const declaredRule = p.rule as string | undefined;
+    const rule = declaredRule || "any_one_approves";
     if (!reviewRuleSupported(rule)) {
       return { error: rpcError(E.PARAMS, `Unsupported review rule ${JSON.stringify(rule)}: review/1.0 supports any_one_approves, all_approve, quorum:<n>`) };
     }
@@ -1136,7 +1145,10 @@ export class Coordinator {
           "Decide, abstain, escalate or cancel it before requesting review of a new artefact.",
         ) };
       }
-      if (rule !== task.review.rule) {
+      // Only a rule the caller actually supplied can be a change. Comparing
+      // the resolved default instead refused the documented
+      // widen-the-reviewer-set request whenever `rule` was omitted.
+      if (declaredRule !== undefined && declaredRule !== task.review.rule) {
         return { error: rpcError(
           E.REVIEW_ALREADY_OPEN,
           `Cannot change the decision rule of an open review (currently ${task.review.rule})`,

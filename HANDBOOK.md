@@ -43,9 +43,9 @@ don't share state.
 identified by a URI:
 
 ```
-human:[email protected]   a person
+human:alice@example.org   a person
 agent:triage-bot#v3.2   a specific agent version
-service:[email protected]   a service or component
+service:coordinator@example.org   a service or component
 group:on-call@example.org   a named group of participants
 workspace:wsp_release-decisions   a workspace acting as a peer
 ```

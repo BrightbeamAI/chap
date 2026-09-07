@@ -11,6 +11,24 @@ incremented under the same rules.
 
 ## Unreleased
 
+---
+
+## 0.2.13: the review gate closed on both routes, and descriptions that match the code
+
+**Behaviour change.** `task.update` with `state: "completed"` is refused with
+`-32602` on a task that requires review. `in_progress → completed` is otherwise
+legal and carried no review check, so the gate `task.complete` enforces could be
+walked around in a single call. Code that completed a review-required task this
+way has to submit through `task.complete` and let a reviewer decide. Tasks that
+need no review are unaffected, as is every other `task.update` transition.
+
+**Schema change.** The MCP parameters `confidence`, `max_cost_usd`, `weights`
+and `weight` were declared `type: "number"`, which no caller could satisfy:
+canonicalisation admits integers only, so any fractional value was refused at
+ingress. They are now `string` or `integer`. A client that was sending
+`confidence: 0.86` was already failing; it now has a schema that says so, and
+`"0.86"` works.
+
 ### Fixed
 
 - **A required review is addressed to people.** `task.complete` on a task whose
@@ -34,6 +52,44 @@ incremented under the same rules.
   `completed` remains legal: completing a task and then requesting review of
   its output is how the framework bridges submit a draft. Nothing that worked
   before stops working except reviving stopped work.
+
+- **`task.update` cannot complete a task that requires review.**
+  `in_progress → completed` is a legal transition and carried no review check,
+  so the gate that `task.complete` enforces could be walked around in one call.
+  The task finished carrying no artefact and no `decide.*` reached the chain,
+  which is the single failure `review_required` exists to prevent. The
+  transition is now refused with `-32602` and the message names
+  `task.complete`. Tasks that need no review are unaffected, as is every other
+  `task.update` transition.
+
+- **`review.request` accepts the documented widen path.** Adding a reviewer to
+  an open review requires re-requesting the same artefact. The rule was
+  compared after the default had been applied, so omitting `rule` on the second
+  request read as a change of rule and was refused with `-32014` on any review
+  not opened under `any_one_approves`. Only a rule the caller actually supplied
+  now counts as a change.
+
+- **Tool and parameter descriptions match the implementation.** An audit of the
+  MCP schema table against both coordinators found nineteen descriptions that
+  named behaviour the code does not have. Among them: `control.pause`
+  `in_flight_policy` is recorded and never acted on; `scope: "participant"`
+  blocks new assignment rather than stopping work in flight;
+  `control.rollback` restores only `mode_ceiling` and `members`;
+  `deliberate.vote` `weight` is not read by the tally; `deliberate.open`
+  `deadline` does not close the vote; `audit.read` has no tag filter;
+  `control.snapshot` `label` is not a rollback target; and `escalate.raise`
+  gives the successor an empty input rather than the original's. Each now
+  states what happens, and names the error code where a constraint is enforced.
+
+- **Fractional parameters are typed as decimal strings.** `confidence`,
+  `max_cost_usd`, `weights` and `weight` were declared `type: "number"`, which
+  no caller can satisfy: §7 admits integers only, so any fractional value was
+  refused at ingress with `-32602`. They are now `string` or `integer` as the
+  case requires. The same error ran through the documentation, including a
+  runnable `curl` in the five-minute start and the JCS vector in
+  `conformance/test-vectors.md`, whose sample envelope carried `0.42` and whose
+  stated canonical bytes were neither sorted nor whitespace-free. The vector is
+  recomputed and agrees byte for byte across both implementations.
 
 ### Changed
 
@@ -59,6 +115,22 @@ incremented under the same rules.
 
 ### Added
 
+- **Every MCP tool parameter carries a description.** 64 of the 192 parameters
+  on the 39 tools had a name and a type and nothing else, so a client deciding
+  whether to call `chap.deliberate.vote` or `chap.control.rollback` had to guess
+  what five of its seven arguments meant. All 195 now say what they are for, and
+  `chap.task.create` gains the `review_required`, `deadline` and
+  `idempotency_key` parameters the coordinator has always accepted but the
+  schema never advertised.
+
+  The Python MCP transport says it mirrors `schemas.ts` exactly and had drifted
+  to 87 differing descriptions. Its table is now generated from the TypeScript
+  one by `scripts/sync-mcp-schemas.mjs`, and CI fails when the committed copy is
+  stale or when any parameter is left undescribed. The tool-level descriptions
+  in `mcp_tools.py` are generated from `tools.ts` the same way, since they had
+  drifted too: `chap.task.complete` still told callers to follow it with
+  `chap.review.request`, which 0.2.12 made wrong.
+
 - **A front door.** [`START_HERE.md`](./START_HERE.md) and
   [`start-here/`](./start-here/) take a new developer from a clone to one
   recorded human decision with Python 3.10 and nothing else: no install, no
@@ -73,6 +145,24 @@ incremented under the same rules.
   and a reviewer surface is responsible for the difference.
 
   The starter adds nothing to the wire format and no new package.
+
+- **One release version, checked.** `scripts/check-versions.mjs` holds the
+  release version to the root `package.json` across the forty-eight places it
+  is written: nine manifests, their cross-dependency pins, `server.json`, the
+  version each server reports to its client, the reference servers and the
+  documentation tables. It found `cli.ts` carrying a version constant of its
+  own. A pattern that stops matching is a failure too, so the check cannot
+  quietly stop covering a file. CI runs it, so no tag can carry a partial bump.
+
+### Packaging
+
+- **`zod` is declared rather than bundled.** `coordinator-mcp` imports `zod` to
+  build one request schema for the MCP SDK, but never declared it, so the
+  bundler inlined the whole library into all four entry points: 598 KB each and
+  a 1 MB tarball. Worse, the inlined copy is a second `zod` instance, and the
+  schemas built with it are handed to the SDK, which validates against its own
+  copy. It is now a dependency on the range the SDK asks for, and external to
+  the bundle. Entry points are 50 KB and the tarball is 205 KB.
 
 ---
 

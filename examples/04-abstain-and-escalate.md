@@ -177,7 +177,7 @@ asked to triage a case it does not understand:
     "task_id": "tsk_01HZA3L4K3X8M2V4N6P8R0T6B",
     "reason": "Customer message is in a language I'm not configured for (detected: Korean; my supported languages: en, fr, de, es).",
     "category": "out_of_scope",
-    "confidence_in_abstention": 0.99,
+    "confidence_in_abstention": "0.99",
     "suggested_escalation_target": "group:multilingual-support@example.org"
   },
   "evidence": { "prev_hash": "sha256:1829…2937", "sig": "ed25519:k-2026-05-17a:…" }

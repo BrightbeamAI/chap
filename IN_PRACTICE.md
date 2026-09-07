@@ -491,8 +491,8 @@ A CHAP-instrumented site puts the whole story in one chain. The agent's flag:
       "evidence": {
         "historian_tag": "PI:ISO3.DP",
         "window": ["2026-05-17T03:14:00Z", "2026-05-17T03:20:00Z"],
-        "value_min": 8.2,
-        "threshold": 10.0
+        "value_min": "8.2",
+        "threshold": "10.0"
       }
     },
     "routing_hints": {

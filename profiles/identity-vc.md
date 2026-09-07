@@ -111,8 +111,8 @@ When `identity-vc` is in use, a Participant URI MAY use a DID
 authority:
 
 ```
-human:[email protected]            # OIDC-bound (typical)
-human:[email protected]                  # DID-bound (VC)
+human:alice@example.org      # OIDC-bound (typical)
+human:did:example:alice      # DID-bound (VC)
 ```
 
 The Coordinator resolves the DID to look up verification methods.

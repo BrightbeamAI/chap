@@ -62,7 +62,7 @@ The agent has produced PR review comments and called `task.complete`:
       "output_hash": "sha256:2937…3041"
     }
   ],
-  "confidence": 0.84,
+  "confidence": "0.84",
   "content_hash": "sha256:3041…4152"
 }
 ```
