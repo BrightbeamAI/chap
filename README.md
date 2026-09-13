@@ -253,6 +253,8 @@ Top file paths:
 
 Your next prompt revision for Cursor cites the pattern by name instead of guessing at it.
 
+For anything past tag counts, [`packages/chap-analytics/`](./packages/chap-analytics/) projects the whole chain into eleven documented pandas tables, from a SQLite file, a JSON export, a live coordinator or a plain `audit.read`, so the overrides, decisions, reviewers, whispers and handoffs can be analysed as the supervision dataset they are. [`examples/support_desk.py`](./packages/chap-analytics/examples/support_desk.py) walks a week of review work through it. The plan for what sits above the tables is in [`ANALYTICS_ROADMAP.md`](./ANALYTICS_ROADMAP.md).
+
 ---
 
 ## The override envelope, in detail

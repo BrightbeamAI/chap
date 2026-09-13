@@ -108,6 +108,16 @@ jobs:
             pytest "packages/$bridge/tests/" -q
           done
 
+      # Installed without its extras: pandas arrives as a dependency and
+      # chap-coordinator is already here from this repo, which is what the
+      # fixtures drive. They generate their chains against the coordinator on
+      # this commit rather than replaying a recorded one, so a protocol change
+      # that the projection has not caught up with fails here.
+      - name: Test chap-analytics
+        run: |
+          pip install -e ./packages/chap-analytics
+          pytest packages/chap-analytics/tests/ -q
+
       # The starter is a consumer of the coordinator, so a behaviour change
       # here breaks the first thing a new developer runs. Cheap, and it belongs
       # on every Python version rather than behind the starter's paths filter.

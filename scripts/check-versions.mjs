@@ -19,6 +19,13 @@
  * Not covered, deliberately: the CHANGELOG, the release notes, and comments
  * that name the version which introduced a behaviour. Those are history and
  * must not move.
+ *
+ * Also not covered, and also deliberately: packages/chap-analytics. The nine
+ * protocol packages move in lockstep because they implement one specification
+ * and a version skew between them is a bug. chap-analytics implements no part
+ * of the specification, emits no envelopes and constrains no implementation,
+ * so it versions on its own track. Adding it here would force a release of
+ * the analysis layer every time the protocol moves, which is backwards.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
