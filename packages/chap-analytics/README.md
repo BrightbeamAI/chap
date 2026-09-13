@@ -15,8 +15,10 @@ support most of them.
 
 ## Install
 
+Not yet on PyPI. From a checkout of this repository:
+
 ```bash
-pip install chap-analytics
+pip install -e packages/chap-analytics
 ```
 
 Python 3.10+. `pandas>=2.0` is the only required dependency. Reading a chain
@@ -43,6 +45,28 @@ f.tasks[f.tasks.confidence.notna()].groupby("outcome")["confidence"].describe()
 # Refining the agent's decision, or reversing it?
 f.overrides.intent_preserved.value_counts(dropna=False)
 ```
+
+## A worked week
+
+[`examples/support_desk.py`](./examples/support_desk.py) drives a week at a
+support desk against a real coordinator: an agent drafts replies, three people
+approve, correct and send back, hand work over at a shift change, ask and
+answer questions, put one exception to a vote and escalate one ticket. It then
+reads the chain back both ways and prints ten short analyses, each a count or a
+median and each naming the decision it informs: what reviewers keep correcting
+and why, whether the agent's confidence tracks its outcomes, who decides and
+how fast, what lapsed and what was handed over, and what an MCP client with
+only `audit.read` can and cannot recover from the same log.
+
+```bash
+python packages/chap-analytics/examples/support_desk.py
+python packages/chap-analytics/examples/support_desk.py --export week.json
+```
+
+The second form writes the `audit.read` result to a file that `from_json`
+reads, which is the shape a deployment would hand to an analyst. The
+workspace is generated, not recorded, so the output is what the coordinator on
+this commit does, and the test suite runs it.
 
 ## The tables
 
