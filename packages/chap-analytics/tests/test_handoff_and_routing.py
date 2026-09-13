@@ -122,7 +122,7 @@ def test_a_partial_acceptance_counts_only_what_was_taken():
     assert (row["n_tasks"], row["n_accepted"]) == (2, 1)
     tasks = env.tasks.set_index("task_id")
     assert tasks.loc[a, "assignee"] == "human:bo"
-    assert tasks.loc[b, "assignee"] == "agent:x", "an unaccepted task must not move"
+    assert tasks.loc[b, "assignee"] == "agent:x", "an unaccepted task stays where it was"
 
 
 def test_an_outstanding_handoff_is_open_rather_than_missing():
@@ -174,10 +174,11 @@ def test_a_stale_routing_choice_does_not_overwrite_a_later_handoff():
 
 
 def test_an_acceptance_that_could_have_been_either_offer_says_so_on_both_tasks():
-    # Two offers to the same person, one accepted. Which one the acceptance
-    # belongs to is not in the log, so one task is reported as moved that was
-    # not and another that moved is reported as still where it started. Both
-    # are named by an offer whose identity is in doubt, and both have to say so.
+    # Two offers to the same person, one accepted. The log leaves open which
+    # offer the acceptance belongs to, so one task is reported as moved while
+    # it stayed put and another moved while the table leaves it where it
+    # started. Both are named by an offer whose identity is in doubt, and both
+    # have to say so.
     c, ok = build()
     a = ok("task.create", {"kind": "a", "input": {}, "assignee": "agent:x"})["task_id"]
     b = ok("task.create", {"kind": "b", "input": {}, "assignee": "agent:y"})["task_id"]
@@ -187,11 +188,11 @@ def test_an_acceptance_that_could_have_been_either_offer_says_so_on_both_tasks()
     ok("handoff.accept", {"handoff_id": second}, "human:bo")
 
     env, state = both(c)
-    assert not env.handoffs["id_certain"].any(), "two identical offers cannot be told apart"
+    assert not env.handoffs["id_certain"].any(), "two identical offers are interchangeable"
     rows = env.tasks.set_index("task_id")
     for tid in (a, b):
         assert not bool(rows.loc[tid, "assignee_certain"]), (
-            "an assignee moved by an offer nobody can identify is not a fact")
+            "an assignee moved by an offer of uncertain identity is an inference")
     # State settles it, and says so.
     stated = state.tasks.set_index("task_id")
     assert stated.loc[b, "assignee"] == "human:bo"
@@ -200,9 +201,8 @@ def test_an_acceptance_that_could_have_been_either_offer_says_so_on_both_tasks()
 
 
 def test_a_routing_reassignment_is_admitted_as_unknown_without_state():
-    # task.route returns its choice in the result, which the log does not
-    # record. Reporting the pre-routing assignee as though it were current
-    # would be wrong; saying so is not.
+    # task.route returns its choice in the result, so the envelopes hold the
+    # pre-routing assignee alone. The row keeps that value and flags it.
     c, ok = build()
     t = ok("task.create", {"kind": "k", "input": {}, "assignee": "agent:x"})["task_id"]
     chosen = ok("task.route", {"task_id": t, "candidates": ["agent:y", "agent:x"]})["selected"]
@@ -214,7 +214,7 @@ def test_a_routing_reassignment_is_admitted_as_unknown_without_state():
 
     assert s["assignee"] == chosen and bool(s["assignee_certain"]) is True
     assert bool(e["assignee_certain"]) is False, (
-        "an envelope-only read cannot know who routing chose, and must say so")
+        "an envelope-only read sees the pre-routing assignee alone, and has to say so")
 
 
 def test_review_depth_and_auto_escalation_record_their_verdicts():
@@ -233,8 +233,8 @@ def test_review_depth_and_auto_escalation_record_their_verdicts():
 # -------------------------------------------------------------- the whisper lapse
 
 def test_a_whisper_answered_after_its_deadline_still_lapsed():
-    # `answered` and `not lapsed` are different questions. The default was
-    # already applied at the deadline; a late answer does not retract it.
+    # `answered` and `lapsed` are separate questions. The default was already
+    # applied at the deadline, and a late answer leaves that in place.
     c, ok = build()
     t = ok("task.create", {"kind": "k", "input": {}, "assignee": "agent:x"})["task_id"]
     w = ok("whisper.ask", {"task_id": t, "to": ["human:ana"], "question": "q?",
@@ -283,7 +283,7 @@ def test_two_overrides_on_one_task_keep_their_own_artefacts():
     assert len(ovs) == 2
     assert ovs.iloc[0]["based_on"] == v1
     assert ovs.iloc[1]["based_on"] == v2, (
-        "the second correction started from the corrected artefact, not the first draft")
+        "the second correction started from the corrected artefact rather than the first draft")
 
 
 # ------------------------------------------------------------- degenerate input
@@ -293,8 +293,8 @@ def test_an_empty_workspace_projects_to_empty_tables_not_an_exception():
     for f in both(c):
         assert len(f.tasks) == 0 and len(f.decisions) == 0
         assert len(f.participants) == 4
-        # An empty frame still has to carry the declared columns and dtypes,
-        # or downstream code breaks only on the days nothing happened.
+        # An empty frame carries the declared columns and dtypes, so downstream
+        # code works the same on a quiet day.
         from chap_analytics import TABLES
         for table in TABLES:
             assert list(f[table.name].columns) == table.names

@@ -1,10 +1,10 @@
 """
 The worked example runs, and what it prints is true of the chain it built.
 
-An example that nobody runs rots quietly. This drives it the way a reader
-would, checks that every section reached the output, and reloads the export it
-wrote through the public loader so the JSON path is exercised on a realistic
-chain rather than a hand-made one.
+An example that runs in the suite stays true. This drives it the way a
+reader would, checks that every section reached the output, and reloads the
+export it wrote through the public loader so the JSON path is exercised on a
+realistic chain.
 """
 from __future__ import annotations
 

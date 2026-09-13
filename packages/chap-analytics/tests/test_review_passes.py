@@ -1,11 +1,11 @@
 """
-A task can be reviewed more than once, and the passes are not one review.
+A task can be reviewed more than once, and each pass is its own review.
 
-The coordinator replaces a review outright when one is requested on a task that
-is not currently under review: the new pass starts with no decisions in it.
-Holding decisions on the task instead of on the pass pooled them, and then
-reported a quorum assembled over two different artefacts as though it had been
-assembled over one. Every test here is a case that got a wrong answer.
+The coordinator replaces a review outright when one is requested on a task
+that is out of review: the new pass starts with an empty decision list.
+Holding decisions on the task pooled them across passes and reported a quorum
+assembled over two different artefacts as though it had been assembled over
+one. Every test here is a case that got a wrong answer.
 """
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ def test_a_review_re_opened_by_completing_again_keeps_its_decisions():
         row = f.tasks.set_index("task_id").loc[t]
         assert row["state"] == "completed", f"{label} read"
         assert row["outcome"] == "approved"
-        assert row["n_reviews"] == 1, "completing again reuses the review, it does not open one"
+        assert row["n_reviews"] == 1, "completing again reuses the open review"
         assert f.decisions.sort_values("seq")["review_index"].tolist() == [0, 0]
 
 
@@ -164,8 +164,8 @@ def test_work_that_shipped_after_a_rejection_is_not_reported_as_approved():
 # ------------------------------------------------- who a rule can wait on
 
 def test_all_approve_with_a_group_addressee_settles_on_the_named_reviewer():
-    # A group URI names nobody in particular, so the coordinator cannot wait on
-    # it and requires only the reviewers it can name.
+    # A group URI names a set, so the coordinator waits on the reviewers it
+    # can name and treats the group as satisfied by any of them.
     c, ok = build()
     t = ok("task.create", {"kind": "k", "input": {}, "assignee": "agent:drafter"})["task_id"]
     ok("task.complete", {"task_id": t, "output": {"v": 1}}, "agent:drafter")
@@ -195,17 +195,16 @@ def test_all_approve_still_waits_for_the_reviewer_it_can_name():
     for label, f in zip(("envelopes", "state"), both(c)):
         row = f.tasks.set_index("task_id").loc[t]
         assert row["outcome"] == "open", (
-            f"{label} read shipped work the named reviewer never approved")
+            f"{label} read shipped work while the named reviewer's approval was still owed")
         assert not f.decisions["is_final"].any()
 
 
 def test_a_workspace_default_the_caller_never_sent_still_reaches_the_table():
-    # Under modes/1.0 a trial task requires review whether or not the caller
-    # asked for it, and the mode itself comes from the workspace. Leaving both
-    # to server state left review_required null on an envelope-only read, and
-    # a task whose completion opens a review was replayed as one that
-    # completes outright: the wrong state, the wrong outcome, the wrong
-    # lifetime.
+    # Under modes/1.0 a trial task requires review whatever the caller asked
+    # for, and the mode itself comes from the workspace. Leaving both to server
+    # state left review_required null on an envelope-only read, and a task
+    # whose completion opens a review was replayed as one that completes
+    # outright: the wrong state, the wrong outcome, the wrong lifetime.
     profiles = ["core/1.0", "review/1.0", "modes/1.0"]
     c = Coordinator(CoordinatorOptions(default_profiles=profiles))
 
@@ -275,7 +274,7 @@ def test_an_escalation_successor_inherits_kind_and_mode():
 
 def test_work_that_shipped_while_its_review_was_still_open_is_named_as_such():
     # all_approve to two reviewers, one approves, the assignee takes the task
-    # back and completes it. Nothing final was decided, and the state alone
+    # back and completes it. The review stayed unsettled, and the state alone
     # would have called it approved.
     c, ok = build()
     t = ok("task.create", {"kind": "k", "input": {}, "assignee": "agent:drafter"})["task_id"]
@@ -301,7 +300,7 @@ def test_the_assignee_declining_the_work_is_not_a_reviewers_rejection():
     for label, f in zip(("envelopes", "state"), both(c)):
         row = f.tasks.set_index("task_id").loc[t]
         assert row["outcome"] == "declined", f"{label} read"
-        assert not bool(row["was_reviewed"]), "no reviewer was ever involved"
+        assert not bool(row["was_reviewed"]), "the assignee declined it unreviewed"
         assert bool(row["settled"])
 
 

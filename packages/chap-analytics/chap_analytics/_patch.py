@@ -6,13 +6,12 @@ carried the artefact they applied it to. Applying the one to the other gives
 the corrected artefact from envelopes alone, which is what makes the
 ``result`` column available to a client that has only ``audit.read``.
 
-This is the coordinator's own applier, copied rather than imported. The
-package must not depend on ``chap-coordinator`` at runtime, and the two
-implementations must agree exactly or ``result`` would differ from what the
-coordinator stored. The differential suite applies every patch both ways and
-requires the same document. Keep this file in step with
-``chap_coordinator/patch.py``; the limits and the refused path segments are
-deliberately the same.
+This is the coordinator's own applier, copied rather than imported, because
+the package runs with pandas alone and the two implementations have to agree
+exactly for ``result`` to equal what the coordinator stored. The differential
+suite applies every patch both ways and requires the same document. Keep this
+file in step with ``chap_coordinator/patch.py``; the limits and the refused
+path segments are deliberately the same.
 """
 from __future__ import annotations
 
@@ -23,8 +22,8 @@ from typing import Any
 __all__ = ["apply_json_patch", "PatchError"]
 
 # Refused in every JSON Pointer segment, as the coordinator refuses them: in a
-# JavaScript runtime they enable prototype pollution, and a patch one
-# implementation refuses must be refused by all.
+# JavaScript runtime they enable prototype pollution, and every implementation
+# refuses the same patches.
 _DANGEROUS_KEYS = frozenset({"__proto__", "constructor", "prototype"})
 
 # An RFC 6901 array index: "0" or a positive integer with no leading zero.
@@ -35,7 +34,7 @@ MAX_DOCUMENT_NODES = 100_000
 
 
 class PatchError(Exception):
-    """A patch operation that cannot be applied to this document."""
+    """A patch operation that fails to apply to this document."""
 
 
 def _array_index(seg: str) -> int:

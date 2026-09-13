@@ -1,30 +1,38 @@
 # chap-analytics
 
+[![PyPI](https://img.shields.io/pypi/v/chap-analytics?style=flat-square&logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/chap-analytics/)
+[![Python](https://img.shields.io/pypi/pyversions/chap-analytics?style=flat-square)](https://pypi.org/project/chap-analytics/)
+[![Licence](https://img.shields.io/badge/licence-Apache_2.0-7c3aed?style=flat-square)](https://github.com/BrightbeamAI/chap/blob/main/LICENSE)
+
 A CHAP audit chain, as pandas tables.
 
-A CHAP chain records what humans decided about agent work: what an agent
+A CHAP chain records what people decided about agent work: what an agent
 produced, what a person changed, why, under which rule, and when. That is a
-continuously generated, human-labelled evaluation set with provenance and
-counterfactuals. This package projects it into documented tables so it can be
-analysed as one.
+human-labelled evaluation set with provenance, generated as a side effect of
+ordinary review. This package projects the chain into eleven documented tables
+so it can be analysed as one.
 
-Stage one of [`ANALYTICS_ROADMAP.md`](../../ANALYTICS_ROADMAP.md). It stops at
-the tables on purpose: statistics belong in a layer above, where their
-assumptions can be stated, and a chain with twelve decisions in it will not
-support most of them.
+It is stage one of the
+[analytics roadmap](https://github.com/BrightbeamAI/chap/blob/main/ANALYTICS_ROADMAP.md)
+and it stops at the tables. Statistics belong in a layer above, where their
+assumptions can be stated.
 
 ## Install
 
-Not yet on PyPI. From a checkout of this repository:
-
 ```bash
-pip install -e packages/chap-analytics
+pip install chap-analytics
 ```
 
-Python 3.10+. `pandas>=2.0` is the only required dependency. Reading a chain
-out of a running `Coordinator` in-process also needs `chap-coordinator`, which
-is the `coordinator` extra; reading a SQLite file, a JSON export or an HTTP
-endpoint needs nothing further.
+Python 3.10 or later. `pandas` is the only dependency. Reading a chain from a
+live `Coordinator` in the same process, or generating the sample week, needs
+`chap-coordinator` as well:
+
+```bash
+pip install 'chap-analytics[coordinator]'
+```
+
+Reading a SQLite file, a JSON export or an HTTP endpoint needs the base
+install alone.
 
 ## Quick start
 
@@ -39,34 +47,44 @@ print(f.summary())
 # Which part of the output do reviewers keep correcting?
 f.patch_ops.groupby("top_path").size().sort_values(ascending=False)
 
-# Does the agent's confidence mean anything?
-f.tasks[f.tasks.confidence.notna()].groupby("outcome")["confidence"].describe()
+# Does the agent's confidence track its outcomes?
+f.tasks.groupby("outcome")["confidence"].describe()
 
-# Refining the agent's decision, or reversing it?
+# Are reviewers refining the agent's decision or reversing it?
 f.overrides.intent_preserved.value_counts(dropna=False)
+
+# Everything, as files.
+f.to_csv("./week")
 ```
 
 ## A worked week
 
-[`examples/support_desk.py`](./examples/support_desk.py) drives a week at a
-support desk against a real coordinator: an agent drafts replies, three people
-approve, correct and send back, hand work over at a shift change, ask and
-answer questions, put one exception to a vote and escalate one ticket. It then
-reads the chain back both ways and prints ten short analyses, each a count or a
-median and each naming the decision it informs: what reviewers keep correcting
-and why, whether the agent's confidence tracks its outcomes, who decides and
-how fast, what lapsed and what was handed over, and what an MCP client with
-only `audit.read` can and cannot recover from the same log.
+`chap_analytics.sample.support_desk()` generates a week at a support desk
+against a real coordinator. An agent drafts replies to customer tickets and
+three people review them. They approve most, correct some and send a few back.
+One declares a conflict of interest, work changes hands at a shift change, the
+agent asks two questions and gets one answer, a policy exception goes to a
+vote, and one ticket is escalated to legal. Every action is a CHAP envelope,
+and the chain comes back ready to project.
 
-```bash
-python packages/chap-analytics/examples/support_desk.py
-python packages/chap-analytics/examples/support_desk.py --export week.json
+```python
+from chap_analytics import frames
+from chap_analytics.sample import support_desk
+
+f = frames(support_desk())
 ```
 
-The second form writes the `audit.read` result to a file that `from_json`
-reads, which is the shape a deployment would hand to an analyst. The
-workspace is generated, not recorded, so the output is what the coordinator on
-this commit does, and the test suite runs it.
+Two guided versions of the same week ship with the repository:
+
+- [`examples/chap_analytics_walkthrough.ipynb`](https://github.com/BrightbeamAI/chap/blob/main/packages/chap-analytics/examples/chap_analytics_walkthrough.ipynb)
+  follows the envelopes from `audit.read` to the tables, with each table's
+  grain, columns, dtypes and provenance explained beside the frames.
+- [`examples/support_desk.py`](https://github.com/BrightbeamAI/chap/blob/main/packages/chap-analytics/examples/support_desk.py)
+  prints ten short analyses of the week, each a count or a median with a line
+  on what it is for.
+
+The week is generated on each run, so it reflects the coordinator that is
+installed. The test suite runs both.
 
 ## The tables
 
@@ -84,99 +102,97 @@ this commit does, and the test suite runs it.
 | `handoffs` | one row per proposed handoff |
 | `routing` | one row per routing decision |
 
-Every column is declared in `schema.py` with its dtype and its provenance.
-`describe()` prints the whole contract:
+Every column is declared in
+[`schema.py`](https://github.com/BrightbeamAI/chap/blob/main/packages/chap-analytics/chap_analytics/schema.py)
+with its dtype and its provenance. `describe()` prints the whole contract:
 
 ```python
 from chap_analytics import describe
 print(describe())
 ```
 
-## Four sources, and what each one knows
+A column the source lacked a value for is present and null. Code downstream
+can reference any column and see missingness rather than a `KeyError`.
+
+## Four sources
 
 ```python
 from chap_analytics import from_sqlite, from_url, from_json, from_coordinator
 
-from_sqlite("./chap.db", workspace="wsp_support")     # richest
-from_url("http://localhost:8080/chap", "wsp_support") # envelopes only
-from_json("export.json")
-from_coordinator(coord, workspace="wsp_support")      # in-process
+from_sqlite("./chap.db", workspace="wsp_support")     # the full snapshot
+from_url("http://localhost:8080/chap", "wsp_support") # envelopes, via audit.read
+from_json("export.json")                              # an audit.read result, a bare entry list, or a snapshot
+from_coordinator(coord, workspace="wsp_support")      # a live coordinator, in-process
 ```
 
-The two kinds of source do not carry the same information, and the library
-says so rather than returning nulls without explanation.
+A SQLite file or a live coordinator carries the workspace snapshot: every
+task, override, deliberation and handoff as the coordinator holds it, and the
+audit log beside them. `audit.read`, which is what an MCP client can obtain,
+returns the audit log alone: every request parameter, in order, and
+hash-linked where the coordinator chains its log.
 
-`audit.read`, which is all an MCP client can obtain, returns envelopes: every
-request parameter, in order, hash-linked. It does not return what the server
-computed, so deliberation outcomes and routing outcomes come back null.
+The tables are **replayed** from the envelope stream, so most of what is worth
+analysing is available from either source. The artefact under review arrives
+on `review.request` and the patch on `decide.override`, so the before and the
+after of every correction come from the envelopes themselves. Three things
+come from the snapshot alone: deliberation and routing outcomes, which the
+server computes; the assignee a `task.route` chose, which `assignee_certain`
+flags; and the certainty of which server-minted id belongs to which creation,
+which the section on identity below explains.
 
-A SqliteStore file or a live `Coordinator` carries the full snapshot as well.
+How far the two reads agree is measured. Random workspaces are driven against
+a real coordinator and read both ways. For every task, decision, override,
+whisper, deliberation and handoff, the row either matches what the coordinator
+holds or is marked `id_certain` false.
 
-Almost everything worth analysing is available either way, because the chain
-is **replayed** rather than read out of server state. The artefact under
-review arrives on `review.request` and the patch on `decide.override`, so the
-before and the after are reconstructed from envelopes alone.
-
-How far the two agree is measured rather than asserted. Random workspaces are
-driven against a real coordinator and read both ways, and for every task,
-decision, override, whisper, deliberation and handoff the row either matches
-what the coordinator holds or is marked `id_certain` false. The one thing an
-envelope-only read cannot always recover is which server-minted id belongs to
-which creation, and the caveat below says what that costs.
-
-A column the source could not populate is present and null, never absent, so
-code can reference any column without first asking where the chain came from.
-
-## What it does for you that a notebook would get wrong
+## What the projection handles for you
 
 **Parses `confidence`.** Fractional values travel the CHAP wire as decimal
-strings, because canonicalisation admits only integers (SPECIFICATION §7). A
-notebook that forgets gets a column of strings and a statistic that silently
-means nothing.
+strings, because canonicalisation admits integers alone
+([SPECIFICATION §7](https://github.com/BrightbeamAI/chap/blob/main/SPECIFICATION.md)).
+The tables carry a float.
 
-**Censors open work.** `lifetime_s` is null while a task is unsettled rather
-than zero or omitted. A mean that quietly drops open reviews flatters every
-latency claim ever made from it.
+**Censors open work.** `lifetime_s` is null while a task is unsettled, and
+`settled` says which rows are censored. A mean over the finished work alone
+flatters every latency figure; the flag lets you say so.
 
 **Knows when a decision settled a review.** Under `all_approve` or `quorum:N`
-an approval may leave the review open. `is_final` is computed with the same
-rule the coordinator applies, down to the detail that `all_approve` waits only
-on the reviewers it can name: a review addressed to a group has no bounded set
-to wait on, so the coordinator degrades it to first-approve, and counting the
-group URI as one more reviewer would leave the review open forever.
+an approval may leave the review open. `is_final` is computed with the rule the
+coordinator applies. Under `all_approve` the coordinator waits on the reviewers
+it can name, and a review addressed to a group alone has none to wait on, so
+it treats that review as first-approve.
 
 **Separates the review passes.** A task sent back for revision is reviewed
-again, and the coordinator starts that review with no decisions in it. Pooling
-the passes reports a quorum assembled over two different artefacts as though it
-had been assembled over one, and marks a decision as final that settled
-nothing. `review_index` says which pass a decision belongs to, and `latency_s`
-is measured from that pass's own opening.
+again, and the coordinator starts that review afresh. `review_index` says which
+pass a decision belongs to, `n_reviews` counts the passes, `latency_s` is
+measured from each pass's own opening, and `outcome` is read from the decision
+that settled the last pass.
 
 **Reconstructs the correction.** `based_on` is the artefact the reviewer saw
-and `result` is the patch applied to it, with the coordinator's own RFC 6902
-semantics, so the before and the after of every override are available to a
-client that has only `audit.read`. Where state carries the artefact the
-coordinator stored, the two are required to agree.
+and `result` is the patch applied to it, using the coordinator's own RFC 6902
+semantics. Both are available from `audit.read` alone. Where the snapshot
+carries the artefact the coordinator stored, that one is used, and the
+differential suite requires the replayed one to equal it.
 
-**Counts tasks nobody created.** `escalate.raise` and `control.supersede` mint
-a successor server-side, with no `task.create` envelope, and give it what the
-original had where the spec says nothing: its kind and mode for an escalation,
-its assignee and mode for a supersession, and the same review rule a creation
-gets. A count that only looks for creations is short, and a successor replayed
-as a bare creation completes where the coordinator opens a review.
+**Counts the tasks the server minted.** `escalate.raise` and
+`control.supersede` create a successor without a `task.create` envelope, and
+give it what the original had. An escalation successor takes the original's
+mode, and its kind where the spec omits one. A supersession successor takes
+the original's assignee and mode where the spec omits them, and gets the same
+`review_required` default a `task.create` would. The successor is a row like
+any other, with `supersedes` linking it back.
 
-**Keeps the orphans.** A task created and never touched again still gets a
-row.
+**Keeps the orphans.** A task created and left alone still gets a row.
 
-**Says what it is unsure about.** `id_certain` and `assignee_certain` mark the
-rows where the chain admits more than one reading, so a filter is available
-where today the alternative is a footnote nobody reads.
+**Says how sure it is.** `id_certain` and `assignee_certain` mark the rows where
+the chain admits more than one reading, so the population to draw conclusions
+from is a filter away.
 
 ## Redaction
 
 Artefacts hold whatever the agent was working on: customer messages,
-contracts, source code. Pass a redactor and it sees every one of them before
-anything reaches a table.
+contracts, source code. A redactor sees every one of them before anything
+reaches a table.
 
 ```python
 from chap_analytics import from_sqlite, redact_artefacts, frames
@@ -187,50 +203,48 @@ f = frames(from_sqlite("./chap.db", redact=redact_artefacts))
 What goes: task inputs and outputs, the artefact under review and the
 corrected one, the values a patch writes, free-text whisper answers under
 either of their two names, lapse defaults, the inputs of a successor an
-escalation or supersession mints, the copies a snapshot holds, and all of it in
-both the envelope stream and the workspace snapshot that also contains it. A
-redactor that leaves content one attribute away is worse than no redactor,
-because someone relied on it, so a test plants a marker in each of those
-places and searches every cell of every table for all of them.
+escalation or supersession mints, and the copies a snapshot holds. All of it
+goes in both the envelope stream and the workspace snapshot that also contains
+it. A test plants a marker in each of those places and searches every cell of
+every table for all of them.
 
-What stays, because it is the analysis rather than the material: counts,
-rates, latencies, tags, policy references, patch paths and operations, which
-option a whisper answer chose, and the words a reviewer wrote about their
-decision. A rationale, a comment, a question, a decline reason and a handoff
-summary are the reviewer's account of what they did, and the point of the
-chain; the redactor is not shown them.
+What stays, because it is the analysis: counts, rates, latencies, tags, policy
+references, patch paths and operations, which option a whisper answer chose,
+and the words participants wrote about the work. A reviewer's rationale,
+comment and decline reason, a handoff summary and a deliberation question are
+the people's account of what they did, and the point of the chain. A whisper
+question is the agent's own words to a person, and it stays too; an agent that
+quotes customer content into a question puts that content in the log, and a
+deployment that needs it removed strips the `question` field before loading.
 
-## A caveat worth reading
+## Identity
 
-Server-minted identifiers are returned in the *result*, and the audit log
-records envelopes, not results. A task id therefore becomes visible only when
-some later envelope acts on it, and which creation produced which id has to be
-worked out afterwards.
+Server-minted identifiers are returned in the *result* of a call, and the
+audit log records the envelopes. A task id therefore becomes visible when a
+later envelope acts on it, and which creation produced which id is worked out
+afterwards.
 
-Server state settles it, by what the creation envelope and the stored task
-agree they are. Without state the library falls back on the order ids appear
-in, which is forced when work proceeds one task at a time and a guess when two
-tasks are created before either is touched. It does not present the two the
-same way: `id_certain` is true only where the log leaves no alternative
-reading, so
+With the snapshot, the pairing is settled by what the creation envelope and
+the stored task agree they are, with the order of appearance breaking ties.
+From envelopes alone, the order of appearance is the evidence: it settles the
+pairing when work proceeds one task at a time, and leaves it open when two
+tasks are created before either is touched. The row says which case it is in.
+`id_certain` is true where the evidence leaves one reading, so
 
 ```python
 f.tasks[f.tasks.id_certain]
 ```
 
-is the population to draw conclusions about individual tasks from. Counts are
-unaffected: a creation that matches no id is given one marked `unidentified`
-rather than dropped, so a total is never quietly short. A stateful read marks a
-row uncertain only where two tasks are indistinguishable by everything the
-coordinator recorded about them and the order they appeared in settles nothing
-either.
+is the population to draw conclusions about individual tasks from. Counts hold
+either way: a creation that matches no observed id is given one marked
+`unidentified`, and the total stays right.
 
-Where the protocol settles an identity, it is used rather than the ordering: a
-lapse notification concerns a whisper whose deadline had passed, a vote comes
-from someone the deliberation invited, an answer comes from someone the whisper
-was addressed to, an acceptance comes from the named recipient, and an id the
-caller supplied itself is read straight off the opening envelope.
-`frames.summary()` prints how many rows are left unsure.
+The protocol settles more than the ordering can. A lapse notice concerns a
+whisper whose deadline had passed. An answer comes from someone the whisper was
+addressed to. A vote comes from someone the deliberation invited. An acceptance
+comes from the named recipient. An id the caller supplied is in the opening
+envelope itself. Each of those is used before the ordering is consulted, and
+`frames.summary()` reports how many rows remain inferred.
 
 ## Tests
 
@@ -239,18 +253,14 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The fixtures drive a real coordinator rather than loading recorded JSON. A
-recorded fixture captures what someone believed the coordinator does; a
-generated one captures what it does, and fails honestly when the protocol
-moves.
+The fixtures drive a real coordinator. A generated fixture captures what the
+coordinator does, and fails when the protocol moves.
 
-Alongside the written cases there is a differential suite: 120 random
-sequences of legal calls against a real coordinator, read both ways, with the
-tasks, decisions, overrides, whispers, deliberations and handoffs checked
-against what that coordinator holds, the corrected artefacts compared with the
-ones it stored, and a floor on how many envelope-only rows are certain so the
-exemption for uncertain rows cannot grow to hide a defect. Two defects
-survived a full adversarial review of the code and were found there instead.
+Alongside the written cases there is a differential suite: random sequences
+of accepted calls against a real coordinator, read both ways. The
+tasks, decisions, overrides, whispers, deliberations and handoffs are checked
+against what that coordinator holds, the corrected artefacts against the ones
+it stored, and a floor is asserted on how many envelope-only rows are certain.
 
 ## Licence
 

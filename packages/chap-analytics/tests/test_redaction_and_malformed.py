@@ -9,7 +9,7 @@ happened to think of.
 
 The second half is about damage limits. A chain assembled by hand, exported
 twice and concatenated, or written by a client that sent a number as a string,
-should cost the analysis the cell it is wrong about and nothing else.
+costs the analysis the cell it is wrong about and keeps the rest.
 """
 from __future__ import annotations
 
@@ -101,9 +101,9 @@ def test_no_table_cell_survives_redaction(source, tmp_path):
 
 @pytest.mark.parametrize("source", ["envelopes", "state"])
 def test_nothing_reachable_from_the_frames_object_survives_either(source, tmp_path):
-    # The tables were redacted and the chain hanging off them was not, so the
-    # artefacts were one attribute away. A snapshot also contains the envelope
-    # stream, so redacting the copy and keeping the original leaks everything.
+    # The chain hangs off the tables, so the artefacts have to be redacted
+    # there too, and a snapshot also contains the envelope stream, so the copy
+    # handed to events and the original inside state are both covered.
     f = redacted_reads(planted(), tmp_path)[source]
     assert not leaks(f.chain.events), "the envelope stream kept its content"
     assert not leaks(f.chain.state), "the snapshot kept what the envelopes gave up"
@@ -157,8 +157,8 @@ def test_a_free_text_answer_is_redacted_under_either_of_its_names(field, tmp_pat
 
 
 def test_a_redacted_override_has_no_result_to_show(tmp_path):
-    # result is the patch applied to based_on. With based_on gone there is
-    # nothing to apply it to, and inventing a result from a null base would put
+    # result is the patch applied to based_on. With based_on gone the patch
+    # has no base to apply to, and a result invented from a null base would put
     # the patch's own content into a column the redactor was meant to clear.
     c = planted()
     for label, f in redacted_reads(c, tmp_path).items():
@@ -241,8 +241,8 @@ def test_a_malformed_patch_counts_no_operations_it_cannot_show(diff):
 def test_one_uncastable_value_costs_its_own_cell_and_no_others():
     # astype fails a whole column on one bad value, so a single client sending
     # a deadline as a string emptied deadline_ms for every whisper in the
-    # workspace, and an empty column looks exactly like a source that could not
-    # carry it.
+    # workspace, and an empty column looks exactly like a source that lacked
+    # the value.
     events = [
         ev(0, "whisper.ask", {"task_id": "T", "question": "a", "deadline_ms": 600_000}),
         ev(1, "whisper.answer", {"whisper_id": "wsp_A", "answer": "x"}),
@@ -265,8 +265,8 @@ def test_a_number_sent_as_a_string_is_read_rather_than_discarded():
 
 
 def test_a_container_where_a_string_was_declared_is_nulled_not_rendered():
-    # pandas will render a dict as its repr in a string column, which looks
-    # like a value and is not one. A scalar is rendered as pandas would.
+    # pandas renders a dict as its repr in a string column, and a repr is a
+    # malformed value in disguise. A scalar is rendered as pandas would.
     events = [
         ev(0, "task.create", {"kind": {"nested": "object"}, "assignee": "agent:x"}),
         ev(1, "task.create", {"kind": 7, "assignee": "agent:x"}),

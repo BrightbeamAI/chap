@@ -1,10 +1,10 @@
 """
-The projection must not lose or invent anything.
+Every row in the chain reaches the tables, and every row in the tables came from the chain.
 
 These check the tables against the chain they came from, rather than against
 a copy of what the projection produced. A test that asserts the output equals
-a recorded output only proves the code has not changed; these prove it agrees
-with the coordinator.
+a recorded output proves the code is unchanged; these prove it agrees with the
+coordinator.
 """
 from __future__ import annotations
 
@@ -31,8 +31,8 @@ def test_every_table_matches_its_declared_schema(f):
 
 
 def test_a_missing_column_is_null_not_absent(envelopes_only):
-    # Read without server state, deliberation outcomes cannot be known. The
-    # column must still be there, so downstream code sees NA and not KeyError.
+    # Read from envelopes alone, deliberation outcomes are unavailable. The
+    # column is still there, so downstream code sees NA rather than KeyError.
     g = frames(envelopes_only)
     assert "outcome" in g.deliberations.columns
     assert g.deliberations["outcome"].isna().all()
@@ -41,11 +41,11 @@ def test_a_missing_column_is_null_not_absent(envelopes_only):
 def test_tables_are_addressable_by_name(f):
     for name in BY_NAME:
         assert isinstance(f[name], pd.DataFrame)
-    with pytest.raises(KeyError, match="not a CHAP table"):
+    with pytest.raises(KeyError, match="Unknown table"):
         f["nonsense"]
 
 
-# ------------------------------------------------------ nothing lost or invented
+# ------------------------------------------------------ every row, and only those
 
 def test_events_reproduce_the_chain_exactly(f, chain):
     assert len(f.events) == len(chain.events)
@@ -68,14 +68,14 @@ def test_every_override_reaches_both_override_tables(f, chain):
 
 
 def test_no_task_is_dropped_including_one_never_touched_again(f, chain):
-    # task.create is not the only way a task comes into being: escalate.raise
-    # and control.supersede mint a successor server-side, with no create
-    # envelope of its own. A count that ignores them is short.
+    # Tasks come into being three ways: task.create, and the successors that
+    # escalate.raise and control.supersede mint server-side with no create
+    # envelope of their own. A count that ignores the last two is short.
     minting = {"task.create", "escalate.raise", "control.supersede"}
     created = sum(1 for e in chain.events
                   if e["envelope"].get("method") in minting)
     assert len(f.tasks) == created, (
-        "tasks must survive even when nothing else ever references them")
+        "a task created and left alone is still a row")
     assert (f.tasks["kind"] == "orphan").sum() == 1
 
 
@@ -90,7 +90,7 @@ def test_every_participant_is_present(f):
     assert set(f.participants["participant"]) == {
         "human:ana", "human:bo", "human:cy", "agent:drafter", "agent:reviewer-bot"}
     bot = f.participants.set_index("participant").loc["agent:reviewer-bot"]
-    assert bot["n_decisions"] == 0, "a member who did nothing still gets a row"
+    assert bot["n_decisions"] == 0, "a member with zero decisions still gets a row"
 
 
 # ------------------------------------------------------------- derived values
@@ -120,14 +120,14 @@ def test_only_the_last_approval_settles_an_all_approve_review(f):
     quorum = f.decisions[f.decisions["rule"] == "all_approve"].sort_values("seq")
     assert len(quorum) == 2, "expected two reviewers on the contract clause"
     assert quorum["is_final"].tolist() == [False, True], (
-        "the first approval must not settle a review that needs both")
+        "a review that needs both approvals waits for the second")
 
 
 def test_a_rejection_sent_back_does_not_settle_the_review(f):
     sent_back = f.decisions[f.decisions["request_revision"] == True]  # noqa: E712
     assert len(sent_back) == 1
     assert not sent_back.iloc[0]["is_final"], (
-        "request_revision returns the task to in_progress, so the review is not over")
+        "request_revision returns the task to in_progress, so the review stays open")
 
 
 def test_patch_operations_are_explodable_to_the_field_corrected(f):
@@ -141,7 +141,7 @@ def test_patch_operations_are_explodable_to_the_field_corrected(f):
 def test_latency_is_measured_from_the_review_opening(f):
     lat = f.decisions["latency_s"].dropna()
     assert len(lat) == len(f.decisions), "every decision here follows a review"
-    assert (lat >= 0).all(), "a decision cannot precede the review it answers"
+    assert (lat >= 0).all(), "a decision follows the review it answers"
 
 
 def test_an_unanswered_whisper_is_distinguishable_from_an_answered_one(f):
@@ -216,13 +216,11 @@ def test_the_two_reads_agree_cell_by_cell_on_the_rows_they_can_both_identify(env
     """
     Comparing counts and value_counts is how eight disagreements hid in this
     fixture: two tasks had their criticality swapped, a third carried another
-    task's assignee and a provenance link it never had, and the totals came out
-    the same either way. A row-by-row comparison is the only one that catches
-    a permutation.
+    task's assignee and an invented provenance link, and the totals came out
+    the same either way. A row-by-row comparison catches a permutation.
 
-    Rows an envelope-only read cannot identify are excluded, because it says so
-    in id_certain rather than pretending otherwise; that they are excluded is
-    itself asserted, so the exemption cannot quietly grow.
+    Rows the envelope-only read marks uncertain in id_certain are excluded, and
+    the exclusion is itself asserted, so the exemption stays small.
     """
     g = frames(envelopes_only)
     a = g.tasks.set_index("task_id")
@@ -243,8 +241,8 @@ def test_the_two_reads_agree_cell_by_cell_on_the_rows_they_can_both_identify(env
 
 
 def test_the_override_base_artefact_is_reconstructed_from_envelopes(envelopes_only):
-    # based_on is not in the override envelope: it arrives on the preceding
-    # review.request. Recovering it is what makes the chain self-sufficient.
+    # based_on arrives on the preceding review.request rather than on the
+    # override envelope. Recovering it is what makes the chain self-sufficient.
     g = frames(envelopes_only)
     ov = g.overrides.iloc[0]
     assert ov["based_on"] == {
@@ -298,8 +296,9 @@ def test_the_corrected_artefact_is_reconstructed_from_envelopes_alone():
 
 
 def test_a_member_joining_again_keeps_their_original_record():
-    # The coordinator merges identity bindings on a repeat join and changes
-    # nothing else, so joined_at and role are those of the first join.
+    # The coordinator merges identity bindings on a repeat join and leaves the
+    # rest of the record as it was, so joined_at and role are those of the
+    # first join.
     c, ok = _fresh()
     ok("participant.join", {"type": "human", "role": "impostor"}, "human:ana")
 
@@ -347,6 +346,6 @@ def test_a_redactor_removes_artefact_bodies_and_keeps_the_analysis(driver):
     assert redacted.tasks["outcome"].value_counts().to_dict() == \
            intact.tasks["outcome"].value_counts().to_dict()
 
-    # Content does not: the artefact the reviewer saw is gone.
+    # Content goes: the artefact the reviewer saw is gone.
     assert redacted.overrides.iloc[0]["based_on"] is None
     assert intact.overrides.iloc[0]["based_on"] is not None

@@ -1,0 +1,2 @@
+include CHANGELOG.md
+include tests/conftest.py

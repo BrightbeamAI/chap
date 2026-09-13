@@ -7,7 +7,7 @@ inference presented as a reading: two tasks created in the same millisecond had
 their criticality and confidence swapped by the random part of a ULID, and an
 escalation between two creations shifted every attribute one row down and
 invented a provenance link. These tests fix the pairing where evidence settles
-it and require the table to admit the guess where nothing does.
+it and require the table to admit the guess elsewhere.
 """
 from __future__ import annotations
 
@@ -55,9 +55,9 @@ def both(c):
 @pytest.mark.parametrize("trial", range(40))
 def test_tasks_created_in_the_same_millisecond_keep_their_own_attributes(trial):
     # Ordering by created_at then by id sorts the tie by the random suffix of a
-    # ULID, so this misattributed roughly half the time and nothing downstream
-    # could see it. The creations differ in what they were created as, and that
-    # is what settles it.
+    # ULID, so this misattributed roughly half the time, invisibly. The
+    # creations differ in what they were created as, and that is what settles
+    # it.
     c, ok = build()
     low = ok("task.create", {"kind": "LOW", "input": {}, "assignee": "agent:x",
                              "routing_hints": {"criticality": "low",
@@ -76,8 +76,9 @@ def test_tasks_created_in_the_same_millisecond_keep_their_own_attributes(trial):
 
 
 def test_an_escalation_successor_is_not_confused_with_the_next_task_created():
-    # A creation that cannot have produced a task with a supersedes link is
-    # evidence about which stored task it is, as much as a kind that matches.
+    # A plain creation produces a task with an empty supersedes link, and that
+    # is evidence about which stored task it is, as much as a kind that
+    # matches.
     c, ok = build()
     a = ok("task.create", {"kind": "alpha", "input": {}, "assignee": "agent:x"})["task_id"]
     successor = ok("escalate.raise", {
@@ -93,10 +94,10 @@ def test_an_escalation_successor_is_not_confused_with_the_next_task_created():
     assert rows.loc[successor, "supersedes"] == a
     import pandas as pd
     assert pd.isna(rows.loc[b, "supersedes"]), (
-        "a task created on its own must not be given another task's provenance")
+        "a task created on its own keeps an empty supersedes link")
 
 
-# ------------------------------------------- admitting what cannot be known
+# ------------------------------------------- admitting what is inferred
 
 def test_sequential_work_pairs_its_ids_beyond_doubt():
     c, ok = build()
@@ -109,7 +110,7 @@ def test_sequential_work_pairs_its_ids_beyond_doubt():
     env, _ = both(c)
     rows = env.tasks.set_index("task_id")
     assert bool(rows["id_certain"].all()), (
-        "each id was seen before the next task existed, so nothing else could own it")
+        "each id was seen before the next task existed, so it was the only candidate")
     assert [rows.loc[t, "kind"] for t in ids] == ["k0", "k1", "k2", "k3"]
 
 
@@ -122,11 +123,11 @@ def test_interleaved_work_is_marked_as_a_guess_rather_than_reported_as_fact():
 
     env, state = both(c)
     assert not env.tasks["id_certain"].any(), (
-        "nothing in the log says which id belongs to which creation here")
+        "the log leaves open which id belongs to which creation here")
     # Counts still reconcile: an uncertain row is still a row.
     assert len(env.tasks) == len(state.tasks) == 3
     assert "guess" not in state.summary()
-    assert "could not be paired" in env.summary(), (
+    assert "inferred from the order of events" in env.summary(), (
         "a caveat an analyst has to read the README to learn is a caveat they will miss")
 
 
@@ -182,14 +183,14 @@ def test_an_open_question_has_not_lapsed():
     for label, f in zip(("envelopes", "state"), both(c)):
         row = f.whispers.iloc[0]
         assert not bool(row["lapsed"]), (
-            f"{label}: unanswered is not lapsed, and reading it as one reports "
-            "every workspace with open questions as one where nobody replies")
+            f"{label}: an unanswered whisper is pending; read as lapsed, every "
+            "workspace with open questions looks like one where deadlines go unmet")
         assert row["state"] == "pending"
 
 
 def test_an_id_the_caller_supplied_is_read_from_the_opening_envelope():
     # The profiles let a client name its own whisper, handoff and deliberation
-    # ids, and the coordinator honours them. There is then nothing to infer,
+    # ids, and the coordinator honours them. The id is then a reading,
     # however the later envelopes are ordered.
     c, ok = build()
     t = ok("task.create", {"kind": "k", "input": {}, "assignee": "agent:x"})["task_id"]
@@ -208,14 +209,13 @@ def test_an_id_the_caller_supplied_is_read_from_the_opening_envelope():
         assert rows.loc["wsp-B", "question"] == "second?", f"{label} read"
         assert rows.loc["wsp-A", "answer"] == "no"
         assert bool(rows["id_certain"].all()), (
-            f"{label}: an id that was in the envelope is not an inference")
+            f"{label}: an id that was in the envelope is a reading")
 
 
 def test_a_whisper_answer_is_attributed_to_a_whisper_its_author_was_asked():
-    # The coordinator refuses an answer from anyone the whisper was not
-    # addressed to, so an accepted answer names a whisper addressed to its
-    # author. Two questions to two people, answered out of order, must not
-    # swap.
+    # The coordinator accepts an answer from someone the whisper was addressed
+    # to, so an accepted answer names a whisper addressed to its author. Two
+    # questions to two people, answered out of order, keep their rows.
     c, ok = build()
     t = ok("task.create", {"kind": "k", "input": {}, "assignee": "agent:x"})["task_id"]
     ok("whisper.ask", {"task_id": t, "to": ["human:ana"], "question": "for ana",
@@ -249,7 +249,7 @@ def test_a_successor_inherits_the_doubt_about_what_it_inherited():
 
     env, state = both(c)
     assert not bool(env.tasks.set_index("task_id").loc[s, "assignee_certain"]), (
-        "inherited from a task whose assignee the log could not name")
+        "inherited from a task whose assignee the log left unnamed")
     stated = state.tasks.set_index("task_id")
     assert stated.loc[s, "assignee"] == c.get_workspace("w").tasks[s].assignee
     assert bool(stated.loc[s, "assignee_certain"])

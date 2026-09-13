@@ -108,14 +108,14 @@ jobs:
             pytest "packages/$bridge/tests/" -q
           done
 
-      # Installed without its extras: pandas arrives as a dependency and
-      # chap-coordinator is already here from this repo, which is what the
-      # fixtures drive. They generate their chains against the coordinator on
-      # this commit rather than replaying a recorded one, so a protocol change
-      # that the projection has not caught up with fails here.
+      # pandas arrives as a dependency and chap-coordinator is already here
+      # from this repo, which is what the fixtures drive. They generate their
+      # chains against the coordinator on this commit, so a coordinator change
+      # the projection has fallen behind fails here. The dev extra adds
+      # nbformat, so the committed notebook is checked against its builder.
       - name: Test chap-analytics
         run: |
-          pip install -e ./packages/chap-analytics
+          pip install -e "./packages/chap-analytics[dev]"
           pytest packages/chap-analytics/tests/ -q
 
       # The starter is a consumer of the coordinator, so a behaviour change
