@@ -4,7 +4,7 @@ A realistic workspace, built by driving the real coordinator.
 Fixtures are generated rather than checked in as JSON. A hand-written fixture
 records what someone believed the coordinator does; a generated one records
 what it does. When the protocol changes, a generated fixture changes with it
-and the tests fail honestly instead of passing against a stale copy.
+and the tests fail where the projection has fallen behind.
 """
 from __future__ import annotations
 
@@ -51,8 +51,8 @@ def driver() -> Driver:
 
     Deliberately mixed: approvals, an override, a rejection sent back, an
     abstention, a multi-reviewer quorum, an escalation, a cancellation, an
-    unanswered whisper, a closed deliberation, and a task nobody ever touched
-    again. Each one is a row some projection must get right.
+    unanswered whisper, a closed deliberation, and a task created and left
+    alone. Each one is a row some projection has to get right.
     """
     d = Driver()
     d("workspace.create", {"profiles": PROFILES})
@@ -103,7 +103,7 @@ def driver() -> Driver:
       actor="agent:drafter")
     d("decide.approve", {"task_id": t, "comment": "Better."}, actor="human:ana")
 
-    # 4. Two reviewers under all_approve: the first approval must not settle it.
+    # 4. Two reviewers under all_approve: the second approval settles it.
     t = make("contract_clause")
     clause = {"clause": "Indemnity capped at fees paid."}
     d("task.complete", {"task_id": t, "output": clause}, actor="agent:drafter")
@@ -131,7 +131,7 @@ def driver() -> Driver:
     t = make()
     d("control.cancel", {"task_id": t, "reason": "Customer withdrew."})
 
-    # 8. Created and never touched again: must still appear in tasks.
+    # 8. Created and left alone: still a row in tasks.
     make("orphan")
 
     # 9. A whisper answered, and one left to lapse.

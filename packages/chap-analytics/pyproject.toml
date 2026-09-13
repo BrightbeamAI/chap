@@ -5,10 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name            = "chap-analytics"
 version         = "0.1.0"
-description     = "Project a CHAP audit chain into documented pandas tables for analysis"
+description     = "A CHAP audit chain as documented pandas tables: every task, decision, override, whisper, handoff and vote, ready to analyse"
 readme          = "README.md"
 requires-python = ">=3.10"
 license         = "Apache-2.0"
+license-files   = ["LICENSE"]
 authors         = [{ name = "Brightbeam AI", email = "oss@brightbeam.com" }]
 keywords        = ["chap", "audit", "analytics", "pandas", "human-in-the-loop", "agent"]
 
@@ -25,24 +26,33 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 
-# pandas is the point of the package, not an optional extra. The coordinator
-# stays dependency-free; this is a different audience with different habits.
+# pandas is the point of the package. The coordinator stays dependency-free;
+# this package serves a different audience with different habits.
 dependencies = ["pandas>=2.0"]
 
 [project.optional-dependencies]
-# Only needed to read a chain out of a live coordinator in-process. Reading a
-# SqliteStore file, a JSON export or an HTTP endpoint needs nothing extra.
+# Reading a chain out of a live coordinator in-process, or generating the
+# sample week, drives chap-coordinator. Reading a SqliteStore file, a JSON
+# export or an HTTP endpoint needs the base install.
 coordinator = ["chap-coordinator>=0.2.13"]
-dev         = ["pytest>=8", "chap-coordinator>=0.2.13"]
+# Regenerating examples/chap_analytics_walkthrough.ipynb with its outputs.
+notebook    = ["nbformat>=5", "nbclient>=0.9", "ipykernel>=6"]
+dev         = ["pytest>=8", "chap-coordinator>=0.2.13", "nbformat>=5"]
 
 [project.urls]
-Homepage      = "https://github.com/BrightbeamAI/chap"
+Homepage      = "https://github.com/BrightbeamAI/chap/tree/main/packages/chap-analytics"
 Repository    = "https://github.com/BrightbeamAI/chap"
+Bugs          = "https://github.com/BrightbeamAI/chap/issues"
+Changelog     = "https://github.com/BrightbeamAI/chap/blob/main/packages/chap-analytics/CHANGELOG.md"
+Walkthrough   = "https://github.com/BrightbeamAI/chap/blob/main/packages/chap-analytics/examples/chap_analytics_walkthrough.ipynb"
 Specification = "https://github.com/BrightbeamAI/chap/blob/main/SPECIFICATION.md"
 Roadmap       = "https://github.com/BrightbeamAI/chap/blob/main/ANALYTICS_ROADMAP.md"
 
 [tool.setuptools.packages.find]
 include = ["chap_analytics*"]
+
+[tool.setuptools.package-data]
+"chap_analytics" = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

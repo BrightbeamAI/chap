@@ -2,8 +2,8 @@
 Getting a chain in, from wherever it lives.
 
 Four sources, one shape. A :class:`Chain` is the envelope stream plus whatever
-server state was available, and it knows which of the two it has, so the
-projections can null out a column honestly rather than guessing.
+server state was available, and it knows which of the two it has, so a
+projection can leave a column null where the source had no value for it.
 
     from chap_analytics import from_sqlite, from_url, from_json, from_coordinator
 
@@ -12,10 +12,10 @@ projections can null out a column honestly rather than guessing.
     chain = from_json("export.json")
     chain = from_coordinator(coord, workspace="wsp_support")
 
-Redaction is applied at load, before anything is projected, because an
-artefact holds whatever the agent was working on: customer messages,
-contracts, source. Pass ``redact=`` a callable and it sees every artefact
-before it reaches a table.
+Redaction is applied at load, before anything is projected. An artefact
+holds whatever the agent was working on: customer messages, contracts,
+source. Pass ``redact=`` a callable and it sees every artefact before the
+artefact reaches a table.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def redact_artefacts(_artefact: Any) -> Any:
     Keeps the shape of an analysis intact while removing the content: counts,
     rates, latencies and patch paths all survive, because they are computed
     from metadata rather than from what the artefact said. Pass this when the
-    person running the analysis should not see customer data.
+    person running the analysis is to be kept from the customer's data.
     """
     return None
 
@@ -49,9 +49,9 @@ class Chain:
     """
     One workspace's history, ready to project.
 
-    ``events`` is always present. ``state`` is present only where the source
-    carried it, and :attr:`has_state` says which, so a projection can mark a
-    column unavailable instead of inventing a value for it.
+    ``events`` is always present. ``state`` is present where the source
+    carried it, and :attr:`has_state` says which, so a projection can leave a
+    column null where the source had no value for it.
     """
 
     workspace: str
@@ -99,9 +99,8 @@ def _redact_diff(diff: Any, redact: Redactor) -> None:
     An operation's ``value`` is the corrected text itself and is as much
     content as the artefact it corrects. Its ``op`` and ``path`` are the
     analysis: which field of an output reviewers keep changing is the question
-    ``patch_ops`` exists to answer, and no column reads the value. So the two
-    are separated rather than the whole diff being kept for the sake of the
-    paths.
+    ``patch_ops`` exists to answer, and the paths answer it on their own. So
+    the value goes and the path stays.
     """
     if not isinstance(diff, list):
         return
@@ -142,13 +141,12 @@ def _redact_state(state: dict | None, redact: Redactor | None) -> dict | None:
     """
     Redact the snapshot as well as the envelopes.
 
-    Redacting only the envelope stream leaks, in two ways. A snapshot stores
+    A snapshot holds content in two places beyond the envelopes. It stores
     the artefact a reviewer worked from and the result of correcting it, and
-    the projection prefers those where it has them. A snapshot also *contains*
-    the envelope stream, under ``audit``: redacting the copy handed to
-    ``events`` and leaving the original in ``state`` puts every artefact back
-    within reach of anyone who looks one attribute further. Both paths have to
-    be covered or the redactor is a false assurance.
+    the projection prefers those where it has them. It also *contains* the
+    envelope stream, under ``audit``, so the copy handed to ``events`` and
+    the original inside ``state`` both have to be redacted for the redaction
+    to hold. Both are covered here.
     """
     if state is None or redact is None:
         return state
@@ -205,9 +203,9 @@ def from_json(path: str, *, workspace: str | None = None, redact: Redactor | Non
     """
     Load from a JSON file.
 
-    Accepts either an ``audit.read`` result (an object with ``entries``), a
-    bare list of entries, or a full workspace snapshot (an object with
-    ``audit``). A snapshot carries server state; the other two do not.
+    Accepts an ``audit.read`` result (an object with ``entries``), a bare list
+    of entries, or a full workspace snapshot (an object with ``audit``). The
+    snapshot carries server state; the other two shapes carry envelopes.
     """
     with open(path, encoding="utf-8") as fh:
         blob = json.load(fh)
@@ -221,8 +219,8 @@ def from_json(path: str, *, workspace: str | None = None, redact: Redactor | Non
         ws = workspace or blob.get("id") or "unknown"
         return _chain(ws, blob["audit"], blob, f"json:{path}", redact)
     raise ValueError(
-        f"{path} is not a chain: expected a list of entries, an object with "
-        "'entries' from audit.read, or a workspace snapshot with 'audit'."
+        f"{path} holds an unrecognised shape. A chain is a list of entries, an "
+        "object with 'entries' from audit.read, or a workspace snapshot with 'audit'."
     )
 
 
@@ -240,13 +238,13 @@ def from_sqlite(path: str, *, workspace: str | None = None, redact: Redactor | N
         rows = con.execute("SELECT id, data FROM chap_workspaces").fetchall()
     except sqlite3.OperationalError as exc:  # pragma: no cover - depends on the file
         raise ValueError(
-            f"{path} does not look like a CHAP SqliteStore: {exc}"
+            f"{path} lacks the chap_workspaces table a CHAP SqliteStore has: {exc}"
         ) from exc
     finally:
         con.close()
 
     if not rows:
-        raise ValueError(f"{path} holds no workspaces.")
+        raise ValueError(f"{path} holds an empty workspace table.")
     available = [r[0] for r in rows]
     if workspace is None:
         if len(rows) > 1:
@@ -259,7 +257,8 @@ def from_sqlite(path: str, *, workspace: str | None = None, redact: Redactor | N
         if ws_id == workspace:
             snap = json.loads(data)
             return _chain(ws_id, snap.get("audit", []), snap, f"sqlite:{path}", redact)
-    raise ValueError(f"{workspace!r} is not in {path}. Available: {', '.join(available)}")
+    raise ValueError(f"{path} holds {', '.join(available)}. Pass one of those as workspace= "
+                     f"({workspace!r} was given).")
 
 
 def from_url(url: str, workspace: str, *, actor: str = "service:analytics",
@@ -267,9 +266,9 @@ def from_url(url: str, workspace: str, *, actor: str = "service:analytics",
     """
     Load over HTTP from a running coordinator, via ``audit.read``.
 
-    Envelopes only: ``audit.read`` returns the log, not server state, so
-    columns whose provenance is ``state`` come back null. Everything derived
-    by replay is still available, which is most of what matters.
+    Envelopes only: ``audit.read`` returns the log, so columns whose provenance
+    is ``state`` come back null. Everything derived by replay is available,
+    which is most of what matters.
     """
     body = json.dumps({
         "jsonrpc": "2.0", "id": "analytics-audit-read", "method": "audit.read",
@@ -284,7 +283,7 @@ def from_url(url: str, workspace: str, *, actor: str = "service:analytics",
         err = payload["error"]
         raise ValueError(
             f"audit.read was refused with {err.get('code')}: {err.get('message')}. "
-            "A coordinator with requireReadMembership set needs `actor` to name a member."
+            "A coordinator that gates reads on membership needs `actor` to name a member."
         )
     entries = (payload.get("result") or {}).get("entries", [])
     return _chain(workspace, entries, None, f"url:{url}", redact)
@@ -299,10 +298,10 @@ def from_coordinator(coord: Any, workspace: str, *, redact: Redactor | None = No
     """
     ws = coord.get_workspace(workspace) if hasattr(coord, "get_workspace") else None
     if ws is None:
-        raise ValueError(f"{workspace!r} is not a workspace on this coordinator.")
+        raise ValueError(f"{workspace!r} is unknown to this coordinator.")
     # dataclasses.asdict is what the coordinator itself persists through, so a
     # chain read this way and one read from the resulting SqliteStore file are
-    # the same shape rather than two shapes that happen to agree today.
+    # the same shape by construction.
     from dataclasses import asdict
 
     snap = asdict(ws)

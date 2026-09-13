@@ -1,22 +1,22 @@
 """
 Random workspaces, checked against the coordinator that produced them.
 
-The hand-written tests each encode a case someone thought of. This one does
-not: it drives a real coordinator with a random sequence of legal calls, reads
-the result both ways, and asserts that what the tables say agrees with what the
+The hand-written tests each encode a case someone thought of. This one
+drives a real coordinator with a random sequence of legal calls, reads the
+result both ways, and asserts that what the tables say agrees with what the
 coordinator holds. Two defects survived a full adversarial review of the code
 and were found here instead: a routing choice written back over an assignee a
 later handoff had moved, and an acceptance attached to the wrong outstanding
 offer with both tasks reported as fact.
 
-Refused calls are skipped rather than fixed, because a refusal is never
-recorded and so is not the projection's problem. What is left is a chain the
-coordinator accepted in full, which is the only kind that exists in the wild.
+Refused calls are skipped, because the coordinator records accepted calls
+alone and a chain in the wild is made of those. What is left is a chain the
+coordinator accepted in full.
 
 Rows the projection marks ``id_certain`` false are exempt from the per-row
-comparisons and from nothing else: the counts, the invariants and the stateful
-read are all checked unconditionally, and a floor on how many rows are certain
-is asserted so the exemption cannot quietly grow to cover a defect.
+comparisons alone: the counts, the invariants and the stateful read are all
+checked unconditionally, and a floor on how many rows are certain is asserted
+so the exemption stays small.
 """
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ class Fuzzer:
         """A caller-supplied id, some of the time, as the profiles allow."""
         return f"{prefix}-{self.seed}-{self.n}" if self.rnd.random() < 0.3 else None
 
-    def step(self) -> None:  # noqa: C901 - a menu, not a branch tree
+    def step(self) -> None:  # noqa: C901 - a menu of actions
         rnd = self.rnd
         act = rnd.choice([
             "create", "create", "complete", "review", "decide", "decide", "update",
@@ -301,9 +301,9 @@ def test_both_reads_match_the_coordinator_that_produced_the_chain(seed):
 @pytest.mark.parametrize("seed", SEEDS)
 def test_the_corrected_artefact_is_reconstructed_as_the_coordinator_computed_it(seed):
     # result is a replay column: the patch applied to the artefact under
-    # review. The coordinator stored what it computed, and the two must agree
-    # for every override, or the envelope-only read is handing out a corrected
-    # artefact the reviewer never produced.
+    # review. The coordinator stored what it computed, and the two have to
+    # agree for every override for the envelope-only read to be handing out
+    # the corrected artefact the reviewer produced.
     f = workspace(seed)
     stored = {}
     for art in f.ws.overrides.values():
@@ -321,9 +321,9 @@ def test_the_corrected_artefact_is_reconstructed_as_the_coordinator_computed_it(
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_a_stateful_read_has_nothing_left_to_infer(seed):
-    # Server state names every task, so nothing about a stateful read should
-    # be a guess except where two tasks are genuinely indistinguishable; even
-    # then, what the row says about them has to be what the coordinator holds.
+    # Server state names every task, so a stateful read is a reading
+    # throughout, except where two tasks are indistinguishable; even then,
+    # what the row says about them has to be what the coordinator holds.
     f = workspace(seed)
     frame = read_both(f)["state"]
     tasks = frame.tasks.set_index("task_id")
