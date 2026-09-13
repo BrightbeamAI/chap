@@ -14,8 +14,8 @@ supervision dataset it already is.
     print(f.summary())
     f.overrides.groupby("top_path").size().sort_values(ascending=False)
 
-Ten tables: events, tasks, decisions, overrides, patch_ops, participants,
-deliberations, votes, whispers, routing. Every column is declared in
+Eleven tables: events, tasks, decisions, overrides, patch_ops, participants,
+deliberations, votes, whispers, handoffs, routing. Every column is declared in
 ``schema.py`` with its dtype and its provenance, and a column the source could
 not populate is present and null rather than absent.
 

@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from chap_analytics import BY_NAME, TABLES, frames
+from chap_analytics.schema import UNTYPED
 
 
 # ------------------------------------------------------------ the contract
@@ -22,7 +23,7 @@ def test_every_table_matches_its_declared_schema(f):
         assert list(df.columns) == table.names, (
             f"{table.name} columns drifted from schema.py")
         for col in table.columns:
-            if col.dtype in ("object", "list"):
+            if col.dtype in UNTYPED:
                 continue
             assert str(df[col.name].dtype) == col.dtype, (
                 f"{table.name}.{col.name} is {df[col.name].dtype}, "
@@ -192,6 +193,55 @@ def test_envelopes_alone_recover_what_state_recovers(envelopes_only, f):
            f.tasks["outcome"].value_counts().to_dict()
 
 
+#: Columns whose value must be identical whichever way the chain was read.
+#: Everything left out is either state-only by declaration or a flag about the
+#: read itself. assignee is excluded because task.route names its choice in the
+#: result; assignee_certain is how a row says so.
+AGREE_ON = [
+    "kind", "delegator", "original_assignee", "mode", "review_required",
+    "state", "created_at", "settled", "settled_at", "lifetime_s", "outcome",
+    "was_reviewed", "was_overridden", "n_reviews", "n_decisions",
+    "confidence", "criticality", "risk_tier", "supersedes",
+]
+
+def _same(x, y) -> bool:
+    if pd.isna(x) and pd.isna(y):
+        return True
+    if pd.isna(x) or pd.isna(y):
+        return False
+    return x == y
+
+
+def test_the_two_reads_agree_cell_by_cell_on_the_rows_they_can_both_identify(envelopes_only, f):
+    """
+    Comparing counts and value_counts is how eight disagreements hid in this
+    fixture: two tasks had their criticality swapped, a third carried another
+    task's assignee and a provenance link it never had, and the totals came out
+    the same either way. A row-by-row comparison is the only one that catches
+    a permutation.
+
+    Rows an envelope-only read cannot identify are excluded, because it says so
+    in id_certain rather than pretending otherwise; that they are excluded is
+    itself asserted, so the exemption cannot quietly grow.
+    """
+    g = frames(envelopes_only)
+    a = g.tasks.set_index("task_id")
+    b = f.tasks.set_index("task_id")
+
+    shared = [i for i in b.index if i in a.index and bool(a.loc[i, "id_certain"])]
+    assert shared, "the fixture should identify at least some tasks from envelopes alone"
+
+    for tid in shared:
+        for col in AGREE_ON:
+            x, y = a.loc[tid, col], b.loc[tid, col]
+            assert _same(x, y), (
+                f"{tid} {col}: envelope-only read says {x!r}, stateful says {y!r}")
+
+    unsure = [i for i in a.index if not bool(a.loc[i, "id_certain"])]
+    assert len(shared) + len(unsure) == len(a), (
+        "every row is either compared or declared uncertain")
+
+
 def test_the_override_base_artefact_is_reconstructed_from_envelopes(envelopes_only):
     # based_on is not in the override envelope: it arrives on the preceding
     # review.request. Recovering it is what makes the chain self-sufficient.
@@ -199,6 +249,88 @@ def test_the_override_base_artefact_is_reconstructed_from_envelopes(envelopes_on
     ov = g.overrides.iloc[0]
     assert ov["based_on"] == {
         "comments": [{"path": "src/pay.ts", "severity": "warning", "body": "Cast."}]}
+
+
+# ------------------------------------------- what the coordinator would say
+
+def _fresh():
+    from chap_coordinator import Coordinator, CoordinatorOptions
+    from conftest import PROFILES
+    c = Coordinator(CoordinatorOptions(default_profiles=PROFILES))
+
+    def ok(m, p=None, a="human:ana"):
+        r = c.dispatch({"jsonrpc": "2.0", "id": m, "method": m,
+                        "params": {"workspace": "w", "from": a, **(p or {})}})
+        assert "error" not in r, f"{m}: {r.get('error')}"
+        return r.get("result", {})
+
+    ok("workspace.create", {"profiles": PROFILES})
+    for uri, kind in [("human:ana", "human"), ("human:bo", "human"), ("agent:x", "agent")]:
+        ok("participant.join", {"type": kind, "role": "original"}, uri)
+    return c, ok
+
+
+def _both(c):
+    from chap_analytics import from_coordinator
+    from chap_analytics.load import Chain
+    entries = c.dispatch({"jsonrpc": "2.0", "id": "r", "method": "audit.read",
+                          "params": {"workspace": "w", "from": "human:ana"}})["result"]["entries"]
+    return (frames(Chain(workspace="w", events=entries, state=None, source="audit.read")),
+            frames(from_coordinator(c, workspace="w")))
+
+
+def test_the_corrected_artefact_is_reconstructed_from_envelopes_alone():
+    # based_on arrives on review.request and the patch on decide.override, so
+    # the result is their combination and needs no server state.
+    c, ok = _fresh()
+    t = ok("task.create", {"kind": "k", "input": {}, "assignee": "agent:x"})["task_id"]
+    ok("task.complete", {"task_id": t, "output": {"body": "Cast.", "tags": ["a"]}}, "agent:x")
+    ok("review.request", {"task_id": t, "artefact": {"body": "Cast.", "tags": ["a"]},
+                          "to": ["human:ana"]}, "agent:x")
+    ok("decide.override", {"task_id": t, "rationale": "House style.",
+                           "diff": [{"op": "replace", "path": "/body", "value": "Cast, please."},
+                                    {"op": "add", "path": "/tags/-", "value": "b"}]}, "human:ana")
+
+    stored = next(iter(c.get_workspace("w").overrides.values())).result
+    env, state = _both(c)
+    assert env.overrides.iloc[0]["result"] == stored == {"body": "Cast, please.", "tags": ["a", "b"]}
+    assert state.overrides.iloc[0]["result"] == stored
+
+
+def test_a_member_joining_again_keeps_their_original_record():
+    # The coordinator merges identity bindings on a repeat join and changes
+    # nothing else, so joined_at and role are those of the first join.
+    c, ok = _fresh()
+    ok("participant.join", {"type": "human", "role": "impostor"}, "human:ana")
+
+    for label, f in zip(("envelopes", "state"), _both(c)):
+        row = f.participants.set_index("participant").loc["human:ana"]
+        assert row["role"] == "original", f"{label} read"
+        first_join = f.events[(f.events["method"] == "participant.join")
+                              & (f.events["actor"] == "human:ana")].iloc[0]["ts"]
+        assert row["joined_at"] == first_join, f"{label} read"
+
+
+def test_the_first_close_of_a_deliberation_is_the_one_that_closed_it():
+    c, ok = _fresh()
+    did = ok("deliberate.open", {"to": ["human:ana", "human:bo"], "rule": "any_one_approves",
+                                 "question": "Ship?"}, "human:ana")["deliberation_id"]
+    ok("deliberate.vote", {"deliberation_id": did, "vote": "yea"}, "human:ana")
+    ok("deliberate.close", {"deliberation_id": did}, "human:ana")
+    ok("deliberate.close", {"deliberation_id": did}, "human:bo")
+
+    for label, f in zip(("envelopes", "state"), _both(c)):
+        closes = f.events[f.events["method"] == "deliberate.close"].sort_values("seq")
+        assert f.deliberations.iloc[0]["closed_at"] == closes.iloc[0]["ts"], f"{label} read"
+
+
+def test_the_assignee_may_be_named_as_to_on_creation():
+    c, ok = _fresh()
+    ok("task.create", {"kind": "k", "input": {}, "to": "agent:x"})
+    for label, f in zip(("envelopes", "state"), _both(c)):
+        row = f.tasks.iloc[0]
+        assert row["assignee"] == "agent:x", f"{label} read"
+        assert row["original_assignee"] == "agent:x", f"{label} read"
 
 
 # ------------------------------------------------------------------ privacy

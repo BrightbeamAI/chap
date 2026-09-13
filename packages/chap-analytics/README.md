@@ -57,6 +57,7 @@ f.overrides.intent_preserved.value_counts(dropna=False)
 | `deliberations` | one row per group decision |
 | `votes` | one row per vote |
 | `whispers` | one row per deadline-bound question |
+| `handoffs` | one row per proposed handoff |
 | `routing` | one row per routing decision |
 
 Every column is declared in `schema.py` with its dtype and its provenance.
@@ -90,8 +91,14 @@ A SqliteStore file or a live `Coordinator` carries the full snapshot as well.
 Almost everything worth analysing is available either way, because the chain
 is **replayed** rather than read out of server state. The artefact under
 review arrives on `review.request` and the patch on `decide.override`, so the
-before and the after are reconstructed from envelopes alone. A test asserts
-that an envelope-only read produces the same tables as a stateful one.
+before and the after are reconstructed from envelopes alone.
+
+How far the two agree is measured rather than asserted. Random workspaces are
+driven against a real coordinator and read both ways, and for every task,
+decision, override, whisper, deliberation and handoff the row either matches
+what the coordinator holds or is marked `id_certain` false. The one thing an
+envelope-only read cannot always recover is which server-minted id belongs to
+which creation, and the caveat below says what that costs.
 
 A column the source could not populate is present and null, never absent, so
 code can reference any column without first asking where the chain came from.
@@ -109,21 +116,43 @@ latency claim ever made from it.
 
 **Knows when a decision settled a review.** Under `all_approve` or `quorum:N`
 an approval may leave the review open. `is_final` is computed with the same
-rule the coordinator applies, so "how long did a decision take" measures the
-decision that actually ended it.
+rule the coordinator applies, down to the detail that `all_approve` waits only
+on the reviewers it can name: a review addressed to a group has no bounded set
+to wait on, so the coordinator degrades it to first-approve, and counting the
+group URI as one more reviewer would leave the review open forever.
+
+**Separates the review passes.** A task sent back for revision is reviewed
+again, and the coordinator starts that review with no decisions in it. Pooling
+the passes reports a quorum assembled over two different artefacts as though it
+had been assembled over one, and marks a decision as final that settled
+nothing. `review_index` says which pass a decision belongs to, and `latency_s`
+is measured from that pass's own opening.
+
+**Reconstructs the correction.** `based_on` is the artefact the reviewer saw
+and `result` is the patch applied to it, with the coordinator's own RFC 6902
+semantics, so the before and the after of every override are available to a
+client that has only `audit.read`. Where state carries the artefact the
+coordinator stored, the two are required to agree.
 
 **Counts tasks nobody created.** `escalate.raise` and `control.supersede` mint
-a successor server-side, with no `task.create` envelope. A count that only
-looks for creations is short.
+a successor server-side, with no `task.create` envelope, and give it what the
+original had where the spec says nothing: its kind and mode for an escalation,
+its assignee and mode for a supersession, and the same review rule a creation
+gets. A count that only looks for creations is short, and a successor replayed
+as a bare creation completes where the coordinator opens a review.
 
 **Keeps the orphans.** A task created and never touched again still gets a
 row.
 
+**Says what it is unsure about.** `id_certain` and `assignee_certain` mark the
+rows where the chain admits more than one reading, so a filter is available
+where today the alternative is a footnote nobody reads.
+
 ## Redaction
 
 Artefacts hold whatever the agent was working on: customer messages,
-contracts, source code. Pass a redactor and it sees every artefact, in both
-the envelope stream and the snapshot, before anything reaches a table.
+contracts, source code. Pass a redactor and it sees every one of them before
+anything reaches a table.
 
 ```python
 from chap_analytics import from_sqlite, redact_artefacts, frames
@@ -131,20 +160,53 @@ from chap_analytics import from_sqlite, redact_artefacts, frames
 f = frames(from_sqlite("./chap.db", redact=redact_artefacts))
 ```
 
-The shape of an analysis survives redaction: counts, rates, latencies, tags,
-policy references and patch paths are all metadata. Only the content goes.
+What goes: task inputs and outputs, the artefact under review and the
+corrected one, the values a patch writes, free-text whisper answers under
+either of their two names, lapse defaults, the inputs of a successor an
+escalation or supersession mints, the copies a snapshot holds, and all of it in
+both the envelope stream and the workspace snapshot that also contains it. A
+redactor that leaves content one attribute away is worse than no redactor,
+because someone relied on it, so a test plants a marker in each of those
+places and searches every cell of every table for all of them.
+
+What stays, because it is the analysis rather than the material: counts,
+rates, latencies, tags, policy references, patch paths and operations, which
+option a whisper answer chose, and the words a reviewer wrote about their
+decision. A rationale, a comment, a question, a decline reason and a handoff
+summary are the reviewer's account of what they did, and the point of the
+chain; the redactor is not shown them.
 
 ## A caveat worth reading
 
 Server-minted identifiers are returned in the *result*, and the audit log
 records envelopes, not results. A task id therefore becomes visible only when
-some later envelope acts on it.
+some later envelope acts on it, and which creation produced which id has to be
+worked out afterwards.
 
-With server state the pairing of creations to ids is exact. Without it, the
-library infers it from order, which is sound for work that proceeds one task
-at a time and can mismatch attributes across heavily interleaved tasks.
-Anything it cannot pair is given an id marked `unidentified` rather than
-dropped, so a count is never quietly short.
+Server state settles it, by what the creation envelope and the stored task
+agree they are. Without state the library falls back on the order ids appear
+in, which is forced when work proceeds one task at a time and a guess when two
+tasks are created before either is touched. It does not present the two the
+same way: `id_certain` is true only where the log leaves no alternative
+reading, so
+
+```python
+f.tasks[f.tasks.id_certain]
+```
+
+is the population to draw conclusions about individual tasks from. Counts are
+unaffected: a creation that matches no id is given one marked `unidentified`
+rather than dropped, so a total is never quietly short. A stateful read marks a
+row uncertain only where two tasks are indistinguishable by everything the
+coordinator recorded about them and the order they appeared in settles nothing
+either.
+
+Where the protocol settles an identity, it is used rather than the ordering: a
+lapse notification concerns a whisper whose deadline had passed, a vote comes
+from someone the deliberation invited, an answer comes from someone the whisper
+was addressed to, an acceptance comes from the named recipient, and an id the
+caller supplied itself is read straight off the opening envelope.
+`frames.summary()` prints how many rows are left unsure.
 
 ## Tests
 
@@ -157,6 +219,14 @@ The fixtures drive a real coordinator rather than loading recorded JSON. A
 recorded fixture captures what someone believed the coordinator does; a
 generated one captures what it does, and fails honestly when the protocol
 moves.
+
+Alongside the written cases there is a differential suite: 120 random
+sequences of legal calls against a real coordinator, read both ways, with the
+tasks, decisions, overrides, whispers, deliberations and handoffs checked
+against what that coordinator holds, the corrected artefacts compared with the
+ones it stored, and a floor on how many envelope-only rows are certain so the
+exemption for uncertain rows cannot grow to hide a defect. Two defects
+survived a full adversarial review of the code and were found there instead.
 
 ## Licence
 

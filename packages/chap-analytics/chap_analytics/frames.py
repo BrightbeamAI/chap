@@ -6,7 +6,7 @@ table is then a view over that index. Replaying rather than reading server
 state is what lets the whole layer work against a plain ``audit.read``, which
 is all an MCP client can obtain.
 
-Two rules hold throughout.
+Three rules hold throughout.
 
 Every table has exactly the columns ``schema.py`` declares, in that order,
 with those dtypes. A column the source could not populate is present and null.
@@ -16,6 +16,12 @@ the chain came from.
 Nothing is invented. Where a value is computed rather than recorded, its
 provenance in the schema says so, and where the computation cannot be trusted,
 the column is left null instead of guessed.
+
+Where the replay is an inference rather than a reading, the table says so in a
+column. Server-minted identifiers are the case that matters: they are returned
+in the *result* and the log records envelopes, so pairing a creation to its id
+is sometimes forced by the ordering and sometimes a guess. ``id_certain``
+distinguishes the two rather than presenting both as fact.
 """
 from __future__ import annotations
 
@@ -26,12 +32,17 @@ from typing import Any
 import pandas as pd
 
 from . import schema
+from ._patch import PatchError, apply_json_patch
 from .load import Chain
 
 __all__ = ["frames", "Frames"]
 
 _TERMINAL = {"completed", "cancelled", "superseded"}
 _SETTLED = _TERMINAL | {"declined", "abstained", "escalated"}
+
+#: URI schemes that address a set rather than a person. A rule cannot wait on
+#: one, because it names nobody in particular.
+_BROADCAST = ("workspace:", "group:")
 
 
 # ---------------------------------------------------------------- helpers
@@ -65,6 +76,24 @@ def _decimal(value: Any) -> float | None:
         return None
 
 
+def _as_list(value: Any) -> list:
+    """
+    A list from a field that should hold one.
+
+    A single string is a list of one, which is how ``to`` is often sent.
+    Anything else that is not a sequence is not silently coerced into one
+    element: it is malformed, and inventing a member from it would put a
+    fabricated participant in the table.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return []
+
+
 def _uri_kind(uri: Any) -> str | None:
     if not isinstance(uri, str) or ":" not in uri:
         return None
@@ -79,11 +108,44 @@ def _top_path(pointer: Any) -> str | None:
     return parts[0] if parts else "(root)"
 
 
-def _rule_satisfied(rule: str, approvers: set[str], addressed: int) -> bool:
-    """Mirrors the coordinator's reviewSatisfied, so `is_final` means what it says."""
+def _apply_patch(artefact: Any, diff: list) -> Any:
+    """
+    The corrected artefact: the patch applied to what the reviewer saw.
+
+    None where it cannot be done. A redactor leaves the artefact as None, and
+    a patch the coordinator accepted applies to the artefact the coordinator
+    held, so a failure here means the reconstructed base is not that artefact
+    and a result computed from it would be wrong rather than merely missing.
+    """
+    if artefact is None or not diff:
+        return None
+    try:
+        return apply_json_patch(artefact, diff)
+    except PatchError:
+        return None
+
+
+def _named_reviewers(requested_to: list[str]) -> list[str]:
+    """The reviewers a rule can wait on, which excludes broadcast addresses."""
+    return [r for r in requested_to
+            if isinstance(r, str) and not r.startswith(_BROADCAST)]
+
+
+def _rule_satisfied(rule: str | None, approvers: set[str], requested_to: list[str]) -> bool:
+    """
+    Mirrors the coordinator's review-satisfied predicate, so ``is_final`` means
+    what it says.
+
+    ``all_approve`` waits on the reviewers it can name. A review addressed to a
+    group or to the workspace has no bounded set to wait on, so the coordinator
+    degrades it to first-approve; a broadcast URI is not one more reviewer.
+    """
     rule = rule or "any_one_approves"
     if rule == "all_approve":
-        return addressed > 0 and len(approvers) >= addressed
+        named = _named_reviewers(requested_to)
+        if not named:
+            return len(approvers) >= 1
+        return all(r in approvers for r in named)
     if rule.startswith("quorum:"):
         try:
             return len(approvers) >= int(rule.split(":", 1)[1])
@@ -92,7 +154,152 @@ def _rule_satisfied(rule: str, approvers: set[str], addressed: int) -> bool:
     return len(approvers) >= 1
 
 
+def _forced_prefix(creations: list[int], sightings: list[int]) -> list[bool]:
+    """
+    Which of these pairings the log forces, one flag per pairing, in order.
+
+    An id is minted server-side and returned in the result, so it becomes
+    visible only when a later envelope names it. Pairing the *i*-th creation
+    with the *i*-th id to appear is therefore an inference. It is forced when
+    only one unclaimed creation could have produced that id: the creation must
+    precede the sighting, and the next creation must not also precede it.
+
+    The property is inductive from the front. While every earlier pairing was
+    forced, the earliest unclaimed creation is the only candidate for the next
+    id; once one pairing is open to two candidates, everything after it is too.
+    So the flags run true until the first break and false thereafter, which is
+    why they are computed together rather than one at a time.
+
+    Two tasks created before either is worked on, or a successor minted between
+    two creations, are the ordinary ways this breaks, and ``id_certain`` is
+    where a row says which case it is in.
+    """
+    out: list[bool] = []
+    forced = len(sightings) <= len(creations)
+    for i, seen in enumerate(sightings):
+        if forced:
+            if seen is None or creations[i] is None or creations[i] >= seen:
+                forced = False
+            elif i + 1 < len(creations) and creations[i + 1] < seen:
+                # A second creation got in before this id was named, so either
+                # of them could own it. Strictly before: an envelope cannot
+                # name an id it is minting, because the id goes back in the
+                # result, so escalate.raise naming the task it supersedes does
+                # not make its own successor a candidate.
+                forced = False
+        out.append(forced)
+    return out
+
+
+def _identify(pending: list, admissible) -> tuple[int, bool | None]:
+    """
+    Which outstanding creation an envelope is about, where the protocol says.
+
+    An id is not in the envelope that created the thing, so the usual answer is
+    "the oldest one nobody has claimed". Often the protocol knows better. A
+    coordinator refuses a vote from someone the deliberation did not invite,
+    refuses an acceptance from anyone but the named recipient, and declares a
+    lapse only once the deadline has passed. An envelope that was accepted
+    therefore rules out every outstanding candidate it could not have been
+    about, and where one candidate is left the pairing is not an inference at
+    all.
+
+    Returns the index to take and whether the protocol settled it: ``True``
+    settled, ``False`` narrowed but did not settle, ``None`` said nothing, in
+    which case the ordering has its usual vote.
+    """
+    if not pending:
+        return 0, None
+    allowed = [i for i, item in enumerate(pending) if admissible(item)]
+    if len(allowed) == 1:
+        return allowed[0], True
+    if allowed:
+        return allowed[0], False
+    return 0, None
+
+
+def _deadline_passed(w: _Whisper, arrived: pd.Timestamp | None) -> bool:
+    """
+    Whether this whisper's deadline had expired when a lapse notice arrived.
+
+    Measured on the coordinator's clock at both ends, as the coordinator
+    measures it: the notice is written by the coordinator, and a client that
+    stamps its own ``ts`` into the ask would otherwise be compared against a
+    clock it never saw.
+    """
+    if arrived is None or w.arrived_at is None:
+        return False
+    ms = _decimal(w.deadline_ms)
+    if ms is None:
+        return False
+    return arrived >= w.arrived_at + pd.Timedelta(milliseconds=ms)
+
+
+def _may_answer(w: _Whisper, actor: str | None) -> bool:
+    """Whether the coordinator would accept an answer to this whisper from ``actor``."""
+    if any(isinstance(a, str) and a.startswith(_BROADCAST) for a in w.askee):
+        return True
+    return actor in w.askee
+
+
 # ---------------------------------------------------------------- the index
+
+@dataclass
+class _Review:
+    """
+    One review pass over a task.
+
+    A task can be reviewed more than once. A rejection that asks for a revision
+    returns it to ``in_progress``, and a later ``review.request`` replaces the
+    review outright: the coordinator starts a fresh one with no decisions in
+    it. Holding decisions on the task instead of on the pass pools them across
+    passes, and then reports a quorum assembled over two different artefacts as
+    though it had been assembled over one.
+    """
+
+    requested_at: pd.Timestamp | None = None
+    requested_to: list[str] = field(default_factory=list)
+    rule: str | None = None
+    artefact: Any = None
+    decisions: list[dict] = field(default_factory=list)
+    settled_at: pd.Timestamp | None = None
+
+
+#: What a task is given when it is made, as opposed to what happens to it
+#: afterwards. Every one of these is fixed at creation, which is what lets a
+#: creation be re-attached to a different task once the pairing is settled.
+_CREATION_FIELDS = ("kind", "delegator", "original_assignee", "mode",
+                    "review_required", "created_at", "criticality",
+                    "risk_tier", "supersedes")
+
+
+@dataclass
+class _Creation:
+    """
+    What a creation envelope said, before it is known which task it made.
+
+    Held apart from the task rather than merged into it at the end, because the
+    replay needs it as it goes: whether completing a task opens a review
+    depends on ``review_required``, which is set at creation and named nowhere
+    else, so the attribution has to be made before the completion is replayed.
+    """
+
+    pos: int
+    kind: str | None = None
+    delegator: str | None = None
+    original_assignee: str | None = None
+    assignee: str | None = None
+    mode: str | None = None
+    review_required: bool | None = None
+    created_at: pd.Timestamp | None = None
+    confidence: float | None = None
+    criticality: str | None = None
+    risk_tier: str | None = None
+    supersedes: str | None = None
+    #: Attributes a successor took from the task it replaces rather than from
+    #: its own spec. What was inherited is only as certain as its source.
+    inherited: frozenset[str] = frozenset()
+
 
 @dataclass
 class _Task:
@@ -101,6 +308,8 @@ class _Task:
     delegator: str | None = None
     original_assignee: str | None = None
     assignee: str | None = None
+    assignee_certain: bool = True
+    id_certain: bool = True
     mode: str | None = None
     review_required: bool | None = None
     created_at: pd.Timestamp | None = None
@@ -110,12 +319,57 @@ class _Task:
     criticality: str | None = None
     risk_tier: str | None = None
     supersedes: str | None = None
-    # review
-    requested_at: pd.Timestamp | None = None
-    requested_to: list[str] = field(default_factory=list)
-    rule: str | None = None
-    artefact: Any = None
-    decisions: list[dict] = field(default_factory=list)
+    #: Set once the replay has seen the assignee move or a confidence reported,
+    #: so re-attributing a creation does not overwrite what actually happened.
+    assignee_moved: bool = False
+    confidence_reported: bool = False
+    reviews: list[_Review] = field(default_factory=list)
+
+    def attribute(self, made: _Creation | None) -> None:
+        """Take this creation's attributes as this task's own."""
+        for f in _CREATION_FIELDS:
+            setattr(self, f, getattr(made, f, None))
+        if not self.assignee_moved:
+            self.assignee = getattr(made, "assignee", None)
+        if not self.confidence_reported:
+            self.confidence = getattr(made, "confidence", None)
+
+    @property
+    def review(self) -> _Review | None:
+        """The pass a decision arriving now would belong to."""
+        return self.reviews[-1] if self.reviews else None
+
+    @property
+    def decisions(self) -> list[dict]:
+        """Every decision on the task, across all passes."""
+        return [d for r in self.reviews for d in r.decisions]
+
+    def open_review(self, ts: pd.Timestamp | None, to: list[str],
+                    rule: str | None, artefact: Any) -> _Review:
+        r = _Review(requested_at=ts, requested_to=list(to), rule=rule, artefact=artefact)
+        self.reviews.append(r)
+        return r
+
+
+@dataclass
+class _Handoff:
+    handoff_id: str
+    proposer: str | None = None
+    recipient: str | None = None
+    task_ids: list[str] = field(default_factory=list)
+    proposed_at: pd.Timestamp | None = None
+    resolved_at: pd.Timestamp | None = None
+    resolution: str = "open"
+    resolved_by: str | None = None
+    accepted: list[str] = field(default_factory=list)
+    reason: str | None = None
+    seq: int | None = None
+    pos: int | None = None
+    seen_pos: int | None = None
+    id_certain: bool = True
+    #: Set where something other than the ordering identified the id, so the
+    #: ordering check does not get a vote. None means it did not.
+    matched_uniquely: bool | None = None
 
 
 @dataclass
@@ -129,6 +383,13 @@ class _Delib:
     closed_at: pd.Timestamp | None = None
     participants: list[str] = field(default_factory=list)
     votes: list[dict] = field(default_factory=list)
+    outcome: str | None = None
+    pos: int | None = None
+    seen_pos: int | None = None
+    id_certain: bool = True
+    #: Set where something other than the ordering identified the id, so the
+    #: ordering check does not get a vote. None means it did not.
+    matched_uniquely: bool | None = None
 
 
 @dataclass
@@ -138,11 +399,24 @@ class _Whisper:
     asker: str | None = None
     question: str | None = None
     asked_at: pd.Timestamp | None = None
+    #: When the coordinator accepted the ask, on its own clock.
+    arrived_at: pd.Timestamp | None = None
     deadline_ms: int | None = None
+    askee: list[str] = field(default_factory=list)
     had_options: bool = False
     answered_at: pd.Timestamp | None = None
     answered_by: str | None = None
     answer: str | None = None
+    #: Set when the coordinator announced the lapse, which it does by writing a
+    #: notify.message into the log. Authoritative where present.
+    lapsed_at: pd.Timestamp | None = None
+    state: str | None = None
+    pos: int | None = None
+    seen_pos: int | None = None
+    id_certain: bool = True
+    #: Set where something other than the ordering identified the id, so the
+    #: ordering check does not get a vote. None means it did not.
+    matched_uniquely: bool | None = None
 
 
 @dataclass
@@ -151,42 +425,125 @@ class _Index:
     delibs: dict[str, _Delib] = field(default_factory=dict)
     whispers: dict[str, _Whisper] = field(default_factory=dict)
     members: dict[str, dict] = field(default_factory=dict)
+    handoffs: dict[str, _Handoff] = field(default_factory=dict)
     overrides: list[dict] = field(default_factory=list)
     routing: list[dict] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
+    #: Task ids in the order the replay first saw them, wherever they appeared.
+    #: Derived from the events table instead, this missed every id that
+    #: arrives nested, as handoff.propose's do.
+    task_order: list[str] = field(default_factory=list)
+    #: Where each id was first seen, as a log position. Positions rather than
+    #: seq numbers: two exports concatenated repeat their seq numbers, and a
+    #: position is always present and always increasing.
+    first_seen: dict[str, int] = field(default_factory=dict)
+    #: Every creation envelope, in order, and the id each was attributed to as
+    #: the replay went. Kept so the attribution can be revisited once server
+    #: state has been consulted, which knows better than the ordering does.
+    creations: list[_Creation] = field(default_factory=list)
+    claimed_by: list[str | None] = field(default_factory=list)
 
 
-def _replay(chain: Chain) -> _Index:
+def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per method
     ix = _Index()
-    # Deliberation and whisper ids are minted by the coordinator and returned
-    # in the result, which the log does not carry. They are recoverable
-    # because every later envelope names the id it acts on, so the opening
-    # envelope is matched to the first id seen for it.
+    # Deliberation, whisper and handoff ids are minted by the coordinator and
+    # returned in the result, which the log does not carry. They are
+    # recoverable because every later envelope names the id it acts on, so an
+    # opening envelope is matched to the first id seen for it. `all_*` keeps
+    # the openings in order for the pairing check afterwards; `pending_*` is
+    # what is still unmatched.
+    all_delib: list[_Delib] = []
+    all_whisper: list[_Whisper] = []
+    all_handoff: list[_Handoff] = []
     pending_delib: list[_Delib] = []
     pending_whisper: list[_Whisper] = []
+    pending_handoff: list[_Handoff] = []
+    #: What was matched, in the order it was matched, and whether every match
+    #: came off the front of the queue. A match made on evidence rather than on
+    #: order leaves the queue out of step, and the ordering check no longer
+    #: describes what happened.
+    done: dict[str, list] = {"delib": [], "whisper": [], "handoff": []}
+    in_order: dict[str, bool] = {"delib": True, "whisper": True, "handoff": True}
+    # The workspace defaults a creation inherits. Both are in the log, on
+    # workspace.create, and both change what a task is: a task.create that
+    # names no mode is not a task with no mode, and under modes/1.0 a trial
+    # task requires review whether or not the caller asked for it.
+    ws_mode = "trial"
+    ws_profiles: list[str] = []
 
-    def task(tid: str | None) -> _Task | None:
+    def review_rule(spec: dict, mode: str | None) -> bool | None:
+        """
+        Whether a task made from this spec requires review, as the coordinator
+        decides it for task.create and control.supersede alike: a trial task
+        under modes/1.0 does regardless, otherwise the spec's own flag, and
+        otherwise the coordinator records nothing.
+        """
+        if mode == "trial" and any(x == "modes" or x.startswith("modes/") for x in ws_profiles):
+            return True
+        if "review_required" in spec:
+            return bool(spec["review_required"])
+        return None
+
+    def task(tid: str | None, pos: int | None = None) -> _Task | None:
+        """
+        The task this id names, attributing a creation to it on first sight.
+
+        An id becomes visible only when an envelope names it, and the earliest
+        creation nobody has claimed is the one that most likely made it. That
+        attribution is provisional: server state settles it properly later, and
+        where nothing settles it the row says so. It is made here rather than
+        afterwards because the replay reads it as it goes.
+        """
         if not tid:
             return None
-        return ix.tasks.setdefault(tid, _Task(task_id=tid))
+        if tid not in ix.tasks:
+            t = ix.tasks[tid] = _Task(task_id=tid)
+            ix.task_order.append(tid)
+            if pos is not None:
+                ix.first_seen[tid] = pos
+            for i, owner in enumerate(ix.claimed_by):
+                if owner is None:
+                    ix.claimed_by[i] = tid
+                    t.attribute(ix.creations[i])
+                    break
+        return ix.tasks[tid]
 
-    for entry in chain.events:
-        env = entry.get("envelope") or {}
-        p = env.get("params") or {}
+    def created(made: _Creation) -> None:
+        ix.creations.append(made)
+        ix.claimed_by.append(None)
+
+    for pos, entry in enumerate(chain.events):
+        if not isinstance(entry, dict):
+            # Not an audit entry. Skipped rather than fatal: a hand-assembled
+            # export with a stray element should not cost the analysis every
+            # entry after it.
+            continue
+        env = entry.get("envelope")
+        env = env if isinstance(env, dict) else {}
+        p = env.get("params")
+        p = p if isinstance(p, dict) else {}
         method = env.get("method") or ""
         actor = p.get("from") or env.get("from")
-        ts = _ts(env.get("ts")) or _ts(entry.get("arrived"))
-        seq = entry.get("seq")
+        # The sender's timestamp lives in params in every profile example and
+        # is read from there first by the coordinator; the envelope-level ts is
+        # the older placement. Whichever is set is the sender's clock, and the
+        # coordinator's own clock is the fallback, not the reading.
+        arrived = _ts(entry.get("arrived"))
+        ts = _ts(p.get("ts")) or _ts(env.get("ts")) or arrived
+        seq = entry.get("seq") if isinstance(entry.get("seq"), int) else None
         # escalate.raise names its subject original_task_id rather than
         # task_id. The event is still about that task, and treating it
         # otherwise leaves the task out of the id ordering.
         tid = p.get("task_id") or p.get("original_task_id")
+        tid = tid if isinstance(tid, str) else None
 
+        if tid:
+            task(tid, pos)
         ix.events.append({
             "seq": seq,
             "workspace": p.get("workspace") or chain.workspace,
             "ts": ts,
-            "arrived": _ts(entry.get("arrived")),
+            "arrived": arrived,
             "method": method,
             "actor": actor,
             "actor_kind": _uri_kind(actor),
@@ -195,11 +552,21 @@ def _replay(chain: Chain) -> _Index:
             "chained": entry.get("prev_hash") is not None,
         })
 
-        if method == "participant.join":
-            ix.members[actor] = {
-                "participant": actor, "kind": p.get("type"), "role": p.get("role"),
-                "joined_at": ts, "left_at": None,
-            }
+        if method in ("workspace.create", "workspace.set_profiles"):
+            if p.get("profiles") is not None:
+                ws_profiles = [x for x in _as_list(p.get("profiles")) if isinstance(x, str)]
+            if p.get("mode"):
+                ws_mode = p["mode"]
+
+        elif method == "participant.join":
+            # A second join by a current member changes nothing the coordinator
+            # records about them; only a member who left is a new member again.
+            current = ix.members.get(actor)
+            if current is None or current.get("left_at") is not None:
+                ix.members[actor] = {
+                    "participant": actor, "kind": p.get("type"), "role": p.get("role"),
+                    "joined_at": ts, "left_at": None,
+                }
 
         elif method == "participant.leave":
             if actor in ix.members:
@@ -208,114 +575,156 @@ def _replay(chain: Chain) -> _Index:
         elif method == "task.create":
             # The id is in the result, not the envelope. Tasks are matched by
             # the order they were created, which the log preserves.
-            hints = p.get("routing_hints") or {}
-            t = _Task(
-                task_id="",  # filled below once an id is observed
-                kind=p.get("kind"), delegator=actor,
-                original_assignee=p.get("assignee"), assignee=p.get("assignee"),
-                mode=p.get("mode"), review_required=p.get("review_required"),
-                created_at=ts, state="created",
+            hints = p.get("routing_hints") if isinstance(p.get("routing_hints"), dict) else {}
+            mode = p.get("mode") or ws_mode
+            assignee = p.get("assignee") or p.get("to")
+            created(_Creation(
+                pos=pos, kind=p.get("kind"), delegator=actor,
+                original_assignee=assignee, assignee=assignee,
+                mode=mode, review_required=review_rule(p, mode), created_at=ts,
                 criticality=hints.get("criticality"), risk_tier=hints.get("risk_tier"),
                 confidence=_decimal(hints.get("confidence")),
-            )
-            ix.tasks[f"__pending_{seq}"] = t
+            ))
 
         elif method == "task.update" and tid:
             t = task(tid)
             new_state = p.get("state")
             if new_state:
                 t.state = new_state
-                if new_state in _SETTLED:
-                    t.settled_at = ts
+                t.settled_at = ts if new_state in _SETTLED else None
 
         elif method == "task.complete" and tid:
             t = task(tid)
             conf = _decimal(p.get("confidence"))
             if conf is None:
-                conf = _decimal((p.get("routing_hints") or {}).get("confidence"))
+                hints = p.get("routing_hints") if isinstance(p.get("routing_hints"), dict) else {}
+                conf = _decimal(hints.get("confidence"))
             if conf is not None:
-                t.confidence = conf
+                t.confidence, t.confidence_reported = conf, True
             if t.review_required:
-                t.state = "review_requested"
-                t.requested_at = t.requested_at or ts
-                t.artefact = p.get("output") if t.artefact is None else t.artefact
-                t.rule = t.rule or "any_one_approves"
+                # review/1.0 S3.1: completing a task that requires review opens
+                # one instead of completing. The coordinator reuses an existing
+                # review rather than replacing it, so decisions already cast
+                # stay in force; only review.request starts a fresh pass.
+                r = t.review
+                if r is None:
+                    r = t.open_review(ts, _implicit_reviewers(ix, actor, t.assignee),
+                                      "any_one_approves", None)
+                r.artefact = p.get("output")
+                t.state, t.settled_at = "review_requested", None
             else:
                 t.state = "completed"
                 t.settled_at = ts
 
         elif method == "review.request" and tid:
             t = task(tid)
-            t.state = "review_requested"
-            t.requested_at = t.requested_at or ts
-            to = p.get("to")
-            addressed = [to] if isinstance(to, str) else list(to or [])
-            for r in addressed:
-                if r not in t.requested_to:
-                    t.requested_to.append(r)
-            if p.get("rule"):
-                t.rule = p["rule"]
-            t.rule = t.rule or "any_one_approves"
-            t.artefact = p.get("artefact")
+            addressed = _as_list(p.get("to"))
+            r = t.review
+            if t.state == "review_requested" and r is not None:
+                # A review already open: this widens the reviewer set. The
+                # coordinator refuses a request that changes the artefact or
+                # the rule underneath an open review, so a widen is the only
+                # thing this can be, and the decisions already cast stand.
+                for reviewer in addressed:
+                    if reviewer not in r.requested_to:
+                        r.requested_to.append(reviewer)
+                if p.get("artefact") is not None:
+                    r.artefact = p["artefact"]
+            else:
+                # A new pass. Its decisions start empty, which is the whole
+                # reason passes are tracked separately.
+                r = t.open_review(ts, addressed, p.get("rule") or "any_one_approves",
+                                  p.get("artefact"))
+            t.state, t.settled_at = "review_requested", None
 
-        elif method in ("decide.approve", "decide.reject", "decide.override", "abstain.declare") and tid:
+        elif method in ("decide.approve", "decide.reject", "decide.override",
+                        "abstain.declare") and tid:
             t = task(tid)
+            r = t.review
+            if r is None:
+                # The coordinator refuses a decision on a task with no review
+                # open, so this should not occur. Recording it against an
+                # implicit pass keeps the decision rather than dropping it.
+                r = t.open_review(ts, [], "any_one_approves", None)
             kind = {"decide.approve": "approve", "decide.reject": "reject",
                     "decide.override": "override", "abstain.declare": "abstain"}[method]
-            t.decisions.append({
+            d = {
                 "seq": seq, "reviewer": actor, "kind": kind, "ts": ts,
                 "comment": p.get("comment") or p.get("reason"),
-                "tags": list(p.get("tags") or []),
+                "tags": _as_list(p.get("tags")),
                 "request_revision": bool(p.get("request_revision")) if kind == "reject" else None,
                 "abstain_category": p.get("category") if kind == "abstain" else None,
                 "digest_bound": p.get("approved_artefact_digest") is not None,
-            })
+                "is_final": False,
+            }
+            r.decisions.append(d)
+
             if kind == "override":
-                diff = list(p.get("diff") or [])
+                diff = p.get("diff")
+                diff = diff if isinstance(diff, list) else []
                 ix.overrides.append({
                     "seq": seq, "task_id": tid, "reviewer": actor, "ts": ts,
-                    "rationale": p.get("rationale"), "tags": list(p.get("tags") or []),
-                    "policy_refs": list(p.get("policy_refs") or []),
+                    "rationale": p.get("rationale"), "tags": _as_list(p.get("tags")),
+                    "policy_refs": _as_list(p.get("policy_refs")),
                     "intent_preserved": p.get("intent_preserved"),
                     "logical_id": p.get("logical_id"),
-                    "diff": diff, "based_on": t.artefact,
+                    "diff": diff, "based_on": r.artefact,
+                    "result": _apply_patch(r.artefact, diff),
                 })
-                t.state, t.settled_at = "completed", ts
+                d["is_final"] = True
+                t.state, t.settled_at, r.settled_at = "completed", ts, ts
             elif kind == "abstain":
-                t.state, t.settled_at = "abstained", ts
+                d["is_final"] = True
+                t.state, t.settled_at, r.settled_at = "abstained", ts, ts
             elif kind == "reject":
                 if p.get("request_revision"):
-                    t.state = "in_progress"
+                    # Sent back, so the review has not ended.
+                    t.state, t.settled_at = "in_progress", None
                 else:
-                    t.state, t.settled_at = "declined", ts
+                    d["is_final"] = True
+                    t.state, t.settled_at, r.settled_at = "declined", ts, ts
             else:
-                approvers = {d["reviewer"] for d in t.decisions if d["kind"] == "approve"}
-                if _rule_satisfied(t.rule or "any_one_approves", approvers, len(t.requested_to)):
-                    t.state, t.settled_at = "completed", ts
+                approvers = {x["reviewer"] for x in r.decisions if x["kind"] == "approve"}
+                if _rule_satisfied(r.rule, approvers, r.requested_to):
+                    d["is_final"] = True
+                    t.state, t.settled_at, r.settled_at = "completed", ts, ts
 
         elif method == "escalate.raise":
             orig = p.get("original_task_id")
-            if orig:
-                t = task(orig)
-                t.state, t.settled_at = "escalated", ts
-            spec = p.get("new_task") or {}
-            ix.tasks[f"__pending_{seq}"] = _Task(
-                task_id="", kind=spec.get("kind"), delegator=actor,
-                original_assignee=spec.get("assignee"), assignee=spec.get("assignee"),
-                created_at=ts, state="created", supersedes=orig)
+            old = task(orig) if orig else None
+            if old is not None:
+                old.state, old.settled_at = "escalated", ts
+            spec = p.get("new_task") if isinstance(p.get("new_task"), dict) else {}
+            # The successor inherits the original's kind where the spec names
+            # none, and its mode always. The coordinator applies no review rule
+            # of its own here, so review_required is whatever it defaults to.
+            inherited = {"mode"} | ({"kind"} if not spec.get("kind") else set())
+            created(_Creation(
+                pos=pos, kind=spec.get("kind") or (old.kind if old else None),
+                delegator=actor, original_assignee=spec.get("assignee"),
+                assignee=spec.get("assignee"), mode=old.mode if old else None,
+                created_at=ts, supersedes=orig, inherited=frozenset(inherited)))
 
         elif method == "control.cancel" and tid:
             t = task(tid)
             t.state, t.settled_at = "cancelled", ts
 
         elif method == "control.supersede" and tid:
-            t = task(tid)
-            t.state, t.settled_at = "superseded", ts
-            spec = p.get("successor_task") or {}
-            ix.tasks[f"__pending_{seq}"] = _Task(
-                task_id="", kind=spec.get("kind"), delegator=actor,
-                original_assignee=spec.get("assignee"), assignee=spec.get("assignee"),
-                created_at=ts, state="created", supersedes=tid)
+            old = task(tid)
+            old.state, old.settled_at = "superseded", ts
+            spec = p.get("successor_task") if isinstance(p.get("successor_task"), dict) else {}
+            # A successor is a created task and is bound as one: it takes the
+            # original's assignee and mode where the spec names none, and the
+            # same review rule task.create applies.
+            assignee = spec.get("assignee") or old.assignee
+            mode = spec.get("mode") or old.mode or ws_mode
+            inherited = ({"assignee"} if not spec.get("assignee") else set()) \
+                | ({"mode"} if not spec.get("mode") else set())
+            created(_Creation(
+                pos=pos, kind=spec.get("kind"), delegator=actor,
+                original_assignee=assignee, assignee=assignee, mode=mode,
+                review_required=review_rule(spec, mode), created_at=ts, supersedes=tid,
+                inherited=frozenset(inherited)))
 
         elif method == "control.pause" and tid and p.get("scope", "task") == "task":
             task(tid).state = "paused"
@@ -324,213 +733,679 @@ def _replay(chain: Chain) -> _Index:
             task(tid).state = "in_progress"
 
         elif method == "deliberate.open":
-            to = p.get("to") or p.get("participants") or []
-            d = _Delib(
+            d_open = _Delib(
                 deliberation_id="", task_id=tid, opener=actor, rule=p.get("rule"),
-                question=p.get("question"), opened_at=ts,
-                participants=[to] if isinstance(to, str) else list(to),
+                question=p.get("question"), opened_at=ts, pos=pos,
+                participants=_as_list(p.get("to") or p.get("participants")),
             )
-            pending_delib.append(d)
+            # A caller may name the id itself, and the coordinator honours it.
+            # Then there is nothing to infer: the opening is identified by its
+            # own envelope and takes no part in the ordering.
+            given = p.get("deliberation_id")
+            if isinstance(given, str) and given and given not in ix.delibs:
+                d_open.deliberation_id, d_open.matched_uniquely = given, True
+                ix.delibs[given] = d_open
+            else:
+                all_delib.append(d_open)
+                pending_delib.append(d_open)
 
         elif method in ("deliberate.vote", "deliberate.comment", "deliberate.close"):
             did = p.get("deliberation_id")
             if did and did not in ix.delibs and pending_delib:
-                d = pending_delib.pop(0)
-                d.deliberation_id = did
-                ix.delibs[did] = d
-            d = ix.delibs.get(did)
-            if d is None:
+                # A vote is refused from anyone the deliberation did not invite,
+                # so an accepted vote names a deliberation the voter belongs to.
+                idx, sure = (_identify(pending_delib, lambda d: actor in d.participants)
+                             if method == "deliberate.vote" else (0, None))
+                d_open = pending_delib.pop(idx)
+                d_open.deliberation_id = did
+                d_open.seen_pos = pos
+                d_open.matched_uniquely = sure
+                in_order["delib"] = in_order["delib"] and idx == 0
+                ix.delibs[did] = d_open
+                done["delib"].append(d_open)
+            d_open = ix.delibs.get(did)
+            if d_open is None:
                 continue
             if method == "deliberate.vote":
-                d.votes.append({
+                d_open.votes.append({
                     "seq": seq, "voter": actor, "vote": p.get("vote"), "ts": ts,
                     "comment": p.get("comment"),
                     "veto_invoked": bool(p.get("veto_invoked")),
                 })
-            elif method == "deliberate.close":
-                d.closed_at = ts
+            elif method == "deliberate.close" and d_open.closed_at is None:
+                # The coordinator records a second close and changes nothing
+                # on it, so the first is the one that closed the deliberation.
+                d_open.closed_at = ts
 
         elif method == "whisper.ask":
-            pending_whisper.append(_Whisper(
+            w = _Whisper(
                 whisper_id="", task_id=tid, asker=actor, question=p.get("question"),
-                asked_at=ts, deadline_ms=p.get("deadline_ms"),
-                had_options=bool(p.get("options")),
-            ))
+                asked_at=ts, arrived_at=arrived or ts, deadline_ms=p.get("deadline_ms"),
+                pos=pos, askee=_as_list(p.get("to")), had_options=bool(p.get("options")),
+            )
+            given = p.get("whisper_id")
+            if isinstance(given, str) and given and given not in ix.whispers:
+                w.whisper_id, w.matched_uniquely = given, True
+                ix.whispers[given] = w
+            else:
+                all_whisper.append(w)
+                pending_whisper.append(w)
 
-        elif method == "whisper.answer":
+        elif method in ("whisper.answer", "notify.message"):
+            # notify.message is how the coordinator announces a lapse: it
+            # writes one into the log naming the whisper and the default it
+            # applied. It is the only record of a lapse in the envelope stream,
+            # and reading it is what separates "nobody has answered yet" from
+            # "the deadline passed and the default stood".
+            if method == "notify.message" and p.get("kind") != "whisper_lapsed":
+                continue
             wid = p.get("whisper_id")
             if wid and wid not in ix.whispers and pending_whisper:
-                w = pending_whisper.pop(0)
+                # A lapse concerns a whisper whose deadline had passed. An
+                # answer is refused from anyone it was not addressed to, unless
+                # it was addressed to a group or the workspace, which any
+                # member may answer.
+                if method == "notify.message":
+                    when = arrived or ts
+                    idx, sure = _identify(pending_whisper, lambda w: _deadline_passed(w, when))
+                else:
+                    idx, sure = _identify(pending_whisper, lambda w: _may_answer(w, actor))
+                w = pending_whisper.pop(idx)
                 w.whisper_id = wid
+                w.seen_pos = pos
+                w.matched_uniquely = sure
+                in_order["whisper"] = in_order["whisper"] and idx == 0
                 ix.whispers[wid] = w
+                done["whisper"].append(w)
             w = ix.whispers.get(wid)
-            if w is not None:
+            if w is None:
+                continue
+            if method == "notify.message":
+                w.lapsed_at, w.state = ts, "lapsed"
+            else:
                 w.answered_at = ts
                 w.answered_by = actor
-                w.answer = p.get("answer_option") or p.get("answer")
+                # The coordinator reads the free text from either name.
+                w.answer = p.get("answer_option") or p.get("answer") or p.get("answer_text")
+                if w.state != "lapsed":
+                    w.state = "answered"
+
+        elif method == "handoff.propose":
+            # The tasks are named inside a nested list, not as a top-level
+            # task_id, and each is a sighting of an id like any other.
+            ids = [x.get("task_id") for x in _as_list(p.get("tasks"))
+                   if isinstance(x, dict) and isinstance(x.get("task_id"), str)]
+            for t_id in ids:
+                task(t_id, pos)
+            h = _Handoff(handoff_id="", proposer=actor, recipient=p.get("to"),
+                         task_ids=ids, proposed_at=ts, seq=seq, pos=pos)
+            given = p.get("handoff_id")
+            if isinstance(given, str) and given and given not in ix.handoffs:
+                h.handoff_id, h.matched_uniquely = given, True
+                ix.handoffs[given] = h
+            else:
+                all_handoff.append(h)
+                pending_handoff.append(h)
+
+        elif method in ("handoff.accept", "handoff.decline"):
+            hid = p.get("handoff_id")
+            if hid and hid not in ix.handoffs and pending_handoff:
+                # Only the named recipient may accept a direct offer, so an
+                # accepted acceptance names an offer made to the acceptor or to
+                # a group. A decline says nothing: anyone may record one.
+                idx, sure = (_identify(
+                    pending_handoff,
+                    lambda h: str(h.recipient or "").startswith("group:")
+                    or h.recipient == actor)
+                    if method == "handoff.accept" else (0, None))
+                h = pending_handoff.pop(idx)
+                h.handoff_id = hid
+                h.seen_pos = pos
+                h.matched_uniquely = sure
+                in_order["handoff"] = in_order["handoff"] and idx == 0
+                ix.handoffs[hid] = h
+                done["handoff"].append(h)
+            h = ix.handoffs.get(hid)
+            if h is None:
+                continue
+            if method == "handoff.decline":
+                h.reason = p.get("reason")
+                # A group recipient is an offer to whoever is free. One member
+                # declining leaves it open for the rest, and the coordinator
+                # keeps it proposed; only the named recipient can turn a
+                # handoff down outright.
+                recipient = h.recipient if isinstance(h.recipient, str) else ""
+                if not recipient.startswith("group:") and actor == recipient:
+                    h.resolution, h.resolved_at, h.resolved_by = "declined", ts, actor
+            else:
+                h.resolution, h.resolved_at, h.resolved_by = "accepted", ts, actor
+                taken = _as_list(p.get("accepted_task_ids")) or h.task_ids
+                h.accepted = list(taken)
+                # Accepting is the moment responsibility moves.
+                for t_id in taken:
+                    moved = task(t_id, pos)
+                    if moved is not None:
+                        moved.assignee, moved.assignee_moved = actor, True
 
         elif method in ("task.route", "review.depth", "escalate.auto"):
+            cands = _as_list(p.get("candidates"))
             ix.routing.append({
                 "seq": seq, "task_id": tid, "method": method, "ts": ts,
                 "workspace": p.get("workspace") or chain.workspace,
+                "candidates": cands, "n_candidates": len(cands),
             })
+            if method == "task.route" and tid:
+                # The chosen candidate is returned in the result, which the
+                # log does not carry. Rather than guess, the assignee is left
+                # as it was and flagged as no longer certain.
+                task(tid).assignee_certain = False
 
-    # Tasks created but never referenced again keep their placeholder key. Any
-    # task acted on later exists under its real id, so the placeholders are
-    # matched to real ids in creation order.
-    _resolve(ix, chain, pending_delib, pending_whisper)
+    _resolve(ix, chain, all_delib, all_whisper, all_handoff,
+             pending_delib, pending_whisper, pending_handoff, done, in_order)
     _merge_state(ix, chain)
     return ix
 
 
-def _resolve(ix: _Index, chain: Chain, pending_delib: list[_Delib],
-             pending_whisper: list[_Whisper]) -> None:
+def _implicit_reviewers(ix: _Index, producer: str | None, assignee: str | None) -> list[str]:
+    """
+    The reviewers a completion opens its review to.
+
+    review/1.0 S3.1: the producer must not satisfy its own review and neither
+    must another agent, so the coordinator addresses the implicit review to the
+    current human members other than the completer and the assignee. An
+    implicit review is always ``any_one_approves`` and no table carries the
+    addressees, so nothing reads this set today; it is reconstructed so the
+    pass is the one the coordinator holds rather than an approximation of it.
+    """
+    return [uri for uri, m in ix.members.items()
+            if uri != producer and uri != assignee
+            and m.get("kind") == "human" and m.get("left_at") is None]
+
+
+def _resolve(ix: _Index, chain: Chain,
+             all_delib: list[_Delib], all_whisper: list[_Whisper],
+             all_handoff: list[_Handoff], pending_delib: list[_Delib],
+             pending_whisper: list[_Whisper], pending_handoff: list[_Handoff],
+             done: dict[str, list], in_order: dict[str, bool]) -> None:
     """
     Attach the ids the coordinator minted to the creations that produced them.
 
-    A task, whisper or deliberation id is generated server-side and returned
-    in the *result*. The audit log records envelopes, not results, so an id
-    only becomes visible when a later envelope acts on it. Two consequences,
-    both handled here rather than papered over.
+    A task, whisper, deliberation or handoff id is generated server-side and
+    returned in the *result*. The audit log records envelopes, not results, so
+    an id only becomes visible when a later envelope acts on it. Two
+    consequences, both handled here rather than papered over.
 
-    Something acted on later is matched by that id directly. Something created
-    and never touched again has no id anywhere in the envelope stream: it is
-    matched against server state where the source carried it, and otherwise
-    given a synthetic id so a count is not silently short. A synthetic id is
-    marked as such, because it is ours and not the coordinator's.
+    Something acted on later is matched by that id, in order, and the ordering
+    is checked: where it is forced by the log the row says so, and where it is
+    a guess the row says that instead. Something created and never touched
+    again has no id anywhere in the envelope stream: it is matched against
+    server state where the source carried it, and otherwise given a synthetic
+    id so a count is not silently short.
     """
     _resolve_tasks(ix, chain)
-    _resolve_pending(
-        ix.delibs, pending_delib, (chain.state or {}).get("deliberations") or {},
-        "opened_at", "deliberation_id", "deliberation")
-    _resolve_pending(
-        ix.whispers, pending_whisper, (chain.state or {}).get("whispers") or {},
-        "asked_at", "whisper_id", "whisper")
+    state = chain.state or {}
+
+    for items, kind in ((all_delib, "delib"), (all_whisper, "whisper"),
+                        (all_handoff, "handoff")):
+        forced = (_forced_prefix([x.pos for x in items], [x.seen_pos for x in done[kind]])
+                  if in_order[kind] else [False] * len(done[kind]))
+        for i, x in enumerate(done[kind]):
+            x.id_certain = forced[i] if x.matched_uniquely is None else x.matched_uniquely
+
+    _resolve_pending(ix.delibs, pending_delib, state.get("deliberations") or {},
+                     "opened_at", "deliberation_id", "deliberation")
+    _resolve_pending(ix.whispers, pending_whisper, state.get("whispers") or {},
+                     "asked_at", "whisper_id", "whisper")
+    _resolve_pending(ix.handoffs, pending_handoff, state.get("handoffs") or {},
+                     "proposed_at", "handoff_id", "handoff")
+
+    # An acceptance moves work, and an acceptance attached to the wrong
+    # outstanding offer moves the wrong work: one task is reassigned that was
+    # not, and another that was is left where it started. Both sides are named
+    # by an offer whose own identity is in doubt, so both are flagged. The
+    # handoff row saying it is unsure is not enough on its own, because the
+    # column an analyst reads is the assignee on the task.
+    for h in ix.handoffs.values():
+        if h.id_certain:
+            continue
+        for t_id in set(h.task_ids) | set(h.accepted):
+            moved = ix.tasks.get(t_id)
+            if moved is not None:
+                moved.assignee_certain = False
+
+
+def _agree(a: Any, b: Any, *, absence_counts: bool) -> int:
+    """
+    Whether a creation envelope and a stored task agree about one attribute.
+
+    ``absence_counts`` is for attributes the coordinator neither defaults nor
+    changes after creation, where a task having no value is as much a fact as
+    the value would be: a plain creation cannot produce a task that supersedes
+    something, so an absent link is evidence and not merely a gap. Attributes
+    the coordinator fills in for itself, such as ``mode``, are read the other
+    way: absent in the envelope and present in state says nothing.
+    """
+    if a is None and b is None:
+        return 0
+    if a is None or b is None:
+        return -1 if absence_counts else 0
+    return 1 if a == b else -1
+
+
+def _match_score(src: _Creation, stored: dict) -> int:
+    """How far a creation envelope and a stored task agree about themselves."""
+    hints = stored.get("routing_hints") if isinstance(stored.get("routing_hints"), dict) else {}
+    return (
+        _agree(src.kind, stored.get("kind"), absence_counts=False)
+        + _agree(src.delegator, stored.get("delegator"), absence_counts=False)
+        + _agree(src.mode, stored.get("mode"), absence_counts=False)
+        + _agree(src.review_required, stored.get("review_required"), absence_counts=False)
+        + _agree(src.supersedes, stored.get("supersedes"), absence_counts=True)
+        + _agree(src.criticality, hints.get("criticality"), absence_counts=True)
+        + _agree(src.risk_tier, hints.get("risk_tier"), absence_counts=True)
+        + _agree(src.confidence, _decimal(hints.get("confidence")), absence_counts=True)
+    )
+
+
+def _assign_group(srcs: list[_Creation], candidates: list[str], stored: dict,
+                  preferred: list[str | None], forced: list[bool]) -> list[tuple[str | None, bool]]:
+    """
+    Match creations to stored tasks created in the same millisecond.
+
+    Taken in creation order, the first creation would claim whichever stored
+    task happens to score well against it and leave the one that actually
+    belonged to it for someone else. So the most clear-cut match is settled
+    first: the pair whose best candidate beats its runner-up by the widest
+    margin, then the next, until one side runs out.
+
+    Where two stored tasks agree with a creation equally well, the ordering
+    evidence decides: ``preferred`` is the id the replay attributed to this
+    creation from the order ids appeared, and ``forced`` says whether that
+    attribution was the only one the log allows. A tie settled that way is as
+    certain as the ordering was; a tie settled with neither is a coin flip and
+    is reported as one.
+    """
+    out: dict[int, tuple[str | None, bool]] = {}
+    left = list(range(len(srcs)))
+    right = list(candidates)
+    while left and right:
+        best: tuple | None = None
+        for si in left:
+            scored = sorted(
+                ((_match_score(srcs[si], stored[tid]), 0 if tid == preferred[si] else 1, tid)
+                 for tid in right),
+                key=lambda triple: (-triple[0], triple[1], triple[2]))
+            top_score, _, top_id = scored[0]
+            margin = top_score - scored[1][0] if len(scored) > 1 else None
+            # Widest margin first, then highest score, then creation order,
+            # which keeps the result deterministic.
+            key = (-(margin if margin is not None else 10**6), -top_score, si)
+            if best is None or key < best[0]:
+                best = (key, si, top_id, margin)
+        _, si, tid, margin = best
+        sure = margin is None or margin > 0 or (tid == preferred[si] and forced[si])
+        out[si] = (tid, sure)
+        left.remove(si)
+        right.remove(tid)
+    for si in left:
+        out[si] = (None, False)
+    return [out[i] for i in range(len(srcs))]
+
+
+def _pair_with_state(ix: _Index, chain: Chain,
+                     forced: list[bool]) -> tuple[list[str | None], list[bool]]:
+    """
+    Pair creations to the ids server state holds, using what the two agree on.
+
+    State names every task that exists, so the pairing is a bijection, but the
+    only ordering the log and the snapshot share is the creation timestamp, and
+    that has millisecond resolution. Two tasks created in the same millisecond
+    are ordered by their ids, which carry a random suffix, so ordering alone
+    decides by coin flip and attributes one task's criticality and confidence
+    to another. Nothing downstream can see that it happened.
+
+    So within a timestamp the creation is matched to the stored task that
+    agrees with it about what it was created as, and where two agree equally
+    the order the ids appeared in the log decides, with the certainty that
+    ordering carries. Where neither settles it the row is marked uncertain
+    rather than presented as fact.
+    """
+    stored = (chain.state or {}).get("tasks") or {}
+    groups: dict[str, list[str]] = {}
+    for tid, body in stored.items():
+        if isinstance(body, dict):
+            groups.setdefault(str(body.get("created_at") or ""), []).append(tid)
+    ordered = sorted(groups)
+
+    # Creations are dealt out to the timestamp groups in order, as many to each
+    # group as that group holds ids. Which creation gets which id inside a
+    # group is then settled on the evidence rather than on the order.
+    n = len(ix.creations)
+    out: list[str | None] = [None] * n
+    certain: list[bool] = [False] * n
+    i = 0
+    for key in ordered:
+        members = groups[key]
+        take = ix.creations[i:i + len(members)]
+        if not take:
+            break
+        assigned = _assign_group(take, members, stored,
+                                 ix.claimed_by[i:i + len(take)], forced[i:i + len(take)])
+        for offset, (tid, sure) in enumerate(assigned):
+            out[i + offset] = tid
+            certain[i + offset] = sure
+        i += len(take)
+    return out, certain
 
 
 def _resolve_tasks(ix: _Index, chain: Chain) -> None:
     """
-    Pair each creation with the id the coordinator gave it.
+    Settle which creation made which task.
 
-    Every task in a workspace came from a creation envelope, and the log
-    preserves the order both were made in, so creations and ids pair up in
-    order. With server state that pairing is exact, because state names every
-    task that exists. Without it, ids are known only for tasks some later
-    envelope referenced, and the pairing is an inference from order: sound for
-    work that proceeds one task at a time, and capable of mismatching
-    attributes across heavily interleaved tasks. Anything left unpaired is
-    given an id marked ``unidentified`` rather than dropped, so a count is
-    never quietly short.
+    The replay attributed each creation to the first unclaimed id it saw, which
+    is right where work proceeds one task at a time and a guess where it does
+    not. Server state settles it properly, by what the creation and the stored
+    task agree they are; without state the replay's own attribution stands and
+    ``id_certain`` says how far it can be trusted. A creation that matches no
+    id at all is given one marked ``unidentified`` rather than dropped, so a
+    count is never quietly short.
     """
-    placeholders = sorted((k for k in ix.tasks if k.startswith("__pending_")),
-                          key=lambda k: int(k.split("_")[-1]))
-    if not placeholders:
-        for tid, t in ix.tasks.items():
-            t.task_id = tid
+    if not ix.creations:
         return
 
-    if chain.has_state:
-        state_tasks = (chain.state or {}).get("tasks") or {}
-        real_ids = sorted(state_tasks,
-                          key=lambda tid: (state_tasks[tid].get("created_at") or "", tid))
-    else:
-        # Only ids some later envelope named are knowable. Ordered by when
-        # they were first seen, which tracks creation order in sequential work.
-        first_seen: dict[str, int] = {}
-        for e in ix.events:
-            tid = e.get("task_id")
-            if tid and tid not in first_seen:
-                first_seen[tid] = e["seq"] or 0
-        real_ids = sorted(first_seen, key=lambda tid: first_seen[tid])
+    # What the order of appearance settles on its own, per creation.
+    prefix = _forced_prefix([c.pos for c in ix.creations],
+                            [ix.first_seen.get(t) for t in ix.task_order])
+    forced = [prefix[i] if i < len(prefix) else False for i in range(len(ix.creations))]
 
-    for i, placeholder in enumerate(placeholders):
-        src = ix.tasks.pop(placeholder)
-        real = real_ids[i] if i < len(real_ids) else f"(unidentified-{i})"
-        dst = ix.tasks.get(real)
-        if dst is None:
-            src.task_id = real
-            ix.tasks[real] = src
-            continue
-        for f in ("kind", "delegator", "original_assignee", "mode",
-                  "review_required", "created_at", "criticality", "risk_tier",
-                  "supersedes"):
-            if getattr(dst, f) in (None, ""):
-                setattr(dst, f, getattr(src, f))
-        if dst.assignee is None:
-            dst.assignee = src.original_assignee
-        if dst.confidence is None:
-            dst.confidence = src.confidence
+    if chain.has_state:
+        targets, certain = _pair_with_state(ix, chain, forced)
+        # Detach first, so a creation moving from one task to another does not
+        # leave its kind behind on the task it is leaving.
+        for owner in ix.claimed_by:
+            if owner and owner in ix.tasks:
+                ix.tasks[owner].attribute(None)
+    else:
+        targets = list(ix.claimed_by)
+        certain = forced
+
+    attributed: list[tuple[_Creation, _Task]] = []
+    for i, made in enumerate(ix.creations):
+        tid, sure = targets[i], certain[i]
+        if not tid:
+            tid, sure = f"(unidentified-{i})", False
+        t = ix.tasks.get(tid)
+        if t is None:
+            t = ix.tasks[tid] = _Task(task_id=tid)
+        t.attribute(made)
+        t.id_certain = sure
+        attributed.append((made, t))
+
+    if not chain.has_state:
+        # A successor that took its assignee or mode from the task it replaces
+        # is only as sure of them as that task's row is. In creation order, so
+        # a chain of successors carries the doubt all the way down. With state
+        # the inherited values are overwritten by the coordinator's, so there
+        # is nothing to carry.
+        for made, t in attributed:
+            old = ix.tasks.get(t.supersedes) if made.inherited and t.supersedes else None
+            if old is None:
+                continue
+            if not old.id_certain:
+                t.id_certain = False
+            if "assignee" in made.inherited and not old.assignee_certain and not t.assignee_moved:
+                t.assignee_certain = False
 
     for tid, t in ix.tasks.items():
         t.task_id = tid
 
 
 def _resolve_pending(registry: dict, pending: list, state_items: dict,
-                     sort_key: str, id_attr: str, label: str) -> None:
-    """Give an id to every creation the envelope stream never named again."""
+                     time_field: str, id_attr: str, label: str) -> None:
+    """
+    Give an id to every creation the envelope stream never named again.
+
+    Ordered by the creation timestamp state records, not by the id itself.
+    CHAP ids happen to sort chronologically today because they are ULIDs, and
+    relying on that would make this correct by accident. ``time_field`` has to
+    be the name the coordinator serialises for this kind of record: a field
+    that does not exist reads as empty on every record, and the sort falls
+    through to the id.
+    """
     if not pending:
         return
-    unobserved = sorted((k for k in state_items if k not in registry))
+    unobserved = sorted(
+        (k for k in state_items if k not in registry),
+        key=lambda k: (str((state_items[k] or {}).get(time_field) or ""), k))
+    times = [str((state_items[k] or {}).get(time_field) or "") for k in unobserved]
+    # Exact when there are as many candidates as creations and their recorded
+    # times are distinct, because then the recorded order is the creation
+    # order. Ties are broken by the id, which is not an order at all.
+    exact = (len(unobserved) == len(pending) and all(times)
+             and len(set(times)) == len(times))
     for i, item in enumerate(pending):
         real = unobserved[i] if i < len(unobserved) else f"(unidentified-{label}-{i})"
         setattr(item, id_attr, real)
+        item.id_certain = exact and i < len(unobserved)
         registry.setdefault(real, item)
 
 
-def _merge_state(ix: _Index, chain: Chain) -> None:
-    """Overlay authoritative server state where the source carried it."""
+def _merge_state(ix: _Index, chain: Chain) -> None:  # noqa: C901 - one block per table
+    """
+    Overlay authoritative server state where the source carried it.
+
+    Facts about what happened are the coordinator's to state, and state wins
+    for them. Timestamps are the exception: a client may stamp its own time
+    into every envelope, and the replay then runs on that one clock. State
+    holds the coordinator's clock instead, and a duration with one end on each
+    is not a duration. So state fills a timestamp the replay lacks and never
+    replaces one it has.
+    """
     if not chain.has_state:
         return
     state = chain.state or {}
 
-    for tid, task in (state.get("tasks") or {}).items():
+    for tid, stored in (state.get("tasks") or {}).items():
+        if not isinstance(stored, dict):
+            continue
         t = ix.tasks.get(tid)
         if t is None:
             t = ix.tasks[tid] = _Task(task_id=tid)
         # State is authoritative: it is what the coordinator believes.
-        t.state = task.get("state", t.state)
-        t.assignee = task.get("assignee", t.assignee)
-        t.kind = task.get("kind", t.kind)
-        t.delegator = task.get("delegator", t.delegator)
-        t.mode = task.get("mode", t.mode)
-        t.supersedes = task.get("supersedes", t.supersedes)
-        if task.get("review_required") is not None:
-            t.review_required = task["review_required"]
-        t.created_at = _ts(task.get("created_at")) or t.created_at
+        t.state = stored.get("state", t.state)
+        t.assignee = stored.get("assignee", t.assignee)
+        # State holds who has the task now, whatever moved it there, so nothing
+        # about the assignee is left to inference on this path.
+        t.assignee_certain = True
+        t.kind = stored.get("kind", t.kind)
+        t.delegator = stored.get("delegator", t.delegator)
+        t.mode = stored.get("mode", t.mode)
+        t.supersedes = stored.get("supersedes", t.supersedes)
+        if stored.get("review_required") is not None:
+            t.review_required = stored["review_required"]
+        t.created_at = t.created_at or _ts(stored.get("created_at"))
         if t.confidence is None:
-            t.confidence = _decimal(task.get("confidence"))
-        review = task.get("review") or {}
+            t.confidence = _decimal(stored.get("confidence"))
+        hints = stored.get("routing_hints") if isinstance(stored.get("routing_hints"), dict) else {}
+        t.criticality = t.criticality or hints.get("criticality")
+        t.risk_tier = t.risk_tier or hints.get("risk_tier")
+        if t.confidence is None:
+            t.confidence = _decimal(hints.get("confidence"))
+        # A task the coordinator does not hold as settled has no settlement
+        # time, whatever an earlier pass left behind. Reporting one on an open
+        # task contradicts the column's own definition.
+        if t.state not in _SETTLED:
+            t.settled_at = None
+        review = stored.get("review") or {}
         if review:
-            t.requested_at = _ts(review.get("requested_at")) or t.requested_at
-            t.rule = review.get("rule") or t.rule
-            t.requested_to = list(review.get("requested_to") or t.requested_to)
+            # State carries the current pass only, which is the last one here.
+            r = t.review or t.open_review(None, [], None, None)
+            r.requested_at = r.requested_at or _ts(review.get("requested_at"))
+            r.rule = review.get("rule") or r.rule
+            r.requested_to = list(review.get("requested_to") or r.requested_to)
 
-    for ov in ix.overrides:
-        stored = (state.get("overrides") or {})
-        for art in stored.values():
-            if art.get("task_id") == ov["task_id"] and art.get("reviewer") == ov["reviewer"]:
-                ov["based_on"] = art.get("based_on_artefact", ov.get("based_on"))
-                ov["result"] = art.get("result")
-                break
+    # Overrides are matched to stored artefacts per task, in order: one
+    # reviewer may correct the same task twice, so (task, reviewer) is not a
+    # key. The stored artefact is what the coordinator computed and wins
+    # where it is present; the replayed one stands where it is not.
+    stored_by_task: dict[str, list[dict]] = {}
+    for art in (state.get("overrides") or {}).values():
+        if isinstance(art, dict):
+            stored_by_task.setdefault(art.get("task_id"), []).append(art)
+    for arts in stored_by_task.values():
+        arts.sort(key=lambda a: str(a.get("ts") or ""))
+    seen: dict[str, int] = {}
+    for ov in sorted(ix.overrides, key=lambda o: o["seq"] or 0):
+        tid = ov["task_id"]
+        i = seen.get(tid, 0)
+        seen[tid] = i + 1
+        arts = stored_by_task.get(tid) or []
+        if i < len(arts):
+            ov["based_on"] = arts[i].get("based_on_artefact", ov.get("based_on"))
+            if "result" in arts[i]:
+                ov["result"] = arts[i]["result"]
 
-    for did, d in (state.get("deliberations") or {}).items():
+    for did, stored in (state.get("deliberations") or {}).items():
+        if not isinstance(stored, dict):
+            continue
         entry = ix.delibs.get(did)
         if entry is None:
-            entry = ix.delibs[did] = _Delib(deliberation_id=did)
-        entry.task_id = d.get("task_id", entry.task_id)
-        entry.rule = d.get("rule", entry.rule)
-        entry.question = d.get("question", entry.question)
-        entry.participants = list(d.get("participants") or entry.participants)
-        outcome = d.get("outcome") or {}
-        entry.outcome = outcome.get("outcome") if isinstance(outcome, dict) else None
+            entry = ix.delibs[did] = _Delib(deliberation_id=did, id_certain=True)
+        entry.task_id = stored.get("task_id", entry.task_id)
+        entry.rule = stored.get("rule", entry.rule)
+        entry.question = stored.get("question", entry.question)
+        entry.opener = stored.get("opener", entry.opener)
+        entry.opened_at = entry.opened_at or _ts(stored.get("opened_at"))
+        entry.participants = list(stored.get("participants") or entry.participants)
+        outcome = stored.get("outcome")
+        if isinstance(outcome, dict):
+            entry.outcome = outcome.get("outcome")
+        # The coordinator records that a deliberation closed, not when; the
+        # closing envelope is the only record of the time, so closed_at stays
+        # as the replay found it.
+
+    for wid, stored in (state.get("whispers") or {}).items():
+        if not isinstance(stored, dict):
+            continue
+        w = ix.whispers.get(wid)
+        if w is None:
+            w = ix.whispers[wid] = _Whisper(whisper_id=wid)
+        w.task_id = stored.get("task_id", w.task_id)
+        w.asker = stored.get("asker", w.asker)
+        w.question = stored.get("question", w.question)
+        w.asked_at = w.asked_at or _ts(stored.get("asked_at"))
+        if stored.get("deadline_ms") is not None:
+            w.deadline_ms = stored["deadline_ms"]
+        w.had_options = bool(stored.get("options")) or w.had_options
+        w.state = stored.get("state") or w.state
+        w.answered_at = w.answered_at or _ts(stored.get("answered_at"))
+        w.answered_by = stored.get("answered_by") or w.answered_by
+        answer = stored.get("answer_option") or stored.get("answer_text")
+        if answer is not None:
+            w.answer = answer
+
+    for hid, stored in (state.get("handoffs") or {}).items():
+        if not isinstance(stored, dict):
+            continue
+        h = ix.handoffs.get(hid)
+        if h is None:
+            h = ix.handoffs[hid] = _Handoff(handoff_id=hid)
+        h.proposer = stored.get("proposer", h.proposer)
+        h.recipient = stored.get("recipient", h.recipient)
+        ids = [x.get("task_id") for x in _as_list(stored.get("tasks"))
+               if isinstance(x, dict) and x.get("task_id")]
+        if ids:
+            h.task_ids = ids
+        h.proposed_at = h.proposed_at or _ts(stored.get("proposed_at"))
+        h.reason = stored.get("decline_reason") or h.reason
+        h.resolution = {"accepted": "accepted", "declined": "declined"}.get(
+            stored.get("state") or "", "open")
+        if h.resolution == "open":
+            h.resolved_at, h.resolved_by = None, None
+        else:
+            h.resolved_at = h.resolved_at or _ts(stored.get("resolved_at"))
+            h.resolved_by = stored.get("accepted_by") or h.resolved_by
+            h.accepted = list(stored.get("accepted_task_ids") or h.accepted)
+        if h.resolution != "accepted":
+            h.accepted = []
+
+    # Route decisions are matched to recorded calls per (task, method), in
+    # order. The Python coordinator stores an escalate.auto artefact before it
+    # checks that the escalation target exists, so a refused call can leave an
+    # artefact with no audit entry; where that has happened the artefacts run
+    # one ahead of the calls for that task and the pairing is off by one.
+    routes = sorted((state.get("route_decisions") or {}).values(),
+                    key=lambda a: str(a.get("produced_at") or ""))
+    by_task_method: dict[tuple, list[dict]] = {}
+    for art in routes:
+        by_task_method.setdefault((art.get("task"), art.get("decision_type")), []).append(art)
+    taken: dict[tuple, int] = {}
+    for row in sorted(ix.routing, key=lambda r: r["seq"] or 0):
+        key = (row["task_id"], row["method"])
+        i = taken.get(key, 0)
+        taken[key] = i + 1
+        arts = by_task_method.get(key) or []
+        if i >= len(arts):
+            continue
+        art = arts[i]
+        outcome = art.get("outcome")
+        row["policy_id"] = art.get("policy_id")
+        alts = art.get("alternatives_considered")
+        if alts is None:
+            alts = (art.get("extra") or {}).get("alternatives_considered")
+        row["n_alternatives"] = len(alts or [])
+        if row["method"] == "task.route":
+            # The routing artefact says who was chosen at the time, not who
+            # holds the work now; the task's assignee comes from state above.
+            row["selected"] = outcome if isinstance(outcome, str) else None
+        elif row["method"] == "review.depth":
+            row["depth"] = outcome if isinstance(outcome, str) else None
+        elif row["method"] == "escalate.auto":
+            row["escalated"] = bool((outcome or {}).get("escalate")) \
+                if isinstance(outcome, dict) else None
 
     for uri, m in (state.get("members") or {}).items():
+        if not isinstance(m, dict):
+            continue
         rec = ix.members.setdefault(uri, {"participant": uri, "joined_at": None, "left_at": None})
         rec["kind"] = m.get("type", rec.get("kind"))
         rec["role"] = m.get("role", rec.get("role"))
 
 
 # ---------------------------------------------------------------- projection
+
+def _coerce(s: pd.Series, dtype: str) -> pd.Series:
+    """
+    Cast a column, nulling only the cells that cannot be cast.
+
+    ``astype`` fails the whole column on one bad value. One client sending a
+    deadline as a string would then empty ``deadline_ms`` for every whisper in
+    the workspace, and an empty column is indistinguishable from a source that
+    could not carry it. Per-value coercion loses the one cell instead.
+
+    A string column never fails to cast, because pandas renders anything as
+    text, so it is handled first: a container where a string was declared is
+    a malformed value and is nulled rather than rendered as its repr, and a
+    scalar is rendered as pandas would.
+    """
+    if dtype == "string":
+        return s.map(lambda v: pd.NA if isinstance(v, (dict, list, tuple, set)) else v
+                     ).astype("string")
+    try:
+        return s.astype(dtype)
+    except (TypeError, ValueError):
+        pass
+    if dtype.startswith("datetime64"):
+        return pd.to_datetime(s, errors="coerce", utc=True)
+    if dtype == "Int64":
+        num = pd.to_numeric(s, errors="coerce")
+        return num.where(num.isna() | (num == num.round())).astype("Int64")
+    if dtype == "float64":
+        return pd.to_numeric(s, errors="coerce").astype(dtype)
+    if dtype == "boolean":
+        return s.map(lambda v: v if isinstance(v, bool) else pd.NA).astype("boolean")
+    raise ValueError(f"schema.py declares a dtype this projection cannot coerce: {dtype}")
+
 
 def _enforce(table: schema.Table, rows: list[dict]) -> pd.DataFrame:
     """Build a frame with exactly the declared columns, order and dtypes."""
@@ -546,12 +1421,7 @@ def _enforce(table: schema.Table, rows: list[dict]) -> pd.DataFrame:
             # An arbitrary artefact. Left exactly as it arrived, including
             # None, which is what a redactor leaves behind.
             continue
-        try:
-            df[col.name] = df[col.name].astype(col.dtype)
-        except (TypeError, ValueError):
-            # A column the source could not populate: present and null, so
-            # downstream code sees missingness rather than a KeyError.
-            df[col.name] = pd.Series([pd.NA] * len(df), dtype=col.dtype)
+        df[col.name] = _coerce(df[col.name], col.dtype)
     return df[list(table.names)]
 
 
@@ -575,6 +1445,7 @@ class Frames:
     deliberations: pd.DataFrame
     votes: pd.DataFrame
     whispers: pd.DataFrame
+    handoffs: pd.DataFrame
     routing: pd.DataFrame
 
     def __getitem__(self, name: str) -> pd.DataFrame:
@@ -595,6 +1466,13 @@ class Frames:
         if not self.chain.has_state:
             lines += ["", "  Read from envelopes alone, so columns whose provenance is",
                       "  'state' are null: deliberation and routing outcomes."]
+        unsure = [(name, int((~self[name]["id_certain"].fillna(False)).sum()))
+                  for name in ("tasks", "deliberations", "whispers", "handoffs")]
+        unsure = [(name, n) for name, n in unsure if n]
+        if unsure:
+            lines += ["", "  Rows whose id could not be paired with certainty, so the",
+                      "  attributes on them may belong to a neighbour:"]
+            lines += [f"    {name}: {n}" for name, n in unsure]
         return "\n".join(lines)
 
 
@@ -605,37 +1483,26 @@ def frames(chain: Chain) -> Frames:
 
     tasks_by_id = ix.tasks
 
-    # -- decisions, with review context folded in ---------------------------
+    # -- decisions, with the review pass they belong to folded in ------------
     decision_rows: list[dict] = []
     for tid, t in tasks_by_id.items():
-        approvers: set[str] = set()
-        settled = False
-        for i, d in enumerate(sorted(t.decisions, key=lambda x: x["seq"] or 0)):
-            if d["kind"] == "approve":
-                approvers.add(d["reviewer"])
-            final = False
-            if not settled:
-                if d["kind"] in ("override", "abstain"):
-                    final = settled = True
-                elif d["kind"] == "reject" and not d.get("request_revision"):
-                    final = settled = True
-                elif d["kind"] == "approve" and _rule_satisfied(
-                        t.rule or "any_one_approves", approvers, len(t.requested_to)):
-                    final = settled = True
-            lat = None
-            if d["ts"] is not None and t.requested_at is not None:
-                lat = (d["ts"] - t.requested_at).total_seconds()
-            decision_rows.append({
-                "task_id": tid, "workspace": ws, "seq": d["seq"],
-                "reviewer": d["reviewer"], "kind": d["kind"], "ts": d["ts"],
-                "requested_at": t.requested_at, "latency_s": lat,
-                "rule": t.rule, "decision_index": i, "is_final": final,
-                "comment": d["comment"], "tags": d["tags"], "n_tags": len(d["tags"]),
-                "request_revision": d["request_revision"],
-                "abstain_category": d["abstain_category"],
-                "digest_bound": d["digest_bound"],
-                "task_kind": t.kind, "assignee": t.assignee,
-            })
+        for pass_no, r in enumerate(t.reviews):
+            for i, d in enumerate(sorted(r.decisions, key=lambda x: x["seq"] or 0)):
+                lat = None
+                if d["ts"] is not None and r.requested_at is not None:
+                    lat = (d["ts"] - r.requested_at).total_seconds()
+                decision_rows.append({
+                    "task_id": tid, "workspace": ws, "seq": d["seq"],
+                    "reviewer": d["reviewer"], "kind": d["kind"], "ts": d["ts"],
+                    "requested_at": r.requested_at, "latency_s": lat,
+                    "rule": r.rule, "review_index": pass_no,
+                    "decision_index": i, "is_final": d["is_final"],
+                    "comment": d["comment"], "tags": d["tags"], "n_tags": len(d["tags"]),
+                    "request_revision": d["request_revision"],
+                    "abstain_category": d["abstain_category"],
+                    "digest_bound": d["digest_bound"],
+                    "task_kind": t.kind, "assignee": t.assignee,
+                })
 
     # -- tasks --------------------------------------------------------------
     kinds_by_task = defaultdict(set)
@@ -645,18 +1512,34 @@ def frames(chain: Chain) -> Frames:
     task_rows: list[dict] = []
     for tid, t in tasks_by_id.items():
         kinds = kinds_by_task.get(tid, set())
-        if "override" in kinds:
-            outcome = "overridden"
-        elif t.state == "completed" and kinds:
-            outcome = "approved"
+        # How a task ended is decided by the decision that settled its last
+        # review pass, not by its state alone. A state of completed says the
+        # work shipped; only a final approval says a reviewer let it. An
+        # approval in an earlier pass was superseded when the work was sent
+        # back, and a partial approval under all_approve settled nothing.
+        last = t.reviews[-1].decisions if t.reviews else []
+        final = next((d["kind"] for d in last if d["is_final"]), None)
+        last_kinds = {d["kind"] for d in last}
+        if t.state == "completed":
+            if final in ("override", "approve"):
+                outcome = "overridden" if final == "override" else "approved"
+            elif "reject" in last_kinds:
+                # A reviewer said no and the work shipped anyway: the one case
+                # an approval rate hides.
+                outcome = "completed_after_rejection"
+            elif t.reviews:
+                # A review was open and had not settled when the work shipped.
+                outcome = "completed_bypassing_review"
+            else:
+                outcome = "completed_without_review"
         elif t.state == "declined":
-            outcome = "rejected"
+            # A reviewer's final rejection, or the assignee declining the work
+            # through task.update with no reviewer involved.
+            outcome = "rejected" if final == "reject" else "declined"
         elif t.state == "abstained":
             outcome = "abstained"
         elif t.state in ("escalated", "cancelled", "superseded"):
             outcome = t.state
-        elif t.state == "completed":
-            outcome = "completed_without_review"
         else:
             outcome = "open"
         settled = t.state in _SETTLED
@@ -665,12 +1548,15 @@ def frames(chain: Chain) -> Frames:
             lifetime = (t.settled_at - t.created_at).total_seconds()
         task_rows.append({
             "task_id": tid, "workspace": ws, "kind": t.kind, "delegator": t.delegator,
-            "assignee": t.assignee, "original_assignee": t.original_assignee,
+            "assignee": t.assignee, "assignee_certain": t.assignee_certain,
+            "id_certain": t.id_certain, "original_assignee": t.original_assignee,
             "mode": t.mode, "review_required": t.review_required, "state": t.state,
-            "created_at": t.created_at, "settled_at": t.settled_at, "settled": settled,
+            "created_at": t.created_at,
+            "settled_at": t.settled_at if settled else None, "settled": settled,
             "lifetime_s": lifetime, "outcome": outcome,
-            "was_reviewed": t.requested_at is not None or bool(kinds),
+            "was_reviewed": bool(t.reviews) or bool(kinds),
             "was_overridden": "override" in kinds,
+            "n_reviews": len(t.reviews),
             "n_decisions": len(t.decisions), "confidence": t.confidence,
             "criticality": t.criticality, "risk_tier": t.risk_tier,
             "supersedes": t.supersedes,
@@ -682,22 +1568,23 @@ def frames(chain: Chain) -> Frames:
     for ov in ix.overrides:
         t = tasks_by_id.get(ov["task_id"]) or _Task(task_id=ov["task_id"])
         diff = ov.get("diff") or []
-        paths = [op.get("path") for op in diff if isinstance(op, dict)]
+        ops = [op for op in diff if isinstance(op, dict)]
+        paths = [op.get("path") for op in ops]
         tops = [_top_path(p) for p in paths]
         override_rows.append({
             "task_id": ov["task_id"], "workspace": ws, "seq": ov["seq"],
             "reviewer": ov["reviewer"], "ts": ov["ts"], "rationale": ov["rationale"],
             "tags": ov["tags"], "policy_refs": ov["policy_refs"],
             "intent_preserved": ov["intent_preserved"], "logical_id": ov["logical_id"],
-            "n_ops": len(diff),
-            "op_kinds": sorted({op.get("op") for op in diff if isinstance(op, dict) and op.get("op")}),
+            # Counted from the operations that reached patch_ops, so the two
+            # tables always reconcile even when the diff was malformed.
+            "n_ops": len(ops),
+            "op_kinds": sorted({op.get("op") for op in ops if op.get("op")}),
             "paths": paths, "top_path": tops[0] if tops else None,
             "based_on": ov.get("based_on"), "result": ov.get("result"),
             "task_kind": t.kind, "assignee": t.assignee, "confidence": t.confidence,
         })
-        for i, op in enumerate(diff):
-            if not isinstance(op, dict):
-                continue
+        for i, op in enumerate(ops):
             path = op.get("path")
             op_rows.append({
                 "task_id": ov["task_id"], "workspace": ws, "seq": ov["seq"],
@@ -745,7 +1632,7 @@ def frames(chain: Chain) -> Frames:
             "n_participants": n_part, "n_votes": len(d.votes),
             "n_yea": tally["yea"], "n_nay": tally["nay"], "n_abstain": tally["abstain"],
             "turnout": (len(d.votes) / n_part) if n_part else None,
-            "outcome": getattr(d, "outcome", None),
+            "outcome": d.outcome, "id_certain": d.id_certain,
         })
 
     # -- whispers -----------------------------------------------------------
@@ -754,12 +1641,40 @@ def frames(chain: Chain) -> Frames:
         resp = None
         if w.answered_at is not None and w.asked_at is not None:
             resp = (w.answered_at - w.asked_at).total_seconds()
+        # A whisper lapses when its deadline passes and the coordinator applies
+        # the default. An answer arriving afterwards does not undo that, so
+        # "answered" and "not lapsed" are different questions. Unanswered is a
+        # third: a question asked a minute ago with a day to run has not lapsed.
+        lapsed = w.lapsed_at is not None or w.state == "lapsed"
+        deadline_ms = _decimal(w.deadline_ms)
+        if not lapsed and resp is not None and deadline_ms is not None:
+            # At the deadline, not after it. The coordinator's own lapse check
+            # keeps a whisper alive only while now < deadline, so an answer
+            # arriving exactly on it is already too late.
+            lapsed = resp * 1000.0 >= deadline_ms
+        state = w.state or ("lapsed" if lapsed else
+                            "answered" if w.answered_at is not None else "pending")
         whisper_rows.append({
             "whisper_id": wid, "workspace": ws, "task_id": w.task_id, "asker": w.asker,
             "question": w.question, "asked_at": w.asked_at, "deadline_ms": w.deadline_ms,
             "answered_at": w.answered_at, "answered_by": w.answered_by, "answer": w.answer,
-            "answered": w.answered_at is not None, "response_s": resp,
-            "had_options": w.had_options,
+            "answered": w.answered_at is not None, "state": state, "lapsed": lapsed,
+            "response_s": resp, "had_options": w.had_options,
+            "id_certain": w.id_certain,
+        })
+
+    handoff_rows = []
+    for hid, h in ix.handoffs.items():
+        resp = None
+        if h.resolved_at is not None and h.proposed_at is not None:
+            resp = (h.resolved_at - h.proposed_at).total_seconds()
+        handoff_rows.append({
+            "handoff_id": hid, "workspace": ws, "seq": h.seq, "proposer": h.proposer,
+            "recipient": h.recipient, "task_ids": h.task_ids, "n_tasks": len(h.task_ids),
+            "proposed_at": h.proposed_at, "resolved_at": h.resolved_at,
+            "resolution": h.resolution, "resolved_by": h.resolved_by,
+            "n_accepted": len(h.accepted), "reason": h.reason, "response_s": resp,
+            "id_certain": h.id_certain,
         })
 
     return Frames(
@@ -773,5 +1688,6 @@ def frames(chain: Chain) -> Frames:
         deliberations=_enforce(schema.DELIBERATIONS, delib_rows),
         votes=_enforce(schema.VOTES, vote_rows),
         whispers=_enforce(schema.WHISPERS, whisper_rows),
+        handoffs=_enforce(schema.HANDOFFS, handoff_rows),
         routing=_enforce(schema.ROUTING, ix.routing),
     )

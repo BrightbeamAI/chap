@@ -23,7 +23,7 @@ import json
 import sqlite3
 import urllib.request
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 __all__ = ["Chain", "from_json", "from_sqlite", "from_url", "from_coordinator", "redact_artefacts"]
@@ -58,7 +58,6 @@ class Chain:
     events: list[dict[str, Any]]
     state: dict[str, Any] | None = None
     source: str = "unknown"
-    _redactor: Redactor | None = field(default=None, repr=False)
 
     @property
     def has_state(self) -> bool:
@@ -83,22 +82,58 @@ class Chain:
         return "\n".join(lines)
 
 
+#: Params that carry arbitrary caller content directly. A whisper's free-text
+#: answer travels under either of two names; the coordinator reads both.
+_CARRIERS = ("artefact", "output", "input", "answer", "answer_text", "default_if_lapsed")
+
+#: Params that carry a whole task specification, whose own input and output are
+#: content. escalate.raise and control.supersede describe the successor they
+#: mint this way, so a scan of the top level alone leaves both untouched.
+_NESTED_TASKS = ("new_task", "successor_task")
+
+
+def _redact_diff(diff: Any, redact: Redactor) -> None:
+    """
+    Drop what a patch operation writes, keep where it writes it.
+
+    An operation's ``value`` is the corrected text itself and is as much
+    content as the artefact it corrects. Its ``op`` and ``path`` are the
+    analysis: which field of an output reviewers keep changing is the question
+    ``patch_ops`` exists to answer, and no column reads the value. So the two
+    are separated rather than the whole diff being kept for the sake of the
+    paths.
+    """
+    if not isinstance(diff, list):
+        return
+    for op in diff:
+        if isinstance(op, dict) and "value" in op:
+            op["value"] = redact(op["value"])
+
+
+def _redact_params(params: Any, redact: Redactor) -> None:
+    """Rewrite every content-bearing field of one envelope's params, in place."""
+    if not isinstance(params, dict):
+        return
+    for key in _CARRIERS:
+        if key in params:
+            params[key] = redact(params[key])
+    _redact_diff(params.get("diff"), redact)
+    for key in _NESTED_TASKS:
+        spec = params.get(key)
+        if isinstance(spec, dict):
+            for inner in ("input", "output"):
+                if inner in spec:
+                    spec[inner] = redact(spec[inner])
+
+
 def _apply_redaction(events: list[dict[str, Any]], redact: Redactor | None) -> list[dict[str, Any]]:
-    """Rewrite artefact-bearing params in place on a copy, before anything reads them."""
+    """Rewrite artefact-bearing params on a copy, before anything reads them."""
     if redact is None:
         return events
-    # The three params that carry arbitrary caller content. `diff` is left
-    # alone: its values can hold content, but its paths are the analysis, and
-    # a redactor that wanted the values gone can strip them itself.
-    carriers = ("artefact", "output", "input")
     out: list[dict[str, Any]] = []
     for e in events:
         e = json.loads(json.dumps(e))  # deep copy; events may be shared
-        params = (e.get("envelope") or {}).get("params")
-        if isinstance(params, dict):
-            for key in carriers:
-                if key in params:
-                    params[key] = redact(params[key])
+        _redact_params((e.get("envelope") or {}).get("params"), redact)
         out.append(e)
     return out
 
@@ -107,35 +142,63 @@ def _redact_state(state: dict | None, redact: Redactor | None) -> dict | None:
     """
     Redact the snapshot as well as the envelopes.
 
-    Redacting only the envelope stream leaks: a snapshot stores the artefact a
-    reviewer worked from and the result of correcting it, and the projection
-    prefers those where it has them. Both paths have to be covered or the
-    redactor is a false assurance.
+    Redacting only the envelope stream leaks, in two ways. A snapshot stores
+    the artefact a reviewer worked from and the result of correcting it, and
+    the projection prefers those where it has them. A snapshot also *contains*
+    the envelope stream, under ``audit``: redacting the copy handed to
+    ``events`` and leaving the original in ``state`` puts every artefact back
+    within reach of anyone who looks one attribute further. Both paths have to
+    be covered or the redactor is a false assurance.
     """
     if state is None or redact is None:
         return state
     state = json.loads(json.dumps(state))
+
+    for entry in state.get("audit") or []:
+        if isinstance(entry, dict):
+            _redact_params((entry.get("envelope") or {}).get("params"), redact)
+
     for task in (state.get("tasks") or {}).values():
+        if not isinstance(task, dict):
+            continue
         for key in ("input", "output", "pending_artefact"):
             if key in task:
                 task[key] = redact(task[key])
     for art in (state.get("overrides") or {}).values():
+        if not isinstance(art, dict):
+            continue
         for key in ("based_on_artefact", "result"):
             if key in art:
                 art[key] = redact(art[key])
+        _redact_diff(art.get("diff"), redact)
     for w in (state.get("whispers") or {}).values():
-        for key in ("default_if_lapsed", "answer"):
+        if not isinstance(w, dict):
+            continue
+        # answer_text is what a person typed; answer_option is which of the
+        # asker's own choices they picked, which is metadata and is what makes
+        # a redacted whisper still worth counting.
+        for key in ("default_if_lapsed", "default_applied", "answer_text"):
             if key in w:
                 w[key] = redact(w[key])
+    # control.snapshot copies the open tasks, input and output included.
+    for snap in (state.get("snapshots") or {}).values():
+        if not isinstance(snap, dict):
+            continue
+        for task in (snap.get("state") or {}).get("open_tasks") or []:
+            if not isinstance(task, dict):
+                continue
+            for key in ("input", "output", "pending_artefact"):
+                if key in task:
+                    task[key] = redact(task[key])
     return state
 
 
 def _chain(workspace: str, events: Iterable[dict], state: dict | None,
            source: str, redact: Redactor | None) -> Chain:
     evs = _apply_redaction(list(events), redact)
-    evs.sort(key=lambda e: e.get("seq", 0))
+    evs.sort(key=lambda e: e.get("seq", 0) if isinstance(e, dict) else 0)
     return Chain(workspace=workspace, events=evs,
-                 state=_redact_state(state, redact), source=source, _redactor=redact)
+                 state=_redact_state(state, redact), source=source)
 
 
 def from_json(path: str, *, workspace: str | None = None, redact: Redactor | None = None) -> Chain:

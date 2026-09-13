@@ -21,7 +21,8 @@ they do not carry the same information:
     Derived by replaying the envelope stream. The artefact under review
     arrives on ``review.request`` and the patch on ``decide.override``, so the
     before and after can be reconstructed from envelopes alone. Available from
-    either source, and checked against ``state`` when both are present.
+    either source; where both are present the stored value is used, and the
+    differential suite requires the replayed one to have agreed with it.
 
 A column whose source is unavailable is present and null, never absent. Code
 downstream should be able to reference a column without asking where the data
@@ -102,7 +103,9 @@ TASKS = Table(
         _c("workspace", "string", "envelopes", "Workspace id."),
         _c("kind", "string", "envelopes", "Operator-defined task kind, uninterpreted by the coordinator."),
         _c("delegator", "string", "envelopes", "Who created the task."),
-        _c("assignee", "string", "replay", "Current assignee, after any routing or handoff reassignment."),
+        _c("assignee", "string", "replay", "Current assignee, after any handoff. A task.route reassignment names its choice in the result rather than the envelope, so it is reflected only when the source carried server state; see assignee_certain."),
+        _c("assignee_certain", "boolean", "derived", "False where a task.route ran and the source could not say who it chose, leaving assignee at its pre-routing value."),
+        _c("id_certain", "boolean", "derived", "Whether this row's id could be paired with its creation envelope beyond doubt. False where the pairing was an inference the evidence does not settle, in which case everything the creation said may belong to a task created around the same moment: kind, delegator, mode, review_required, the routing hints, supersedes, and through review_required the lifecycle columns too, since whether completing a task opens a review depends on it. Conservative: it is also false where the candidates were indistinguishable and the choice therefore changed nothing. Filter on it before drawing a conclusion from a single row."),
         _c("original_assignee", "string", "envelopes", "Assignee at creation, before any reassignment."),
         _c("mode", "string", "envelopes", "shadow, trial or production."),
         _c("review_required", "boolean", "envelopes", "Whether completion depends on a reviewer decision."),
@@ -111,10 +114,11 @@ TASKS = Table(
         _c("settled_at", "datetime64[ns, UTC]", "replay", "When it reached a terminal state. Null while open."),
         _c("settled", "boolean", "derived", "Whether the task reached a terminal state. False means censored, not failed."),
         _c("lifetime_s", "float64", "derived", "Seconds from creation to settlement. Null while open, so a mean over this column silently drops open work: use the censoring flag."),
-        _c("outcome", "string", "derived", "How it ended for analysis: approved, overridden, rejected, abstained, escalated, cancelled, superseded, completed_without_review, or open."),
+        _c("outcome", "string", "derived", "How it ended, from the decision that settled the last review pass rather than from the state alone. approved, overridden, rejected and abstained name a reviewer's final decision. completed_after_rejection is work that shipped after a reviewer said no; completed_bypassing_review shipped while a review was open and unsettled; completed_without_review was never reviewed. declined is the assignee refusing the work through task.update, with no reviewer involved. escalated, cancelled and superseded are what they say, and open is anything still running. An earlier pass does not count: it judged an artefact that was sent back."),
         _c("was_reviewed", "boolean", "derived", "Whether any review was opened on it."),
         _c("was_overridden", "boolean", "derived", "Whether a human corrected the artefact rather than accepting or refusing it."),
-        _c("n_decisions", "Int64", "derived", "Number of decisions recorded against it."),
+        _c("n_reviews", "Int64", "derived", "Review passes opened on it. More than one means the work was sent back and reviewed again, and the passes must not be pooled: each judged a different artefact."),
+        _c("n_decisions", "Int64", "derived", "Number of decisions recorded against it, across every pass."),
         _c("confidence", "float64", "derived", "Self-reported confidence, parsed from its decimal-string wire form. Null when not supplied."),
         _c("criticality", "string", "envelopes", "Routing hint, where given."),
         _c("risk_tier", "string", "envelopes", "Routing hint, where given."),
@@ -137,10 +141,11 @@ DECISIONS = Table(
         _c("reviewer", "string", "envelopes", "Who decided."),
         _c("kind", "string", "envelopes", "approve, reject, override or abstain."),
         _c("ts", "datetime64[ns, UTC]", "envelopes", "When the decision was made."),
-        _c("requested_at", "datetime64[ns, UTC]", "replay", "When the review this decision belongs to was opened."),
-        _c("latency_s", "float64", "derived", "Seconds from the review opening to this decision. Elapsed time, not effort: a reviewer answering after three days may have spent ninety seconds."),
+        _c("requested_at", "datetime64[ns, UTC]", "replay", "When the review pass this decision belongs to was opened."),
+        _c("latency_s", "float64", "derived", "Seconds from the opening of this decision's own review pass. Elapsed time, not effort: a reviewer answering after three days may have spent ninety seconds."),
         _c("rule", "string", "replay", "The review rule in force: any_one_approves, all_approve or quorum:N."),
-        _c("decision_index", "Int64", "derived", "Order of this decision within its review, from zero."),
+        _c("review_index", "Int64", "derived", "Which review pass on this task, from zero. A task sent back for revision is reviewed again from scratch, and a rate computed across passes as though they were one review counts approvals of artefacts that no longer exist."),
+        _c("decision_index", "Int64", "derived", "Order of this decision within its review pass, from zero."),
         _c("is_final", "boolean", "derived", "Whether this decision settled the review."),
         _c("comment", "string", "envelopes", "Free-text note, where given."),
         _c("tags", "list", "envelopes", "Workspace-defined labels as a list. Empty list, never null."),
@@ -178,7 +183,7 @@ OVERRIDES = Table(
         _c("paths", "list", "derived", "JSON Pointers touched, as a list."),
         _c("top_path", "string", "derived", "First path segment, the usual grouping key for 'which part of the output gets corrected'."),
         _c("based_on", "object", "replay", "The artefact before correction, reconstructed from the review request."),
-        _c("result", "object", "replay", "The artefact after the patch was applied."),
+        _c("result", "object", "replay", "The artefact after correction: the patch applied to based_on, with the coordinator's own RFC 6902 semantics. Where state carries the artefact the coordinator stored, that is used, and the differential suite requires the two to agree."),
         _c("task_kind", "string", "derived", "Denormalised from tasks."),
         _c("assignee", "string", "derived", "Denormalised: whose work was corrected."),
         _c("confidence", "float64", "derived", "Denormalised: what the producer claimed. Pairs with the correction for calibration."),
@@ -244,6 +249,7 @@ DELIBERATIONS = Table(
         _c("n_abstain", "Int64", "derived", "Abstentions, which count as neither side."),
         _c("turnout", "float64", "derived", "Votes over participants."),
         _c("outcome", "string", "state", "approved or rejected. Computed at close, so unavailable from envelopes alone."),
+        _c("id_certain", "boolean", "derived", "Whether this row's id could be paired with the opening envelope beyond doubt. See tasks.id_certain."),
     ),
 )
 
@@ -281,10 +287,13 @@ WHISPERS = Table(
         _c("deadline_ms", "Int64", "envelopes", "How long it was given."),
         _c("answered_at", "datetime64[ns, UTC]", "replay", "When answered, null if never."),
         _c("answered_by", "string", "replay", "Who answered."),
-        _c("answer", "string", "replay", "The answer, or the chosen option id."),
-        _c("answered", "boolean", "derived", "Whether a human answered before the deadline passed."),
+        _c("answer", "string", "replay", "The answer, or the chosen option id. Free text is content, so a redactor removes it; a chosen option id is metadata and survives."),
+        _c("answered", "boolean", "derived", "Whether an answer was recorded at all."),
+        _c("state", "string", "replay", "pending, answered or lapsed, as the coordinator holds it."),
+        _c("lapsed", "boolean", "derived", "Whether the deadline had passed by the time an answer arrived, or the coordinator announced the lapse and applied default_if_lapsed. A whisper nobody has answered yet is not lapsed: the coordinator declares a lapse when its check runs, and until then the question is merely open. Reading unanswered as lapsed reports every workspace with outstanding questions as one where nobody replies. Can be true while state is 'answered', for an answer that arrived after the deadline but before any lapse check."),
         _c("response_s", "float64", "derived", "Seconds to answer. Null where unanswered."),
         _c("had_options", "boolean", "derived", "Whether it was multiple choice."),
+        _c("id_certain", "boolean", "derived", "Whether this row's id could be paired with the asking envelope beyond doubt. See tasks.id_certain."),
     ),
 )
 
@@ -302,7 +311,9 @@ ROUTING = Table(
         _c("task_id", "string", "envelopes", "Task routed."),
         _c("method", "string", "envelopes", "task.route, review.depth or escalate.auto."),
         _c("ts", "datetime64[ns, UTC]", "envelopes", "When."),
-        _c("selected", "string", "state", "Assignee chosen, for task.route."),
+        _c("candidates", "list", "envelopes", "Candidates offered to the policy, for task.route."),
+        _c("n_candidates", "Int64", "derived", "How many candidates were offered."),
+        _c("selected", "string", "state", "Assignee chosen, for task.route. The coordinator returns this in the result, which the log does not record, so it is null without server state."),
         _c("depth", "string", "state", "skip, spot_check or full, for review.depth."),
         _c("escalated", "boolean", "state", "Whether escalate.auto decided to escalate."),
         _c("policy_id", "string", "state", "Which policy produced the answer."),
@@ -310,9 +321,36 @@ ROUTING = Table(
     ),
 )
 
+HANDOFFS = Table(
+    name="handoffs",
+    grain="one row per proposed handoff",
+    doc=(
+        "Work passed between participants. The column worth looking at is "
+        "``resolution``: a high decline rate says the proposer is misreading "
+        "who should take the work, which nothing else here shows."
+    ),
+    columns=(
+        _c("handoff_id", "string", "envelopes", "Handoff id."),
+        _c("workspace", "string", "envelopes", "Workspace id."),
+        _c("seq", "Int64", "envelopes", "Position of the proposing envelope."),
+        _c("proposer", "string", "envelopes", "Who offered the work."),
+        _c("recipient", "string", "envelopes", "Who it was offered to, a participant or a group URI."),
+        _c("task_ids", "list", "envelopes", "Tasks in the proposal."),
+        _c("n_tasks", "Int64", "derived", "How many tasks were offered."),
+        _c("proposed_at", "datetime64[ns, UTC]", "envelopes", "When."),
+        _c("resolved_at", "datetime64[ns, UTC]", "replay", "When accepted or declined, null while outstanding."),
+        _c("resolution", "string", "derived", "accepted, declined, or open. A handoff offered to a group stays open when one member declines, because the rest may still take it; only the named recipient of a direct offer can decline it outright."),
+        _c("resolved_by", "string", "replay", "Who accepted or declined it."),
+        _c("n_accepted", "Int64", "derived", "Tasks actually taken on. Fewer than n_tasks where the recipient accepted a subset."),
+        _c("reason", "string", "envelopes", "Why it was declined, where it was. Present on a declined offer that is still open to the rest of a group."),
+        _c("response_s", "float64", "derived", "Seconds from proposal to resolution."),
+        _c("id_certain", "boolean", "derived", "Whether this row's id could be paired with the proposing envelope beyond doubt. See tasks.id_certain."),
+    ),
+)
+
 TABLES: tuple[Table, ...] = (
     EVENTS, TASKS, DECISIONS, OVERRIDES, PATCH_OPS,
-    PARTICIPANTS, DELIBERATIONS, VOTES, WHISPERS, ROUTING,
+    PARTICIPANTS, DELIBERATIONS, VOTES, WHISPERS, HANDOFFS, ROUTING,
 )
 
 BY_NAME: dict[str, Table] = {t.name: t for t in TABLES}

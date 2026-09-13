@@ -43,7 +43,7 @@ rather than quietly returning nulls.
 
 | Source | Carries | Missing |
 |---|---|---|
-| `audit.read` over MCP or HTTP | Every envelope: all request parameters, in order, hash-linked | Server-computed artefacts: `based_on_artefact`, `result`, deliberation outcomes, route-decision outcomes |
+| `audit.read` over MCP or HTTP | Every envelope: all request parameters, in order, hash-linked | What only the server computed: deliberation outcomes, route-decision outcomes, and which server-minted id a creation produced |
 | A `SqliteStore` file or workspace snapshot | Full state: tasks, overrides, deliberations, handoffs, route decisions, and the audit log | Nothing, but requires filesystem access to the deployment |
 
 The envelope stream is nonetheless self-sufficient for the analyses that
@@ -52,7 +52,8 @@ matter. `review.request` carries the artefact under review and
 reconstructed by **replaying** the chain rather than by reading server state.
 That property is what lets the whole layer work against a plain `audit.read`,
 which is the only thing available to an MCP client, and it is checkable:
-replayed artefacts must equal the snapshot wherever both exist.
+replayed artefacts must equal the snapshot wherever both exist, and stage 1
+checks it on every override in its differential suite.
 
 ---
 
@@ -120,22 +121,34 @@ after it.
 **`chap-analytics`, the projection from a chain to tables.**
 
 One documented, versioned, tabular representation of a CHAP chain, loadable
-from a live coordinator, a SQLite file, a JSON export, or an in-process
-`Coordinator`. Eight tables: `events`, `tasks`, `decisions`, `overrides`,
-`participants`, `deliberations`, `whispers`, `routing`.
+from a live coordinator, a SQLite file, a JSON export, or an HTTP endpoint.
+Eleven tables: `events`, `tasks`, `decisions`, `overrides`, `patch_ops`,
+`participants`, `deliberations`, `votes`, `whispers`, `handoffs`, `routing`.
 
 This is the whole foundation. Everything later is a function of these tables,
 and a data scientist who dislikes every opinion in stage 2 can stop here and
 use pandas.
 
 It also does the tedious work that otherwise gets done wrong in every notebook:
-parsing `confidence` from its decimal-string wire form into a float, deriving
-decision latency from the review's `requested_at`, flattening RFC 6902 patch
-operations into countable rows, and marking which columns the current source
-could not populate.
+parsing `confidence` from its decimal-string wire form into a float, measuring
+decision latency from the opening of the review pass the decision belongs to,
+flattening RFC 6902 patch operations into countable rows, and marking which
+columns the current source could not populate.
+
+Two of those turned out to be harder than they look, and both are the reason
+the layer exists rather than a notebook. A task can be reviewed more than once,
+and the passes must not be pooled: the coordinator replaces a review outright
+when one is requested on a task that is not currently under review, so an
+approval from the first pass says nothing about the second, and a rate computed
+across both counts approvals of artefacts that no longer exist. And a
+server-minted identifier is returned in the *result* while the log records
+envelopes, so pairing a creation to its id is sometimes forced by the ordering
+and sometimes a guess; the tables carry `id_certain` and say which.
 
 **Done when** a chain projects to tables, every table is documented with dtypes
-and provenance, and a test proves no projection loses or invents a row.
+and provenance, a test proves no projection loses or invents a row, and random
+workspaces driven against a live coordinator agree with what that coordinator
+holds, on every row the projection vouches for, from either source.
 
 ### Stage 2: descriptive statistics with honest intervals
 
@@ -219,6 +232,22 @@ already drafted and still unfiled. It matters more here than anywhere: every
 analysis in stage 3 attributes a decision to an artefact, and that attribution
 assumes the decider saw what the chain says they saw. The digest binds a
 decision to content, not to a rendering of it.
+
+**No server-minted identifier in the log.** A task, whisper, deliberation and
+handoff id all come back in the *result*, and the audit log records envelopes.
+Anything acted on later is recoverable, because the acting envelope names it,
+but where two are created before either is touched the ordering alone cannot
+say which is which. Stage 1 measures the ambiguity and reports it per row
+rather than hiding it, and the protocol constraints narrow it further: a lapse
+concerns a whisper whose deadline had passed, a vote comes from someone the
+deliberation invited, an answer from someone the whisper was addressed to, an
+acceptance from the named recipient, and an id the caller supplied is in the
+envelope itself. Across random workspaces read from envelopes alone, roughly
+half the task rows and between six and eight in ten of the whisper,
+deliberation and handoff rows can be identified beyond doubt; the differential
+suite holds a floor under those figures. Recording the minted id in the audit
+entry alongside the envelope would make it all of them. Worth doing only if
+the analytics prove the ambiguity costs something real.
 
 ---
 
