@@ -47,9 +47,10 @@ _LONE_SURROGATE_ERROR = (
 
 
 def _assert_no_lone_surrogate(s: str) -> None:
-    for ch in s:
-        if 0xD800 <= ord(ch) <= 0xDFFF:
-            raise ValueError(_LONE_SURROGATE_ERROR)
+    try:
+        s.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError(_LONE_SURROGATE_ERROR) from None
 
 
 def _canon(obj: Any) -> str:
