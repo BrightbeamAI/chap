@@ -186,3 +186,30 @@ def test_review_request_rejects_unhonorable_rule():
              **{"from": "agent:bot", "to": ["human:a"]},
              task_id=tid, artefact={"x": 1}, rule="weighted_vote:2.0")
     assert r["error"]["code"] == -32602  # PARAMS: rule review/1.0 can't honor
+
+
+def test_task_complete_refusal_mutates_nothing():
+    coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
+
+    def send(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"t-{method}",
+                               "method": method, "params": params})
+
+    send("workspace.create", workspace="w")
+    send("participant.join", workspace="w",
+         **{"from": "agent:bot", "type": "agent", "role": "drafter"})
+    tid = send("task.create", workspace="w",
+               **{"from": "agent:bot", "kind": "draft", "input": {},
+                  "assignee": "agent:bot", "review_required": True})["result"]["task_id"]
+    send("task.update", workspace="w", **{"from": "agent:bot"},
+         task_id=tid, state="in_progress")
+    ws = coord.workspaces["w"]
+    audit_before = len(ws.audit)
+
+    r = send("task.complete", workspace="w", **{"from": "agent:bot"},
+             task_id=tid, output={"secret": "x"})
+    assert r["error"]["code"] == -32011
+    t = ws.tasks[tid]
+    assert t.pending_artefact is None
+    assert t.state == "in_progress"
+    assert len(ws.audit) == audit_before

@@ -1034,7 +1034,6 @@ export class Coordinator {
     // completed with unreviewed output and no decision.
     if (task.review_required) {
       const now = this.now();
-      task.pending_artefact = p.output;
       if (!task.review) {
         // review_required means a person has to see this. The producer must
         // not satisfy its own review, and neither must another agent: an agent
@@ -1055,6 +1054,7 @@ export class Coordinator {
         }
         task.review = { requested_at: now, requested_to: eligible as ParticipantUri[], rule: "any_one_approves", decisions: [] };
       }
+      task.pending_artefact = p.output;
       task.state = "review_requested";
       task.updated_at = now;
       task.history.push({ ts: now, from: p.from as ParticipantUri, state: "review_requested",

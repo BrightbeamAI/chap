@@ -222,6 +222,14 @@ def register_routing(coord: "Coordinator") -> None:
                 "hints_used": ["criticality", "confidence"],
             }
 
+        if escalate:
+            if not to:
+                return {"error": rpc_error(E.ROUTING_ESC_TARGET_UNAVAILABLE,
+                                           "Escalation triggered but no target available")}
+            if not to.startswith("group:") and to not in ws.members:
+                return {"error": rpc_error(E.ROUTING_ESC_TARGET_UNAVAILABLE,
+                                           f"Escalation target {to} is not a member or group")}
+
         art_id = coord.ids.artefact_id()
         artefact = RouteDecisionArtefact(
             id=art_id,
@@ -238,12 +246,6 @@ def register_routing(coord: "Coordinator") -> None:
         ws.route_decisions[art_id] = artefact
 
         if escalate:
-            if not to:
-                return {"error": rpc_error(E.ROUTING_ESC_TARGET_UNAVAILABLE,
-                                           "Escalation triggered but no target available")}
-            if not to.startswith("group:") and to not in ws.members:
-                return {"error": rpc_error(E.ROUTING_ESC_TARGET_UNAVAILABLE,
-                                           f"Escalation target {to} is not a member or group")}
             if coord.options.on_auto_escalate:
                 try:
                     coord.options.on_auto_escalate(task, to)

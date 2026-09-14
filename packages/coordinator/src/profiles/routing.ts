@@ -174,6 +174,14 @@ export function registerRouting(coord: Coordinator): void {
         hints_used: ["criticality", "confidence"],
       };
     }
+    if (escalate) {
+      if (!to) return { error: rpcError(E.ROUTING_ESC_TARGET_UNAVAILABLE,
+        "Escalation triggered but no target available") };
+      if (!to.startsWith("group:") && !ws.members.has(to)) {
+        return { error: rpcError(E.ROUTING_ESC_TARGET_UNAVAILABLE,
+          `Escalation target ${to} is not a member or group`) };
+      }
+    }
     const artId = coord.ids.artefactId();
     const artefact: RouteDecisionArtefact = {
       id: artId, kind: "route_decision",
@@ -188,13 +196,7 @@ export function registerRouting(coord: Coordinator): void {
     };
     ws.route_decisions.set(artId, artefact);
     if (escalate) {
-      if (!to) return { error: rpcError(E.ROUTING_ESC_TARGET_UNAVAILABLE,
-        "Escalation triggered but no target available") };
-      if (!to.startsWith("group:") && !ws.members.has(to)) {
-        return { error: rpcError(E.ROUTING_ESC_TARGET_UNAVAILABLE,
-          `Escalation target ${to} is not a member or group`) };
-      }
-      if (coord.options.onAutoEscalate) {
+      if (coord.options.onAutoEscalate && to) {
         try { coord.options.onAutoEscalate(task, to); } catch { /* */ }
       }
       return { result: { escalate: true, to, decision_artefact: artId, triggered_rule: rule } };
