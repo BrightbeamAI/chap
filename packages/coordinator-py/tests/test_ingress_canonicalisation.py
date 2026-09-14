@@ -56,3 +56,14 @@ def test_integer_confidence_still_accepted():
     r = s("task.complete", workspace="w", **{"from": "agent:b"},
           task_id=tid, output={}, confidence=1)
     assert r["result"]["state"] == "completed"
+
+
+def test_deeply_nested_envelope_is_rejected_not_crashed():
+    c = Coordinator(CoordinatorOptions(deterministic_ids=True))
+    nested: dict = {}
+    for _ in range(5000):
+        nested = {"a": nested}
+    r = c.dispatch({"jsonrpc": "2.0", "id": "deep", "method": "workspace.describe",
+                    "params": {"workspace": "w", "x": nested}})
+    assert "error" in r
+    assert r["error"]["code"] == E.PARAMS

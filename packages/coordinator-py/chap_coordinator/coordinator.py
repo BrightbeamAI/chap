@@ -422,7 +422,7 @@ class Coordinator:
 
         try:
             size = len(canonicalize(envelope))
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, RecursionError):
             size = 0  # not canonicalisable; the ingress check below rejects it
         if size > self.options.max_envelope_bytes:
             return make_response(
@@ -527,7 +527,7 @@ class Coordinator:
 
         try:
             canonicalize(envelope)
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, RecursionError) as exc:
             return make_response(env_id, error=rpc_error(E.PARAMS, str(exc)))
 
         try:

@@ -47,3 +47,14 @@ test("an integer confidence is still accepted", () => {
   const r = s("task.complete", { workspace: "w", from: "agent:b", task_id: tid, output: {}, confidence: 1 });
   assert.equal(r.result.state, "completed");
 });
+
+test("a deeply nested envelope is rejected, not thrown", () => {
+  const c = new Coordinator({ deterministicIds: true });
+  let nested: Record<string, unknown> = {};
+  for (let i = 0; i < 100000; i++) nested = { a: nested };
+  const r: any = c.dispatch({
+    jsonrpc: "2.0", id: "deep", method: "workspace.describe",
+    params: { workspace: "w", x: nested },
+  } as never);
+  assert.equal(r.error.code, E.PARAMS);
+});
