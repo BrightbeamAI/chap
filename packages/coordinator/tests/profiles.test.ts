@@ -418,3 +418,21 @@ test("whisper.ask requires the asker to be a member", () => {
     task_id: tid, question: "?", options: [{ id: "y" }], deadline_ms: 30000, default_if_lapsed: "y" });
   assert.equal(r.error?.code, -32011);
 });
+
+test("escalate.auto refusal records no artefact", () => {
+  const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
+  const send = (m: string, p: Record<string, unknown>) =>
+    c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
+  send("workspace.create", { workspace: "w", profiles: ["core/1.0", "review/1.0", "routing/1.0"] });
+  send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner" });
+  send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
+  const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "k",
+    input: {}, assignee: "agent:bot", routing_hints: { criticality: "critical" } }).result as { task_id: string }).task_id;
+  const ws = c.workspaces.get("w")!;
+  const auditBefore = ws.audit.length, rdBefore = ws.route_decisions.size;
+
+  const r = send("escalate.auto", { workspace: "w", task_id: tid, default_escalation_target: "human:ghost" });
+  assert.equal(r.error?.code, -32516);
+  assert.equal(ws.route_decisions.size, rdBefore);
+  assert.equal(ws.audit.length, auditBefore);
+});

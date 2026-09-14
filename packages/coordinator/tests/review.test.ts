@@ -155,3 +155,23 @@ test("review.request rejects a rule review/1.0 cannot honor", () => {
     to: ["human:a"], task_id: tid, artefact: { x: 1 }, rule: "weighted_vote:2.0" });
   assert.equal(r.error?.code, -32602);
 });
+
+test("task.complete refusal mutates nothing", () => {
+  const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
+  const send = (m: string, p: Record<string, unknown>) =>
+    c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
+  send("workspace.create", { workspace: "w" });
+  send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
+  const tid = (send("task.create", { workspace: "w", from: "agent:bot", kind: "draft",
+    input: {}, assignee: "agent:bot", review_required: true }).result as { task_id: string }).task_id;
+  send("task.update", { workspace: "w", from: "agent:bot", task_id: tid, state: "in_progress" });
+  const ws = c.workspaces.get("w")!;
+  const auditBefore = ws.audit.length;
+
+  const r = send("task.complete", { workspace: "w", from: "agent:bot", task_id: tid, output: { secret: "x" } });
+  assert.equal(r.error?.code, -32011);
+  const t = ws.tasks.get(tid)!;
+  assert.equal(t.pending_artefact, undefined);
+  assert.equal(t.state, "in_progress");
+  assert.equal(ws.audit.length, auditBefore);
+});

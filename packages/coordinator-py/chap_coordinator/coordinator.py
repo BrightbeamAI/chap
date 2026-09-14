@@ -1072,7 +1072,6 @@ class Coordinator:
         # would reach completed with unreviewed output and no decision.
         if task.review_required:
             now = self.now_iso()
-            task.pending_artefact = p.get("output")
             if task.review is None:
                 # review_required means a person has to see this. The producer
                 # must not satisfy its own review, and neither must another
@@ -1095,6 +1094,7 @@ class Coordinator:
                         "(needs a human member other than its assignee and completer)")}
                 task.review = ReviewState(requested_at=now,
                                           requested_to=list(eligible))
+            task.pending_artefact = p.get("output")
             task.state = "review_requested"
             task.updated_at = now
             task.history.append(TaskHistoryEntry(
