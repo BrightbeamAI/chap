@@ -27,8 +27,25 @@ const NUMBER_RANGE_ERROR =
   "CHAP canonical integers must be within the safe-integer range " +
   "(abs value <= Number.MAX_SAFE_INTEGER); represent larger numbers as strings.";
 
+const LONE_SURROGATE_ERROR =
+  "CHAP canonical strings must be valid Unicode (I-JSON / RFC 7493); " +
+  "unpaired UTF-16 surrogates are not permitted.";
+
+function assertNoLoneSurrogate(s: string): void {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = i + 1 < s.length ? s.charCodeAt(i + 1) : 0;
+      if (next < 0xdc00 || next > 0xdfff) throw new Error(LONE_SURROGATE_ERROR);
+      i++;
+    } else if (c >= 0xdc00 && c <= 0xdfff) {
+      throw new Error(LONE_SURROGATE_ERROR);
+    }
+  }
+}
+
 function canonicalString(s: string): string {
-  // JSON string escaping; \uXXXX for control chars
+  assertNoLoneSurrogate(s);
   return JSON.stringify(s);
 }
 

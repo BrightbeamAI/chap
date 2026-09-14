@@ -40,6 +40,16 @@ _NUMBER_RANGE_ERROR = (
     "CHAP canonical integers must be within the safe-integer range "
     "(abs value <= 2**53 - 1); represent larger numbers as strings."
 )
+_LONE_SURROGATE_ERROR = (
+    "CHAP canonical strings must be valid Unicode (I-JSON / RFC 7493); "
+    "unpaired UTF-16 surrogates are not permitted."
+)
+
+
+def _assert_no_lone_surrogate(s: str) -> None:
+    for ch in s:
+        if 0xD800 <= ord(ch) <= 0xDFFF:
+            raise ValueError(_LONE_SURROGATE_ERROR)
 
 
 def _canon(obj: Any) -> str:
@@ -51,6 +61,7 @@ def _canon(obj: Any) -> str:
     if obj is False:
         return "false"
     if isinstance(obj, str):
+        _assert_no_lone_surrogate(obj)
         return json.dumps(obj, ensure_ascii=False)
     if isinstance(obj, int):
         if abs(obj) > _MAX_SAFE_INTEGER:
@@ -69,6 +80,7 @@ def _canon(obj: Any) -> str:
         for key in obj:
             if not isinstance(key, str):
                 raise TypeError("JCS object keys must be strings.")
+            _assert_no_lone_surrogate(key)
         items: list[str] = []
         # JCS sorts keys by UTF-16 code unit, not code point; comparing the
         # UTF-16-BE bytes reproduces the JavaScript reference's ordering for

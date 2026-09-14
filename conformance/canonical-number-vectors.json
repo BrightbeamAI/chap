@@ -15,7 +15,8 @@
     { "value": "8.2",                "canonical": "\"8.2\"" },
     { "value": [1, 2, 3],            "canonical": "[1,2,3]" },
     { "value": { "seq": 3, "tags": ["a", "b"], "n": 100 }, "canonical": "{\"n\":100,\"seq\":3,\"tags\":[\"a\",\"b\"]}" },
-    { "value": { "b": 1, "a": 2 },   "canonical": "{\"a\":2,\"b\":1}" }
+    { "value": { "b": 1, "a": 2 },   "canonical": "{\"a\":2,\"b\":1}" },
+    { "value": "𝄞",                  "canonical": "\"𝄞\"" }
   ],
   "reject": [
     { "note": "non-integer decimal", "json": "1.5" },
@@ -23,7 +24,10 @@
     { "note": "exponent / very small", "json": "1e-7" },
     { "note": "exponent / very large", "json": "1e21" },
     { "note": "2**53 exceeds safe-integer range", "json": "9007199254740992" },
-    { "note": "2**53 + 1 exceeds safe-integer range", "json": "9007199254740993" }
+    { "note": "2**53 + 1 exceeds safe-integer range", "json": "9007199254740993" },
+    { "note": "lone high surrogate in string value", "json": "\"\\ud834\"" },
+    { "note": "lone low surrogate in string value", "json": "\"\\udd1e\"" },
+    { "note": "lone surrogate in object key", "json": "{\"\\ud834\":1}" }
   ],
   "notes": {
     "2.0": "A JSON `2.0` parses to the value 2 (integer-valued) and canonicalises to \"2\" on both sides. Because it is expressed as a JSON literal here, it is covered by the implementation unit tests rather than this file (JSON has no way to distinguish 2 from 2.0).",
