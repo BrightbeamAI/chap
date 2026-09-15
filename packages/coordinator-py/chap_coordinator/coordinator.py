@@ -317,6 +317,7 @@ class Coordinator:
         self._clock_ms: int | None = (
             1_700_000_000_000 if self.options.deterministic_clock else None
         )
+        self._frozen_now: str | None = None
         self.workspaces: dict[str, Workspace] = {}
         self._audit_listeners: list[AuditListener] = []
         if self.options.on_audit:
@@ -334,11 +335,16 @@ class Coordinator:
 
     # -- public lifecycle ---------------------------------------------
 
-    def now_iso(self) -> str:
+    def _advance_clock(self) -> str:
         if self._clock_ms is not None:
             self._clock_ms += 1000
             return _now_iso(self._clock_ms)
         return _now_iso()
+
+    def now_iso(self) -> str:
+        if self._frozen_now is not None:
+            return self._frozen_now
+        return self._advance_clock()
 
     def add_audit_listener(self, fn: AuditListener) -> None:
         self._audit_listeners.append(fn)
@@ -414,6 +420,13 @@ class Coordinator:
 
     def dispatch(self, envelope: dict) -> dict:
         """Process one JSON-RPC envelope; return the response."""
+        self._frozen_now = self._advance_clock()
+        try:
+            return self._dispatch(envelope)
+        finally:
+            self._frozen_now = None
+
+    def _dispatch(self, envelope: dict) -> dict:
         if not is_valid_envelope(envelope):
             return make_response(
                 envelope.get("id") if isinstance(envelope, dict) else None,
