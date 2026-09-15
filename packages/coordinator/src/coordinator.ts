@@ -108,6 +108,7 @@ export interface CoordinatorOptions {
   maxEnvelopeBytes?: number;
   onAudit?: AuditListener;
   onAutoEscalate?: (task: Task, to: ParticipantUri) => void;
+  onStoreError?: (err: unknown, record: { id: string; version: number }) => void;
   verifyOidcToken?: TokenVerifier;
   verifyVc?: CredentialVerifier;
   scittSubmitter?: ScittSubmitter;
@@ -203,6 +204,7 @@ export class Coordinator {
   readonly ids: IdFactory;
   readonly store: Store;
   private wsVersions = new Map<WorkspaceId, number>();
+  private saveChains = new Map<WorkspaceId, Promise<void>>();
   private clockMs?: number;
   private auditListeners: AuditListener[] = [];
   /** Method handler registry; profiles plug into this. */
@@ -270,26 +272,56 @@ export class Coordinator {
   private persist(ws: Workspace): void {
     const next = (this.wsVersions.get(ws.id) ?? 0) + 1;
     this.wsVersions.set(ws.id, next);
+    let record: WorkspaceRecord;
     try {
-      // snapshot() returns an array of all workspaces; we only need
-      // this one, so slice it. Stores are per-workspace.
       const all = this.snapshot() as Array<Record<string, unknown>>;
       const data = all.find(w => w.id === ws.id);
       if (!data) return;
-      const result = this.store.save({
-        id: ws.id,
-        data,
-        version: next,
-        updated_at: this.now(),
-      });
-      // Async stores: fire-and-forget; failures surface via process unhandled-rejection.
-      // Sync stores: nothing to do.
-      if (result instanceof Promise) {
-        result.catch(() => { /* deliberately swallowed; stores should log */ });
-      }
+      record = { id: ws.id, data, version: next, updated_at: this.now() };
     } catch {
-      // Persistence failures must not break dispatch. Audit listeners
-      // can mirror the audit stream to a second sink for durability.
+      return;
+    }
+
+    const pending = this.saveChains.get(ws.id);
+    if (pending) {
+      this.trackSave(pending.then(() => this.store.save(record)), record);
+      return;
+    }
+    let result: Promise<void> | void;
+    try {
+      result = this.store.save(record);
+    } catch (err) {
+      this.reportStoreError(err, record);
+      return;
+    }
+    if (result instanceof Promise) {
+      this.trackSave(result, record);
+    }
+  }
+
+  private trackSave(save: Promise<void>, record: WorkspaceRecord): void {
+    const guarded = save.catch(err => this.reportStoreError(err, record));
+    this.saveChains.set(record.id, guarded);
+    void guarded.then(() => {
+      if (this.saveChains.get(record.id) === guarded) {
+        this.saveChains.delete(record.id);
+      }
+    });
+  }
+
+  private reportStoreError(err: unknown, record: WorkspaceRecord): void {
+    if (this.options.onStoreError) {
+      try {
+        this.options.onStoreError(err, { id: record.id, version: record.version });
+      } catch {
+        void 0;
+      }
+    }
+  }
+
+  async drainSaves(): Promise<void> {
+    while (this.saveChains.size) {
+      await Promise.allSettled([...this.saveChains.values()]);
     }
   }
 
