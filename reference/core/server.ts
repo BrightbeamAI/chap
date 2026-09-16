@@ -434,7 +434,11 @@ const server = createServer(async (req, res) => {
 });
 
 const port = parseInt(process.env.PORT ?? "8080", 10);
-server.listen(port, () => {
+const host = process.env.CHAP_HOST ?? "127.0.0.1";
+if (!["127.0.0.1", "::1", "localhost"].includes(host)) {
+  console.warn(`WARNING: binding to ${host} exposes an unauthenticated coordinator to the network. Use only on a trusted network.`);
+}
+server.listen(port, host, () => {
   console.log(`CHAP Core reference listening on http://localhost:${port}/chap`);
   console.log(`Try: curl -X POST http://localhost:${port}/chap -H 'Content-Type: application/json' \\`);
   console.log(`     -d '{"jsonrpc":"2.0","id":"1","method":"workspace.describe","params":{"workspace":"wsp_demo"}}'`);

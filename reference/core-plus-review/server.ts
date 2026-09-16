@@ -857,7 +857,11 @@ const server = createServer(async (req, res) => {
 // is imported -- e.g. by the patch test, which exercises applyJsonPatch alone.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = parseInt(process.env.PORT ?? "8080", 10);
-  server.listen(port, () => {
+  const host = process.env.CHAP_HOST ?? "127.0.0.1";
+  if (!["127.0.0.1", "::1", "localhost"].includes(host)) {
+    console.warn(`WARNING: binding to ${host} exposes an unauthenticated coordinator to the network. Use only on a trusted network.`);
+  }
+  server.listen(port, host, () => {
     console.log(`CHAP Core+Review reference on http://localhost:${port}/chap`);
     console.log(`Profiles: core/1.0, review/1.0`);
   });
