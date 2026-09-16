@@ -925,7 +925,7 @@ an artefact that carries a `logical_id`, the replacement SHOULD carry
 the same `logical_id` and set `intent_preserved` accordingly.
 
 An artefact MAY carry an optional `fulfils` field naming the `id` of the
-decision it acts on — for example, a tool call executed to carry out a
+decision it acts on, for example a tool call executed to carry out a
 decision a human approved, so that an execution can be traced back to its
 authorising decision. `fulfils` and `based_on` both express derivation but
 differ in what they name and in what they prove. `based_on` names the input an
