@@ -56,6 +56,7 @@ def wrap_mcp_tool_call(
     routing_hints: dict[str, Any] | None = None,
     confidence: float | str | None = None,
     review_required: bool = False,
+    based_on: str | None = None,
 ) -> dict[str, str]:
     """Wrap a completed MCP tool call as a CHAP task pair.
 
@@ -150,11 +151,14 @@ def wrap_mcp_tool_call(
                     "task_id": task_id, "state": "in_progress"},
     })
 
+    output: dict[str, Any] = {"result": result, "citations": citations}
+    if based_on:
+        output["based_on"] = based_on
     complete_params: dict[str, Any] = {
         "workspace": workspace,
         "from":      caller,
         "task_id":   task_id,
-        "output":    {"result": result, "citations": citations},
+        "output":    output,
     }
     if confidence is not None:
         complete_params["confidence"] = confidence
@@ -186,6 +190,7 @@ def wrap_a2a_message_exchange(
     task_kind: str = "a2a_exchange",
     routing_hints: dict[str, Any] | None = None,
     confidence: float | str | None = None,
+    based_on: str | None = None,
 ) -> dict[str, str]:
     """Wrap a completed A2A message exchange as a CHAP task pair.
 
@@ -269,9 +274,12 @@ def wrap_a2a_message_exchange(
                    "task_id": task_id, "state": "in_progress"},
     })
 
+    output: dict[str, Any] = {"received": received, "citations": [citation]}
+    if based_on:
+        output["based_on"] = based_on
     complete_params: dict[str, Any] = {
         "workspace": workspace, "from": bridge_uri, "task_id": task_id,
-        "output": {"received": received, "citations": [citation]},
+        "output": output,
     }
     if confidence is not None:
         complete_params["confidence"] = confidence

@@ -87,6 +87,41 @@ def test_wrap_mcp_emits_task_create_and_complete() -> None:
     assert citations[0]["output_hash"] == res["output_hash"]
 
 
+def test_wrap_mcp_records_based_on_when_given() -> None:
+    coord = _make_coord()
+    res = wrap_mcp_tool_call(
+        coord, "wsp_wrap",
+        caller="agent:bot", tool="some.tool",
+        args={}, result={"ok": True},
+        based_on="art_approved_decision",
+    )
+    task = coord.get_workspace("wsp_wrap").tasks[res["task_id"]]
+    assert task.output["based_on"] == "art_approved_decision"
+
+
+def test_wrap_mcp_omits_based_on_by_default() -> None:
+    coord = _make_coord()
+    res = wrap_mcp_tool_call(
+        coord, "wsp_wrap",
+        caller="agent:bot", tool="some.tool",
+        args={}, result={"ok": True},
+    )
+    task = coord.get_workspace("wsp_wrap").tasks[res["task_id"]]
+    assert "based_on" not in task.output
+
+
+def test_wrap_a2a_records_based_on_when_given() -> None:
+    coord = _make_coord()
+    res = wrap_a2a_message_exchange(
+        coord, "wsp_wrap",
+        bridge_uri="service:a2a-bridge", remote_agent="a2a:partner/agent",
+        sent={"q": 1}, received={"a": 2},
+        based_on="art_approved_decision",
+    )
+    task = coord.get_workspace("wsp_wrap").tasks[res["task_id"]]
+    assert task.output["based_on"] == "art_approved_decision"
+
+
 def test_wrap_mcp_routing_hints_attach_to_task() -> None:
     coord = _make_coord()
     res = wrap_mcp_tool_call(
