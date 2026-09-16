@@ -663,7 +663,7 @@ categories, because several methods carry preconditions of their own.
 | review_requested | `abstain.declare` | abstained |
 | created, in_progress, review_requested, declined, abstained, escalated, paused | `escalate.raise` | escalated |
 | created, in_progress, review_requested, abstained, escalated, paused | `control.pause` | paused |
-| paused | `control.resume` | in_progress |
+| paused | `control.resume` | the state captured at pause (in_progress when none was captured) |
 | created, in_progress, review_requested, abstained, escalated, paused | `control.cancel` | cancelled |
 | any state | `control.supersede` | superseded |
 

@@ -134,7 +134,7 @@ def test_a_paused_task_resumes_before_it_can_be_reviewed():
     tid = _task(s, "paused")
     assert "error" in s("review.request", task_id=tid, artefact=ARTEFACT, to="human:a")
     s("control.resume", actor="human:a", task_id=tid, reason="carry on")
-    assert _state(c, tid) == "in_progress"
+    assert _state(c, tid) == "created"
     r = s("review.request", task_id=tid, artefact=ARTEFACT, to="human:a")
     assert "error" not in r, r
     assert _state(c, tid) == "review_requested"
