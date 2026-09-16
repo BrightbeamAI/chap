@@ -12,7 +12,7 @@
 import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
 import { modeLE } from "../types.js";
-import type { Mode, SnapshotArtefact, Task } from "../types.js";
+import type { Mode, SnapshotArtefact, Task, TaskState } from "../types.js";
 
 const VALID_MODES = new Set<Mode>(["shadow", "trial", "production"]);
 const VALID_SCOPES = new Set(["task", "participant", "workspace"]);
@@ -33,6 +33,7 @@ export function registerControl(coord: Coordinator): void {
       }
       task.paused = true;
       const prior = task.state;
+      if (prior !== "paused") task.paused_from = prior;
       task.state = "paused";
       task.updated_at = coord.now();
       task.history.push({ ts: task.updated_at, from: p.from as string, state: "paused", note: `was ${prior}` });
@@ -66,10 +67,12 @@ export function registerControl(coord: Coordinator): void {
         return { error: rpcError(E.CONTROL_NOT_AUTHORISED, `Cannot resume ${task.state} task`) };
       }
       task.paused = false;
-      task.state = "in_progress";
+      const restored: TaskState = task.paused_from ?? "in_progress";
+      task.paused_from = undefined;
+      task.state = restored;
       task.updated_at = coord.now();
-      task.history.push({ ts: task.updated_at, from: p.from as string, state: "in_progress" });
-      return { result: { scope: "task", task_id: task.id, state: "in_progress" } };
+      task.history.push({ ts: task.updated_at, from: p.from as string, state: restored });
+      return { result: { scope: "task", task_id: task.id, state: restored } };
     }
     if (scope === "participant") {
       const uri = (p.participant_uri as string) || (p.uri as string);

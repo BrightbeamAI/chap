@@ -307,6 +307,7 @@ class _Task:
     review_required: bool | None = None
     created_at: pd.Timestamp | None = None
     state: str = "created"
+    paused_from: str | None = None
     settled_at: pd.Timestamp | None = None
     confidence: float | None = None
     criticality: str | None = None
@@ -718,10 +719,14 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
                 inherited=frozenset(inherited)))
 
         elif method == "control.pause" and tid and p.get("scope", "task") == "task":
-            task(tid).state = "paused"
+            t = task(tid)
+            t.paused_from = t.state
+            t.state = "paused"
 
         elif method == "control.resume" and tid and p.get("scope", "task") == "task":
-            task(tid).state = "in_progress"
+            t = task(tid)
+            t.state = t.paused_from or "in_progress"
+            t.paused_from = None
 
         elif method == "deliberate.open":
             d_open = _Delib(
