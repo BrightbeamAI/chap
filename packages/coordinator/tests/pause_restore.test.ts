@@ -39,6 +39,20 @@ test("resume restores in_progress", () => {
   assert.equal(r.result.state, "in_progress");
 });
 
+test("a repeated pause resumes in one call", () => {
+  const { c, s, tid } = setup();
+  s("review.request", "agent:b", { task_id: tid, artefact: { text: "draft" }, to: "human:a" });
+  s("control.pause", "human:a", { task_id: tid, reason: "hold" });
+  s("control.pause", "human:a", { task_id: tid, reason: "hold again" });
+  const ws: any = c.workspaces.get("w");
+  assert.equal(ws.tasks.get(tid).paused_from, "review_requested");
+
+  const r = s("control.resume", "human:a", { task_id: tid });
+  assert.equal(r.result.state, "review_requested");
+  assert.equal(ws.tasks.get(tid).state, "review_requested");
+  assert.equal(ws.tasks.get(tid).paused, false);
+});
+
 test("paused_from survives a snapshot round-trip", () => {
   const { c, s, tid } = setup();
   s("review.request", "agent:b", { task_id: tid, artefact: { text: "draft" }, to: "human:a" });

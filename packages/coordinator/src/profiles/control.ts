@@ -33,7 +33,7 @@ export function registerControl(coord: Coordinator): void {
       }
       task.paused = true;
       const prior = task.state;
-      task.paused_from = prior;
+      if (prior !== "paused") task.paused_from = prior;
       task.state = "paused";
       task.updated_at = coord.now();
       task.history.push({ ts: task.updated_at, from: p.from as string, state: "paused", note: `was ${prior}` });

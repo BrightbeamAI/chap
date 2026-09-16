@@ -49,6 +49,21 @@ def test_resume_restores_in_progress():
     assert r["result"]["state"] == "in_progress"
 
 
+def test_repeated_pause_resumes_in_one_call():
+    c, s, tid = _setup()
+    s("review.request", "agent:b", task_id=tid, artefact={"text": "draft"}, to="human:a")
+    s("control.pause", "human:a", task_id=tid, reason="hold")
+    s("control.pause", "human:a", task_id=tid, reason="hold again")
+    task = c.workspaces["w"].tasks[tid]
+    assert task.paused_from == "review_requested"
+
+    r = s("control.resume", "human:a", task_id=tid)
+    assert r["result"]["state"] == "review_requested"
+    task = c.workspaces["w"].tasks[tid]
+    assert task.state == "review_requested"
+    assert task.paused is False
+
+
 def test_paused_from_is_serialised():
     c, s, tid = _setup()
     s("review.request", "agent:b", task_id=tid, artefact={"text": "draft"}, to="human:a")

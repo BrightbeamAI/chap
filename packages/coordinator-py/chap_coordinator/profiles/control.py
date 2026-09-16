@@ -57,7 +57,8 @@ def register_control(coord: "Coordinator") -> None:
                                            f"Cannot pause {task.state} task")}
             task.paused = True
             prior = task.state
-            task.paused_from = prior
+            if prior != "paused":
+                task.paused_from = prior
             task.state = "paused"
             task.updated_at = coord.now_iso()
             task.history.append(TaskHistoryEntry(
