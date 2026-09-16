@@ -206,6 +206,7 @@ export class Coordinator {
   private wsVersions = new Map<WorkspaceId, number>();
   private saveChains = new Map<WorkspaceId, Promise<void>>();
   private clockMs?: number;
+  private frozenNow?: string;
   private auditListeners: AuditListener[] = [];
   /** Method handler registry; profiles plug into this. */
   readonly handlers = new Map<string, Handler>();
@@ -327,12 +328,16 @@ export class Coordinator {
 
   // -- lifecycle -----------------------------------------------------
 
-  now(): string {
+  private advanceClock(): string {
     if (this.clockMs !== undefined) {
       this.clockMs += 1000;
       return nowIso(this.clockMs);
     }
     return nowIso();
+  }
+
+  now(): string {
+    return this.frozenNow ?? this.advanceClock();
   }
 
   onAudit(listener: AuditListener): () => void {
@@ -484,6 +489,15 @@ export class Coordinator {
   // -- dispatch ------------------------------------------------------
 
   dispatch(envelope: Envelope): Envelope {
+    this.frozenNow = this.advanceClock();
+    try {
+      return this._dispatch(envelope);
+    } finally {
+      this.frozenNow = undefined;
+    }
+  }
+
+  private _dispatch(envelope: Envelope): Envelope {
     if (!isValidEnvelope(envelope) || !envelope.method) {
       return reply(envelope, { error: rpcError(E.REQUEST, "Invalid JSON-RPC 2.0 request") });
     }
