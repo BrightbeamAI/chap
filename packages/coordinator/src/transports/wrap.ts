@@ -36,8 +36,8 @@ export interface WrapMcpToolCallOptions {
   routingHints?: Record<string, unknown>;
   /** Optional confidence value attached to task.complete. */
   confidence?: number | string;
-  /** Optional id of the decision artefact this call fulfils; recorded as ``based_on`` on the result artefact. */
-  basedOn?: string;
+  /** Optional id of the decision this call fulfils; recorded as a ``fulfils`` link on the result artefact. Asserted by the caller and not verified by the coordinator. */
+  fulfils?: string;
 }
 
 export interface WrapResult {
@@ -102,7 +102,7 @@ export function wrapMcpToolCall(
   });
 
   const output: Record<string, unknown> = { result: options.result, citations };
-  if (options.basedOn) output.based_on = options.basedOn;
+  if (options.fulfils) output.fulfils = options.fulfils;
   const completeParams: Record<string, unknown> = {
     workspace,
     from:     options.caller,
@@ -139,8 +139,8 @@ export interface WrapA2aExchangeOptions {
   routingHints?: Record<string, unknown>;
   /** Optional confidence value attached to task.complete. */
   confidence?: number | string;
-  /** Optional id of the decision artefact this exchange fulfils; recorded as ``based_on`` on the result artefact. */
-  basedOn?: string;
+  /** Optional id of the decision this exchange fulfils; recorded as a ``fulfils`` link on the result artefact. Asserted by the caller and not verified by the coordinator. */
+  fulfils?: string;
 }
 
 export interface WrapA2aResult {
@@ -199,7 +199,7 @@ export function wrapA2aMessageExchange(
   });
 
   const output: Record<string, unknown> = { received: options.received, citations: [citation] };
-  if (options.basedOn) output.based_on = options.basedOn;
+  if (options.fulfils) output.fulfils = options.fulfils;
   const completeParams: Record<string, unknown> = {
     workspace, from: options.bridgeUri, task_id: taskId,
     output,

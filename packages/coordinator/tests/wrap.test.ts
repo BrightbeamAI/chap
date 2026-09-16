@@ -85,35 +85,35 @@ test("wrapMcpToolCall emits task.create + task.complete", () => {
   assert.equal(output.citations[0].output_hash, res.output_hash);
 });
 
-test("wrapMcpToolCall records based_on when given", () => {
+test("wrapMcpToolCall records fulfils when given", () => {
   const coord = makeCoord();
   const res = wrapMcpToolCall(coord, "wsp_wrap", {
     caller: "agent:bot", tool: "some.tool",
     args: {}, result: { ok: true },
-    basedOn: "art_approved_decision",
+    fulfils: "art_approved_decision",
   });
   const task = coord.getWorkspace("wsp_wrap")!.tasks.get(res.task_id)!;
-  assert.equal((task.output as { based_on?: string }).based_on, "art_approved_decision");
+  assert.equal((task.output as { fulfils?: string }).fulfils, "art_approved_decision");
 });
 
-test("wrapMcpToolCall omits based_on by default", () => {
+test("wrapMcpToolCall omits fulfils by default", () => {
   const coord = makeCoord();
   const res = wrapMcpToolCall(coord, "wsp_wrap", {
     caller: "agent:bot", tool: "some.tool", args: {}, result: { ok: true },
   });
   const task = coord.getWorkspace("wsp_wrap")!.tasks.get(res.task_id)!;
-  assert.ok(!("based_on" in (task.output as object)));
+  assert.ok(!("fulfils" in (task.output as object)));
 });
 
-test("wrapA2aMessageExchange records based_on when given", () => {
+test("wrapA2aMessageExchange records fulfils when given", () => {
   const coord = makeCoord();
   const res = wrapA2aMessageExchange(coord, "wsp_wrap", {
     bridgeUri: "service:a2a-bridge", remoteAgent: "a2a:partner/agent",
     sent: { q: 1 }, received: { a: 2 },
-    basedOn: "art_approved_decision",
+    fulfils: "art_approved_decision",
   });
   const task = coord.getWorkspace("wsp_wrap")!.tasks.get(res.task_id)!;
-  assert.equal((task.output as { based_on?: string }).based_on, "art_approved_decision");
+  assert.equal((task.output as { fulfils?: string }).fulfils, "art_approved_decision");
 });
 
 test("wrapMcpToolCall routing hints attach to task", () => {

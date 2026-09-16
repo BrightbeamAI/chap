@@ -56,7 +56,7 @@ def wrap_mcp_tool_call(
     routing_hints: dict[str, Any] | None = None,
     confidence: float | str | None = None,
     review_required: bool = False,
-    based_on: str | None = None,
+    fulfils: str | None = None,
 ) -> dict[str, str]:
     """Wrap a completed MCP tool call as a CHAP task pair.
 
@@ -95,6 +95,10 @@ def wrap_mcp_tool_call(
         If True, leaves the task in ``review_requested`` state via
         ``review.request`` to the caller's manager (configured per
         deployment). Default False: completes the task immediately.
+    fulfils
+        Optional id of the decision this call fulfils; recorded as a
+        ``fulfils`` link on the result artefact. Asserted by the caller
+        and not verified by the coordinator.
 
     Returns
     -------
@@ -152,8 +156,8 @@ def wrap_mcp_tool_call(
     })
 
     output: dict[str, Any] = {"result": result, "citations": citations}
-    if based_on:
-        output["based_on"] = based_on
+    if fulfils:
+        output["fulfils"] = fulfils
     complete_params: dict[str, Any] = {
         "workspace": workspace,
         "from":      caller,
@@ -190,7 +194,7 @@ def wrap_a2a_message_exchange(
     task_kind: str = "a2a_exchange",
     routing_hints: dict[str, Any] | None = None,
     confidence: float | str | None = None,
-    based_on: str | None = None,
+    fulfils: str | None = None,
 ) -> dict[str, str]:
     """Wrap a completed A2A message exchange as a CHAP task pair.
 
@@ -226,6 +230,10 @@ def wrap_a2a_message_exchange(
         Optional hints attached to the CHAP task.
     confidence
         Optional confidence value attached to ``task.complete``.
+    fulfils
+        Optional id of the decision this exchange fulfils; recorded as a
+        ``fulfils`` link on the result artefact. Asserted by the caller
+        and not verified by the coordinator.
 
     Returns
     -------
@@ -275,8 +283,8 @@ def wrap_a2a_message_exchange(
     })
 
     output: dict[str, Any] = {"received": received, "citations": [citation]}
-    if based_on:
-        output["based_on"] = based_on
+    if fulfils:
+        output["fulfils"] = fulfils
     complete_params: dict[str, Any] = {
         "workspace": workspace, "from": bridge_uri, "task_id": task_id,
         "output": output,
