@@ -94,7 +94,7 @@ export function registerHandoff(coord: Coordinator): void {
     }
     const validIds = new Set(ho.tasks.map(t => t.task_id));
     const acceptedIds: string[] = Array.isArray(p.accepted_task_ids)
-      ? (p.accepted_task_ids as string[])
+      ? [...p.accepted_task_ids as string[]]
       : ho.tasks.map(t => t.task_id);
     for (const tid of acceptedIds) {
       if (!validIds.has(tid)) {

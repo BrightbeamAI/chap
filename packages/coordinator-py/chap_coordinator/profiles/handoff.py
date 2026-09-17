@@ -114,8 +114,13 @@ def register_handoff(coord: "Coordinator") -> None:
                 return {"error": rpc_error(E.HANDOFF_RECIPIENT_NOT_MEMBER,
                                            "Acceptor is not a workspace member")}
 
-        # Accepted tasks (default: all in the handoff)
-        accepted_ids = p.get("accepted_task_ids") or [t.task_id for t in ho.tasks]
+        # Accepted tasks (default: all in the handoff). An explicitly empty
+        # list is a valid no-op and must not be confused with an omitted field.
+        accepted_ids = (
+            list(p["accepted_task_ids"])
+            if isinstance(p.get("accepted_task_ids"), list)
+            else [t.task_id for t in ho.tasks]
+        )
         valid_ids = {t.task_id for t in ho.tasks}
         for tid in accepted_ids:
             if tid not in valid_ids:
