@@ -431,7 +431,10 @@ export class Coordinator {
         chain_enabled:   ws.chain_enabled,
       });
     }
-    return out;
+    // A persistence record is a snapshot, not a live view of coordinator
+    // state. Detach nested arrays and objects before handing it to callers or
+    // a Store so later mutations cannot rewrite captured state in place.
+    return structuredClone(out);
   }
 
   /** Restore from a snapshot produced by ``snapshot()``. Replaces
