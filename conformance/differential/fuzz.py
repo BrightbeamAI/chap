@@ -13,13 +13,10 @@ response and on the audit-chain head. A subprocess boundary is used rather than
 HTTP so no serialisation layer masks or invents a difference.
 
 The action set covers the core and review lifecycle, control, handoff, whisper,
-deliberation and routing. Two cases are deliberately held out until known
-divergences between the references are resolved, because the fuzzer catches
-each immediately and a CI run is expected to pass: control.snapshot (artefact
-shape, issue #148) and handoff.accept with an explicitly empty
-accepted_task_ids (issue #151, where Python expands the empty list to every
-task). Fold each back in once its fix lands. Widen the set as the references
-converge.
+deliberation and routing, including canonical control.snapshot artefacts and
+subsequent rollback. Explicitly empty handoff acceptance remains held out until
+#151 lands; snapshot/rollback use omitted or non-empty selections so this suite
+does not depend on the separate empty-selection change in #152.
 
 Usage:
     python fuzz.py --seeds 200          # sweep seeds 0..199
@@ -58,6 +55,7 @@ class Recorder:
         self.responses: list[dict] = []
         self.tasks: list[str] = []
         self.handoffs: list[str] = []
+        self.snapshots: list[str] = []
         self.whispers: list[str] = []
         self.delibs: list[str] = []
         self._n = 0
@@ -92,7 +90,8 @@ class Recorder:
         a = rnd.choice([
             "create", "create", "update", "review", "decide", "decide",
             "complete", "pause", "resume", "escalate", "supersede", "cancel",
-            "handoff", "whisper", "deliberate", "route", "depth", "auto"])
+            "handoff", "whisper", "deliberate", "route", "depth", "auto",
+            "snapshot", "rollback"])
         if a == "create" or not self.tasks:
             r = self._send("task.create", "human:a", kind=rnd.choice(["a", "b"]),
                            input={"n": self._n}, assignee=rnd.choice(AGENTS))
@@ -141,6 +140,19 @@ class Recorder:
         elif a == "cancel":
             if "result" in self._send("control.cancel", "human:a", task_id=tid, reason="no"):
                 self.tasks.remove(tid)
+        elif a == "snapshot":
+            slices = ["members", "open_tasks", "mode_ceiling", "policy", "audit"]
+            params = {} if rnd.random() < 0.3 else {
+                "include": rnd.sample(slices, rnd.randint(1, len(slices)))}
+            result = self._send("control.snapshot", human, **params)
+            snapshot_id = self._result(result, "snapshot_artefact_id")
+            if snapshot_id:
+                self.snapshots.append(snapshot_id)
+        elif a == "rollback" and self.snapshots:
+            params = {} if rnd.random() < 0.5 else {
+                "what_to_restore": rnd.sample(["members", "mode_ceiling"], rnd.randint(1, 2))}
+            self._send("control.rollback", human,
+                       to_snapshot_artefact_id=rnd.choice(self.snapshots), **params)
         elif a == "handoff":
             r = self._send("handoff.propose", self._assignee(tid),
                            to=rnd.choice(HUMANS), tasks=[{"task_id": tid}])

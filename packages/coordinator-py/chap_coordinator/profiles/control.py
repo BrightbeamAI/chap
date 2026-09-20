@@ -28,6 +28,7 @@ import copy
 from typing import TYPE_CHECKING
 
 from ..coordinator import mode_le
+from ..canonical import content_hash
 from ..jsonrpc import E, rpc_error
 from ..types import SnapshotArtefact, Task, TaskHistoryEntry
 
@@ -144,36 +145,56 @@ def register_control(coord: "Coordinator") -> None:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         include = list(p.get("include") or ["members", "open_tasks",
                                             "mode_ceiling"])
-        # Capture the requested slice of state
+        # Each slice has the same deliberately small projection in both refs.
         state: dict = {}
         if "members" in include:
-            state["members"] = [m.to_dict() for m in ws.members.values()]
+            members = []
+            for member in ws.members.values():
+                item = {"uri": member.uri, "type": member.type}
+                if member.role:
+                    item["role"] = member.role
+                if member.scopes:
+                    item["scopes"] = member.scopes
+                members.append(item)
+            if members:
+                state["members"] = members
         if "open_tasks" in include:
-            state["open_tasks"] = [
-                t.to_dict() for t in ws.tasks.values()
-                if t.state not in ("completed", "declined", "cancelled", "superseded")
-            ]
+            tasks = []
+            for task in ws.tasks.values():
+                if task.state in ("completed", "declined", "cancelled", "superseded"):
+                    continue
+                item = {"id": task.id, "kind": task.kind, "state": task.state}
+                if task.assignee:
+                    item["assignee"] = task.assignee
+                tasks.append(item)
+            if tasks:
+                state["open_tasks"] = tasks
         if "mode_ceiling" in include:
             state["mode_ceiling"] = ws.mode_ceiling
-        if "policy" in include:
+        if "policy" in include and ws.routing_policy_uri:
             state["routing_policy_uri"] = ws.routing_policy_uri
         if "all" in include or "audit" in include:
             state["audit_seq"] = len(ws.audit)
 
-        snap_id = coord.ids.artefact_id()  # snapshots are artefacts per spec
+        content = copy.deepcopy({
+            "workspace": ws.id,
+            "audit_seq": len(ws.audit),
+            "include": include,
+            "state": state,
+        })
+        if p.get("label"):
+            content["label"] = p["label"]
+        snap_id = coord.ids.artefact_id()
         snap = SnapshotArtefact(
             id=snap_id,
-            ts=coord.now_iso(),
-            by=p.get("from", ""),
-            workspace=ws.id,
-            audit_seq=len(ws.audit),
-            label=p.get("label"),
-            include=copy.deepcopy(include),
-            state=copy.deepcopy(state),
+            produced_by=p.get("from", ""),
+            produced_at=coord.now_iso(),
+            content=content,
+            content_hash=content_hash(content),
         )
         ws.snapshots[snap_id] = snap
         return {"result": {"snapshot_artefact_id": snap_id,
-                           "audit_seq": snap.audit_seq,
+                           "audit_seq": snap.content["audit_seq"],
                            "artefact": snap.to_dict()}}
 
     def control_rollback(p: dict) -> dict:
@@ -190,30 +211,30 @@ def register_control(coord: "Coordinator") -> None:
         if not snap:
             return {"error": rpc_error(E.CONTROL_SNAPSHOT_NOT_FOUND,
                                        f"Unknown snapshot: {snap_id}")}
-        what = list(p.get("what_to_restore") or snap.include)
+        what = list(p.get("what_to_restore") or snap.content["include"])
 
         # Apply the rollback. Per spec, this APPENDS, it does not truncate.
         # We restore the named slices of state.
         restored: list[str] = []
-        if "mode_ceiling" in what and "mode_ceiling" in snap.state:
-            ws.mode_ceiling = snap.state["mode_ceiling"]
+        if "mode_ceiling" in what and "mode_ceiling" in snap.content["state"]:
+            ws.mode_ceiling = snap.content["state"]["mode_ceiling"]
             restored.append("mode_ceiling")
-        if "members" in what and "members" in snap.state:
+        if "members" in what and "members" in snap.content["state"]:
             # Restore each member's role/scopes from the snapshot;
             # we don't recreate departed members (audit is append-only)
-            snap_uris = {m["uri"]: m for m in snap.state["members"]}
+            snap_uris = {m["uri"]: m for m in snap.content["state"]["members"]}
             for uri, snap_m in snap_uris.items():
                 if uri in ws.members:
                     ws.members[uri].role = snap_m.get("role",
                                                      ws.members[uri].role)
-                    ws.members[uri].scopes = snap_m.get("scopes")
+                    ws.members[uri].scopes = copy.deepcopy(snap_m.get("scopes"))
             restored.append("members")
 
         return {"result": {
             "rolled_back_to": snap_id,
-            "audit_seq": snap.audit_seq,
+            "audit_seq": snap.content["audit_seq"],
             "restored": restored,
-            "reason": p.get("reason"),
+            **({"reason": p["reason"]} if p.get("reason") else {}),
         }}
 
     def control_supersede(p: dict) -> dict:

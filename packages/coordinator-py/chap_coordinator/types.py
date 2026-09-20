@@ -11,6 +11,8 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from .canonical import content_hash as hash_content
+
 ParticipantType = Literal["human", "agent", "service", "group", "workspace"]
 TaskState = Literal[
     "created",
@@ -320,34 +322,59 @@ class RouteDecisionArtefact:
 
 @dataclass
 class SnapshotArtefact:
-    """A control/1.0 snapshot, represented as an artefact (kind=snapshot)."""
+    """Canonical control/1.0 artefact; rollback reads ``content.state``."""
 
-    id: str  # art_... per profile spec
-    ts: str
-    by: str
-    workspace: str
-    audit_seq: int  # snapshot covers entries [0, audit_seq)
-    label: str | None = None
-    include: list[str] = field(default_factory=list)
-    # The serialised slice of state covered by this snapshot
-    state: dict[str, Any] = field(default_factory=dict)
+    id: str
+    produced_by: str
+    produced_at: str
+    content_hash: str
+    content: dict[str, Any]
+    kind: Literal["snapshot"] = "snapshot"
 
     def to_dict(self) -> dict:
-        out: dict[str, Any] = {
+        return copy.deepcopy({
             "id": self.id,
-            "kind": "snapshot",
-            "produced_by": self.by,
-            "produced_at": self.ts,
-            "content": {
-                "workspace": self.workspace,
-                "audit_seq": self.audit_seq,
-                "include": copy.deepcopy(self.include),
-                "state": copy.deepcopy(self.state),
-            },
-        }
-        if self.label:
-            out["content"]["label"] = self.label
-        return out
+            "kind": self.kind,
+            "produced_by": self.produced_by,
+            "produced_at": self.produced_at,
+            "content_hash": self.content_hash,
+            "content": self.content,
+        })
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "SnapshotArtefact":
+        """Read canonical records, or normalize a pre-conformance store record.
+
+        Legacy fields are accepted only at the persistence boundary; the live
+        snapshot and every newly emitted artefact use the canonical shape.
+        """
+        if "content" in value:
+            return cls(**copy.deepcopy(value))
+        content = copy.deepcopy({
+            "workspace": value["workspace"],
+            "audit_seq": value["audit_seq"],
+            "include": value["include"],
+            "state": value["state"],
+        })
+        # Old Python records held full task/member bodies. Project before
+        # hashing so excluded task inputs (including decimals) do not leak
+        # into the canonical snapshot or prevent an otherwise valid restart.
+        old_state = content["state"]
+        state = {key: old_state[key] for key in
+                 ("mode_ceiling", "routing_policy_uri", "audit_seq")
+                 if key in old_state and old_state[key] not in (None, "")}
+        for key, fields in (("members", ("uri", "type", "role", "scopes")),
+                            ("open_tasks", ("id", "kind", "state", "assignee"))):
+            if old_state.get(key):
+                state[key] = [{field: item[field] for field in fields
+                               if field in item and item[field] not in (None, "", [], {})}
+                              for item in old_state[key]]
+        content["state"] = state
+        if value.get("label"):
+            content["label"] = value["label"]
+        return cls(id=value["id"], produced_by=value["by"],
+                   produced_at=value["ts"], content=content,
+                   content_hash=hash_content(content))
 
 
 # ============================================================

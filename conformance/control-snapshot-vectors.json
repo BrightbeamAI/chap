@@ -1,0 +1,1105 @@
+{
+  "description": "Exact canonical control.snapshot responses and audit-chain heads; shared by both references. Deterministic IDs and clock are enabled.",
+  "vectors": [
+    {
+      "name": "default-projection",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "routing/1.0"
+      ],
+      "workspace": "wsp_snapshot_conformance",
+      "envelopes": [
+        {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "routing/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "type": "human",
+            "role": "admin",
+            "scopes": [
+              "review"
+            ],
+            "display_name": "Reviewer",
+            "capabilities": {
+              "not_captured": true
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "agent:writer@example.org",
+            "type": "agent",
+            "role": "worker",
+            "scopes": [],
+            "capabilities": {
+              "models": [
+                "not-captured"
+              ]
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e4",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "kind": "draft",
+            "assignee": "agent:writer@example.org",
+            "input": {
+              "private_body": {
+                "nested": [
+                  "must not be copied into a snapshot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e5",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "kind": "cancelled",
+            "assignee": "agent:writer@example.org",
+            "input": {}
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e6",
+          "method": "control.cancel",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "task_id": "tsk_01HF7YAT02000KRVQKEBZ99Y1A",
+            "reason": "fixture"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e7",
+          "method": "control.snapshot",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org"
+          }
+        }
+      ],
+      "expected": {
+        "jsonrpc": "2.0",
+        "id": "e7",
+        "result": {
+          "snapshot_artefact_id": "art_01HF7YAT03000XN9KD5HYXYX1Z",
+          "audit_seq": 6,
+          "artefact": {
+            "id": "art_01HF7YAT03000XN9KD5HYXYX1Z",
+            "kind": "snapshot",
+            "produced_by": "human:reviewer@example.org",
+            "produced_at": "2023-11-14T22:13:27.000Z",
+            "content_hash": "sha256:aedd611f9b06a1d092e0dfe3e20b61c2de158b41cc9f2f82ee384630b4e1ee79",
+            "content": {
+              "workspace": "wsp_snapshot_conformance",
+              "audit_seq": 6,
+              "include": [
+                "members",
+                "open_tasks",
+                "mode_ceiling"
+              ],
+              "state": {
+                "members": [
+                  {
+                    "uri": "human:reviewer@example.org",
+                    "type": "human",
+                    "role": "admin",
+                    "scopes": [
+                      "review"
+                    ]
+                  },
+                  {
+                    "uri": "agent:writer@example.org",
+                    "type": "agent",
+                    "role": "worker"
+                  }
+                ],
+                "open_tasks": [
+                  {
+                    "id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+                    "kind": "draft",
+                    "state": "created",
+                    "assignee": "agent:writer@example.org"
+                  }
+                ],
+                "mode_ceiling": "production"
+              }
+            }
+          }
+        }
+      },
+      "expected_chain_head": "sha256:5f3f72a803c6b7853279e45127ac8ec0eb8fe13e4a6cab1daf63e1817b6e46b0"
+    },
+    {
+      "name": "all-five-slices-unicode-label",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "routing/1.0"
+      ],
+      "workspace": "wsp_snapshot_conformance",
+      "envelopes": [
+        {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "routing/1.0"
+            ],
+            "routing_policy_uri": "https://example.org/policies/triage"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "type": "human",
+            "role": "admin",
+            "scopes": [
+              "review"
+            ],
+            "display_name": "Reviewer",
+            "capabilities": {
+              "not_captured": true
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "agent:writer@example.org",
+            "type": "agent",
+            "role": "worker",
+            "scopes": [],
+            "capabilities": {
+              "models": [
+                "not-captured"
+              ]
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e4",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "kind": "draft",
+            "assignee": "agent:writer@example.org",
+            "input": {
+              "private_body": {
+                "nested": [
+                  "must not be copied into a snapshot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e5",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "kind": "cancelled",
+            "assignee": "agent:writer@example.org",
+            "input": {}
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e6",
+          "method": "control.cancel",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "task_id": "tsk_01HF7YAT02000KRVQKEBZ99Y1A",
+            "reason": "fixture"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e7",
+          "method": "control.snapshot",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "include": [
+              "members",
+              "open_tasks",
+              "mode_ceiling",
+              "policy",
+              "audit"
+            ],
+            "label": "Release Δ 🛰"
+          }
+        }
+      ],
+      "expected": {
+        "jsonrpc": "2.0",
+        "id": "e7",
+        "result": {
+          "snapshot_artefact_id": "art_01HF7YAT03000XN9KD5HYXYX1Z",
+          "audit_seq": 6,
+          "artefact": {
+            "id": "art_01HF7YAT03000XN9KD5HYXYX1Z",
+            "kind": "snapshot",
+            "produced_by": "human:reviewer@example.org",
+            "produced_at": "2023-11-14T22:13:27.000Z",
+            "content_hash": "sha256:a21d4a2121aa2de9f1aac7da8b74d8245832186e811e2b1c59c762ee1b5103b9",
+            "content": {
+              "workspace": "wsp_snapshot_conformance",
+              "audit_seq": 6,
+              "include": [
+                "members",
+                "open_tasks",
+                "mode_ceiling",
+                "policy",
+                "audit"
+              ],
+              "state": {
+                "members": [
+                  {
+                    "uri": "human:reviewer@example.org",
+                    "type": "human",
+                    "role": "admin",
+                    "scopes": [
+                      "review"
+                    ]
+                  },
+                  {
+                    "uri": "agent:writer@example.org",
+                    "type": "agent",
+                    "role": "worker"
+                  }
+                ],
+                "open_tasks": [
+                  {
+                    "id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+                    "kind": "draft",
+                    "state": "created",
+                    "assignee": "agent:writer@example.org"
+                  }
+                ],
+                "mode_ceiling": "production",
+                "routing_policy_uri": "https://example.org/policies/triage",
+                "audit_seq": 6
+              },
+              "label": "Release Δ 🛰"
+            }
+          }
+        }
+      },
+      "expected_chain_head": "sha256:54c2a18d10f78659fc7ac4a4ce25d9d69de2e6c5ce7615168bafd02891e735d0"
+    },
+    {
+      "name": "members-omit-empty-scopes",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "routing/1.0"
+      ],
+      "workspace": "wsp_snapshot_conformance",
+      "envelopes": [
+        {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "routing/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "type": "human",
+            "role": "admin",
+            "scopes": [
+              "review"
+            ],
+            "display_name": "Reviewer",
+            "capabilities": {
+              "not_captured": true
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "agent:writer@example.org",
+            "type": "agent",
+            "role": "worker",
+            "scopes": [],
+            "capabilities": {
+              "models": [
+                "not-captured"
+              ]
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e4",
+          "method": "control.snapshot",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "include": [
+              "members"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "jsonrpc": "2.0",
+        "id": "e4",
+        "result": {
+          "snapshot_artefact_id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "audit_seq": 3,
+          "artefact": {
+            "id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "kind": "snapshot",
+            "produced_by": "human:reviewer@example.org",
+            "produced_at": "2023-11-14T22:13:24.000Z",
+            "content_hash": "sha256:3187cb00d80349701fb02c47ea4ae4ff2bd2c2ceb5df642af7db8eb7cc20bd1c",
+            "content": {
+              "workspace": "wsp_snapshot_conformance",
+              "audit_seq": 3,
+              "include": [
+                "members"
+              ],
+              "state": {
+                "members": [
+                  {
+                    "uri": "human:reviewer@example.org",
+                    "type": "human",
+                    "role": "admin",
+                    "scopes": [
+                      "review"
+                    ]
+                  },
+                  {
+                    "uri": "agent:writer@example.org",
+                    "type": "agent",
+                    "role": "worker"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "expected_chain_head": "sha256:680330cfec30d4b886524b3601ead740bd61cf1e02a9e168d7eabe69bfe208af"
+    },
+    {
+      "name": "open-tasks-exclude-cancelled-and-body",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "routing/1.0"
+      ],
+      "workspace": "wsp_snapshot_conformance",
+      "envelopes": [
+        {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "routing/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "type": "human",
+            "role": "admin",
+            "scopes": [
+              "review"
+            ],
+            "display_name": "Reviewer",
+            "capabilities": {
+              "not_captured": true
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "agent:writer@example.org",
+            "type": "agent",
+            "role": "worker",
+            "scopes": [],
+            "capabilities": {
+              "models": [
+                "not-captured"
+              ]
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e4",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "kind": "draft",
+            "assignee": "agent:writer@example.org",
+            "input": {
+              "private_body": {
+                "nested": [
+                  "must not be copied into a snapshot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e5",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "kind": "cancelled",
+            "assignee": "agent:writer@example.org",
+            "input": {}
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e6",
+          "method": "control.cancel",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "task_id": "tsk_01HF7YAT02000KRVQKEBZ99Y1A",
+            "reason": "fixture"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e7",
+          "method": "control.snapshot",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "include": [
+              "open_tasks"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "jsonrpc": "2.0",
+        "id": "e7",
+        "result": {
+          "snapshot_artefact_id": "art_01HF7YAT03000XN9KD5HYXYX1Z",
+          "audit_seq": 6,
+          "artefact": {
+            "id": "art_01HF7YAT03000XN9KD5HYXYX1Z",
+            "kind": "snapshot",
+            "produced_by": "human:reviewer@example.org",
+            "produced_at": "2023-11-14T22:13:27.000Z",
+            "content_hash": "sha256:e3a5a3276123dce92772fba986d8b804693cc90f6cd4dfa180bc0b63934a665b",
+            "content": {
+              "workspace": "wsp_snapshot_conformance",
+              "audit_seq": 6,
+              "include": [
+                "open_tasks"
+              ],
+              "state": {
+                "open_tasks": [
+                  {
+                    "id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+                    "kind": "draft",
+                    "state": "created",
+                    "assignee": "agent:writer@example.org"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "expected_chain_head": "sha256:8e30e21fd24a5b34174389ccb740e1c3db7a1554c21343ba5de120295a43601f"
+    },
+    {
+      "name": "empty-open-tasks-and-label-omitted",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "routing/1.0"
+      ],
+      "workspace": "wsp_snapshot_conformance",
+      "envelopes": [
+        {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "routing/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "type": "human",
+            "role": "admin",
+            "scopes": [
+              "review"
+            ],
+            "display_name": "Reviewer",
+            "capabilities": {
+              "not_captured": true
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "agent:writer@example.org",
+            "type": "agent",
+            "role": "worker",
+            "scopes": [],
+            "capabilities": {
+              "models": [
+                "not-captured"
+              ]
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e4",
+          "method": "control.snapshot",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "include": [
+              "open_tasks"
+            ],
+            "label": ""
+          }
+        }
+      ],
+      "expected": {
+        "jsonrpc": "2.0",
+        "id": "e4",
+        "result": {
+          "snapshot_artefact_id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "audit_seq": 3,
+          "artefact": {
+            "id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "kind": "snapshot",
+            "produced_by": "human:reviewer@example.org",
+            "produced_at": "2023-11-14T22:13:24.000Z",
+            "content_hash": "sha256:a314fee52971509eb549547a9847e7171e116c4e550107159508a8db7f2b9656",
+            "content": {
+              "workspace": "wsp_snapshot_conformance",
+              "audit_seq": 3,
+              "include": [
+                "open_tasks"
+              ],
+              "state": {}
+            }
+          }
+        }
+      },
+      "expected_chain_head": "sha256:4934db2d749cc63fe4129127756475a9656efba9275a279077e80e7696d7fad2"
+    },
+    {
+      "name": "mode-ceiling-only",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "routing/1.0"
+      ],
+      "workspace": "wsp_snapshot_conformance",
+      "envelopes": [
+        {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "routing/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "type": "human",
+            "role": "admin",
+            "scopes": [
+              "review"
+            ],
+            "display_name": "Reviewer",
+            "capabilities": {
+              "not_captured": true
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "agent:writer@example.org",
+            "type": "agent",
+            "role": "worker",
+            "scopes": [],
+            "capabilities": {
+              "models": [
+                "not-captured"
+              ]
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e4",
+          "method": "control.snapshot",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "include": [
+              "mode_ceiling"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "jsonrpc": "2.0",
+        "id": "e4",
+        "result": {
+          "snapshot_artefact_id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "audit_seq": 3,
+          "artefact": {
+            "id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "kind": "snapshot",
+            "produced_by": "human:reviewer@example.org",
+            "produced_at": "2023-11-14T22:13:24.000Z",
+            "content_hash": "sha256:03c0428e5b84736c4fbcb4274d10da851dfb1f57d87dfc927694b037c284d4a0",
+            "content": {
+              "workspace": "wsp_snapshot_conformance",
+              "audit_seq": 3,
+              "include": [
+                "mode_ceiling"
+              ],
+              "state": {
+                "mode_ceiling": "production"
+              }
+            }
+          }
+        }
+      },
+      "expected_chain_head": "sha256:1ec9e6181ebd8b995207b2059c98a6496c62f918ce6415a1caacd69e1b5ecbc2"
+    },
+    {
+      "name": "policy-present",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "routing/1.0"
+      ],
+      "workspace": "wsp_snapshot_conformance",
+      "envelopes": [
+        {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "routing/1.0"
+            ],
+            "routing_policy_uri": "https://example.org/policies/triage"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "type": "human",
+            "role": "admin",
+            "scopes": [
+              "review"
+            ],
+            "display_name": "Reviewer",
+            "capabilities": {
+              "not_captured": true
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "agent:writer@example.org",
+            "type": "agent",
+            "role": "worker",
+            "scopes": [],
+            "capabilities": {
+              "models": [
+                "not-captured"
+              ]
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e4",
+          "method": "control.snapshot",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "include": [
+              "policy"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "jsonrpc": "2.0",
+        "id": "e4",
+        "result": {
+          "snapshot_artefact_id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "audit_seq": 3,
+          "artefact": {
+            "id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "kind": "snapshot",
+            "produced_by": "human:reviewer@example.org",
+            "produced_at": "2023-11-14T22:13:24.000Z",
+            "content_hash": "sha256:73eab05ea0cb6258698d5dea9239737e3ac7e6b317d693d3921200667e06c00e",
+            "content": {
+              "workspace": "wsp_snapshot_conformance",
+              "audit_seq": 3,
+              "include": [
+                "policy"
+              ],
+              "state": {
+                "routing_policy_uri": "https://example.org/policies/triage"
+              }
+            }
+          }
+        }
+      },
+      "expected_chain_head": "sha256:0033644391b473e9c357cbb9f204e33242c8148c43d0af75c4836a7ed6b772c7"
+    },
+    {
+      "name": "absent-policy-omitted",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "routing/1.0"
+      ],
+      "workspace": "wsp_snapshot_conformance",
+      "envelopes": [
+        {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "routing/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "type": "human",
+            "role": "admin",
+            "scopes": [
+              "review"
+            ],
+            "display_name": "Reviewer",
+            "capabilities": {
+              "not_captured": true
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "agent:writer@example.org",
+            "type": "agent",
+            "role": "worker",
+            "scopes": [],
+            "capabilities": {
+              "models": [
+                "not-captured"
+              ]
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e4",
+          "method": "control.snapshot",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "include": [
+              "policy"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "jsonrpc": "2.0",
+        "id": "e4",
+        "result": {
+          "snapshot_artefact_id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "audit_seq": 3,
+          "artefact": {
+            "id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "kind": "snapshot",
+            "produced_by": "human:reviewer@example.org",
+            "produced_at": "2023-11-14T22:13:24.000Z",
+            "content_hash": "sha256:3bc2d8dc4c8452748f8121f8abe3f75e927e53ea6e205e7b6c12716779df50dc",
+            "content": {
+              "workspace": "wsp_snapshot_conformance",
+              "audit_seq": 3,
+              "include": [
+                "policy"
+              ],
+              "state": {}
+            }
+          }
+        }
+      },
+      "expected_chain_head": "sha256:50554f7f602c5b30a95d35c6e3b28483129765f08e7806be0d9fa0d907ff3a6a"
+    },
+    {
+      "name": "audit-only",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "routing/1.0"
+      ],
+      "workspace": "wsp_snapshot_conformance",
+      "envelopes": [
+        {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "routing/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "type": "human",
+            "role": "admin",
+            "scopes": [
+              "review"
+            ],
+            "display_name": "Reviewer",
+            "capabilities": {
+              "not_captured": true
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "agent:writer@example.org",
+            "type": "agent",
+            "role": "worker",
+            "scopes": [],
+            "capabilities": {
+              "models": [
+                "not-captured"
+              ]
+            }
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "e4",
+          "method": "control.snapshot",
+          "params": {
+            "workspace": "wsp_snapshot_conformance",
+            "from": "human:reviewer@example.org",
+            "include": [
+              "audit"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "jsonrpc": "2.0",
+        "id": "e4",
+        "result": {
+          "snapshot_artefact_id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "audit_seq": 3,
+          "artefact": {
+            "id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "kind": "snapshot",
+            "produced_by": "human:reviewer@example.org",
+            "produced_at": "2023-11-14T22:13:24.000Z",
+            "content_hash": "sha256:d3dee54f580b2e226f0b26286230c82a5fe1a69484958aff4e477de5d0759d80",
+            "content": {
+              "workspace": "wsp_snapshot_conformance",
+              "audit_seq": 3,
+              "include": [
+                "audit"
+              ],
+              "state": {
+                "audit_seq": 3
+              }
+            }
+          }
+        }
+      },
+      "expected_chain_head": "sha256:5d2e1380124d45b66ead520149787f46418dcd6cca5533b1d8ff00987317ce55"
+    }
+  ]
+}

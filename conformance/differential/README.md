@@ -42,3 +42,13 @@ A failure prints the seed, the envelope index, and the two differing responses
 (or the two chain heads), which is enough to reproduce and minimise by hand.
 
 Tracked in [#124](https://github.com/BrightbeamAI/chap/issues/124).
+
+
+## Snapshot coverage
+
+The action set includes `control.snapshot` with omitted or non-empty selections
+and later `control.rollback` calls. The shared
+[`control-snapshot-vectors.json`](../control-snapshot-vectors.json) fixtures
+also pin exact wire responses, projections, and hashes. Explicitly empty
+selection cases remain separate in #151 and #152. The broader state-aware
+review-path and coverage-statistics improvements remain tracked in #156.

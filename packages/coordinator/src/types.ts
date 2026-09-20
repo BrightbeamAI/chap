@@ -166,13 +166,16 @@ export interface RouteDecisionArtefact {
 export interface SnapshotArtefact {
   id:           ArtefactId;
   kind:         "snapshot";
-  ts:           string;
-  by:           ParticipantUri;
-  workspace:    WorkspaceId;
-  audit_seq:    number;
-  label?:       string;
-  include:      string[];
-  state:        Record<string, unknown>;
+  produced_at:  string;
+  produced_by:  ParticipantUri;
+  content_hash: string;
+  content: {
+    workspace: WorkspaceId;
+    audit_seq: number;
+    label?:    string;
+    include:   string[];
+    state:     Record<string, unknown>;
+  };
 }
 
 // ============================================================

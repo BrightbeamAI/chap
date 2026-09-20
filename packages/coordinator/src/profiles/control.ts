@@ -11,6 +11,7 @@
  */
 import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
+import { contentHash } from "../canonical.js";
 import { modeLE } from "../types.js";
 import type { Mode, SnapshotArtefact, Task } from "../types.js";
 
@@ -103,36 +104,48 @@ export function registerControl(coord: Coordinator): void {
       : ["members", "open_tasks", "mode_ceiling"];
     const state: Record<string, unknown> = {};
     if (include.includes("members")) {
-      state.members = Array.from(ws.members.values()).map(m => ({
-        uri: m.uri, type: m.type, role: m.role, scopes: m.scopes,
+      const members = Array.from(ws.members.values()).map(m => ({
+        uri: m.uri, type: m.type,
+        ...(m.role ? { role: m.role } : {}),
+        ...(m.scopes?.length ? { scopes: m.scopes } : {}),
       }));
+      if (members.length) state.members = members;
     }
     if (include.includes("open_tasks")) {
-      state.open_tasks = Array.from(ws.tasks.values())
+      const tasks = Array.from(ws.tasks.values())
         .filter(t => t.state !== "completed" && t.state !== "declined" && t.state !== "cancelled" && t.state !== "superseded")
-        .map(t => ({ id: t.id, kind: t.kind, state: t.state, assignee: t.assignee }));
+        .map(t => ({ id: t.id, kind: t.kind, state: t.state,
+          ...(t.assignee ? { assignee: t.assignee } : {}),
+        }));
+      if (tasks.length) state.open_tasks = tasks;
     }
     if (include.includes("mode_ceiling")) state.mode_ceiling = ws.mode_ceiling;
-    if (include.includes("policy")) state.routing_policy_uri = ws.routing_policy_uri;
+    if (include.includes("policy") && ws.routing_policy_uri) state.routing_policy_uri = ws.routing_policy_uri;
     if (include.includes("audit") || include.includes("all")) state.audit_seq = ws.audit.length;
 
+    // Store the same canonical artefact that is emitted on the wire. Copies
+    // belong to this explicit capture boundary, never Coordinator.snapshot().
+    const content: SnapshotArtefact["content"] = structuredClone({
+      workspace: ws.id,
+      audit_seq: ws.audit.length,
+      include,
+      state,
+      ...(p.label ? { label: p.label as string } : {}),
+    });
     const snapId = coord.ids.artefactId();
     const snap: SnapshotArtefact = {
       id: snapId,
       kind: "snapshot",
-      ts: coord.now(),
-      by: p.from as string,
-      workspace: ws.id,
-      audit_seq: ws.audit.length,
-      label: p.label as string | undefined,
-      include,
-      state: structuredClone(state),
+      produced_at: coord.now(),
+      produced_by: p.from as string,
+      content_hash: contentHash(content),
+      content,
     };
     ws.snapshots.set(snapId, snap);
     return {
       result: {
         snapshot_artefact_id: snapId,
-        audit_seq: snap.audit_seq,
+        audit_seq: snap.content.audit_seq,
         artefact: structuredClone(snap),
       },
     };
@@ -147,29 +160,29 @@ export function registerControl(coord: Coordinator): void {
     if (!snapId) return { error: rpcError(E.PARAMS, "to_snapshot_artefact_id is required") };
     const snap = ws.snapshots.get(snapId);
     if (!snap) return { error: rpcError(E.CONTROL_SNAPSHOT_NOT_FOUND, `Unknown snapshot: ${snapId}`) };
-    const what: string[] = (p.what_to_restore as string[]) ?? snap.include;
+    const what: string[] = (p.what_to_restore as string[]) ?? snap.content.include;
     const restored: string[] = [];
-    if (what.includes("mode_ceiling") && snap.state.mode_ceiling) {
-      ws.mode_ceiling = snap.state.mode_ceiling as Mode;
+    if (what.includes("mode_ceiling") && snap.content.state.mode_ceiling) {
+      ws.mode_ceiling = snap.content.state.mode_ceiling as Mode;
       restored.push("mode_ceiling");
     }
-    if (what.includes("members") && Array.isArray(snap.state.members)) {
+    if (what.includes("members") && Array.isArray(snap.content.state.members)) {
       const snapByUri = new Map<string, Record<string, unknown>>();
-      for (const m of snap.state.members as Array<Record<string, unknown>>) {
+      for (const m of snap.content.state.members as Array<Record<string, unknown>>) {
         snapByUri.set(m.uri as string, m);
       }
       for (const [uri, snapM] of snapByUri) {
         if (ws.members.has(uri)) {
           const cur = ws.members.get(uri)!;
           cur.role = (snapM.role as string) ?? cur.role;
-          cur.scopes = snapM.scopes as string[] | undefined;
+          cur.scopes = Array.isArray(snapM.scopes) ? [...snapM.scopes as string[]] : undefined;
         }
       }
       restored.push("members");
     }
     return { result: {
-      rolled_back_to: snapId, audit_seq: snap.audit_seq, restored,
-      reason: p.reason as string | undefined,
+      rolled_back_to: snapId, audit_seq: snap.content.audit_seq, restored,
+      ...(p.reason ? { reason: p.reason as string } : {}),
     }};
   });
 
