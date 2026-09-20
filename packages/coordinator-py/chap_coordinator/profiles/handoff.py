@@ -114,8 +114,10 @@ def register_handoff(coord: "Coordinator") -> None:
                 return {"error": rpc_error(E.HANDOFF_RECIPIENT_NOT_MEMBER,
                                            "Acceptor is not a workspace member")}
 
-        # Accepted tasks (default: all in the handoff). An explicitly empty
-        # list is a valid no-op and must not be confused with an omitted field.
+        # Omission accepts all proposed tasks; an explicit empty selection
+        # is invalid and must not record a handoff with no ownership transfer.
+        if isinstance(p.get("accepted_task_ids"), list) and not p["accepted_task_ids"]:
+            return {"error": rpc_error(E.PARAMS, "accepted_task_ids must not be empty")}
         accepted_ids = (
             list(p["accepted_task_ids"])
             if isinstance(p.get("accepted_task_ids"), list)

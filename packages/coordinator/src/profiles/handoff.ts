@@ -92,6 +92,10 @@ export function registerHandoff(coord: Coordinator): void {
           "Acceptor is not a workspace member") };
       }
     }
+    // Omission accepts all proposed tasks; an empty selection is not a handoff.
+    if (Array.isArray(p.accepted_task_ids) && p.accepted_task_ids.length === 0) {
+      return { error: rpcError(E.PARAMS, "accepted_task_ids must not be empty") };
+    }
     const validIds = new Set(ho.tasks.map(t => t.task_id));
     const acceptedIds: string[] = Array.isArray(p.accepted_task_ids)
       ? [...p.accepted_task_ids as string[]]
