@@ -1039,7 +1039,7 @@ export class Coordinator {
       created:          ["in_progress", "declined", "paused"],
       in_progress:      ["in_progress", "completed", "declined", "review_requested", "paused"],
       review_requested: ["in_progress"],
-      paused:           ["in_progress", "cancelled"],
+      paused:           ["cancelled"],
     };
     if (!legal[task.state]?.includes(newState)) {
       return { error: rpcError(E.PARAMS, `Illegal transition ${task.state} -> ${newState}`) };

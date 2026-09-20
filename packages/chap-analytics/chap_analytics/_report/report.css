@@ -1,0 +1,52 @@
+:root {
+  --ink: #1d1f24; --muted: #5f6673; --line: #e3e6ea; --paper: #ffffff; --wash: #f5f7f9;
+  --primary: #1f4e79; --accent: #c0392b; --ok: #2e7d32; --warn: #b26a00;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--wash); color: var(--ink);
+  font: 15px/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+header.top { background: var(--paper); border-bottom: 1px solid var(--line); padding: 28px 0 18px; }
+.brand { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: 4px 0 6px; font-size: 26px; font-weight: 650; }
+.sub { margin: 0; color: var(--muted); }
+h2 { font-size: 19px; margin: 0 0 4px; font-weight: 650; }
+.filters { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; background: var(--paper);
+  border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; margin: 20px 0; position: sticky; top: 0; z-index: 5; }
+.field { display: flex; flex-direction: column; gap: 3px; }
+.field.inline { flex-direction: row; align-items: center; gap: 10px; margin: 8px 0 12px; }
+.field label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.field select, .field input { font: inherit; padding: 5px 8px; border: 1px solid #c9ced6; border-radius: 6px; background: #fff; min-width: 140px; }
+.field button { font: inherit; padding: 6px 14px; border: 1px solid #c9ced6; border-radius: 6px; background: #fff; cursor: pointer; }
+.field button:hover { background: var(--wash); }
+.scope { flex-basis: 100%; font-size: 13px; color: var(--muted); }
+.scope.active { color: var(--accent); }
+.headlines { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin: 18px 0 30px; }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; cursor: pointer; }
+.card:hover { border-color: var(--primary); }
+.card .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.card .value { font-size: 30px; font-weight: 650; margin: 2px 0; line-height: 1.1; }
+.card .value.warn { color: var(--warn); }
+.card .value.bad { color: var(--accent); }
+.card .value.ok { color: var(--ok); }
+.card .detail { font-size: 13px; color: var(--muted); }
+.card .meaning { font-size: 13px; margin-top: 8px; }
+.card.thin .value { opacity: 0.55; }
+.section { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 20px 22px; margin: 0 0 18px; }
+.question { color: var(--muted); margin: 0 0 12px; }
+.chart { min-height: 120px; margin: 6px 0 10px; overflow-x: auto; }
+.brief { border-left: 3px solid var(--primary); padding: 6px 14px; margin: 12px 0 6px; background: var(--wash); border-radius: 0 6px 6px 0; }
+.brief .headline { font-weight: 650; }
+.brief .text { margin: 4px 0 0; }
+.brief .note { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.decision { margin: 10px 0 0; font-style: italic; color: #333; }
+.thin-note { font-size: 12px; color: var(--warn); }
+table.drill { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 10px; }
+table.drill th, table.drill td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.drill th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.drill-title { font-size: 13px; color: var(--muted); margin-top: 8px; }
+footer { color: var(--muted); font-size: 13px; padding: 20px 0 40px; }
+.vega-embed { width: 100%; }
+.vega-embed summary { opacity: 0.4; }
+.list { columns: 2; font-size: 13px; }
+@media (max-width: 720px) { .list { columns: 1; } h1 { font-size: 22px; } }
