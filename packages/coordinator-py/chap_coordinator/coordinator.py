@@ -195,7 +195,8 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     """
     from .types import (
         Workspace, Member, Task, TaskHistoryEntry, KeyRecord, ReviewState,
-        WhisperPrompt, Deliberation, Handoff, HandoffTask, AuditEntry,
+        WhisperPrompt, Deliberation, Handoff, HandoffTask, SnapshotArtefact,
+        AuditEntry,
     )
 
     def _opt(cls, d):
@@ -232,12 +233,17 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
         v["tasks"] = [HandoffTask(**t) for t in v.get("tasks", [])]
         handoffs[k] = Handoff(**v)
 
+    snapshots = {
+        k: SnapshotArtefact(**v) if isinstance(v, dict) else v
+        for k, v in (data.get("snapshots") or {}).items()
+    }
+
     audit = [AuditEntry(**a) for a in (data.get("audit") or [])]
 
     ws_kwargs = {
         k: v for k, v in data.items()
         if k not in {"members", "tasks", "whispers", "deliberations",
-                     "handoffs", "audit"}
+                     "handoffs", "snapshots", "audit"}
     }
     ws = Workspace(**ws_kwargs)
     ws.members = members
@@ -245,6 +251,7 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     ws.whispers = whispers
     ws.deliberations = deliberations
     ws.handoffs = handoffs
+    ws.snapshots = snapshots
     ws.audit = audit
     return ws
 
