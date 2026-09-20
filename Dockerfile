@@ -29,6 +29,8 @@ EXPOSE 8080
 
 ENV CHAP_NO_LLM=1
 ENV PORT=8080
+# Bind all interfaces so the published port is reachable; docker-compose maps only 127.0.0.1:8080 on the host.
+ENV CHAP_HOST=0.0.0.0
 
 WORKDIR /chap/reference/playground
 
