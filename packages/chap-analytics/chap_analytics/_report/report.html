@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<style>
+/*{{CSS}}*/
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">CHAP analytics</div>
+    <h1>{{TITLE}}</h1>
+    <p class="sub">{{SUBTITLE}}</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="filters" id="filters">
+    <div class="field"><label for="f-from">From</label><input type="date" id="f-from"></div>
+    <div class="field"><label for="f-to">To</label><input type="date" id="f-to"></div>
+    <div class="field"><label for="f-kind">Task kind</label><select id="f-kind"><option value="">all</option></select></div>
+    <div class="field"><label for="f-agent">Agent</label><select id="f-agent"><option value="">all</option></select></div>
+    <div class="field"><label for="f-reviewer">Reviewer</label><select id="f-reviewer"><option value="">all</option></select></div>
+    <div class="field"><label for="f-mode">Mode</label><select id="f-mode"><option value="">all</option></select></div>
+    <div class="field"><label for="f-tag">Tag</label><select id="f-tag"><option value="">all</option></select></div>
+    <div class="field"><button id="f-clear" type="button">Clear</button></div>
+    <div class="scope" id="scope"></div>
+  </section>
+
+  <section class="headlines" id="headlines"></section>
+
+  <main id="sections"></main>
+
+  <section class="section" id="lineage-section">
+    <h2>Lineage of one task</h2>
+    <p class="question">What led to this outcome, and who was involved at each step?</p>
+    <div class="field inline"><label for="lineage-task">Task</label><select id="lineage-task"></select></div>
+    <div class="chart" id="chart-lineage"></div>
+    <p class="decision">Read left to right. Every point is an envelope on the chain. A human lane with no point on it is a step nobody signed off.</p>
+  </section>
+
+  <footer>
+    <p>Built by chap-analytics {{VERSION}} at {{GENERATED}}. Every number on this page is computed from the chain
+    it was read from; artefact content is left out of the file. The charts are Vega-Lite specifications rendered
+    by a runtime embedded in this file, so it opens with no network. Filtering recomputes every statistic in the
+    browser with the same definitions as the library.</p>
+  </footer>
+</div>
+
+<script>
+/*{{VEGA}}*/
+</script>
+<script>
+/*{{VEGA_LITE}}*/
+</script>
+<script>
+/*{{VEGA_EMBED}}*/
+</script>
+<script>
+/*{{STATS}}*/
+</script>
+<script id="chap-data" type="application/json">/*{{PAYLOAD}}*/</script>
+<script>
+/*{{APP}}*/
+</script>
+</body>
+</html>

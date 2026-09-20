@@ -16,6 +16,10 @@ all of it as a side effect.
     pip install 'chap-analytics[coordinator]'
     python support_desk.py
     python support_desk.py --export week.json   # the audit.read result, for from_json()
+    python support_desk.py --report week.html   # the standalone interactive report
+
+The last section prints the briefs: every decision in the roadmap's table,
+answered in a sentence with the number, its interval and what it supports.
 
 The workspace is generated on a simulated clock, so the output reflects the
 coordinator that is installed and is the same for the same seed.
@@ -147,11 +151,25 @@ def show_redaction(coord, intact: Frames) -> None:
           f"(was a {type(intact.overrides.iloc[0]['based_on']).__name__})")
 
 
+def show_briefs(f: Frames) -> None:
+    from chap_analytics import briefs
+
+    section("The briefs",
+            "Every decision in the roadmap's table, answered in a sentence. A week is a small sample, and each "
+            "brief says so where it matters; the same call on a quarter gives the same sentences with the "
+            "intervals closed in.")
+    for b in briefs.everything(f):
+        flag = "" if b.sufficient else "  (too few rows to act on)"
+        print(f"{b.title}{flag}\n  {b.headline}\n  -> {b.decision}\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--export", metavar="PATH",
                         help="also write the audit.read result to a JSON file, to load later with from_json()")
+    parser.add_argument("--report", metavar="PATH",
+                        help="also write the standalone interactive report to an HTML file")
     args = parser.parse_args(argv)
 
     coord = support_desk_coordinator(args.seed)
@@ -164,11 +182,17 @@ def main(argv: list[str] | None = None) -> int:
     report(with_state)
     compare_reads(with_state, from_envelopes)
     show_redaction(coord, with_state)
+    show_briefs(with_state)
 
     if args.export:
         with open(args.export, "w", encoding="utf-8") as fh:
             json.dump({"workspace": WORKSPACE, "entries": entries}, fh, indent=1)
         print(f"\nWrote {len(entries)} audit entries to {args.export}")
+    if args.report:
+        from chap_analytics import report as _report
+
+        path = _report.write(with_state, args.report, title="A week at the support desk")
+        print(f"\nWrote the report to {path}")
     return 0
 
 

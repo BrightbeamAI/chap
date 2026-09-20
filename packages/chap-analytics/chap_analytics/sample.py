@@ -22,13 +22,15 @@ for the same seed. Generating it needs ``chap-coordinator``, which is the
 """
 from __future__ import annotations
 
+import math
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .load import Chain, from_coordinator
 
-__all__ = ["support_desk", "support_desk_coordinator", "WORKSPACE"]
+__all__ = ["support_desk", "support_desk_coordinator", "synthetic", "WORKSPACE",
+           "SYNTHETIC_WORKSPACE"]
 
 WORKSPACE = "wsp_support"
 PROFILES = ["core/1.0", "review/1.0", "whisper/1.0", "deliberation/1.0",
@@ -73,6 +75,16 @@ def support_desk_coordinator(seed: int = 7) -> Any:
     return desk.coord
 
 
+def _sync_clock(coord: Any, now: datetime) -> None:
+    """
+    Keep the coordinator's own clock on the simulated timeline, so the entries
+    it mints itself (a lapse notice, for one) carry the same dates as the
+    envelopes around them. A coordinator without a settable clock keeps its own.
+    """
+    if hasattr(coord, "_clock_ms") and coord._clock_ms is not None:
+        coord._clock_ms = int(now.timestamp() * 1000) - 1000
+
+
 class _Desk:
     """Drives the coordinator with a simulated clock stamped into every envelope."""
 
@@ -95,6 +107,7 @@ class _Desk:
         self.now += timedelta(minutes=minutes)
 
     def call(self, method: str, params: dict | None = None, actor: str = INTAKE) -> dict:
+        _sync_clock(self.coord, self.now)
         res = self.coord.dispatch({
             "jsonrpc": "2.0", "id": method, "method": method,
             "params": {"workspace": WORKSPACE, "from": actor,
@@ -279,3 +292,258 @@ class _Desk:
             self.advance(self.rnd.uniform(3, 20))
             self.call("deliberate.vote", {"deliberation_id": did, "vote": vote}, who)
         self.call("deliberate.close", {"deliberation_id": did}, "human:priya")
+
+
+# ============================================================================
+#   A workspace with known truth, for checking statistics
+# ============================================================================
+
+SYNTHETIC_WORKSPACE = "wsp_synthetic"
+
+
+def synthetic(seed: int = 0, *, tasks: int = 300, days: int = 20,
+              reviewers: tuple[str, ...] = ("human:ana", "human:ben", "human:cal"),
+              reviewer_weights: tuple[float, ...] | None = None,
+              agents: tuple[str, ...] = ("agent:drafter",),
+              outcome_model: str = "fixed",
+              override_rate: float = 0.30, reject_rate: float = 0.05,
+              refine_share: float = 0.60,
+              quorum_share: float = 0.0, agreement: float = 0.9,
+              latency_minutes: tuple[float, float] = (5.0, 240.0),
+              open_share: float = 0.05,
+              whisper_rate: float = 0.0, lapse_rate: float = 0.3,
+              handoffs: int = 0, handoff_accept: float = 0.8,
+              delegator_reviews: bool = False,
+              mode: str = "trial",
+              drift: tuple[int, float] | None = None,
+              strictness: tuple[float, ...] | None = None,
+              agent_quality: tuple[float, ...] | None = None,
+              envelopes_only: bool = False) -> Chain:
+    """
+    A workspace generated from stated rates, so a statistic can be checked
+    against the truth that produced it.
+
+    ``outcome_model`` picks how decisions are drawn. ``fixed`` draws each
+    decision from ``override_rate`` and ``reject_rate`` whatever the agent's
+    confidence, which is the setting for checking rates. ``calibrated``,
+    ``overconfident`` and ``underconfident`` draw approval with a probability
+    that follows the confidence the agent reported, exactly, too high, or too
+    low, which is the setting for checking calibration.
+
+    ``quorum_share`` sends that share of tasks to two reviewers under
+    ``quorum:2``; the second reviewer repeats the first's decision with
+    probability ``agreement``. ``open_share`` leaves that share of the last
+    tasks undecided, so latency statistics have censored rows to handle.
+    ``reviewer_weights`` skews who gets asked, for concentration checks, and
+    ``delegator_reviews`` has the person who delegated a task review it as
+    well, for separation-of-duties checks. ``drift=(after, rate)`` switches
+    the override rate to ``rate`` once ``after`` tasks have been decided, for
+    drift-detection checks. ``strictness`` adds to the override rate per
+    reviewer and ``agent_quality`` subtracts from it per agent, so a model
+    that separates the two can be checked against what generated them; both
+    apply under every outcome model, while ``drift`` and ``reject_rate``
+    apply under ``fixed``.
+
+    Generating it needs ``chap-coordinator``.
+    """
+    gen = _Synthetic(seed, tasks=tasks, days=days, reviewers=reviewers,
+                     reviewer_weights=reviewer_weights, agents=agents,
+                     outcome_model=outcome_model, override_rate=override_rate,
+                     reject_rate=reject_rate, refine_share=refine_share,
+                     quorum_share=quorum_share, agreement=agreement,
+                     latency_minutes=latency_minutes, open_share=open_share,
+                     whisper_rate=whisper_rate, lapse_rate=lapse_rate,
+                     handoffs=handoffs, handoff_accept=handoff_accept,
+                     delegator_reviews=delegator_reviews, mode=mode, drift=drift,
+                     strictness=strictness, agent_quality=agent_quality)
+    gen.run()
+    if envelopes_only:
+        entries = gen.call("audit.read", {}, gen.delegator)["entries"]
+        return Chain(workspace=SYNTHETIC_WORKSPACE, events=entries, state=None,
+                     source="audit.read")
+    return from_coordinator(gen.coord, workspace=SYNTHETIC_WORKSPACE)
+
+
+class _Synthetic:
+    # modes/1.0 is left off: under it a trial task opens its own review on
+    # task.complete, and the generator wants to choose the reviewers and rule.
+    PROFILES = ["core/1.0", "review/1.0", "whisper/1.0", "handoff/1.0"]
+    KINDS = ["draft_reply", "summary", "classification"]
+    PATHS = ["/reply", "/reply", "/summary", "/label", "/amount"]
+
+    def __init__(self, seed: int, **k: Any):
+        try:
+            from chap_coordinator import Coordinator, CoordinatorOptions
+        except ImportError as exc:  # pragma: no cover - depends on the environment
+            raise ImportError(
+                "Generating a synthetic chain needs chap-coordinator: "
+                "pip install 'chap-analytics[coordinator]'"
+            ) from exc
+        self.k = k
+        self.rnd = random.Random(seed)
+        self.coord = Coordinator(CoordinatorOptions(default_profiles=self.PROFILES,
+                                                    deterministic_clock=True,
+                                                    enable_chain=True))
+        self.now = datetime(2026, 4, 6, 9, 0, tzinfo=timezone.utc)
+        self.delegator = "service:intake"
+        self.reviewers = list(k["reviewers"])
+        self.weights = list(k["reviewer_weights"] or [1.0] * len(self.reviewers))
+        self.agents = list(k["agents"])
+        self.decided = 0
+
+    def call(self, method: str, params: dict | None = None, actor: str | None = None) -> dict:
+        _sync_clock(self.coord, self.now)
+        res = self.coord.dispatch({
+            "jsonrpc": "2.0", "id": method, "method": method,
+            "params": {"workspace": SYNTHETIC_WORKSPACE, "from": actor or self.delegator,
+                       "ts": self.now.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                       **(params or {})}})
+        if "error" in res:
+            raise RuntimeError(f"{method} refused: {res['error']['code']} "
+                               f"{res['error']['message']}")
+        return res.get("result", {})
+
+    def advance(self, minutes: float) -> None:
+        self.now += timedelta(minutes=minutes)
+
+    def run(self) -> None:
+        k = self.k
+        self.call("workspace.create", {"profiles": self.PROFILES, "mode": k["mode"]})
+        self.call("participant.join", {"type": "service", "role": "intake"})
+        for a in self.agents:
+            self.call("participant.join", {"type": "agent", "role": "drafter"}, a)
+        for r in self.reviewers:
+            self.call("participant.join", {"type": "human", "role": "reviewer"}, r)
+
+        days = max(1, k["days"])
+        per_day = [k["tasks"] // days + (1 if i < k["tasks"] % days else 0) for i in range(days)]
+        pending: list[tuple[str, list[str], float]] = []
+        n_open = int(round(k["tasks"] * k["open_share"]))
+        for day in range(days):
+            self.now = self.now.replace(hour=9, minute=0) + timedelta(days=1 if day else 0)
+            for _ in range(per_day[day]):
+                pending.append(self.task_arrives())
+                # Decide what is pending, apart from the tail left open.
+                while len(pending) > (n_open if day == days - 1 else 0) and self.rnd.random() < 0.85:
+                    self.decide(*pending.pop(0))
+            if k["handoffs"] and day == 1:
+                self.some_handoffs()
+
+    def pick_reviewers(self) -> tuple[list[str], str]:
+        if self.rnd.random() < self.k["quorum_share"] and len(self.reviewers) >= 2:
+            first = self.rnd.choices(self.reviewers, weights=self.weights)[0]
+            others = [r for r in self.reviewers if r != first]
+            return [first, self.rnd.choice(others)], "quorum:2"
+        chosen = self.rnd.choices(self.reviewers, weights=self.weights)[0]
+        to = [chosen]
+        if self.k["delegator_reviews"]:
+            to = [self.delegator]
+        return to, "any_one_approves"
+
+    def task_arrives(self) -> tuple[str, list[str], float]:
+        self.advance(self.rnd.uniform(5, 40))
+        agent = self.rnd.choice(self.agents)
+        kind = self.rnd.choice(self.KINDS)
+        confidence = round(self.rnd.uniform(0.5, 0.98), 2)
+        tid = self.call("task.create", {
+            "kind": kind, "assignee": agent, "mode": self.k["mode"],
+            "routing_hints": {"confidence": f"{confidence:.2f}"},
+            "input": {"item": self.rnd.randint(1000, 9999)},
+        })["task_id"]
+        self.advance(self.rnd.uniform(0.5, 3))
+        output = {"reply": "Draft text.", "summary": "Draft summary.",
+                  "label": "general", "amount": 0}
+        self.call("task.complete", {"task_id": tid, "output": output,
+                                    "confidence": f"{confidence:.2f}"}, agent)
+        to, rule = self.pick_reviewers()
+        self.call("review.request", {"task_id": tid, "artefact": output,
+                                     "to": to, "rule": rule}, agent)
+        if self.rnd.random() < self.k["whisper_rate"]:
+            self.a_whisper(tid, agent, to[0])
+        return tid, to, confidence
+
+    def draw_decision(self, confidence: float, reviewer: str | None = None, agent: str | None = None) -> str:
+        k = self.k
+        model = k["outcome_model"]
+        if model == "fixed":
+            rate = k["override_rate"]
+            if k["drift"] and self.decided >= k["drift"][0]:
+                rate = k["drift"][1]
+            if k.get("strictness") and reviewer in self.reviewers:
+                rate += k["strictness"][self.reviewers.index(reviewer)]
+            if k.get("agent_quality") and agent in self.agents:
+                rate -= k["agent_quality"][self.agents.index(agent)]
+            rate = min(max(rate, 0.0), 1.0 - k["reject_rate"])
+            r = self.rnd.random()
+            if r < rate:
+                return "override"
+            if r < rate + k["reject_rate"]:
+                return "reject"
+            return "approve"
+        shift = {"calibrated": 0.0, "overconfident": -0.25, "underconfident": 0.15}[model]
+        p_approve = confidence + shift
+        if k.get("strictness") and reviewer in self.reviewers:
+            p_approve -= k["strictness"][self.reviewers.index(reviewer)]
+        if k.get("agent_quality") and agent in self.agents:
+            p_approve += k["agent_quality"][self.agents.index(agent)]
+        p_approve = min(0.99, max(0.01, p_approve))
+        return "approve" if self.rnd.random() < p_approve else "override"
+
+    def decide(self, tid: str, reviewers: list[str], confidence: float) -> None:
+        lo, hi = self.k["latency_minutes"]
+        # Log-uniform latency: most decisions come quickly, a few take long.
+        self.advance(math.exp(self.rnd.uniform(math.log(lo), math.log(hi))))
+        agent = self.coord.get_workspace(SYNTHETIC_WORKSPACE).tasks[tid].assignee
+        first = self.draw_decision(confidence, reviewers[0], agent)
+        self.decided += 1
+        decisions = [first]
+        for _ in reviewers[1:]:
+            same = self.rnd.random() < self.k["agreement"]
+            decisions.append(first if same else ("approve" if first != "approve" else "override"))
+        for who, kind in zip(reviewers, decisions):
+            state = self.coord.get_workspace(SYNTHETIC_WORKSPACE).tasks[tid].state
+            if state != "review_requested":
+                break
+            if kind == "override":
+                path = self.rnd.choice(self.PATHS)
+                refining = self.rnd.random() < self.k["refine_share"]
+                self.call("decide.override", {
+                    "task_id": tid, "rationale": "Adjusted.", "intent_preserved": refining,
+                    "tags": ["tone"] if refining else ["substance"],
+                    "diff": [{"op": "replace", "path": path,
+                              "value": 1 if path == "/amount" else "Edited."}]}, who)
+            elif kind == "reject":
+                self.call("decide.reject", {"task_id": tid, "comment": "No."}, who)
+            else:
+                self.call("decide.approve", {"task_id": tid}, who)
+            self.advance(self.rnd.uniform(1, 30))
+
+    def a_whisper(self, tid: str, agent: str, human: str) -> None:
+        wid = self.call("whisper.ask", {
+            "task_id": tid, "to": [human], "deadline_ms": 20 * 60_000,
+            "question": "Proceed?", "default_if_lapsed": "no",
+            "options": [{"id": "yes", "label": "Yes"}, {"id": "no", "label": "No"}]},
+            agent)["whisper_id"]
+        if self.rnd.random() < self.k["lapse_rate"]:
+            ws = self.coord.get_workspace(SYNTHETIC_WORKSPACE)
+            asked = datetime.fromisoformat(ws.whispers[wid].asked_at.replace("Z", "+00:00"))
+            cutoff = (asked + timedelta(minutes=21)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            self.coord.check_whisper_lapses(SYNTHETIC_WORKSPACE, now=cutoff)
+            self.advance(25)
+        else:
+            self.advance(self.rnd.uniform(1, 15))
+            self.call("whisper.answer", {"whisper_id": wid, "answer_option": "yes"}, human)
+
+    def some_handoffs(self) -> None:
+        for _ in range(self.k["handoffs"]):
+            a, b = self.rnd.sample(self.reviewers, 2)
+            self.advance(self.rnd.uniform(3, 10))
+            tid = self.call("task.create", {"kind": "manual", "assignee": a,
+                                            "input": {"item": 1}})["task_id"]
+            hid = self.call("handoff.propose", {"to": b, "tasks": [{"task_id": tid}],
+                                                "summary": "Take this one."}, a)["handoff_id"]
+            self.advance(self.rnd.uniform(2, 40))
+            if self.rnd.random() < self.k["handoff_accept"]:
+                self.call("handoff.accept", {"handoff_id": hid}, b)
+            else:
+                self.call("handoff.decline", {"handoff_id": hid, "reason": "Full."}, b)
