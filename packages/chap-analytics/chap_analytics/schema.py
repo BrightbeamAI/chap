@@ -88,6 +88,8 @@ EVENTS = Table(
         _c("task_id", "string", "envelopes", "Task the envelope concerns, where it names one."),
         _c("prev_hash", "string", "envelopes", "Hash link to the previous entry, when chaining is on."),
         _c("chained", "boolean", "derived", "Whether this entry carries a chain link."),
+        _c("signed", "boolean", "derived", "Whether the envelope carried a top-level signature (security-signed/1.0)."),
+        _c("scitt_submitted", "boolean", "derived", "Whether a later audit.submit_to_scitt call recorded on the chain covered this entry's position. Whether the transparency service returned a receipt is in that call's result, which the log does not carry."),
     ),
 )
 

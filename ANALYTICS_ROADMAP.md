@@ -58,7 +58,7 @@ chart that shows it, and the tables it reads.
 | Rewrite an ambiguous policy | Do reviewers agree with each other on the same artefact? | Fleiss' kappa across `quorum:N` and `all_approve` reviews; abstention by category | Agreement matrix; abstentions by policy reference | `decisions`, `deliberations`, `votes` |
 | Clarify the task inputs | How often do agents have to ask, and does anyone answer in time? | Whispers per task, lapse rate, response time | Lapse rate by asker and kind; response time distribution | `whispers` |
 | Cover the shift | Are handoffs accepted, and how fast? | Acceptance rate, response time, declines by recipient | Handoff timeline with acceptances and declines | `handoffs` |
-| Trust the record | Is the chain verifiable end to end? | Chained fraction, signed fraction, receipt coverage | Coverage over time | `events` |
+| Trust the record | Is the chain verifiable end to end? | Hash-linked fraction, signed fraction, transparency-log submission coverage | Coverage over time | `events` |
 | Notice a change early | Has the override rate moved since the last prompt or model change? | CUSUM on the override rate with a stated false-alarm rate | Control chart with the alarm marked | `tasks`, `overrides` |
 | Trace one outcome to its origin | What led to this action, and who was involved at each step? | The lineage of one artefact: draft, review, decisions, override, supersession, escalation, execution, in order | A swimlane, one lane per participant, events as nodes, relations as edges | all tables, through the graph |
 | Find the bottleneck | Who does most of the reviewing, and does one reviewer decide most of one agent's work? | Degree and betweenness on the collaboration graph; share of each agent's decisions taken by its top reviewer | Collaboration graph, humans and agents, edges weighted by decisions, sized by latency | `decisions`, `handoffs`, `participants` |
@@ -71,19 +71,21 @@ notebook, in the standalone report, and as a static image for a paper.
 
 ### The chain as a graph
 
-The last four rows read the chain as a graph. Participants, tasks, artefacts,
-reviews, whispers, deliberations and handoffs are nodes. Delegates, assigned
-to, reviewed, decided, overrode (`based_on`), fulfils, supersedes, escalated
-to, handed off to, asked, answered, voted in, and the `prev_hash` link between
-envelopes are edges. Every edge is an envelope or a field on one, so the graph
-is a second projection of the same data as the tables and it carries the same
-`id_certain` marks.
+The last four rows read the chain as a graph. Nine node types: the
+workspace, participants, tasks, review passes, artefacts, decisions,
+whispers, deliberations and handoffs. Twenty-five edge types, each an
+envelope or a field on one: `member_of`, `delegated`, `assigned_to`,
+`produced`, `under_review`, `requested`, `asked_to`, `reviews`, `decided`,
+`decision_on`, `based_on`, `overrode`, `fulfils`, `supersedes`, `asked`,
+`whispered_to`, `answered`, `about`, `proposed`, `offered_to`, `resolved`,
+`covers`, `opened`, `concerns` and `voted`. The graph is a second projection
+of the same data as the tables and it carries the same `id_certain` marks.
 
-Two things come out of it. The lineage of one outcome, which is the picture
-an auditor asks for first: everything that led to this action, in order, with
-the people and agents at each step. And the collaboration graph across a
-workspace, which is where load, concentration and separation of duties are
-visible in a way a table hides.
+Two things come out of it. The lineage of one outcome: everything that led
+to this action, in order, with the people and agents at each step, which is
+the picture to start from when someone asks what happened. And the
+collaboration graph across a workspace, where load, concentration and
+separation of duties can be seen at a glance.
 
 The graph has a fixed vocabulary of node and edge types, drawn once as a
 diagram in the package documentation. That diagram is the ontology of a CHAP
@@ -96,26 +98,29 @@ graph can take the export without a mapping step.
 kappa, drift detection and calibration curves need far more. Every statistic
 carries its uncertainty, intervals are Wilson intervals, posteriors are shown
 rather than point estimates where the count is small, and a function that
-lacks the data to answer says so and says how much more it needs.
+lacks the data to answer says so and names the minimum it was judged against.
 
-**Every analysis names its intervention.** Override rate by tag revises a
-prompt. Low inter-rater agreement on a policy means the policy is ambiguous.
+**Every analysis names its intervention.** Corrections by tag and by patch
+path point at the part of a prompt to revise. Low inter-rater agreement on a
+policy means the policy is ambiguous.
 Miscalibrated confidence retunes the routing thresholds. Abstention clustering
 exposes a gap in reviewer coverage. Every chart that ships has its decision
 attached.
 
-**One specification, three renderings.** Charts are Vega-Lite specifications
-built with Altair. A notebook renders them inline. The report inlines them in
-one HTML file with the runtime embedded, so it opens from a file share with no
-network. `vl-convert` turns the same specification into SVG or PNG for papers
-and slides. Graph layouts are computed in Python and drawn with the same
+**One specification, three renderings.** Charts are Vega-Lite specifications,
+plain dictionaries with no library between them and the data. A notebook
+renders them inline, and Altair takes them where it is installed. The report
+inlines them in one HTML file with the runtime embedded, so it opens from a
+file share with no network. `vl-convert` turns the same specification into
+SVG or PNG for papers and slides. Graph layouts are computed in Python and drawn with the same
 renderer, as nodes and edges, so the report needs one runtime. The work that
 matters is choosing the right questions and answering them carefully.
 
 **Interactive where it changes the decision.** The report carries one filter
-bar for workspace, date range, task kind, agent, reviewer, mode and tag, and
-every chart and every headline number answers to it. Hovering shows the ids and
-the rationale. Clicking a bar shows the rows behind it. Brushing the time axis
+bar for date range, task kind, agent, reviewer, mode and tag, and every
+chart and every headline number answers to it. Hovering shows the numbers
+behind a mark. Clicking a cell of the correction heatmap shows
+the overrides behind it with their rationales. Brushing the time axis
 re-scopes the page. All of it runs in the browser from data embedded in the
 file.
 
@@ -125,8 +130,7 @@ the report shows can be reproduced in a notebook from the same call.
 
 **Redaction from day one.** Artefacts contain customer messages, contracts and
 source code. The redaction hook in the loaders applies to the report and the
-briefs as well. Artefact content stays out of a report unless the caller opts
-in.
+briefs as well, and artefact content stays out of a report in every case.
 
 **Python.** The protocol packages hold TypeScript and Python at behavioural
 parity because two implementations of a specification are what make it a
@@ -153,11 +157,11 @@ reconstructs the corrected artefact from the patch, counts the tasks the
 server mints on escalation and supersession, and marks the rows whose id had
 to be inferred from the order of events.
 
-Complete. Two columns are added for the assurance row of the table above:
-`events.signed` (the envelope carried a signature) and `events.receipt` (a
-SCITT receipt exists for the entry).
+Complete. Two columns serve the assurance row of the table above:
+`events.signed` (the envelope carried a signature) and `events.scitt_submitted`
+(the entry fell within a range submitted with `audit.submit_to_scitt`).
 
-### Stage 2: the decision layer, one question at a time
+### Stage 2: the decision layer
 
 `chap_analytics.stats` returns tidy frames, one row per group, with the
 estimate, its interval, its sample size and a `sufficient` flag.
@@ -180,7 +184,8 @@ worked example on the sample week. In order:
 6. Reviewer agreement: Fleiss' kappa with a stated minimum, and abstention
    clustering.
 7. Whisper and handoff analytics.
-8. Chain assurance: chained, signed and receipted fractions over time.
+8. Chain assurance: hash-linked, signed and transparency-log-submitted
+   fractions over time.
 9. The graph: `chap_analytics.graph` builds the node-link graph from a
    `Frames` object, with the lineage of one outcome and the collaboration
    graph of a workspace as the two views, and the four graph rows of the
@@ -191,36 +196,46 @@ Statistics use numpy and pandas only. Altair and `vl-convert` are an optional
 extra, `chap-analytics[viz]`, and networkx is another, `chap-analytics[graph]`,
 so the tables and statistics install without either.
 
+Shipped in chap-analytics 0.2.0, every slice, with tests against generated
+chains whose truth is known.
+
 ### Stage 3: the report
 
 `chap_analytics.report` assembles the slices into one standalone HTML file.
 
-The front page states the headline for each decision in the table: the number,
-its interval, the sample size, and one line on what it means for that
-workspace. Below it, one section per decision with the chart and the brief.
-The filter bar at the top applies to everything on the page. The collaboration
-graph has its own section, and any task, decision or artefact on the page
-opens its lineage view.
+The front page states the headline for each decision in the table that has
+a number: the figure, its interval, the sample size, and one line on what it
+means for that workspace. Below it, one section per decision with the chart
+and the brief. The filter bar at the top applies to everything on the page.
+The collaboration graph has its own section, and a selector opens the
+lineage view of any task.
 
 The report is built from the same `Frames` object a notebook uses, so it is
-reproducible from the chain, and it is regenerated rather than edited. Data is
-embedded per chart, pre-aggregated, so the file stays small and raw artefacts
-stay out of it. A report for a month of a busy workspace is a single file that
-opens from disk.
+reproducible from the chain, and it is regenerated rather than edited. The
+rows behind every chart are embedded without artefact content, and the page
+recomputes each statistic in the browser as the reader filters, with the same
+arithmetic the library uses. A report for a quarter of a busy workspace is a
+single file that opens from disk.
 
-Done when the sample week renders as a report with every row of the decision
-table present, a test confirms every resource in the file is inlined, and the
-filter bar re-scopes every chart and every headline.
+Shipped in chap-analytics 0.2.0. The sample week renders as a report with
+every row of the decision table present, a test confirms every resource in
+the file is inlined, a differential test runs the page's own JavaScript
+against the library's numbers, and the filter bar re-scopes every chart and
+every headline.
 
 ### Stage 4: watching a live workspace
 
 `chap_analytics.watch` reads `audit.read` incrementally from a sequence
-cursor, re-projects, and regenerates the report or a brief on a schedule. The
+cursor, re-projects, and regenerates the report on a schedule, with the
+briefs available on demand. The
 CUSUM in the decision table runs here with a declared false-alarm rate, so a
 prompt or model change can be judged within days rather than at the end of a
 quarter, and an alarm names the metric, the window and the tasks that moved
 it. A callback hook lets a deployment route an alarm to wherever it routes
 alerts.
+
+Shipped in chap-analytics 0.2.0 as `Watcher`, over HTTP, an in-process
+coordinator, or any callable that returns entries from a sequence number.
 
 ### Stage 5: exports
 
@@ -229,14 +244,20 @@ alerts.
 - Prompt-revision candidates: the override clusters most worth addressing,
   ranked by frequency and by refine or reverse
 - Routing-policy calibration: thresholds fitted to observed outcomes, with the
-  reliability diagram that justifies them
+  reliability table that justifies them
+
+Shipped in chap-analytics 0.2.0 as `chap_analytics.export`.
 
 ### Stage 6: models
 
-Reviewer severity against agent quality, as a mixed-effects or item-response
-model that separates how strict a reviewer is from how good the work was. This
-needs more data than most workspaces hold in their first months, so it ships
-as `chap-analytics[models]` and declines to fit below its minimum.
+Reviewer severity against agent quality, as a Rasch-style item-response
+model that separates how strict a reviewer is from how good the work was. It
+needs more data than most workspaces hold in their first months, so it
+declines to fit below its minimum and says which minimum it fell short of.
+
+Shipped in chap-analytics 0.2.0 as `chap_analytics.models`, in numpy, with
+the fit checked against generated workspaces whose strictness and quality
+are known.
 
 ## Testing the layer
 
@@ -247,9 +268,10 @@ the matching reliability curve, and a censored latency set has to reproduce
 its survival function. Graph statistics are checked the same way: a generated
 workspace with one reviewer deciding everything for one agent has to report
 that concentration, and a generated path with no human decision on it has to
-be listed as uncovered. Every chart specification is validated against the
-Vega-Lite schema. The report is checked to be self-contained, every resource
-inlined. The notebook is executed in the suite, as it is today.
+be listed as uncovered. Every chart specification is compiled and rendered
+by the Vega-Lite runtime the package ships. The report is checked to be
+self-contained, every resource inlined, and its in-browser arithmetic is
+checked against the library's. The notebook is executed in the suite.
 
 ## Protocol gaps the analytics expose
 
