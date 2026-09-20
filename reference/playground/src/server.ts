@@ -322,8 +322,13 @@ const server = createServer(async (req, res) => {
   jsonReply(res, 405, { error: "method not allowed" });
 });
 
+const HOST = process.env.CHAP_HOST ?? "127.0.0.1";
+if (!["127.0.0.1", "::1", "localhost"].includes(HOST)) {
+  console.warn(`WARNING: binding to ${HOST} exposes an unauthenticated playground to the network. Use only on a trusted network.`);
+}
+
 bootstrap().then(() => {
-  server.listen(PORT, () => {
+  server.listen(PORT, HOST, () => {
     console.log(`CHAP playground at http://localhost:${PORT}/`);
     console.log(`  JSON-RPC wire: POST http://localhost:${PORT}/rpc`);
     console.log(`  SSE stream:    GET  http://localhost:${PORT}/events?participant=<uri>`);

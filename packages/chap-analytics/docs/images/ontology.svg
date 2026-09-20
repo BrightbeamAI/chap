@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1246" viewBox="0 0 1080 1246" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280"/></marker></defs>
+<rect width="1080" height="1246" fill="#ffffff"/>
+<text x="24" y="38" font-size="20" font-weight="600" fill="#1f2937">The ontology of a CHAP workspace</text>
+<text x="24" y="60" font-size="13" fill="#4b5563">Nine node types; every edge is an envelope or a field on one. Left: what a participant does or receives. Right: how the work refers to itself.</text>
+<text x="24" y="80" font-size="13" fill="#4b5563">A dashed edge is a claim the producer made, which the chain records without checking.</text>
+<rect x="44" y="116" width="180" height="1038" rx="10" fill="#fbe9e7" stroke="#c0392b" stroke-width="1.6"/>
+<text x="134.0" y="148" font-size="16" font-weight="600" fill="#c0392b" text-anchor="middle">participant</text>
+<text x="134.0" y="172" font-size="12" fill="#374151" text-anchor="middle">A human, agent, service</text>
+<text x="134.0" y="188" font-size="12" fill="#374151" text-anchor="middle">or group that sent or</text>
+<text x="134.0" y="204" font-size="12" fill="#374151" text-anchor="middle">received envelopes.</text>
+<line x1="224" y1="159.0" x2="500" y2="159.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="224" y1="693.0" x2="500" y2="693.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="500" y1="713.0" x2="224" y2="713.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="224" y1="431.0" x2="500" y2="431.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="224" y1="285.0" x2="500" y2="285.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="500" y1="305.0" x2="224" y2="305.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="224" y1="567.0" x2="500" y2="567.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="224" y1="819.0" x2="500" y2="819.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="500" y1="839.0" x2="224" y2="839.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="224" y1="859.0" x2="500" y2="859.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="224" y1="1091.0" x2="500" y2="1091.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="500" y1="1111.0" x2="224" y2="1111.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="224" y1="1131.0" x2="500" y2="1131.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="224" y1="965.0" x2="500" y2="965.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<line x1="224" y1="985.0" x2="500" y2="985.0" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 790 295.0 A 34 68.0 0 0 1 790 431.0" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 790 295.0 A 146 204.0 0 0 1 790 703.0" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 790 567.0 A 84 136.0 0 0 0 790 295.0" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 790 567.0 A 34 68.0 0 0 0 790 431.0" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 790 431.0 A 64 68.0 0 0 1 790 567.0" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)" stroke-dasharray="6 4"/>
+<path d="M 790 839.0 A 34 68.0 0 0 0 790 703.0" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 790 1111.0 A 146 204.0 0 0 0 790 703.0" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 790 975.0 A 84 136.0 0 0 0 790 703.0" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 617.0 396.0 C 603.0 350.0, 687.0 350.0, 673.0 396.0" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<path d="M 617.0 668.0 C 603.0 622.0, 687.0 622.0, 673.0 668.0" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#arrow)"/>
+<rect x="500" y="124.0" width="290" height="70" rx="8" fill="#fbe9e7" stroke="#c0392b" stroke-width="1.6"/>
+<text x="645.0" y="146.0" font-size="16" font-weight="600" fill="#c0392b" text-anchor="middle">workspace</text>
+<text x="645.0" y="167.0" font-size="12" fill="#374151" text-anchor="middle">The workspace the chain belongs to.</text>
+<rect x="500" y="260.0" width="290" height="70" rx="8" fill="#e8eef6" stroke="#1f4e79" stroke-width="1.6"/>
+<text x="645.0" y="282.0" font-size="16" font-weight="600" fill="#1f4e79" text-anchor="middle">review</text>
+<text x="645.0" y="303.0" font-size="12" fill="#374151" text-anchor="middle">One review pass on a task: the artefact</text>
+<text x="645.0" y="318.0" font-size="12" fill="#374151" text-anchor="middle">under review and the reviewers asked.</text>
+<rect x="500" y="396.0" width="290" height="70" rx="8" fill="#e8eef6" stroke="#1f4e79" stroke-width="1.6"/>
+<text x="645.0" y="418.0" font-size="16" font-weight="600" fill="#1f4e79" text-anchor="middle">artefact</text>
+<text x="645.0" y="439.0" font-size="12" fill="#374151" text-anchor="middle">A draft under review, or the corrected</text>
+<text x="645.0" y="454.0" font-size="12" fill="#374151" text-anchor="middle">artefact an override produced.</text>
+<rect x="500" y="532.0" width="290" height="70" rx="8" fill="#e8eef6" stroke="#1f4e79" stroke-width="1.6"/>
+<text x="645.0" y="554.0" font-size="16" font-weight="600" fill="#1f4e79" text-anchor="middle">decision</text>
+<text x="645.0" y="575.0" font-size="12" fill="#374151" text-anchor="middle">A reviewer's approve, reject, override or</text>
+<text x="645.0" y="590.0" font-size="12" fill="#374151" text-anchor="middle">abstain on a review pass.</text>
+<rect x="500" y="668.0" width="290" height="70" rx="8" fill="#e8eef6" stroke="#1f4e79" stroke-width="1.6"/>
+<text x="645.0" y="690.0" font-size="16" font-weight="600" fill="#1f4e79" text-anchor="middle">task</text>
+<text x="645.0" y="711.0" font-size="12" fill="#374151" text-anchor="middle">A unit of work with a lifecycle.</text>
+<rect x="500" y="804.0" width="290" height="70" rx="8" fill="#f6f1dc" stroke="#7d6608" stroke-width="1.6"/>
+<text x="645.0" y="826.0" font-size="16" font-weight="600" fill="#7d6608" text-anchor="middle">whisper</text>
+<text x="645.0" y="847.0" font-size="12" fill="#374151" text-anchor="middle">A deadline-bound question an agent asked</text>
+<text x="645.0" y="862.0" font-size="12" fill="#374151" text-anchor="middle">mid-task.</text>
+<rect x="500" y="940.0" width="290" height="70" rx="8" fill="#f6f1dc" stroke="#7d6608" stroke-width="1.6"/>
+<text x="645.0" y="962.0" font-size="16" font-weight="600" fill="#7d6608" text-anchor="middle">deliberation</text>
+<text x="645.0" y="983.0" font-size="12" fill="#374151" text-anchor="middle">A multi-party vote.</text>
+<rect x="500" y="1076.0" width="290" height="70" rx="8" fill="#f6f1dc" stroke="#7d6608" stroke-width="1.6"/>
+<text x="645.0" y="1098.0" font-size="16" font-weight="600" fill="#7d6608" text-anchor="middle">handoff</text>
+<text x="645.0" y="1119.0" font-size="12" fill="#374151" text-anchor="middle">A proposal to move tasks from one</text>
+<text x="645.0" y="1134.0" font-size="12" fill="#374151" text-anchor="middle">participant to another.</text>
+<rect x="323.7" y="144.0" width="76.6" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="157.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">member_of</text>
+<rect x="323.7" y="678.0" width="76.6" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="691.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">delegated</text>
+<rect x="316.3" y="698.0" width="91.4" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="711.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">assigned_to</text>
+<rect x="327.4" y="416.0" width="69.2" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="429.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">produced</text>
+<rect x="323.7" y="270.0" width="76.6" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="283.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">requested</text>
+<rect x="327.4" y="290.0" width="69.2" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="303.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">asked_to</text>
+<rect x="331.1" y="552.0" width="61.8" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="565.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">decided</text>
+<rect x="338.5" y="804.0" width="47.0" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="817.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">asked</text>
+<rect x="312.6" y="824.0" width="98.8" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="837.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">whispered_to</text>
+<rect x="327.4" y="844.0" width="69.2" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="857.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">answered</text>
+<rect x="327.4" y="1076.0" width="69.2" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="1089.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">proposed</text>
+<rect x="320.0" y="1096.0" width="84.0" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="1109.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">offered_to</text>
+<rect x="327.4" y="1116.0" width="69.2" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="1129.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">resolved</text>
+<rect x="334.8" y="950.0" width="54.4" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="963.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">opened</text>
+<rect x="338.5" y="970.0" width="47.0" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="362.0" y="983.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">voted</text>
+<rect x="774.6" y="354.0" width="98.8" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="824.0" y="367.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">under_review</text>
+<rect x="905.1" y="490.0" width="61.8" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="936.0" y="503.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">reviews</text>
+<rect x="828.3" y="422.0" width="91.4" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="874.0" y="435.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">decision_on</text>
+<rect x="789.4" y="490.0" width="69.2" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="824.0" y="503.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">overrode</text>
+<rect x="799.9" y="542.4" width="61.8" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="830.8" y="555.4" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">fulfils</text>
+<rect x="800.5" y="762.0" width="47.0" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="824.0" y="775.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">about</text>
+<rect x="908.8" y="898.0" width="54.4" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="936.0" y="911.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">covers</text>
+<rect x="839.4" y="830.0" width="69.2" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="874.0" y="843.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">concerns</text>
+<rect x="610.4" y="345.0" width="69.2" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="645.0" y="358.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">based_on</text>
+<rect x="603.0" y="617.0" width="84.0" height="17" rx="3" fill="#ffffff" fill-opacity="0.94"/>
+<text x="645.0" y="630.0" font-size="12.5" fill="#374151" text-anchor="middle" font-family="Menlo, Consolas, monospace">supersedes</text>
+<rect x="24" y="1208" width="18" height="13" rx="2" fill="#fbe9e7" stroke="#c0392b" stroke-width="1.4"/>
+<text x="48" y="1219" font-size="13" fill="#374151">People and the workspace</text>
+<rect x="264.4" y="1208" width="18" height="13" rx="2" fill="#e8eef6" stroke="#1f4e79" stroke-width="1.4"/>
+<text x="288.4" y="1219" font-size="13" fill="#374151">Work and the judgement on it</text>
+<rect x="535.1999999999999" y="1208" width="18" height="13" rx="2" fill="#f6f1dc" stroke="#7d6608" stroke-width="1.4"/>
+<text x="559.1999999999999" y="1219" font-size="13" fill="#374151">Exchanges between participants</text>
+</svg>

@@ -30,6 +30,10 @@ npm run start:demo   # server on http://localhost:8080/chap
 npm run demo:client
 ```
 
+The server binds `127.0.0.1` by default. Set `CHAP_HOST` (and `PORT`) to bind
+elsewhere; a non-loopback host has no authentication in front of it, so it
+warns on startup. Only expose it on a trusted network.
+
 You should see output like:
 
 ```

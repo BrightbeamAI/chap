@@ -652,7 +652,7 @@ categories, because several methods carry preconditions of their own.
 | in_progress | `task.update` | in_progress, completed, declined, review_requested, paused |
 | in_progress | `task.update` to completed (review required) | refused, -32602 |
 | review_requested | `task.update` | in_progress |
-| paused | `task.update` | in_progress, cancelled |
+| paused | `task.update` | cancelled |
 | created, in_progress, completed, declined, abstained, escalated | `review.request` | review_requested |
 | review_requested | `review.request` (same artefact) | review_requested, reviewer set widened |
 | review_requested | `review.request` (different artefact) | refused, -32014 |
