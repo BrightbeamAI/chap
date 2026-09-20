@@ -29,10 +29,6 @@ a paragraph that states the number and the decision it supports. All of it
 assembles into one self-contained HTML report that recomputes as the reader
 filters.
 
-<p align="center">
-<img src="https://raw.githubusercontent.com/BrightbeamAI/chap/main/packages/chap-analytics/docs/images/report.png" alt="The report: headline cards for every decision, a filter bar, and the charts below" width="900">
-</p>
-
 ## Install
 
 ```bash
