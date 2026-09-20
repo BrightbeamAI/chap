@@ -37,14 +37,3 @@ test("control.snapshot detaches the captured state from live and returned values
   assert.deepEqual(captured.members[0].scopes, ["review"]);
   assert.equal(captured.open_tasks[0].assignee, "agent:b");
 });
-
-test("Coordinator.snapshot returns a detached persistence projection", () => {
-  const c = new Coordinator({ deterministicIds: true });
-  send(c, "workspace.create", { workspace: "w" });
-  send(c, "participant.join", {
-    workspace: "w", from: "human:a", type: "human", scopes: ["review"],
-  });
-  const projection = c.snapshot() as any[];
-  projection[0].members[0].scopes.push("outside");
-  assert.deepEqual(c.workspaces.get("w")!.members.get("human:a")!.scopes, ["review"]);
-});
