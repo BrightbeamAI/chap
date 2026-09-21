@@ -36,6 +36,8 @@ export interface WrapMcpToolCallOptions {
   routingHints?: Record<string, unknown>;
   /** Optional confidence value attached to task.complete. */
   confidence?: number | string;
+  /** Optional id of the decision this call fulfils; recorded as a ``fulfils`` link on the result artefact. Asserted by the caller and not verified by the coordinator. */
+  fulfils?: string;
 }
 
 export interface WrapResult {
@@ -99,11 +101,13 @@ export function wrapMcpToolCall(
     params:  { workspace, from: options.caller, task_id: taskId, state: "in_progress" },
   });
 
+  const output: Record<string, unknown> = { result: options.result, citations };
+  if (options.fulfils) output.fulfils = options.fulfils;
   const completeParams: Record<string, unknown> = {
     workspace,
     from:     options.caller,
     task_id:  taskId,
-    output:   { result: options.result, citations },
+    output,
   };
   if (options.confidence !== undefined) completeParams.confidence = options.confidence;
 
@@ -135,6 +139,8 @@ export interface WrapA2aExchangeOptions {
   routingHints?: Record<string, unknown>;
   /** Optional confidence value attached to task.complete. */
   confidence?: number | string;
+  /** Optional id of the decision this exchange fulfils; recorded as a ``fulfils`` link on the result artefact. Asserted by the caller and not verified by the coordinator. */
+  fulfils?: string;
 }
 
 export interface WrapA2aResult {
@@ -192,9 +198,11 @@ export function wrapA2aMessageExchange(
               task_id: taskId, state: "in_progress" },
   });
 
+  const output: Record<string, unknown> = { received: options.received, citations: [citation] };
+  if (options.fulfils) output.fulfils = options.fulfils;
   const completeParams: Record<string, unknown> = {
     workspace, from: options.bridgeUri, task_id: taskId,
-    output: { received: options.received, citations: [citation] },
+    output,
   };
   if (options.confidence !== undefined) completeParams.confidence = options.confidence;
 

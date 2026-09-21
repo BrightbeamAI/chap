@@ -70,6 +70,8 @@ and the first to accept wins.
 }
 ```
 
+`accepted_task_ids: []` MUST be refused with `-32602`; omitting `accepted_task_ids` accepts all proposed tasks, and a non-empty list selects a subset.
+
 On accept, the Coordinator atomically:
 
 1. Updates each accepted task's `assignee` to the accepter.

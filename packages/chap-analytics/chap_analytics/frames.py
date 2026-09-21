@@ -307,6 +307,7 @@ class _Task:
     review_required: bool | None = None
     created_at: pd.Timestamp | None = None
     state: str = "created"
+    fulfils: str | None = None
     settled_at: pd.Timestamp | None = None
     confidence: float | None = None
     criticality: str | None = None
@@ -601,6 +602,9 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
 
         elif method == "task.complete" and tid:
             t = task(tid)
+            out = p.get("output")
+            if isinstance(out, dict) and isinstance(out.get("fulfils"), str):
+                t.fulfils = out["fulfils"]
             conf = _decimal(p.get("confidence"))
             if conf is None:
                 hints = p.get("routing_hints") if isinstance(p.get("routing_hints"), dict) else {}
@@ -1589,7 +1593,7 @@ def frames(chain: Chain) -> Frames:
             "n_reviews": len(t.reviews),
             "n_decisions": len(t.decisions), "confidence": t.confidence,
             "criticality": t.criticality, "risk_tier": t.risk_tier,
-            "supersedes": t.supersedes,
+            "supersedes": t.supersedes, "fulfils": t.fulfils,
         })
 
     # -- overrides and their operations -------------------------------------

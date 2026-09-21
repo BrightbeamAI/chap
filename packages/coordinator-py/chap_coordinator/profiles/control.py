@@ -143,8 +143,11 @@ def register_control(coord: "Coordinator") -> None:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
-        include = list(p.get("include") or ["members", "open_tasks",
-                                            "mode_ceiling"])
+        requested = p.get("include")
+        if isinstance(requested, list) and not requested:
+            return {"error": rpc_error(E.PARAMS, "include must not be empty")}
+        include = list(requested if requested is not None
+                       else ["members", "open_tasks", "mode_ceiling"])
         # Each slice has the same deliberately small projection in both refs.
         state: dict = {}
         if "members" in include:
@@ -211,7 +214,10 @@ def register_control(coord: "Coordinator") -> None:
         if not snap:
             return {"error": rpc_error(E.CONTROL_SNAPSHOT_NOT_FOUND,
                                        f"Unknown snapshot: {snap_id}")}
-        what = list(p.get("what_to_restore") or snap.content["include"])
+        requested = p.get("what_to_restore")
+        if isinstance(requested, list) and not requested:
+            return {"error": rpc_error(E.PARAMS, "what_to_restore must not be empty")}
+        what = list(requested if requested is not None else snap.content["include"])
 
         # Apply the rollback. Per spec, this APPENDS, it does not truncate.
         # We restore the named slices of state.

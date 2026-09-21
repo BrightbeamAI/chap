@@ -83,6 +83,10 @@ Member capabilities, keys, joined timestamps, task inputs, outputs, histories,
 and review bodies are not part of this projection. Full tasks remain in their
 own audit entries rather than being duplicated in the snapshot artefact.
 The `include` list retains the caller's selection order.
+`include: []` and `what_to_restore: []` MUST be refused with `-32602`; omitting
+`include` selects `members`, `open_tasks`, and `mode_ceiling`, while omitting
+`what_to_restore` selects the snapshot's captured slices. Non-empty lists retain
+partial selection.
 
 Rollback MUST read the captured `artefact.content.state`; there is no separate
 internal wire representation. Restoring mutable fields must not alias them

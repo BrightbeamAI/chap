@@ -419,6 +419,12 @@ hashes of the canonicalised inputs and outputs. The helper returns the
 new task id and both hashes so downstream callers can cite the
 wrapped event directly.
 
+Pass `fulfils` (TypeScript) / `fulfils=` (Python) with the id of the
+decision the call carries out, and the helper records it as a `fulfils`
+link on the result artefact, so an execution can be traced back to the
+decision that authorised it. The link is asserted by the caller and not
+verified by the Coordinator (see SPECIFICATION.md §9.4).
+
 ```typescript
 import { Coordinator, wrapMcpToolCall } from "@brightbeamai/chap-coordinator";
 
