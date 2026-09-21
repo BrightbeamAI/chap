@@ -74,6 +74,10 @@ PRIVILEGED_METHODS = frozenset({
 _READ_ONLY_METHODS = frozenset({
     "workspace.describe", "audit.read",
     "audit.verify_chain", "audit.verify_receipt",
+    # Submitting the chain to a transparency service reads it and sends it
+    # onward. Recording the submission would append to the very log being
+    # submitted, so the receipt would attest a chain one entry shorter.
+    "audit.submit_to_scitt",
 })
 
 
@@ -195,8 +199,8 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     """
     from .types import (
         Workspace, Member, Task, TaskHistoryEntry, KeyRecord, ReviewState,
-        WhisperPrompt, Deliberation, Handoff, HandoffTask, SnapshotArtefact,
-        AuditEntry,
+        OverrideArtefact, WhisperPrompt, Deliberation, Handoff, HandoffTask,
+        SnapshotArtefact, RouteDecisionArtefact, AuditEntry,
     )
 
     def _opt(cls, d):
@@ -238,20 +242,35 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
         for k, v in (data.get("snapshots") or {}).items()
     }
 
+    # Every typed collection on Workspace is persisted by asdict, so every one
+    # has to come back typed. An untyped collection reads as a plain dict and
+    # diverges from the TypeScript restore, which rebuilds all of them.
+    overrides = {
+        k: OverrideArtefact(**v) if isinstance(v, dict) else v
+        for k, v in (data.get("overrides") or {}).items()
+    }
+    route_decisions = {
+        k: RouteDecisionArtefact(**v) if isinstance(v, dict) else v
+        for k, v in (data.get("route_decisions") or {}).items()
+    }
+
     audit = [AuditEntry(**a) for a in (data.get("audit") or [])]
 
     ws_kwargs = {
         k: v for k, v in data.items()
-        if k not in {"members", "tasks", "whispers", "deliberations",
-                     "handoffs", "snapshots", "audit"}
+        if k not in {"members", "tasks", "overrides", "whispers",
+                     "deliberations", "handoffs", "snapshots",
+                     "route_decisions", "audit"}
     }
     ws = Workspace(**ws_kwargs)
     ws.members = members
     ws.tasks = tasks
+    ws.overrides = overrides
     ws.whispers = whispers
     ws.deliberations = deliberations
     ws.handoffs = handoffs
     ws.snapshots = snapshots
+    ws.route_decisions = route_decisions
     ws.audit = audit
     return ws
 

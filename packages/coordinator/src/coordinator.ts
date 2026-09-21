@@ -88,6 +88,10 @@ export const PRIVILEGED_METHODS = new Set<string>([
 // recorded in the audit chain -- recording a read would grow and re-link it.
 const READ_ONLY_METHODS = new Set<string>([
   "workspace.describe", "audit.read", "audit.verify_chain", "audit.verify_receipt",
+  // Submitting the chain to a transparency service reads it and sends it
+  // onward. Recording the submission would append to the very log being
+  // submitted, so the receipt would attest a chain one entry shorter.
+  "audit.submit_to_scitt",
 ]);
 
 // Cap on a workspace's task.create idempotency map. Older keys are evicted, so
