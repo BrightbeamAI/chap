@@ -1,0 +1,22 @@
+{
+  "_comment": "Every refusal the JSON Patch engine gives, word for word. Both references read this file, so a message that drifts in one of them fails in both suites. Generated from the cases in packages/coordinator-py/tests/test_patch_message_parity.py.",
+  "messages": {
+    "array index with a leading zero": "Array index expected at \"01\"",
+    "array index in exponent form": "Array index expected at \"1e1\"",
+    "array index with a separator": "Array index expected at \"1_0\"",
+    "add into a string": "Cannot add into string",
+    "add into a number": "Cannot add into number",
+    "replace at an index of an object": "Path not found for replace: /a/0",
+    "remove from a string": "Cannot remove from string",
+    "index past the end": "Index out of range for remove: /items/5",
+    "an operation that does not exist": "Unsupported op: \"frobnicate\"",
+    "a pointer with no leading slash": "JSON Pointer must start with '/': \"a\"",
+    "a prototype-polluting segment": "Refusing unsafe path segment \"__proto__\"",
+    "test against the wrong value": "'test' failed at /a",
+    "move into a child of itself": "'move' cannot move a location into its own child.",
+    "remove at the position after the last element": "Index out of range for remove: /a/-",
+    "replace at the position after the last element": "Path not found for replace: /a/-",
+    "test at the position after the last element": "Cannot read '-' position.",
+    "copy from the position after the last element": "Cannot read '-' position."
+  }
+}

@@ -16,6 +16,7 @@ exactly the same patches.
 from __future__ import annotations
 
 import copy
+import json
 import re
 from typing import Any
 
@@ -31,9 +32,38 @@ _DANGEROUS_KEYS = frozenset({"__proto__", "constructor", "prototype"})
 _ARRAY_INDEX_RE = re.compile(r"^(0|[1-9][0-9]*)$")
 
 
+def _quoted(value: Any) -> str:
+    """A value as it appears on the wire, so both references say the same thing.
+
+    Python's repr and JavaScript's JSON.stringify quote differently, which made
+    the same refusal read two ways across the two references.
+    """
+    return json.dumps(value)
+
+
+def _json_type(value: Any) -> str:
+    """The JSON type name of a value.
+
+    Python and JavaScript name their own types differently (dict against
+    object, list against object, str against string). The refusal names the
+    JSON type, which both references and the specification share.
+    """
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return "null"
+
+
 def _array_index(seg: str) -> int:
     if not _ARRAY_INDEX_RE.match(seg):
-        raise PatchError(f"Array index expected at {seg!r}")
+        raise PatchError(f"Array index expected at {_quoted(seg)}")
     return int(seg)
 
 
@@ -50,11 +80,11 @@ def _split_path(path: str) -> list[str]:
     if path == "":
         return []
     if not path.startswith("/"):
-        raise PatchError(f"JSON Pointer must start with '/': {path!r}")
+        raise PatchError(f"JSON Pointer must start with '/': {_quoted(path)}")
     segments = [_unescape(tok) for tok in path[1:].split("/")]
     for seg in segments:
         if seg in _DANGEROUS_KEYS:
-            raise PatchError(f"Refusing unsafe path segment {seg!r}")
+            raise PatchError(f"Refusing unsafe path segment {_quoted(seg)}")
     return segments
 
 
@@ -74,7 +104,7 @@ def _navigate(doc: Any, parts: list[str]) -> tuple[Any, str | int]:
                 raise PatchError(f"Path not found: /{'/'.join(parts[:i+1])}")
             parent = parent[part]
         else:
-            raise PatchError(f"Cannot traverse into {type(parent).__name__} at {part!r}")
+            raise PatchError(f"Cannot traverse into {_json_type(parent)} at {_quoted(part)}")
     last = parts[-1]
     if isinstance(parent, list):
         if last == "-":
@@ -121,7 +151,7 @@ def _apply_one(doc: Any, op: dict) -> Any:
         elif isinstance(parent, dict):
             parent[key] = op["value"]
         else:
-            raise PatchError(f"Cannot add into {type(parent).__name__}")
+            raise PatchError(f"Cannot add into {_json_type(parent)}")
         return doc
 
     if kind == "replace":
@@ -140,7 +170,7 @@ def _apply_one(doc: Any, op: dict) -> Any:
                 raise PatchError(f"Path not found for replace: {path}")
             parent[key] = op["value"]
         else:
-            raise PatchError(f"Cannot replace in {type(parent).__name__}")
+            raise PatchError(f"Cannot replace in {_json_type(parent)}")
         return doc
 
     if kind == "remove":
@@ -157,7 +187,7 @@ def _apply_one(doc: Any, op: dict) -> Any:
                 raise PatchError(f"Path not found for remove: {path}")
             del parent[key]
         else:
-            raise PatchError(f"Cannot remove from {type(parent).__name__}")
+            raise PatchError(f"Cannot remove from {_json_type(parent)}")
         return doc
 
     if kind == "copy":
@@ -186,7 +216,7 @@ def _apply_one(doc: Any, op: dict) -> Any:
             raise PatchError(f"'test' failed at {path}")
         return doc
 
-    raise PatchError(f"Unsupported op: {kind!r}")
+    raise PatchError(f"Unsupported op: {_quoted(kind)}")
 
 
 MAX_PATCH_OPS = 1000
