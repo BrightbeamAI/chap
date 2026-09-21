@@ -307,6 +307,7 @@ class _Task:
     review_required: bool | None = None
     created_at: pd.Timestamp | None = None
     state: str = "created"
+    fulfils: str | None = None
     paused_from: str | None = None
     settled_at: pd.Timestamp | None = None
     confidence: float | None = None
@@ -542,7 +543,22 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
             "task_id": tid,
             "prev_hash": entry.get("prev_hash"),
             "chained": entry.get("prev_hash") is not None,
+            "signed": isinstance(env.get("sig"), str),
+            "scitt_submitted": False,
         })
+
+        if method == "audit.submit_to_scitt":
+            # A recorded submission covered a range of positions. The call is on
+            # the chain only where the coordinator accepted it, so the range is
+            # what was sent to the transparency service.
+            rng = p.get("range") if isinstance(p.get("range"), dict) else {}
+            lo = rng.get("from_seq", 0)
+            hi = rng.get("to_seq", pos)
+            if isinstance(lo, int) and isinstance(hi, int):
+                for row in ix.events:
+                    s = row["seq"]
+                    if isinstance(s, int) and lo <= s < hi:
+                        row["scitt_submitted"] = True
 
         if method in ("workspace.create", "workspace.set_profiles"):
             if p.get("profiles") is not None:
@@ -587,6 +603,9 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
 
         elif method == "task.complete" and tid:
             t = task(tid)
+            out = p.get("output")
+            if isinstance(out, dict) and isinstance(out.get("fulfils"), str):
+                t.fulfils = out["fulfils"]
             conf = _decimal(p.get("confidence"))
             if conf is None:
                 hints = p.get("routing_hints") if isinstance(p.get("routing_hints"), dict) else {}
@@ -1383,7 +1402,11 @@ def _coerce(s: pd.Series, dtype: str) -> pd.Series:
     try:
         return s.astype(dtype)
     except (TypeError, ValueError):
-        pass
+        return _coerce_each(s, dtype)
+
+
+def _coerce_each(s: pd.Series, dtype: str) -> pd.Series:
+    """The per-value path of :func:`_coerce`, for a column with at least one value that will not cast."""
     if dtype.startswith("datetime64"):
         return pd.to_datetime(s, errors="coerce", utc=True)
     if dtype == "Int64":
@@ -1575,7 +1598,7 @@ def frames(chain: Chain) -> Frames:
             "n_reviews": len(t.reviews),
             "n_decisions": len(t.decisions), "confidence": t.confidence,
             "criticality": t.criticality, "risk_tier": t.risk_tier,
-            "supersedes": t.supersedes,
+            "supersedes": t.supersedes, "fulfils": t.fulfils,
         })
 
     # -- overrides and their operations -------------------------------------

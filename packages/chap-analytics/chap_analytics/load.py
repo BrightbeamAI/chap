@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -270,6 +271,12 @@ def from_url(url: str, workspace: str, *, actor: str = "service:analytics",
     is ``state`` come back null. Everything derived by replay is available,
     which is most of what matters.
     """
+    scheme = urllib.parse.urlparse(url).scheme.lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(
+            f"from_url only accepts http and https URLs; got {scheme or 'no'} "
+            f"scheme in {url!r}."
+        )
     body = json.dumps({
         "jsonrpc": "2.0", "id": "analytics-audit-read", "method": "audit.read",
         "params": {"workspace": workspace, "from": actor},

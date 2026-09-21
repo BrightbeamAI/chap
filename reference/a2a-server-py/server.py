@@ -74,9 +74,14 @@ def build_app(base_url: str = "http://localhost:9090") -> FastAPI:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9090)
     args = parser.parse_args()
+
+    if args.host not in ("127.0.0.1", "::1", "localhost"):
+        print(f"WARNING: binding to {args.host} exposes an unauthenticated "
+              "coordinator to the network. Use only on a trusted network.",
+              file=sys.stderr)
 
     base_url = f"http://{args.host}:{args.port}"
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")

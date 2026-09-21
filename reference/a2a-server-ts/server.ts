@@ -68,4 +68,11 @@ process.stderr.write(
   "Profiles enabled: core, review, whisper, deliberation, handoff, control, routing, audit-scitt.\n",
 );
 
-app.listen(port);
+const host = process.env.CHAP_HOST ?? "127.0.0.1";
+if (!["127.0.0.1", "::1", "localhost"].includes(host)) {
+  process.stderr.write(
+    `WARNING: binding to ${host} exposes an unauthenticated coordinator to ` +
+    "the network. Use only on a trusted network.\n",
+  );
+}
+app.listen(port, host);

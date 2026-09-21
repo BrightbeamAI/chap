@@ -21,7 +21,12 @@ pip install -e "../../packages/coordinator-py[a2a]"
 ```bash
 python3 server.py                # default port 9090
 python3 server.py --port 9091
+python3 server.py --host 0.0.0.0 # bind all interfaces (see below)
 ```
+
+The server binds `127.0.0.1` by default. Pass `--host` to bind elsewhere; it
+has no authentication, so a non-loopback host warns on startup. Only expose it
+on a trusted network.
 
 You should see, on stderr:
 

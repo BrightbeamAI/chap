@@ -195,7 +195,8 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     """
     from .types import (
         Workspace, Member, Task, TaskHistoryEntry, KeyRecord, ReviewState,
-        WhisperPrompt, Deliberation, Handoff, HandoffTask, AuditEntry,
+        WhisperPrompt, Deliberation, Handoff, HandoffTask, SnapshotArtefact,
+        AuditEntry,
     )
 
     def _opt(cls, d):
@@ -232,12 +233,17 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
         v["tasks"] = [HandoffTask(**t) for t in v.get("tasks", [])]
         handoffs[k] = Handoff(**v)
 
+    snapshots = {
+        k: SnapshotArtefact(**v) if isinstance(v, dict) else v
+        for k, v in (data.get("snapshots") or {}).items()
+    }
+
     audit = [AuditEntry(**a) for a in (data.get("audit") or [])]
 
     ws_kwargs = {
         k: v for k, v in data.items()
         if k not in {"members", "tasks", "whispers", "deliberations",
-                     "handoffs", "audit"}
+                     "handoffs", "snapshots", "audit"}
     }
     ws = Workspace(**ws_kwargs)
     ws.members = members
@@ -245,6 +251,7 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     ws.whispers = whispers
     ws.deliberations = deliberations
     ws.handoffs = handoffs
+    ws.snapshots = snapshots
     ws.audit = audit
     return ws
 
@@ -317,6 +324,7 @@ class Coordinator:
         self._clock_ms: int | None = (
             1_700_000_000_000 if self.options.deterministic_clock else None
         )
+        self._frozen_now: str | None = None
         self.workspaces: dict[str, Workspace] = {}
         self._audit_listeners: list[AuditListener] = []
         if self.options.on_audit:
@@ -334,11 +342,16 @@ class Coordinator:
 
     # -- public lifecycle ---------------------------------------------
 
-    def now_iso(self) -> str:
+    def _advance_clock(self) -> str:
         if self._clock_ms is not None:
             self._clock_ms += 1000
             return _now_iso(self._clock_ms)
         return _now_iso()
+
+    def now_iso(self) -> str:
+        if self._frozen_now is not None:
+            return self._frozen_now
+        return self._advance_clock()
 
     def add_audit_listener(self, fn: AuditListener) -> None:
         self._audit_listeners.append(fn)
@@ -414,6 +427,13 @@ class Coordinator:
 
     def dispatch(self, envelope: dict) -> dict:
         """Process one JSON-RPC envelope; return the response."""
+        self._frozen_now = self._advance_clock()
+        try:
+            return self._dispatch(envelope)
+        finally:
+            self._frozen_now = None
+
+    def _dispatch(self, envelope: dict) -> dict:
         if not is_valid_envelope(envelope):
             return make_response(
                 envelope.get("id") if isinstance(envelope, dict) else None,
@@ -1023,7 +1043,7 @@ class Coordinator:
             "in_progress":      ["in_progress", "completed", "declined",
                                  "review_requested", "paused"],
             "review_requested": ["in_progress"],
-            "paused":           ["in_progress", "cancelled"],
+            "paused":           ["cancelled"],
         }
         if new_state not in legal.get(task.state, []):
             return {"error": rpc_error(

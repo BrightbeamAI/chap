@@ -162,6 +162,11 @@ ticket-catalogue integrity.
 Environment variables:
 
 - `PORT`: HTTP port (default `7777`)
+- `CHAP_HOST`: interface to bind (default `127.0.0.1`). The playground has no
+  authentication; it warns when bound to a non-loopback host, and the Docker
+  image sets `0.0.0.0` because the container's published port is mapped to
+  `127.0.0.1` on the host by `docker-compose.yml`. Only expose it on a trusted
+  network.
 - `OLLAMA_URL`: Ollama base URL (default `http://localhost:11434`)
 - `OLLAMA_MODEL`: model name (default `gemma3:4b`)
 
