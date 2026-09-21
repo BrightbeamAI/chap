@@ -7,8 +7,17 @@
  *
  * This test reads it. It drives a task into every state, attempts every
  * state-changing method from each, and requires the result to match the table
- * exactly. Mirrors packages/coordinator-py/tests/test_spec_lifecycle_table.py,
- * so the two implementations and the specification move together or not at all.
+ * exactly.
+ *
+ * Both columns are read. The From column says where a method may be called,
+ * and the To column says where it leaves the task. A state named in a To cell
+ * must be one the method actually produces, and a state a method produces must
+ * be named. Rows whose outcome depends on more than the starting state, a
+ * review rule not yet satisfied, a rejection sent back for revision, the state
+ * a pause captured, are driven by outcomeScenarios below.
+ *
+ * Mirrors packages/coordinator-py/tests/test_spec_lifecycle_table.py, so the
+ * two implementations and the specification move together or not at all.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -44,9 +53,20 @@ function tableRows(): [string, string, string][] {
   return rows;
 }
 
+/**
+ * The states a To cell names, whatever prose surrounds them. A cell may carry
+ * an explanation beside the outcome, as "completed once the review rule is
+ * satisfied, otherwise review_requested" does. What is normative is which
+ * states it names.
+ */
+function statesNamedIn(cell: string): string[] {
+  return STATES.filter(s => new RegExp(`\\b${s}\\b`).test(cell));
+}
+
 function specMachine() {
   const permitted = new Map<string, Set<string>>();
   const updateTargets = new Map<string, Set<string>>();
+  const outcomes = new Map<string, Set<string>>();
   for (const [froms, methodCell, toCell] of tableRows()) {
     const method = /`([a-z_]+\.[a-z_]+)`/.exec(methodCell)![1];
     const refused = toCell.trim().startsWith("refused");
@@ -65,10 +85,16 @@ function specMachine() {
         updateTargets.set(state, set);
       } else {
         permitted.set(method, (permitted.get(method) ?? new Set()).add(state));
+        const named = statesNamedIn(toCell);
+        assert.ok(named.length > 0,
+                  `§8.1 gives ${method} a To cell that names no state: ${toCell}`);
+        const set = outcomes.get(method) ?? new Set<string>();
+        for (const n of named) set.add(n);
+        outcomes.set(method, set);
       }
     }
   }
-  return { permitted, updateTargets };
+  return { permitted, updateTargets, outcomes };
 }
 
 // ------------------------------------------------------------ the coordinator
@@ -131,9 +157,51 @@ function attempt(send: any, method: string, id: string) {
   }
 }
 
+/**
+ * Outcomes a starting state alone does not settle: a review rule not yet
+ * satisfied, a rejection sent back for revision, the state a pause captured.
+ * Each scenario drives itself and names the method it exercised, so the state
+ * the task lands in is attributed to that method.
+ */
+function outcomeScenarios(): ((send: any) => [string, string])[] {
+  const resumeFrom = (origin: string) => (send: any): [string, string] => {
+    const id = drive(send, origin);
+    send("control.pause", { task_id: id, reason: "hold" }, HUMAN);
+    send("control.resume", { task_id: id }, HUMAN);
+    return ["control.resume", id];
+  };
+  return [
+    (send): [string, string] => {
+      const id = send("task.create", { kind: "k", input: {}, assignee: AGENT }).result.task_id;
+      send("review.request", { task_id: id, artefact: ARTEFACT, to: [HUMAN, OTHER],
+                               rule: "quorum:2" });
+      send("decide.approve", { task_id: id, comment: "ok", rationale: "ok" }, HUMAN);
+      return ["decide.approve", id];
+    },
+    (send): [string, string] => {
+      const id = send("task.create", { kind: "k", input: {}, assignee: AGENT }).result.task_id;
+      send("review.request", { task_id: id, artefact: ARTEFACT, to: HUMAN });
+      send("decide.reject", { task_id: id, comment: "no", rationale: "no",
+                              request_revision: true }, HUMAN);
+      return ["decide.reject", id];
+    },
+    (send): [string, string] => {
+      const id = send("task.create", { kind: "k", input: {}, assignee: AGENT,
+                                       review_required: true }).result.task_id;
+      send("task.complete", { task_id: id, output: ARTEFACT });
+      return ["task.complete", id];
+    },
+    // control.pause names the states a pause can be entered from, so those are
+    // the states a resume can restore.
+    ...["created", "in_progress", "review_requested", "abstained", "escalated"]
+      .map(origin => resumeFrom(origin)),
+  ];
+}
+
 function implementedMachine() {
   const permitted = new Map<string, Set<string>>();
   const updateTargets = new Map<string, Set<string>>();
+  const outcomes = new Map<string, Set<string>>();
   for (const state of STATES) {
     {
       const { c, send } = ready();
@@ -142,10 +210,12 @@ function implementedMachine() {
                    `the fixture for ${state} did not reach it`);
     }
     for (const method of METHODS) {
-      const { send } = ready();
+      const { c, send } = ready();
       const id = drive(send, state);
       if (attempt(send, method, id).error === undefined) {
         permitted.set(method, (permitted.get(method) ?? new Set()).add(state));
+        outcomes.set(method, (outcomes.get(method) ?? new Set())
+          .add((c as any).workspaces.get("w").tasks.get(id).state));
       }
     }
     for (const target of STATES) {
@@ -156,7 +226,13 @@ function implementedMachine() {
       }
     }
   }
-  return { permitted, updateTargets };
+  for (const scenario of outcomeScenarios()) {
+    const { c, send } = ready();
+    const [method, id] = scenario(send);
+    outcomes.set(method, (outcomes.get(method) ?? new Set())
+      .add((c as any).workspaces.get("w").tasks.get(id).state));
+  }
+  return { permitted, updateTargets, outcomes };
 }
 
 const spec = specMachine();
@@ -169,6 +245,7 @@ test("the table is not empty", () => {
   // Without this the comparisons below would pass by having nothing to compare.
   assert.ok(spec.permitted.size >= 8, "SPECIFICATION.md 8.1 parsed to almost nothing");
   assert.ok(spec.updateTargets.size > 0, "no task.update rows found in 8.1");
+  assert.ok(spec.outcomes.size >= 8, "the To column of 8.1 parsed to almost nothing");
 });
 
 for (const method of METHODS) {
@@ -179,6 +256,18 @@ for (const method of METHODS) {
       `SPECIFICATION.md 8.1 and the coordinator disagree about ${method}.\n` +
       `  the table permits it from : ${documented.join(", ") || "nothing"}\n` +
       `  the coordinator permits it: ${actual.join(", ") || "nothing"}`);
+  });
+}
+
+for (const method of METHODS) {
+  test(`the To column matches where ${method} leaves the task`, () => {
+    const named = sorted(spec.outcomes.get(method));
+    const reached = sorted(real.outcomes.get(method));
+    assert.deepEqual(named, reached,
+      `SPECIFICATION.md 8.1 and the coordinator disagree about where ${method} ` +
+      `leaves the task.\n` +
+      `  the To column names    : ${named.join(", ") || "nothing"}\n` +
+      `  the coordinator reaches: ${reached.join(", ") || "nothing"}`);
   });
 }
 

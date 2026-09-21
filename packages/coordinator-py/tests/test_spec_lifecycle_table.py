@@ -8,7 +8,17 @@ two states (`assigned`, `accepted`) that are not in `TaskState`.
 This test reads it. It drives a task into every state, attempts every
 state-changing method from each, and requires the result to match the table
 exactly: a transition the table permits must work, and one it does not list
-must be refused. The same check runs against the TypeScript coordinator in
+must be refused.
+
+Both columns are read. The From column says where a method may be called, and
+the To column says where it leaves the task. A state named in a To cell must be
+one the method actually produces, and a state a method produces must be named,
+so a cell cannot describe an outcome the coordinator does not have. Rows whose
+outcome depends on more than the starting state, a review rule not yet
+satisfied, a rejection sent back for revision, the state a pause captured, are
+driven by the scenarios in OUTCOMES below.
+
+The same check runs against the TypeScript coordinator in
 packages/coordinator/tests/spec_lifecycle_table.test.ts, so the two
 implementations and the specification move together or not at all.
 """
@@ -46,9 +56,19 @@ def _table_rows():
             and not set(r[0]) <= set("-| ")]
 
 
+def _states_named_in(cell: str) -> set[str]:
+    """The states a To cell names, whatever prose surrounds them.
+
+    A cell may carry an explanation beside the outcome, as
+    "completed once the review rule is satisfied, otherwise review_requested"
+    does. What is normative is which states it names.
+    """
+    return {s for s in STATES if re.search(rf"\b{s}\b", cell)}
+
+
 def spec_machine():
-    """(permitted, update_targets) as the specification describes them."""
-    permitted, update_targets = {}, {}
+    """(permitted, update_targets, outcomes) as the specification describes them."""
+    permitted, update_targets, outcomes = {}, {}, {}
     for froms, method_cell, to_cell in _table_rows():
         method = re.search(r"`([a-z_]+\.[a-z_]+)`", method_cell).group(1)
         refused = to_cell.strip().startswith("refused")
@@ -66,7 +86,10 @@ def spec_machine():
                     t.strip() for t in to_cell.split(","))
             else:
                 permitted.setdefault(method, set()).add(state)
-    return permitted, update_targets
+                named = _states_named_in(to_cell)
+                assert named, f"§8.1 gives {method} a To cell that names no state: {to_cell}"
+                outcomes.setdefault(method, set()).update(named)
+    return permitted, update_targets, outcomes
 
 
 # ------------------------------------------------------------ the coordinator
@@ -136,8 +159,52 @@ def _attempt(send, method, tid):
     return calls[method]()
 
 
+# Outcomes a starting state alone does not settle: a review rule not yet
+# satisfied, a rejection sent back for revision, the state a pause captured.
+# Each entry drives the scenario and returns the method it exercised, so the
+# state the task lands in is attributed to that method.
+def _outcome_scenarios():
+    def review_rule_unsatisfied(send):
+        tid = send("task.create", kind="k", input={}, assignee=AGENT)["result"]["task_id"]
+        send("review.request", task_id=tid, artefact=ARTEFACT, to=[HUMAN, OTHER],
+             rule="quorum:2")
+        send("decide.approve", actor=HUMAN, task_id=tid, comment="ok", rationale="ok")
+        return "decide.approve", tid
+
+    def rejection_sent_back(send):
+        tid = send("task.create", kind="k", input={}, assignee=AGENT)["result"]["task_id"]
+        send("review.request", task_id=tid, artefact=ARTEFACT, to=HUMAN)
+        send("decide.reject", actor=HUMAN, task_id=tid, comment="no", rationale="no",
+             request_revision=True)
+        return "decide.reject", tid
+
+    def completion_opening_a_review(send):
+        tid = send("task.create", kind="k", input={}, assignee=AGENT,
+                   review_required=True)["result"]["task_id"]
+        send("task.complete", task_id=tid, output=ARTEFACT)
+        return "task.complete", tid
+
+    def resume_from(origin):
+        def run(send):
+            tid = _drive(send, origin)
+            send("control.pause", actor=HUMAN, task_id=tid, reason="hold")
+            send("control.resume", actor=HUMAN, task_id=tid)
+            return "control.resume", tid
+        run.__name__ = f"resume_from_{origin}"
+        return run
+
+    scenarios = [review_rule_unsatisfied, rejection_sent_back,
+                 completion_opening_a_review]
+    # control.pause names the states a pause can be entered from, so those are
+    # the states a resume can restore.
+    scenarios += [resume_from(origin) for origin in
+                  ("created", "in_progress", "review_requested", "abstained",
+                   "escalated")]
+    return scenarios
+
+
 def implemented_machine():
-    permitted, update_targets = {}, {}
+    permitted, update_targets, outcomes = {}, {}, {}
     for state in STATES:
         c, send = _ready()
         tid = _drive(send, state)
@@ -148,12 +215,19 @@ def implemented_machine():
             tid2 = _drive(send2, state)
             if "error" not in _attempt(send2, method, tid2):
                 permitted.setdefault(method, set()).add(state)
+                outcomes.setdefault(method, set()).add(
+                    c2.get_workspace("w").tasks[tid2].state)
         for target in STATES:
             c3, send3 = _ready()
             tid3 = _drive(send3, state)
             if "error" not in send3("task.update", task_id=tid3, state=target):
                 update_targets.setdefault(state, set()).add(target)
-    return permitted, update_targets
+    for scenario in _outcome_scenarios():
+        c4, send4 = _ready()
+        method, tid4 = scenario(send4)
+        outcomes.setdefault(method, set()).add(
+            c4.get_workspace("w").tasks[tid4].state)
+    return permitted, update_targets, outcomes
 
 
 # ------------------------------------------------------------------ the check
@@ -165,14 +239,15 @@ def machines():
 
 def test_the_table_is_not_empty(machines):
     # Without this the comparisons below would pass by having nothing to compare.
-    (spec_permitted, spec_updates), _ = machines
+    (spec_permitted, spec_updates, spec_outcomes), _ = machines
     assert len(spec_permitted) >= 8, "SPECIFICATION.md 8.1 parsed to almost nothing"
     assert spec_updates, "no task.update rows found in 8.1"
+    assert len(spec_outcomes) >= 8, "the To column of 8.1 parsed to almost nothing"
 
 
 @pytest.mark.parametrize("method", METHODS)
 def test_the_table_matches_the_coordinator(method, machines):
-    (spec_permitted, _), (real_permitted, _) = machines
+    (spec_permitted, _, _), (real_permitted, _, _) = machines
     documented = spec_permitted.get(method, set())
     actual = real_permitted.get(method, set())
     assert documented == actual, (
@@ -186,11 +261,26 @@ def test_the_table_matches_the_coordinator(method, machines):
 
 @pytest.mark.parametrize("state", STATES)
 def test_the_task_update_rows_match_the_transition_map(state, machines):
-    (_, spec_updates), (_, real_updates) = machines
+    (_, spec_updates, _), (_, real_updates, _) = machines
     assert spec_updates.get(state, set()) == real_updates.get(state, set()), (
         f"SPECIFICATION.md 8.1 and task.update disagree about {state}.\n"
         f"  the table says : {sorted(spec_updates.get(state, set())) or 'nothing'}\n"
         f"  the map allows : {sorted(real_updates.get(state, set())) or 'nothing'}"
+    )
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_the_to_column_matches_where_the_coordinator_leaves_the_task(method, machines):
+    (_, _, documented), (_, _, actual) = machines
+    named = documented.get(method, set())
+    reached = actual.get(method, set())
+    assert named == reached, (
+        f"SPECIFICATION.md 8.1 and the coordinator disagree about where "
+        f"{method} leaves the task.\n"
+        f"  the To column names  : {sorted(named) or 'nothing'}\n"
+        f"  the coordinator reaches: {sorted(reached) or 'nothing'}\n"
+        f"  named but unreachable: {sorted(named - reached) or 'none'}\n"
+        f"  reached but unnamed  : {sorted(reached - named) or 'none'}"
     )
 
 

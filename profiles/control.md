@@ -32,6 +32,13 @@ log as a first-class entry.
 | `participant` | A specific participant stops being assigned new tasks; in-flight tasks complete by default. |
 | `workspace`   | The whole workspace stops accepting new tasks.                  |
 
+At task scope, `control.resume` returns the task to the state it held at the
+`control.pause`, so a review paused mid-flight is actionable again rather than
+arriving back as `in_progress` with the review stranded. A second pause on an
+already paused task captures nothing, so one resume clears it. Where no state
+was captured, a task restored from a store written before this was recorded,
+the task resumes to `in_progress`. SPECIFICATION 8.1 carries the table.
+
 ```json
 {
   "method": "control.pause",
