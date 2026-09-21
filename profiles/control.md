@@ -72,6 +72,8 @@ log as a first-class entry.
 
 Returns a snapshot artefact id that can be passed to `control.rollback`.
 
+`include: []` and `what_to_restore: []` MUST be refused with `-32602`; omitting `include` selects `members`, `open_tasks`, and `mode_ceiling`, while omitting `what_to_restore` selects the snapshot's captured slices. Non-empty lists retain partial selection.
+
 `control.rollback` **does not truncate the audit log.** It appends
 a rollback entry and writes new entries that restore the snapshot's
 recorded state going forward. The interim history remains visible.

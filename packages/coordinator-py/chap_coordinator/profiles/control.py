@@ -142,6 +142,8 @@ def register_control(coord: "Coordinator") -> None:
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         requested = p.get("include")
+        if isinstance(requested, list) and not requested:
+            return {"error": rpc_error(E.PARAMS, "include must not be empty")}
         include = list(requested if requested is not None
                        else ["members", "open_tasks", "mode_ceiling"])
         # Capture the requested slice of state
@@ -191,6 +193,8 @@ def register_control(coord: "Coordinator") -> None:
             return {"error": rpc_error(E.CONTROL_SNAPSHOT_NOT_FOUND,
                                        f"Unknown snapshot: {snap_id}")}
         requested = p.get("what_to_restore")
+        if isinstance(requested, list) and not requested:
+            return {"error": rpc_error(E.PARAMS, "what_to_restore must not be empty")}
         what = list(requested if requested is not None else snap.include)
 
         # Apply the rollback. Per spec, this APPENDS, it does not truncate.
