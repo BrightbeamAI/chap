@@ -14,9 +14,13 @@ HTTP so no serialisation layer masks or invents a difference.
 
 The action set covers the core and review lifecycle, control, handoff, whisper,
 deliberation and routing, including canonical control.snapshot artefacts and
-subsequent rollback. Explicitly empty handoff acceptance remains held out until
-#151 lands; snapshot/rollback use omitted or non-empty selections so this suite
-does not depend on the separate empty-selection change in #152.
+subsequent rollback.
+
+Each envelope is recorded as the client sent it, taken before dispatch, and
+every seed also asserts that dispatch left it untouched. A coordinator records
+what it received: a handler that writes into the request makes the recorded
+envelope differ from the signed one, and would otherwise be replayed into the
+other reference as though both had produced it.
 
 Usage:
     python fuzz.py --seeds 200          # sweep seeds 0..199
@@ -52,6 +56,7 @@ class Recorder:
             deterministic_ids=True, deterministic_clock=True,
             enable_chain=True, default_profiles=PROFILES))
         self.envelopes: list[dict] = []
+        self.dispatched: list[dict] = []
         self.responses: list[dict] = []
         self.tasks: list[str] = []
         self.handoffs: list[str] = []
@@ -67,10 +72,29 @@ class Recorder:
         self._n += 1
         env = {"jsonrpc": "2.0", "id": f"e{self._n}", "method": method,
                "params": {"workspace": "w", "from": actor, **params}}
+        # Record what the client sent, not what dispatch left behind. A handler
+        # that writes into params would otherwise be replayed into the other
+        # reference, and the two would agree on a value only one of them had
+        # produced. Keeping the sent copy also lets the recorded envelope be
+        # compared with the dispatched one, which is the invariant below.
+        sent = json.loads(json.dumps(env))
         resp = self.coord.dispatch(env)
-        self.envelopes.append(env)
+        self.dispatched.append(env)
+        self.envelopes.append(sent)
         self.responses.append(resp)
         return resp
+
+    def recording_matches_what_was_sent(self) -> list[str]:
+        """Methods whose envelope the coordinator altered during dispatch.
+
+        A coordinator records what it received. Anything here is a handler
+        writing into the request, which makes the recorded envelope differ
+        from the signed one and makes this fuzzer replay one reference's
+        mutation into the other.
+        """
+        return [sent["method"]
+                for sent, after in zip(self.envelopes, self.dispatched)
+                if sent != after]
 
     def _bootstrap(self) -> None:
         self._send("workspace.create", "human:a", profiles=PROFILES)
@@ -220,6 +244,13 @@ def _first_divergence(py: list[dict], ts: list[dict]) -> int | None:
 
 def check_seed(seed: int, steps: int) -> tuple[bool, str]:
     rec = Recorder(seed, steps)
+    altered = rec.recording_matches_what_was_sent()
+    if altered:
+        return False, (
+            f"seed {seed}: the coordinator altered the envelope it recorded\n"
+            f"  methods: {', '.join(sorted(set(altered)))}\n"
+            "  A recorded envelope must be the one the client sent, or a "
+            "signature over it no longer verifies.")
     ts = _replay_ts(rec.envelopes)
     ts_responses = ts["responses"]
     idx = _first_divergence(rec.responses, ts_responses)
