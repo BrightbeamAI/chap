@@ -209,6 +209,12 @@ export function registerControl(coord: Coordinator): void {
     if (!ws.members.has(assignee)) {
       return { error: rpcError(E.PARAMS, "successor assignee not in workspace") };
     }
+    // The successor is a created task, so the participant-paused check
+    // task.create applies has to apply here too. Without it, superseding is a
+    // way to hand work to a participant whose work was stopped.
+    if (ws.members.get(assignee)!.paused) {
+      return { error: rpcError(E.CONTROL_WORKSPACE_PAUSED, `Assignee ${assignee} is paused`) };
+    }
     // The successor is a created task, so it is bound by the same modes/1.0
     // invariants as task.create: it must not exceed the workspace ceiling, and
     // a trial-mode task forces review on regardless of its own setting.
