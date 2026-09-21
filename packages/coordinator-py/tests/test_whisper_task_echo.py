@@ -1,8 +1,8 @@
 """
-whisper.answer echoes the whisper's task_id onto the recorded envelope, so a
-task-filtered audit.read returns the answer alongside the ask. The value is
-taken from the stored whisper, never from the caller, so an answer cannot be
-filed against a different task.
+A task-filtered audit.read returns a whisper.answer alongside its ask.
+audit.read resolves the answer's task by joining on whisper_id against the
+stored whisper (never the caller's params), so the answer cannot be filed
+against a different task and the recorded envelope is left as it was signed.
 """
 from __future__ import annotations
 

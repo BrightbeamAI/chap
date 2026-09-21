@@ -1168,7 +1168,14 @@ export class Coordinator {
       const ep = (entry.envelope.params ?? {}) as Record<string, unknown>;
       if (filter.method && entry.envelope.method !== filter.method) continue;
       if (filter.from && ep.from !== filter.from) continue;
-      if (filter.task_id && ep.task_id !== filter.task_id) continue;
+      if (filter.task_id) {
+        let taskId = ep.task_id;
+        if (entry.envelope.method === "whisper.answer") {
+          const prompt = ws.whispers.get(ep.whisper_id as string);
+          taskId = prompt ? (prompt as { task_id?: string }).task_id : undefined;
+        }
+        if (taskId !== filter.task_id) continue;
+      }
       const item: Record<string, unknown> = {
         seq: entry.seq, arrived: entry.arrived, envelope: entry.envelope,
       };

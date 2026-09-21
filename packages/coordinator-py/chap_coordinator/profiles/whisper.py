@@ -116,11 +116,6 @@ def register_whisper(coord: "Coordinator") -> None:
         prompt.answer_option = answer_option
         prompt.answer_text = answer_text
         prompt.comment = p.get("comment")
-        # Echo the whisper's task_id onto the recorded envelope so a
-        # task-filtered audit.read returns the answer alongside the ask.
-        # The value comes from the stored whisper, not the caller, so an
-        # answer cannot be filed against a different task.
-        p["task_id"] = prompt.task_id
         return {"result": {"answered": True,
                            "whisper_id": prompt.id,
                            "task_id": prompt.task_id}}

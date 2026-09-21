@@ -73,13 +73,20 @@ discouraged because it defeats analytical aggregation.
 }
 ```
 
-`task_id` identifies the task the whisper was raised against. The
-Coordinator MUST record the answer against the `task_id` held on the
-whisper identified by `whisper_id`, overwriting any value supplied by
-the caller, and SHOULD echo it in the response. This keeps an
-`audit.read` filtered by `task_id` returning the answer alongside the
-ask, so the thread is recoverable without knowing the whisper id, and
-prevents an answer being filed against a task it did not belong to.
+`task_id` identifies the task the whisper was raised against and is
+optional here. The Coordinator MUST record the envelope as it received
+it, and MUST resolve the answer's task from the `task_id` held on the
+whisper identified by `whisper_id`, disregarding any value the caller
+supplied. An `audit.read` filtered by `task_id` therefore returns the
+answer alongside the ask, so the thread is recoverable without knowing
+the whisper id, and an answer cannot be filed against a task it did not
+belong to. The Coordinator SHOULD echo the resolved `task_id` in the
+response.
+
+Writing the resolved value into the recorded envelope would make the
+chained copy differ from the one the client sent, so under
+`require_signatures` a `whisper.answer` would no longer verify against
+its own signature.
 
 ---
 
