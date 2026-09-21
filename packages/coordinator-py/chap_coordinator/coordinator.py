@@ -1038,10 +1038,13 @@ class Coordinator:
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
         new_state = p.get("state")
+        # Pausing and resuming both belong to control/1.0. A Core-only
+        # workspace that could pause through task.update would hold a task
+        # nothing it advertises can lift.
         legal = {
-            "created":          ["in_progress", "declined", "paused"],
+            "created":          ["in_progress", "declined"],
             "in_progress":      ["in_progress", "completed", "declined",
-                                 "review_requested", "paused"],
+                                 "review_requested"],
             "review_requested": ["in_progress"],
             "paused":           ["cancelled"],
         }
