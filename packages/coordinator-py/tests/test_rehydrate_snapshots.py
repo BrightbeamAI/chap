@@ -4,6 +4,7 @@ from __future__ import annotations
 from chap_coordinator import Coordinator, CoordinatorOptions
 from chap_coordinator.storage.store import MemoryStore
 from chap_coordinator.types import SnapshotArtefact
+from chap_coordinator.canonical import content_hash
 
 
 def _send(coord, method, **params):
@@ -17,10 +18,11 @@ def test_snapshot_artefacts_rehydrate_as_dataclasses():
     _send(coord, "workspace.create", workspace="w")
     workspace = coord.get_workspace("w")
     assert workspace is not None
+    content = {"workspace": "w", "audit_seq": 3, "include": ["mode_ceiling"],
+               "state": {"mode_ceiling": "trial"}}
     workspace.snapshots["art_test"] = SnapshotArtefact(
-        id="art_test", ts="2026-01-01T00:00:00.000Z", by="human:a",
-        workspace="w", audit_seq=3, include=["mode_ceiling"],
-        state={"mode_ceiling": "trial"},
+        id="art_test", produced_at="2026-01-01T00:00:00.000Z", produced_by="human:a",
+        content=content, content_hash=content_hash(content),
     )
 
     from dataclasses import asdict
@@ -28,7 +30,7 @@ def test_snapshot_artefacts_rehydrate_as_dataclasses():
 
     restored = _rehydrate_workspace(asdict(workspace))
     assert isinstance(restored.snapshots["art_test"], SnapshotArtefact)
-    assert restored.snapshots["art_test"].state == {"mode_ceiling": "trial"}
+    assert restored.snapshots["art_test"].content["state"] == {"mode_ceiling": "trial"}
 
 
 def test_snapshot_rollback_works_after_store_restart():

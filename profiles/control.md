@@ -54,6 +54,45 @@ log as a first-class entry.
 
 ## 3. Snapshot and rollback
 
+A snapshot MUST use the `Artefact` shape defined in
+[`chap-task.schema.json`](../schemas/core/chap-task.schema.json): `id`,
+`kind: "snapshot"`, `produced_by`, `produced_at`, `content_hash`, and inline
+`content`. `content_hash` MUST be the `sha256:<hex>` digest of the JCS
+canonical bytes of **content**, not of the whole artefact or just `state`.
+
+The result contains `snapshot_artefact_id`, `audit_seq`, and `artefact`.
+`content` contains `workspace`, `audit_seq`, `include`, `state`, and an optional
+non-empty `label`. The two `audit_seq` values identify the number of entries
+captured before the snapshot operation itself is appended: entries
+`[0, audit_seq)`. The result's `snapshot_artefact_id` equals `artefact.id`.
+
+Each `include` slice has exactly this projection in `content.state`:
+
+| Slice | Captured fields | Rollback behavior |
+|-------|-----------------|-------------------|
+| `members` | `members`: list of `uri`, `type`, `role`, and optional non-empty `scopes`. | Restore role and scopes for members still present; do not recreate departed members. |
+| `mode_ceiling` | `mode_ceiling`: the workspace value. | Restore the captured ceiling. |
+| `open_tasks` | `open_tasks`: list of `id`, `kind`, `state`, and `assignee` for tasks not in `completed`, `declined`, `cancelled`, or `superseded`. | Informational only; tasks are not restored. |
+| `policy` | `routing_policy_uri`, when present and non-empty. | Informational only. |
+| `audit` | `audit_seq`. | Informational only; history is never truncated. |
+
+Optional absent or empty fields and empty `members`/`open_tasks` collections
+MUST be omitted. Numeric zero is not empty. The structural `state` object
+remains present even when the selected slices have no values to expose.
+Member capabilities, keys, joined timestamps, task inputs, outputs, histories,
+and review bodies are not part of this projection. Full tasks remain in their
+own audit entries rather than being duplicated in the snapshot artefact.
+The `include` list retains the caller's selection order.
+`include: []` and `what_to_restore: []` MUST be refused with `-32602`; omitting
+`include` selects `members`, `open_tasks`, and `mode_ceiling`, while omitting
+`what_to_restore` selects the snapshot's captured slices. Non-empty lists retain
+partial selection.
+
+Rollback MUST read the captured `artefact.content.state`; there is no separate
+internal wire representation. Restoring mutable fields must not alias them
+back into the saved snapshot. Snapshot content and its hash remain stable
+after live state changes or library callers modify a returned response.
+
 `control.snapshot` captures workspace state at a point in time:
 
 ```json
@@ -72,7 +111,36 @@ log as a first-class entry.
 
 Returns a snapshot artefact id that can be passed to `control.rollback`.
 
-`include: []` and `what_to_restore: []` MUST be refused with `-32602`; omitting `include` selects `members`, `open_tasks`, and `mode_ceiling`, while omitting `what_to_restore` selects the snapshot's captured slices. Non-empty lists retain partial selection.
+For example, a capture selecting only `mode_ceiling` returns the following
+canonical response (deterministic fixture identifiers and timestamp):
+
+```json
+{
+  "snapshot_artefact_id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+  "audit_seq": 3,
+  "artefact": {
+    "id": "art_01HF7YAT010009WDVSQ5ZMMZ0N",
+    "kind": "snapshot",
+    "produced_by": "human:reviewer@example.org",
+    "produced_at": "2023-11-14T22:13:24.000Z",
+    "content_hash": "sha256:03c0428e5b84736c4fbcb4274d10da851dfb1f57d87dfc927694b037c284d4a0",
+    "content": {
+      "workspace": "wsp_snapshot_conformance",
+      "audit_seq": 3,
+      "include": [
+        "mode_ceiling"
+      ],
+      "state": {
+        "mode_ceiling": "production"
+      }
+    }
+  }
+}
+```
+
+Shared [conformance vectors](../conformance/control-snapshot-vectors.md) fix
+exact responses and hashes for each slice and the default projection.
+
 
 `control.rollback` **does not truncate the audit log.** It appends
 a rollback entry and writes new entries that restore the snapshot's

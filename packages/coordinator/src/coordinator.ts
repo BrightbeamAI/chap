@@ -38,6 +38,7 @@ import type {
   Mode,
   OverrideArtefact,
   ParticipantUri,
+  SnapshotArtefact,
   Task,
   TaskId,
   Workspace,
@@ -478,8 +479,44 @@ export class Coordinator {
         ws.deliberations.set(x.id, x as never);
       for (const x of (w.handoffs as Array<{ id: string } & Record<string, unknown>>) ?? [])
         ws.handoffs.set(x.id, x as never);
-      for (const x of (w.snapshots as Array<{ id: string } & Record<string, unknown>>) ?? [])
-        ws.snapshots.set(x.id, x as never);
+      for (const x of (w.snapshots as Array<{ id: string } & Record<string, unknown>>) ?? []) {
+        // Normalize the former flat store representation only on restore.
+        // New snapshots are stored and emitted in the canonical wire shape.
+        const content = structuredClone((x.content ?? {
+          workspace: x.workspace, audit_seq: x.audit_seq,
+          include: x.include, state: x.state,
+          ...(x.label ? { label: x.label } : {}),
+        }) as SnapshotArtefact["content"]);
+        if (!x.content) {
+          // Legacy in-memory projections can contain undefined optional
+          // fields; full bodies from older stores are not snapshot slices.
+          const oldState = content.state;
+          const state: Record<string, unknown> = {};
+          for (const key of ["mode_ceiling", "routing_policy_uri", "audit_seq"]) {
+            if (oldState[key] != null && oldState[key] !== "") state[key] = oldState[key];
+          }
+          for (const [key, fields] of [
+            ["members", ["uri", "type", "role", "scopes"]],
+            ["open_tasks", ["id", "kind", "state", "assignee"]],
+          ] as const) {
+            const items = oldState[key];
+            if (Array.isArray(items) && items.length) {
+              state[key] = items.map(item => Object.fromEntries(fields
+                .filter(field => item[field] != null && item[field] !== ""
+                  && (!Array.isArray(item[field]) || item[field].length > 0))
+                .map(field => [field, item[field]])));
+            }
+          }
+          content.state = state;
+        }
+        ws.snapshots.set(x.id, {
+          id: x.id, kind: "snapshot",
+          produced_by: (x.produced_by ?? x.by) as string,
+          produced_at: (x.produced_at ?? x.ts) as string,
+          content_hash: (x.content_hash as string | undefined) ?? contentHash(content),
+          content,
+        });
+      }
       for (const x of (w.route_decisions as Array<{ id: string } & Record<string, unknown>>) ?? [])
         ws.route_decisions.set(x.id, x as never);
       this.workspaces.set(ws.id, ws);

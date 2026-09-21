@@ -42,8 +42,8 @@ def test_snapshot_isolated_from_live_mutations_and_response_mutations():
     # Mutating the response returned to a library caller must not mutate the
     # artefact retained for rollback.
     returned = result["artefact"]
-    returned["content"]["state"]["open_tasks"][0]["input"]["nested"].append("response")
-    assert saved.state["open_tasks"][0]["input"]["nested"] == ["before"]
+    returned["content"]["state"]["members"][0]["scopes"].append("response")
+    assert saved.content["state"]["members"][0]["scopes"] == ["review"]
 
     # Mutating live nested values after capture must not rewrite the captured
     # projection either.
@@ -51,7 +51,8 @@ def test_snapshot_isolated_from_live_mutations_and_response_mutations():
     task = workspace.tasks[task_id]
     task.input["nested"].append("live")
     task.review.decisions.append({"reviewer": "human:a", "kind": "approve"})
-    assert saved.state["members"][0]["scopes"] == ["review"]
-    captured_task = next(t for t in saved.state["open_tasks"] if t["id"] == task_id)
-    assert captured_task["input"]["nested"] == ["before"]
-    assert captured_task["review"]["decisions"] == []
+    assert saved.content["state"]["members"][0]["scopes"] == ["review"]
+    captured_task = next(t for t in saved.content["state"]["open_tasks"] if t["id"] == task_id)
+    assert set(captured_task) == {"id", "kind", "state", "assignee"}
+    assert captured_task["state"] == "review_requested"
+    assert captured_task["assignee"] == "agent:b"

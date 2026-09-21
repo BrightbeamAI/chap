@@ -234,7 +234,7 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
         handoffs[k] = Handoff(**v)
 
     snapshots = {
-        k: SnapshotArtefact(**v) if isinstance(v, dict) else v
+        k: SnapshotArtefact.from_dict(v) if isinstance(v, dict) else v
         for k, v in (data.get("snapshots") or {}).items()
     }
 

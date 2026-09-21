@@ -23,11 +23,11 @@ test("control.snapshot detaches the captured state from live and returned values
     workspace: "w", from: "human:a", include: ["members", "open_tasks"],
   }).result;
   const internal = c.workspaces.get("w")!.snapshots.get(snapshot.snapshot_artefact_id)!;
-  const captured = internal.state as any;
+  const captured = internal.content.state as any;
   const returned = snapshot.artefact as any;
 
-  returned.state.members[0].scopes.push("response");
-  returned.state.open_tasks[0].assignee = "response";
+  returned.content.state.members[0].scopes.push("response");
+  returned.content.state.open_tasks[0].assignee = "response";
   assert.deepEqual(captured.members[0].scopes, ["review"]);
   assert.equal(captured.open_tasks[0].assignee, "agent:b");
 
