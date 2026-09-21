@@ -11,6 +11,29 @@ incremented under the same rules.
 
 ## Unreleased
 
+**Behaviour change.** Pausing a task is `control.pause` alone. `task.update`
+reached `paused` from `created` and from `in_progress`, while `control.resume`
+was already the only way out of a pause, so a workspace advertising `core/1.0`
+could hold a task it had no advertised method to lift. `paused → cancelled`
+through `task.update` is unchanged, so a task stranded by an earlier version
+can still be closed. SPECIFICATION 8.1 moves with it.
+
+**Behaviour change.** `whisper.answer` is recorded as the client sent it. Both
+references wrote the whisper's `task_id` into the request after the signature
+had been verified, so the recorded envelope no longer verified under its own
+signature and the chain held an envelope the signer never signed. The answer's
+task is now resolved from the whisper at read time, so an `audit.read` filtered
+by task still returns the answer with the ask, and a caller still cannot file an
+answer against another task.
+
+**Behaviour change.** `audit.submit_to_scitt` is a read. It was recorded, so
+submitting the chain appended to the chain being submitted and moved its head:
+the receipt attested a log one entry shorter than the workspace then held.
+
+**Behaviour change.** `control.supersede` applies the participant-paused check
+that `task.create` applies. Superseding was a way to hand work to a participant
+whose work had been stopped.
+
 **Behaviour change.** `control.resume` restores the state the task held at the
 `control.pause` that preceded it. It set `in_progress` unconditionally, so a
 task paused during a review came back as `in_progress` with the review still
@@ -50,6 +73,22 @@ response and hash for each slice in both references.
 
 ### Fixed
 
+- **The two references refuse the same JSON Patch in the same words.** They
+  gave the same error code and different text: Python quoted with apostrophes
+  and named Python types, TypeScript quoted with double quotes and named
+  JavaScript types. Both now speak JSON, and a shared vector file holds every
+  message so a drift in one fails the suite in both.
+- **`remove` and `replace` at the position after the last array element are
+  refused in both references.** RFC 6901 gives `-` the position after the last
+  element, which no element occupies, so RFC 6902 admits it for `add` alone.
+  TypeScript compared the token numerically, which NaN makes false both ways:
+  `remove` then deleted the first element and `replace` reported success
+  without changing anything. The same `decide.override` therefore produced a
+  different corrected artefact in each reference.
+- **Every typed collection on a workspace is rebuilt when a store is loaded.**
+  `overrides` and `route_decisions` came back as plain dicts in the Python
+  reference, which diverges from the TypeScript restore and breaks the first
+  attribute read after a restart.
 - **A captured snapshot no longer follows live state.** `control.snapshot`
   held references to the workspace's own mutable structures, so later changes
   to members or tasks, and callers modifying a returned response, reached the
