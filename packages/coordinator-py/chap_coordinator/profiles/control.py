@@ -24,6 +24,7 @@ Error codes:
 """
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING
 
 from ..coordinator import mode_le
@@ -170,8 +171,8 @@ def register_control(coord: "Coordinator") -> None:
             workspace=ws.id,
             audit_seq=len(ws.audit),
             label=p.get("label"),
-            include=include,
-            state=state,
+            include=copy.deepcopy(include),
+            state=copy.deepcopy(state),
         )
         ws.snapshots[snap_id] = snap
         return {"result": {"snapshot_artefact_id": snap_id,

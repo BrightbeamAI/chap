@@ -1,2 +1,6 @@
 include CHANGELOG.md
 include tests/conftest.py
+include tests/js_stats_runner.js
+recursive-include chap_analytics/_vendor *
+recursive-include chap_analytics/_report *
+recursive-include examples *.py *.ipynb

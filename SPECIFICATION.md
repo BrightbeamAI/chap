@@ -652,7 +652,7 @@ categories, because several methods carry preconditions of their own.
 | in_progress | `task.update` | in_progress, completed, declined, review_requested, paused |
 | in_progress | `task.update` to completed (review required) | refused, -32602 |
 | review_requested | `task.update` | in_progress |
-| paused | `task.update` | in_progress, cancelled |
+| paused | `task.update` | cancelled |
 | created, in_progress, completed, declined, abstained, escalated | `review.request` | review_requested |
 | review_requested | `review.request` (same artefact) | review_requested, reviewer set widened |
 | review_requested | `review.request` (different artefact) | refused, -32014 |
@@ -923,6 +923,18 @@ structures without it.
 The same convention applies to `control.supersede`: when superseding
 an artefact that carries a `logical_id`, the replacement SHOULD carry
 the same `logical_id` and set `intent_preserved` accordingly.
+
+An artefact MAY carry an optional `fulfils` field naming the `id` of the
+decision it acts on, for example a tool call executed to carry out a
+decision a human approved, so that an execution can be traced back to its
+authorising decision. `fulfils` and `based_on` both express derivation but
+differ in what they name and in what they prove. `based_on` names the input an
+override was derived from and is reconstructible by replaying the chain;
+`fulfils` names the authority an action claims and is **asserted by the
+producer and not verified by the Coordinator**. An incorrect `fulfils`
+identifier is a dangling reference that the chain still verifies, so it MUST
+NOT be read as evidence of the same strength as `approved_artefact_digest`,
+which the Coordinator checks and refuses on mismatch.
 
 [RFC 6902]: https://www.rfc-editor.org/rfc/rfc6902
 

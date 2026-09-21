@@ -101,7 +101,9 @@ export function registerControl(coord: Coordinator): void {
     if (Array.isArray(p.include) && p.include.length === 0) {
       return { error: rpcError(E.PARAMS, "include must not be empty") };
     }
-    const include: string[] = (p.include as string[]) ?? ["members", "open_tasks", "mode_ceiling"];
+    const include: string[] = Array.isArray(p.include)
+      ? [...p.include as string[]]
+      : ["members", "open_tasks", "mode_ceiling"];
     const state: Record<string, unknown> = {};
     if (include.includes("members")) {
       state.members = Array.from(ws.members.values()).map(m => ({
@@ -127,10 +129,16 @@ export function registerControl(coord: Coordinator): void {
       audit_seq: ws.audit.length,
       label: p.label as string | undefined,
       include,
-      state,
+      state: structuredClone(state),
     };
     ws.snapshots.set(snapId, snap);
-    return { result: { snapshot_artefact_id: snapId, audit_seq: snap.audit_seq, artefact: snap } };
+    return {
+      result: {
+        snapshot_artefact_id: snapId,
+        audit_seq: snap.audit_seq,
+        artefact: structuredClone(snap),
+      },
+    };
   });
 
   coord.handlers.set("control.rollback", (p) => {

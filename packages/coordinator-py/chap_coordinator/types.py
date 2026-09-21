@@ -7,6 +7,7 @@ profile specs under ``profiles/``.
 """
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -340,8 +341,8 @@ class SnapshotArtefact:
             "content": {
                 "workspace": self.workspace,
                 "audit_seq": self.audit_seq,
-                "include": self.include,
-                "state": self.state,
+                "include": copy.deepcopy(self.include),
+                "state": copy.deepcopy(self.state),
             },
         }
         if self.label:

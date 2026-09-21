@@ -31,6 +31,10 @@ npm run demo:client                # walks the override-capture flow
 npm run analyze                    # produces the learning-data report
 ```
 
+The server binds `127.0.0.1` by default. Set `CHAP_HOST` (and `PORT`) to bind
+elsewhere; a non-loopback host has no authentication in front of it, so it
+warns on startup. Only expose it on a trusted network.
+
 Or run all three in one shot:
 
 ```bash

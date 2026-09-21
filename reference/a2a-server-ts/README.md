@@ -20,6 +20,10 @@ npm start              # default port 9090
 npm start -- --port 9091
 ```
 
+The server binds `127.0.0.1` by default. Set `CHAP_HOST` to bind elsewhere;
+it has no authentication, so a non-loopback host warns on startup. Only expose
+it on a trusted network.
+
 You should see, on stderr:
 
 ```
