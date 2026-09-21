@@ -663,7 +663,7 @@ categories, because several methods carry preconditions of their own.
 | review_requested | `abstain.declare` | abstained |
 | created, in_progress, review_requested, declined, abstained, escalated, paused | `escalate.raise` | escalated |
 | created, in_progress, review_requested, abstained, escalated, paused | `control.pause` | paused |
-| paused | `control.resume` | in_progress |
+| paused | `control.resume` | the state held at the pause: created, in_progress, review_requested, abstained or escalated; in_progress where none was captured |
 | created, in_progress, review_requested, abstained, escalated, paused | `control.cancel` | cancelled |
 | any state | `control.supersede` | superseded |
 
@@ -688,11 +688,11 @@ Preconditions that are narrower or wider than "non-terminal":
   the workspace's own profile set could not lift.
 - **`control.pause` on a paused task succeeds and changes nothing.**
 - **`control.resume` restores the state captured at the corresponding
-  `control.pause`.** The `To` column above shows `in_progress`, which is the
-  result when no prior state was captured (for example a task resumed from a
-  snapshot written before this was recorded); otherwise the task returns to the
-  state it held when it was paused, so a review paused mid-flight is actionable
-  again on resume.
+  `control.pause`.** A review paused mid-flight is therefore actionable again
+  on resume. `in_progress` is the result only where no prior state was
+  captured, for example a task resumed from a snapshot written before this was
+  recorded. A second `control.pause` on an already paused task captures
+  nothing, so the state held at the first pause is the one restored.
 - **`task.update` MUST NOT complete a task that requires review.**
   `in_progress → completed` is otherwise legal, so without this the review
   could be skipped: the task would finish carrying no artefact and no
