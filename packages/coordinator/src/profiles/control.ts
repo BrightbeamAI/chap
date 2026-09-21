@@ -98,6 +98,9 @@ export function registerControl(coord: Coordinator): void {
   coord.handlers.set("control.snapshot", (p) => {
     const ws = coord.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    if (Array.isArray(p.include) && p.include.length === 0) {
+      return { error: rpcError(E.PARAMS, "include must not be empty") };
+    }
     const include: string[] = Array.isArray(p.include)
       ? [...p.include as string[]]
       : ["members", "open_tasks", "mode_ceiling"];
@@ -147,6 +150,9 @@ export function registerControl(coord: Coordinator): void {
     if (!snapId) return { error: rpcError(E.PARAMS, "to_snapshot_artefact_id is required") };
     const snap = ws.snapshots.get(snapId);
     if (!snap) return { error: rpcError(E.CONTROL_SNAPSHOT_NOT_FOUND, `Unknown snapshot: ${snapId}`) };
+    if (Array.isArray(p.what_to_restore) && p.what_to_restore.length === 0) {
+      return { error: rpcError(E.PARAMS, "what_to_restore must not be empty") };
+    }
     const what: string[] = (p.what_to_restore as string[]) ?? snap.include;
     const restored: string[] = [];
     if (what.includes("mode_ceiling") && snap.state.mode_ceiling) {
