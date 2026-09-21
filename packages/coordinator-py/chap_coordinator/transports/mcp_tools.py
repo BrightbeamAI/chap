@@ -356,7 +356,7 @@ TOOL_ANNOTATIONS: dict[str, dict[str, Any]] = {
     },
     "chap.audit.submit_to_scitt": {
         "title": "Anchor audit log in SCITT",
-        "readOnlyHint": False,
+        "readOnlyHint": True,
         "destructiveHint": False,
         "idempotentHint": False,
         "openWorldHint": True,
