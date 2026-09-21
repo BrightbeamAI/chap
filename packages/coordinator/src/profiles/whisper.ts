@@ -100,11 +100,6 @@ export function registerWhisper(coord: Coordinator): void {
     prompt.answer_option = answerOption;
     prompt.answer_text = answerText;
     prompt.comment = p.comment as string | undefined;
-    // Echo the whisper's task_id onto the recorded envelope so a
-    // task-filtered audit.read returns the answer alongside the ask. The
-    // value comes from the stored whisper, not the caller, so an answer
-    // cannot be filed against a different task.
-    p.task_id = prompt.task_id;
     return { result: { answered: true, whisper_id: prompt.id, task_id: prompt.task_id } };
   });
 

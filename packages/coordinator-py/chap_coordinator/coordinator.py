@@ -1156,8 +1156,13 @@ class Coordinator:
                 continue
             if flt.get("from") and ep.get("from") != flt["from"]:
                 continue
-            if flt.get("task_id") and ep.get("task_id") != flt["task_id"]:
-                continue
+            if flt.get("task_id"):
+                task_id = ep.get("task_id")
+                if env.get("method") == "whisper.answer":
+                    prompt = ws.whispers.get(ep.get("whisper_id", ""))
+                    task_id = prompt.task_id if prompt else None
+                if task_id != flt["task_id"]:
+                    continue
             out.append(entry.to_dict())
         return {"result": {"entries": out, "next_seq": to_seq}}
 
