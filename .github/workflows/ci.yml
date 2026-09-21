@@ -168,7 +168,7 @@ jobs:
           kill $SERVER 2>/dev/null || true
 
       - name: Differential fuzzer (Python vs TypeScript)
-        run: python3 conformance/differential/fuzz.py --seeds 25 --steps 40
+        run: python3 conformance/differential/fuzz.py --seeds 25 --steps 40 --stats
 
   link-and-style:
     name: Docs (em-dashes, link integrity)
