@@ -1073,9 +1073,12 @@ export class Coordinator {
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
     const newState = p.state as Task["state"];
+    // Pausing and resuming both belong to control/1.0. A Core-only workspace
+    // that could pause through task.update would hold a task nothing it
+    // advertises can lift.
     const legal: Record<string, string[]> = {
-      created:          ["in_progress", "declined", "paused"],
-      in_progress:      ["in_progress", "completed", "declined", "review_requested", "paused"],
+      created:          ["in_progress", "declined"],
+      in_progress:      ["in_progress", "completed", "declined", "review_requested"],
       review_requested: ["in_progress"],
       paused:           ["cancelled"],
     };

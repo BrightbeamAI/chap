@@ -87,7 +87,7 @@ test("task.update still completes a task that needs no review", () => {
   assert.equal(task(c, id).state, "completed");
 });
 
-for (const state of ["in_progress", "declined", "paused"]) {
+for (const state of ["in_progress", "declined"]) {
   test(`task.update to ${state} is unaffected`, () => {
     const { c, send } = ready();
     const id = requiredTask(send, "created");

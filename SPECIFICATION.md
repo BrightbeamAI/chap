@@ -648,8 +648,8 @@ categories, because several methods carry preconditions of their own.
 |------|--------|-----|
 | created, in_progress | `task.complete` (review not required) | completed |
 | created, in_progress | `task.complete` (review required) | review_requested, output held as the artefact under review |
-| created | `task.update` | in_progress, declined, paused |
-| in_progress | `task.update` | in_progress, completed, declined, review_requested, paused |
+| created | `task.update` | in_progress, declined |
+| in_progress | `task.update` | in_progress, completed, declined, review_requested |
 | in_progress | `task.update` to completed (review required) | refused, -32602 |
 | review_requested | `task.update` | in_progress |
 | paused | `task.update` | cancelled |
@@ -681,6 +681,11 @@ Preconditions that are narrower or wider than "non-terminal":
 - **`escalate.raise` accepts any non-terminal state**, including `declined`,
   `abstained` and `escalated`. A second escalation on an already escalated
   task replaces its `superseded_by` link with the newer successor.
+- **Pausing is `control.pause` alone.** `task.update` reaches no paused
+  state in either direction, so pause and resume both require
+  `control/1.0`. A workspace that could pause through Core and resume
+  only through `control/1.0` would let any member strand a task that
+  the workspace's own profile set could not lift.
 - **`control.pause` on a paused task succeeds and changes nothing.**
 - **`control.resume` restores the state captured at the corresponding
   `control.pause`.** The `To` column above shows `in_progress`, which is the

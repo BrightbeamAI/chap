@@ -94,7 +94,7 @@ def test_task_update_still_completes_a_task_that_needs_no_review():
     assert _task(c, tid).state == "completed"
 
 
-@pytest.mark.parametrize("state", ["in_progress", "declined", "paused"])
+@pytest.mark.parametrize("state", ["in_progress", "declined"])
 def test_the_other_task_update_transitions_are_unaffected(state):
     c, send = _ready()
     tid = _required_task(send, "created")
