@@ -169,8 +169,10 @@ envelope plus its signature.
 
 ## I
 
-**`id`.** [normative] The ULID identifying a message. Globally unique;
-re-use is rejected with error `-32701`.
+**`id`.** [normative] The ULID identifying a message. Globally unique.
+Refusing a repeated `id` at acceptance is a deployment-level defence
+described in [SECURITY.md](./SECURITY.md#envelope-id-replay); neither
+reference implements it, so no error code is allocated for it.
 
 **`instance_id`.** [normative] Optional artefact-descriptor field
 identifying the specific version of an artefact. When present, MUST

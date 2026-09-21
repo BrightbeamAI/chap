@@ -139,6 +139,61 @@ compromise, the chain head MAY be anchored externally, e.g. periodic
 publication to a transparency log or an internal append-only store with
 separate access controls.
 
+### Envelope id replay
+
+A verifier replaying a chain sees a repeated `id` (item 4 above). Refusing
+one at acceptance is a different and stronger defence, and it is an
+operational decision rather than a protocol requirement. SPECIFICATION §15.4
+carried it as a MUST with the error code `-32701`; neither reference
+implements it, no reference allocates the code, and a requirement the
+references do not meet is worse than none, because the references are what
+conformance is measured against.
+
+What a deployment needs to decide before implementing it:
+
+- **How long to remember.** A seen-id set is unbounded unless it is bounded,
+  and the bound is the replay window the deployment will accept. A
+  long-running workspace cannot hold every id it has ever seen.
+- **Where it lives.** Under the single-writer requirement of SPECIFICATION
+  §10.3 one Coordinator owns the chain, so the set can live with it; a
+  failover replica needs the set to survive the failover or the window
+  reopens.
+- **What it costs a legitimate client.** A client that retries a timed-out
+  request with the same envelope, which is the ordinary response to an
+  ambiguous network failure, is refused. `task.create` already carries
+  `idempotency_key` for exactly that case, and it is the mechanism to reach
+  for first: it dedupes one method by an explicit caller-supplied key, rather
+  than refusing any envelope whose id has been seen.
+
+Chain-level defences are already in force and need no decision:
+`prev_hash` must match the current head, so a replay against a chain that
+has advanced is refused at acceptance, and `ts` must be monotonically
+non-decreasing per `from`.
+
+### Sender-declared timestamps
+
+`ts` is the sender's clock. The chain is ordered by the Coordinator: each
+entry carries `arrived` from the Coordinator's clock, a `seq` assigned in
+acceptance order, and `prev_hash` linking it to the one before. A sender
+cannot reorder the chain by lying about `ts`.
+
+A `ts` that goes backwards for one `from` is still worth watching, because it
+means a clock is wrong, a queue is replaying, or a client is fabricating
+times. Refusing such an envelope is a deployment decision, and these are its
+costs:
+
+- **Millisecond precision.** A participant that sends twice inside one
+  millisecond produces two equal timestamps, so a strict rule refuses
+  ordinary traffic. Non-decreasing is the strongest rule that does not.
+- **Clock skew.** A participant on several hosts, or one whose clock is
+  corrected by NTP, will step backwards through no fault of its own.
+- **What it buys.** Chain order does not depend on it, so the gain is the
+  signal rather than the integrity. Most deployments are better served by
+  alerting on it than by refusing it.
+
+SPECIFICATION §4.3 carried this as a MUST refused with `-32401`. Neither
+reference implements it and no reference allocates the code.
+
 ---
 
 ## 6. Mode safety

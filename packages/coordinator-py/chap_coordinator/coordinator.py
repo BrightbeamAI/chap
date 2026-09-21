@@ -29,6 +29,7 @@ from typing import Any, Callable
 
 from .canonical import ZERO_HASH, canonicalize, content_hash, sha256_hex
 from .ids import IdFactory
+from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
 from .jsonrpc import E, is_valid_envelope, make_response, rpc_error
 from .patch import PatchError, apply_json_patch
 from .types import (
@@ -513,6 +514,15 @@ class Coordinator:
             if stale:
                 return make_response(env_id, error=stale)
 
+        # SPECIFICATION 15.4: refuse a method whose owning profile the
+        # workspace does not advertise. The refusal is -32601, the same answer
+        # a coordinator that never implemented the method would give, so a
+        # deployment cannot tell from outside which of the two it is talking
+        # to. The detail rides in `data` for an operator reading the log.
+        gate = self._profile_gate(method, params)
+        if gate:
+            return make_response(env_id, error=gate)
+
         # control/1.0 and deliberation/1.0: these operations are privileged
         # and MUST be performed by a workspace member. Control is the
         # governance "emergency brake"; deliberation open/close set the vote
@@ -635,6 +645,30 @@ class Coordinator:
         return WorkspaceRecord(
             id=ws.id, data=data, version=version, updated_at=self.now_iso(),
         )
+
+    def _profile_gate(self, method: str, params: Any) -> dict | None:
+        """The SPECIFICATION 15.4 check, per method rather than per namespace.
+
+        Core is always present, so a core method is never gated. The reads in
+        ALWAYS_AVAILABLE are never gated either: a workspace must be able to
+        ask what it is and to check its own chain, and `audit.verify_chain`
+        belongs to `audit-scitt/1.0` while chaining also turns on through an
+        option, so gating it would let a workspace write a hash-linked chain it
+        is refused permission to verify.
+        """
+        owner = OWNING_PROFILE.get(method)
+        if owner is None or owner == "core/1.0" or method in ALWAYS_AVAILABLE:
+            return None
+        ws_id = params.get("workspace") if isinstance(params, dict) else None
+        ws = self.workspaces.get(ws_id) if isinstance(ws_id, str) else None
+        if ws is None:
+            return None
+        # Match on the profile name, so a workspace advertising a later minor
+        # version of the owning profile still carries its methods.
+        if ws.has_profile(owner.split("/")[0]):
+            return None
+        return rpc_error(E.METHOD, f"Unknown method: {method}",
+                         data={"profile": owner, "advertised": list(ws.profiles)})
 
     def _restore_from_store(self) -> None:
         if self.options.store is None:
@@ -821,6 +855,31 @@ class Coordinator:
         if ws_id in self.workspaces:
             return {"error": rpc_error(E.PARAMS, f"workspace already exists: {ws_id}")}
         profiles = list(p.get("profiles") or self.options.default_profiles)
+
+        # SPECIFICATION 15.4: the descriptor and the enforcement agree, and the
+        # workspace boundary is where a disagreement surfaces.
+        #
+        # Advertising a security profile does not turn its enforcement on: that
+        # would break every workspace advertising it today without signing, and
+        # break it at the second call rather than at configuration time. The
+        # rule runs the other way, where it costs nothing. Enforcement on adds
+        # the profile, so the descriptor never understates what is enforced;
+        # the profile advertised with enforcement off is a configuration error.
+        for profile, enforced, option in (
+            ("security-signed/1.0", self.options.require_signatures, "require_signatures"),
+            ("identity-oidc/1.0", self.options.verify_oidc_token is not None, "verify_oidc_token"),
+        ):
+            name = profile.split("/")[0]
+            advertised = any(x == name or x.startswith(name + "/") for x in profiles)
+            if enforced and not advertised:
+                profiles.append(profile)
+            elif advertised and not enforced:
+                return {"error": rpc_error(
+                    E.PARAMS,
+                    f"{profile} is advertised but {option} is not configured. "
+                    f"A workspace that advertises it and does not enforce it "
+                    f"describes a guarantee it does not give.")}
+
         ws = Workspace(
             id=ws_id,
             created=self.now_iso(),
@@ -862,8 +921,12 @@ class Coordinator:
             "audit_count": len(ws.audit),
             "task_count": len(ws.tasks),
             "override_count": len(ws.overrides),
-            "evidence_head": ws.chain_head,
         }
+        # A workspace without the chain has no head. Sending null where the
+        # TypeScript reference omits the key made the same call answer two
+        # ways on the wire, since JSON.stringify drops an undefined value.
+        if ws.chain_head:
+            out["evidence_head"] = ws.chain_head
         if ws.routing_policy_uri:
             out["routing_policy_uri"] = ws.routing_policy_uri
         return {"result": out}

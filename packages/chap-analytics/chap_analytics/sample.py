@@ -34,7 +34,7 @@ __all__ = ["support_desk", "support_desk_coordinator", "synthetic", "WORKSPACE",
 
 WORKSPACE = "wsp_support"
 PROFILES = ["core/1.0", "review/1.0", "whisper/1.0", "deliberation/1.0",
-            "handoff/1.0", "control/1.0"]
+            "handoff/1.0", "control/1.0", "routing/1.0"]
 HUMANS = ["human:maya", "human:sam", "human:priya"]
 AGENT = "agent:drafter"
 INTAKE = "service:intake"
@@ -367,7 +367,11 @@ def synthetic(seed: int = 0, *, tasks: int = 300, days: int = 20,
 class _Synthetic:
     # modes/1.0 is left off: under it a trial task opens its own review on
     # task.complete, and the generator wants to choose the reviewers and rule.
-    PROFILES = ["core/1.0", "review/1.0", "whisper/1.0", "handoff/1.0"]
+    # The rest are advertised because the generator calls them, and since
+    # SPECIFICATION 15.4 is enforced a workspace is refused what it does not
+    # advertise.
+    PROFILES = ["core/1.0", "review/1.0", "whisper/1.0", "handoff/1.0",
+                "deliberation/1.0", "control/1.0", "routing/1.0"]
     KINDS = ["draft_reply", "summary", "classification"]
     PATHS = ["/reply", "/reply", "/summary", "/label", "/amount"]
 

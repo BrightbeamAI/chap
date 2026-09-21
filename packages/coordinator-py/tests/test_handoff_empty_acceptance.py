@@ -17,7 +17,7 @@ def _ready():
             "params": {"workspace": "w", "from": "human:alice", **params},
         })
 
-    send("workspace.create")
+    send("workspace.create", profiles=["core/1.0", "review/1.0", "handoff/1.0"])
     send("participant.join", type="human")
     send("participant.join", **{"from": "human:bob"}, type="human")
     task_ids = [send("task.create", kind="handoff", input={},

@@ -14,7 +14,7 @@ def _open(rule, weights=None, participants=("human:a", "human:b")):
     def s(method, **params):
         return c.dispatch({"jsonrpc": "2.0", "id": method, "method": method, "params": params})
 
-    s("workspace.create", workspace="w")
+    s("workspace.create", workspace="w", profiles=["core/1.0", "review/1.0", "deliberation/1.0"])
     for u in participants:
         s("participant.join", workspace="w", **{"from": u}, type="human")
     opts = {"to": list(participants), "rule": rule}

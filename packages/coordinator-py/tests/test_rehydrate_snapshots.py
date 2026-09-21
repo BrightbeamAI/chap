@@ -15,7 +15,7 @@ def _send(coord, method, **params):
 
 def test_snapshot_artefacts_rehydrate_as_dataclasses():
     coord = Coordinator(CoordinatorOptions(deterministic_ids=True))
-    _send(coord, "workspace.create", workspace="w")
+    _send(coord, "workspace.create", workspace="w", profiles=["core/1.0", "review/1.0", "control/1.0"])
     workspace = coord.get_workspace("w")
     assert workspace is not None
     content = {"workspace": "w", "audit_seq": 3, "include": ["mode_ceiling"],
@@ -39,7 +39,8 @@ def test_snapshot_rollback_works_after_store_restart():
         deterministic_ids=True, deterministic_clock=True, store=store,
     )
     first = Coordinator(options)
-    _send(first, "workspace.create", workspace="w")
+    _send(first, "workspace.create", workspace="w",
+          profiles=["core/1.0", "review/1.0", "control/1.0"])
     _send(first, "participant.join", workspace="w", **{"from": "human:a"}, type="human")
     snap = _send(
         first, "control.snapshot", workspace="w", **{"from": "human:a"},

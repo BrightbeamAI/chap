@@ -12,7 +12,7 @@ def _send(coord, method, **params):
 
 def _ready():
     coord = Coordinator(CoordinatorOptions(deterministic_ids=True))
-    _send(coord, "workspace.create", workspace="w")
+    _send(coord, "workspace.create", workspace="w", profiles=["core/1.0", "review/1.0", "control/1.0"])
     _send(coord, "participant.join", workspace="w", **{"from": "human:a"},
           type="human", scopes=["review"])
     _send(coord, "participant.join", workspace="w", **{"from": "agent:b"},

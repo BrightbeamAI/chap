@@ -22,7 +22,9 @@
     "conformance:py": "bash scripts/run-conformance.sh python",
     "conformance:ts": "bash scripts/run-conformance.sh typescript",
     "check:mcp-schemas": "tsx scripts/sync-mcp-schemas.mjs --check",
-    "check:versions": "node scripts/check-versions.mjs"
+    "check:versions": "node scripts/check-versions.mjs",
+    "check:catalogue": "node scripts/sync-method-catalogue.mjs --check",
+    "check:error-codes": "node scripts/check-error-codes.mjs"
   },
   "engines": {
     "node": ">=20"

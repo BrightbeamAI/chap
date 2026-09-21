@@ -51,10 +51,21 @@ A Coordinator advertises its active profiles in `workspace.describe`:
 }
 ```
 
-Clients check this list before attempting profile-specific methods.
-A client that uses an advertised profile is conformant; a client
-that uses an unadvertised profile MUST be prepared for
-`-32601 Method not found` errors.
+The list is normative, and SPECIFICATION §6.5 says what each entry means.
+
+Clients check it before attempting profile-specific methods. A method whose
+owning profile is not on the list is refused with `-32601 Method not found`,
+the same answer a Coordinator that never implemented it would give, so a
+client cannot tell from the response which of the two it is talking to. The
+error carries `data: {"profile": …, "advertised": [...]}` for an operator
+reading the log.
+
+Two sets of methods answer whatever the list says. The reads,
+`workspace.describe`, `audit.read`, `audit.verify_chain` and
+`audit.verify_receipt`, because a workspace must be able to say what it is and
+to check its own chain. And the key lifecycle, `participant.rotate_key` and
+`participant.revoke_key`, which belong to Core: an operator's response to a
+compromised key does not depend on a profile entry.
 
 ---
 

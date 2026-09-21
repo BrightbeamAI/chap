@@ -11,7 +11,7 @@ function open(rule: string, weights?: Record<string, number>) {
   const c = new Coordinator({ deterministicIds: true });
   const s = (method: string, params: unknown): any =>
     c.dispatch({ jsonrpc: "2.0", id: method, method, params } as never);
-  s("workspace.create", { workspace: "w" });
+  s("workspace.create", { workspace: "w", profiles: ["core/1.0", "review/1.0", "deliberation/1.0"] });
   s("participant.join", { workspace: "w", from: "human:a", type: "human" });
   s("participant.join", { workspace: "w", from: "human:b", type: "human" });
   const params: Record<string, unknown> = { workspace: "w", from: "human:a", to: ["human:a", "human:b"], rule };

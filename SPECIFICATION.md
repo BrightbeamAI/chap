@@ -272,10 +272,20 @@ The `id` field MUST be a [ULID](https://github.com/ulid/spec): 26
 Crockford-base32 characters. ULIDs encode their creation time in their
 prefix, which gives sortability and makes accidental reuse detectable.
 
-The `ts` field MUST be UTC with millisecond precision and MUST be
-strictly monotonic for messages from the same `from` Participant.
-Implementations encountering a non-monotonic timestamp from the same
-origin MUST reject the message with error code `-32401` (`temporal_order_violation`).
+The `ts` field MUST be UTC with millisecond precision. It is declared by
+the sender and carries the sender's clock, so it is not the protocol's
+ordering. The Coordinator records `arrived` on each audit entry from its
+own clock and assigns `seq` in acceptance order, and it is that pair, with
+`prev_hash`, that orders the chain.
+
+A sender whose `ts` goes backwards is worth an operator's attention, and
+[SECURITY.md](./SECURITY.md#sender-declared-timestamps) describes the check
+and what it costs. It was written here as a MUST refused with `-32401`
+(`temporal_order_violation`). Neither reference implements it, no reference
+allocates the code, and §15.4 stated the same rule as non-decreasing while
+this paragraph stated it as strictly monotonic, so the two could not both be
+met. Millisecond precision alone makes strict monotonicity refuse a
+participant that sends twice inside one millisecond.
 
 ### 4.4 Size limits
 
@@ -548,6 +558,51 @@ Policy is referenced by URI; the policy itself is out of scope for
 this specification. The policy document SHOULD be a signed JSON object
 fetchable over HTTPS, with a hash committed to the workspace descriptor
 at creation time.
+
+### 6.5 What advertising a profile does
+
+A workspace's `profiles` list is normative, and this table says what each
+entry means. Advertising had grown three different meanings: for some
+profiles it changed behaviour, for others a separate option did the work and
+the entry did nothing, and for the rest the methods worked whether the entry
+was there or not. The table below is the single answer, and §15.4's dispatch
+rule follows from it.
+
+| Profile | What advertising it does |
+|---|---|
+| `core/1.0` | Nothing. Core is always present, and a Core method is never refused for want of an entry. |
+| `review/1.0` | Admits `review.request`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare` and `escalate.raise`. |
+| `modes/1.0` | Admits the mode ladder of §11, and makes a `trial` task require review whatever its own `review_required` says. |
+| `control/1.0` | Admits `control.*`: pause, resume, cancel, supersede, snapshot, rollback and the mode ceiling. |
+| `whisper/1.0` | Admits `whisper.ask` and `whisper.answer`. |
+| `deliberation/1.0` | Admits `deliberate.open`, `deliberate.vote`, `deliberate.comment` and `deliberate.close`. |
+| `handoff/1.0` | Admits `handoff.propose`, `handoff.accept` and `handoff.decline`. |
+| `routing/1.0` | Admits `task.route`, `review.depth` and `escalate.auto`. |
+| `audit-scitt/1.0` | Turns the hash-linked chain on, and admits `audit.submit_to_scitt`. The reads are Core and are listed below. |
+| `security-signed/1.0` | States that every envelope carries a verified signature. A Coordinator configured to require signatures MUST add this entry, so the descriptor never understates what is enforced, and MUST refuse `workspace.create` where the entry is present and signatures are not required. |
+| `identity-oidc/1.0` | States that a token verifier is configured, under the same two rules as `security-signed/1.0`. Step-up freshness on privileged methods is a separate option. |
+| `identity-vc/1.0` | States that a credential verifier is configured. No method is gated on it. |
+
+Two sets of methods are never refused for want of an entry, whichever profile
+owns them:
+
+- **The reads.** `workspace.describe`, `audit.read`, `audit.verify_chain` and
+  `audit.verify_receipt`. A workspace MUST be able to say what it is and to
+  check its own chain. `audit.verify_chain` belongs to `audit-scitt/1.0` while
+  chaining also turns on through an implementation option, so gating it would
+  let a workspace write a hash-linked chain it is refused permission to verify.
+- **The key lifecycle.** `participant.rotate_key` and `participant.revoke_key`
+  belong to Core. They were attributed to `security-signed/1.0`, which would
+  have removed an operator's response to a compromised key from every
+  deployment that does not advertise it. A conformant Coordinator answers them
+  whatever the workspace advertises.
+
+Advertising a profile does not turn its enforcement on. The rule runs one way
+only: what is enforced MUST be advertised. A deployment advertising
+`security-signed/1.0` today without signing would otherwise break at its second
+call rather than at configuration time, and the descriptor understating
+enforcement is the failure that matters, because a relying party reads the
+descriptor to decide what the chain is worth.
 
 ---
 
@@ -1493,8 +1548,11 @@ Conformant implementations MUST:
 
 1. Verify every signature before accepting any message into the
    evidence chain.
-2. Reject messages with non-monotonic timestamps from the same
-   origin.
+2. Order the chain by acceptance rather than by the sender's clock:
+   record arrival, assign a sequence, and link each entry to the
+   previous one. A sender-declared timestamp that goes backwards is an
+   operational signal, described in
+   [SECURITY.md](./SECURITY.md#sender-declared-timestamps).
 3. Reject messages whose `prev_hash` does not match the current
    chain head.
 4. Enforce role/method/scope checks before dispatching.
@@ -1535,12 +1593,17 @@ defended class. The full operational threat model is in
 [SECURITY.md](./SECURITY.md).
 
 **Replay.** An adversary captures a previously-valid envelope and
-re-injects it into the chain.  *Countermeasures:* envelope `id` is a
-ULID (Crockford-base32; 26 chars) which conformant Coordinators MUST
-reject on second observation (error code `-32701 id_reused`); `ts`
-MUST be monotonically non-decreasing per `from`; `prev_hash` MUST
+re-injects it into the chain.  *Countermeasures:* `prev_hash` MUST
 match the current chain head, so any replay against a chain that has
-since advanced is detected at acceptance.
+since advanced is detected at acceptance, and the entry is recorded
+with the Coordinator's own arrival time and sequence rather than the
+sender's `ts`. Rejecting an envelope `id` on
+second observation is a deployment-level defence rather than a
+protocol requirement, and is described in
+[SECURITY.md](./SECURITY.md#envelope-id-replay): neither reference
+keeps a seen-id set, the size of one is a deployment decision, and a
+requirement no reference meets is worse than no requirement, because
+the references are what conformance is measured against.
 
 **Downgrade.** An adversary forces capability negotiation in
 `workspace.describe` to advertise fewer profiles than both peers
@@ -1557,11 +1620,27 @@ policy, lets an operator pin a floor.
 **Capability confusion across profiles.** Two profiles define methods
 with similar names but different security properties (for example,
 `decide.override` in `review/1.0` versus a hypothetical
-`decide.override` in a forked profile). *Countermeasures:* methods
-are namespaced (`namespace.verb`) and the profile that owns a
-namespace is declared in the workspace descriptor; Coordinators MUST
-reject a method call whose namespace's owning profile is not in the
-workspace's advertised set.
+`decide.override` in a forked profile). *Countermeasures:* methods are
+namespaced (`namespace.verb`), and **a Coordinator MUST refuse a method
+whose owning profile is not in the workspace's advertised set**, except
+for the reads and the key lifecycle named in §6.5.
+
+The rule is per method. It cannot be written per namespace, because six
+of the twelve namespaces span profiles: `workspace` covers Core, `modes`
+and `control`; `participant` covers Core and `security-signed`; `task`,
+`review` and `escalate` each straddle their home profile and `routing`;
+`audit` covers Core and `audit-scitt`. Which profile owns which method is
+declared in
+[`chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json),
+by the `since` field on each entry.
+
+The refusal is `-32601`, the code a Coordinator that never implemented
+the method would return, so a deployment that omits a profile and one
+that has it compiled in but unadvertised are indistinguishable from
+outside. The error object SHOULD carry
+`data: {"profile": …, "advertised": [...]}` for an operator reading the
+log. Refusing with a distinct code would tell an adversary which
+capabilities a Coordinator holds back.
 
 **Key rotation.** A participant rotates a signing key mid-chain.
 *Countermeasures:* `identity-oidc/1.0` and `identity-vc/1.0` define

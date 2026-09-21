@@ -21,7 +21,8 @@ from chap_coordinator import Coordinator, CoordinatorOptions  # noqa: E402
 from chap_analytics import frames, from_coordinator  # noqa: E402
 from chap_analytics.load import Chain  # noqa: E402
 
-PROFILES = ["core/1.0", "review/1.0", "whisper/1.0", "deliberation/1.0", "control/1.0"]
+PROFILES = ["core/1.0", "review/1.0", "whisper/1.0", "deliberation/1.0", "control/1.0",
+            "routing/1.0"]
 
 
 def build():

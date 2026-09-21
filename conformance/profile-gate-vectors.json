@@ -1,0 +1,578 @@
+{
+  "description": "SPECIFICATION 15.4, the dispatch gate, as exact responses shared by both references. A refusal is -32601 with the owning profile and the advertised set in `data`, which is the same answer a coordinator that never implemented the method would give. The allowed cases carry their own refusals, from the handler rather than the gate, which is what distinguishes the two.",
+  "vectors": [
+    {
+      "name": "refused-control-not-advertised",
+      "profiles": [
+        "core/1.0",
+        "review/1.0"
+      ],
+      "workspace": "wsp_profile_gate",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "type": "human",
+            "role": "owner"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "agent:b",
+            "type": "agent",
+            "role": "drafter"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "control.pause",
+        "params": {
+          "workspace": "wsp_profile_gate",
+          "from": "human:a",
+          "task_id": "tsk_absent",
+          "reason": "hold"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32601,
+          "message": "Unknown method: control.pause",
+          "data": {
+            "profile": "control/1.0",
+            "advertised": [
+              "core/1.0",
+              "review/1.0"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "refused-whisper-not-advertised",
+      "profiles": [
+        "core/1.0",
+        "review/1.0"
+      ],
+      "workspace": "wsp_profile_gate",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "type": "human",
+            "role": "owner"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "agent:b",
+            "type": "agent",
+            "role": "drafter"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "whisper.ask",
+        "params": {
+          "workspace": "wsp_profile_gate",
+          "from": "human:a",
+          "task_id": "tsk_absent",
+          "to": [
+            "human:a"
+          ],
+          "question": "q",
+          "deadline_ms": 1000,
+          "default_if_lapsed": "no"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32601,
+          "message": "Unknown method: whisper.ask",
+          "data": {
+            "profile": "whisper/1.0",
+            "advertised": [
+              "core/1.0",
+              "review/1.0"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "refused-routing-not-advertised",
+      "profiles": [
+        "core/1.0",
+        "review/1.0"
+      ],
+      "workspace": "wsp_profile_gate",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "type": "human",
+            "role": "owner"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "agent:b",
+            "type": "agent",
+            "role": "drafter"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "task.route",
+        "params": {
+          "workspace": "wsp_profile_gate",
+          "from": "human:a",
+          "task_id": "tsk_absent",
+          "candidates": [
+            "agent:b"
+          ]
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32601,
+          "message": "Unknown method: task.route",
+          "data": {
+            "profile": "routing/1.0",
+            "advertised": [
+              "core/1.0",
+              "review/1.0"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "refused-audit-scitt-not-advertised",
+      "profiles": [
+        "core/1.0",
+        "review/1.0"
+      ],
+      "workspace": "wsp_profile_gate",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "type": "human",
+            "role": "owner"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "agent:b",
+            "type": "agent",
+            "role": "drafter"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "audit.submit_to_scitt",
+        "params": {
+          "workspace": "wsp_profile_gate",
+          "from": "human:a"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32601,
+          "message": "Unknown method: audit.submit_to_scitt",
+          "data": {
+            "profile": "audit-scitt/1.0",
+            "advertised": [
+              "core/1.0",
+              "review/1.0"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "allowed-control-advertised",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0"
+      ],
+      "workspace": "wsp_profile_gate",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "type": "human",
+            "role": "owner"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "agent:b",
+            "type": "agent",
+            "role": "drafter"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "control.pause",
+        "params": {
+          "workspace": "wsp_profile_gate",
+          "from": "human:a",
+          "task_id": "tsk_absent",
+          "reason": "hold"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32602,
+          "message": "Unknown task"
+        }
+      }
+    },
+    {
+      "name": "allowed-control-later-minor-version",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.1"
+      ],
+      "workspace": "wsp_profile_gate",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.1"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "type": "human",
+            "role": "owner"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "agent:b",
+            "type": "agent",
+            "role": "drafter"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "control.pause",
+        "params": {
+          "workspace": "wsp_profile_gate",
+          "from": "human:a",
+          "task_id": "tsk_absent",
+          "reason": "hold"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32602,
+          "message": "Unknown task"
+        }
+      }
+    },
+    {
+      "name": "allowed-read-never-gated",
+      "profiles": [
+        "core/1.0",
+        "review/1.0"
+      ],
+      "workspace": "wsp_profile_gate",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "type": "human",
+            "role": "owner"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "agent:b",
+            "type": "agent",
+            "role": "drafter"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "workspace.describe",
+        "params": {
+          "workspace": "wsp_profile_gate",
+          "from": "human:a"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "result": {
+          "id": "wsp_profile_gate",
+          "created": "2023-11-14T22:13:21.000Z",
+          "state": "active",
+          "mode": "trial",
+          "mode_ceiling": "production",
+          "max_envelope_bytes": 1048576,
+          "step_up_window_sec": 300,
+          "profiles": [
+            "core/1.0",
+            "review/1.0"
+          ],
+          "members": [
+            {
+              "uri": "human:a",
+              "type": "human",
+              "role": "owner",
+              "joined": "2023-11-14T22:13:22.000Z"
+            },
+            {
+              "uri": "agent:b",
+              "type": "agent",
+              "role": "drafter",
+              "joined": "2023-11-14T22:13:23.000Z"
+            }
+          ],
+          "audit_count": 3,
+          "task_count": 0,
+          "override_count": 0
+        }
+      }
+    },
+    {
+      "name": "allowed-key-revocation-never-gated",
+      "profiles": [
+        "core/1.0",
+        "review/1.0"
+      ],
+      "workspace": "wsp_profile_gate",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "human:a",
+            "type": "human",
+            "role": "owner"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_profile_gate",
+            "from": "agent:b",
+            "type": "agent",
+            "role": "drafter"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "participant.revoke_key",
+        "params": {
+          "workspace": "wsp_profile_gate",
+          "from": "human:a",
+          "target_uri": "human:a",
+          "kid": "k-absent"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32071,
+          "message": "No key k-absent for target"
+        }
+      }
+    }
+  ]
+}

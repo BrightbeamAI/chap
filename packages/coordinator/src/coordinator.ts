@@ -21,6 +21,7 @@
  */
 
 import { canonicalize, contentHash, sha256Hex, ZERO_HASH } from "./canonical.js";
+import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "./catalogue.js";
 import { publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
@@ -586,6 +587,16 @@ export class Coordinator {
       if (stale) return reply(envelope, { error: stale });
     }
 
+    // SPECIFICATION 15.4: refuse a method whose owning profile the workspace
+    // does not advertise. The refusal is -32601, the same answer a coordinator
+    // that never implemented the method would give, so a deployment cannot
+    // tell from outside which of the two it is talking to. The detail rides in
+    // `data` for an operator reading the log.
+    {
+      const gate = this.profileGate(method, params);
+      if (gate) return reply(envelope, { error: gate });
+    }
+
     // control/1.0 and deliberation/1.0: these operations are privileged and
     // MUST be performed by a workspace member. Control is the governance
     // "emergency brake"; deliberation open/close set the vote parameters and
@@ -773,6 +784,30 @@ export class Coordinator {
 
   // -- step-up (identity-oidc/1.0) -----------------------------------
 
+  /**
+   * The SPECIFICATION 15.4 check, per method rather than per namespace.
+   *
+   * Core is always present, so a core method is never gated. The reads in
+   * ALWAYS_AVAILABLE are never gated either: a workspace must be able to ask
+   * what it is and to check its own chain, and `audit.verify_chain` belongs to
+   * `audit-scitt/1.0` while chaining also turns on through an option, so
+   * gating it would let a workspace write a hash-linked chain it is refused
+   * permission to verify.
+   */
+  private profileGate(method: string, params: Record<string, unknown>) {
+    const owner = OWNING_PROFILE[method];
+    if (owner === undefined || owner === "core/1.0" || ALWAYS_AVAILABLE.has(method)) return undefined;
+    const wsId = params.workspace as string | undefined;
+    const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
+    if (!ws) return undefined;
+    // Match on the profile name, so a workspace advertising a later minor
+    // version of the owning profile still carries its methods.
+    const name = owner.split("/")[0];
+    if (ws.profiles.some(p => p === name || p.startsWith(name + "/"))) return undefined;
+    return rpcError(E.METHOD, `Unknown method: ${method}`,
+                    { profile: owner, advertised: [...ws.profiles] });
+  }
+
   private checkStepUp(params: Record<string, unknown>): { code: number; message: string; data?: unknown } | null {
     const wsId = params.workspace as string | undefined;
     const sender = params.from as string | undefined;
@@ -847,6 +882,31 @@ export class Coordinator {
     if (typeof id !== "string") return { error: rpcError(E.PARAMS, "workspace must be a string id") };
     if (this.workspaces.has(id)) return { error: rpcError(E.PARAMS, `workspace already exists: ${id}`) };
     const profiles: string[] = Array.isArray(p.profiles) ? [...(p.profiles as string[])] : [...(this.options.defaultProfiles ?? ["core/1.0", "review/1.0"])];
+
+    // SPECIFICATION 15.4: the descriptor and the enforcement agree, and the
+    // workspace boundary is where a disagreement surfaces.
+    //
+    // Advertising a security profile does not turn its enforcement on: that
+    // would break every workspace advertising it today without signing, and
+    // break it at the second call rather than at configuration time. The rule
+    // runs the other way, where it costs nothing. Enforcement on adds the
+    // profile, so the descriptor never understates what is enforced; the
+    // profile advertised with enforcement off is a configuration error.
+    for (const [profile, enforced, option] of [
+      ["security-signed/1.0", !!this.options.requireSignatures, "requireSignatures"],
+      ["identity-oidc/1.0", this.options.verifyOidcToken !== undefined, "verifyOidcToken"],
+    ] as [string, boolean, string][]) {
+      const name = profile.split("/")[0];
+      const advertised = profiles.some(x => x === name || x.startsWith(name + "/"));
+      if (enforced && !advertised) profiles.push(profile);
+      else if (advertised && !enforced) {
+        return { error: rpcError(E.PARAMS,
+          `${profile} is advertised but ${option} is not configured. ` +
+          `A workspace that advertises it and does not enforce it ` +
+          `describes a guarantee it does not give.`) };
+      }
+    }
+
     const chainEnabled = profiles.includes("audit-scitt/1.0") || !!this.options.enableChain;
     const ws: Workspace = {
       id,
@@ -897,7 +957,10 @@ export class Coordinator {
       audit_count: ws.audit.length,
       task_count: ws.tasks.size,
       override_count: ws.overrides.size,
-      evidence_head: ws.chain_head,
+      // Omitted where the workspace has no chain, which is what the Python
+      // reference now sends too: JSON.stringify drops an undefined value, so
+      // the two answered the same call differently on the wire.
+      ...(ws.chain_head ? { evidence_head: ws.chain_head } : {}),
       ...(ws.routing_policy_uri ? { routing_policy_uri: ws.routing_policy_uri } : {}),
     }};
   }

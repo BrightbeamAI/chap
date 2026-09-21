@@ -54,6 +54,19 @@ jobs:
       - name: One release version everywhere
         run: npm run check:versions
 
+      # SPECIFICATION 15.4's dispatch gate needs one statement of which
+      # profile owns which method. Two hand-kept copies of that map would
+      # drift, as the MCP parameter descriptions did, so both references read
+      # a generated table and this fails when a committed copy is stale.
+      - name: The owning-profile catalogue matches both references
+        run: npm run check:catalogue
+
+      # A code the normative tables allocate and a reference does not is a
+      # promise the reference does not keep. -32701 and -32401 were both
+      # specified as MUSTs and allocated in neither.
+      - name: Every allocated error code exists in both references
+        run: npm run check:error-codes
+
       - name: Test all TS packages
         # The SQLite store suites skipped silently on every machine for months
         # because their availability probe was broken. Strict mode makes an
