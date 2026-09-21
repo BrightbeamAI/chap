@@ -26,6 +26,22 @@ const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 // "0x0a", "3.0", "", "1_0"), which would apply the same patch differently.
 const ARRAY_INDEX_RE = /^(0|[1-9][0-9]*)$/;
 
+// The JSON type name of a value. Python and JavaScript name their own types
+// differently (dict against object, list against object, str against string).
+// The refusal names the JSON type, which both references and the
+// specification share.
+function jsonType(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  switch (typeof value) {
+    case "object":  return "object";
+    case "string":  return "string";
+    case "number":  return "number";
+    case "boolean": return "boolean";
+    default:        return "null";
+  }
+}
+
 function arrayIndex(seg: string): number {
   if (!ARRAY_INDEX_RE.test(seg)) throw new PatchError(`Array index expected at ${JSON.stringify(seg)}`);
   return Number(seg);
@@ -69,7 +85,7 @@ function navigate(doc: any, parts: string[]): [any, string | number] {
       }
       parent = parent[part];
     } else {
-      throw new PatchError(`Cannot traverse into ${typeof parent} at ${JSON.stringify(part)}`);
+      throw new PatchError(`Cannot traverse into ${jsonType(parent)} at ${JSON.stringify(part)}`);
     }
   }
   const last = parts[parts.length - 1];
@@ -148,7 +164,7 @@ function applyOne(doc: any, op: JsonPatchOp): any {
     } else if (parent !== null && typeof parent === "object") {
       parent[key as string] = op.value;
     } else {
-      throw new PatchError(`Cannot add into ${typeof parent}`);
+      throw new PatchError(`Cannot add into ${jsonType(parent)}`);
     }
     return doc;
   }
@@ -159,7 +175,10 @@ function applyOne(doc: any, op: JsonPatchOp): any {
     if (parts.length === 0) return op.value;
     const [parent, key] = navigate(doc, parts);
     if (Array.isArray(parent)) {
-      const idx = key as number;
+      // RFC 6901: "-" names the position after the last element, which no
+      // element occupies, so only "add" can use it. Left as a string it slips
+      // through a numeric range check and writes a "-" property on the array.
+      const idx = key === "-" ? -1 : (key as number);
       if (idx < 0 || idx >= parent.length) {
         throw new PatchError(`Path not found for replace: ${path}`);
       }
@@ -170,7 +189,7 @@ function applyOne(doc: any, op: JsonPatchOp): any {
       }
       parent[key as string] = op.value;
     } else {
-      throw new PatchError(`Cannot replace in ${typeof parent}`);
+      throw new PatchError(`Cannot replace in ${jsonType(parent)}`);
     }
     return doc;
   }
@@ -180,7 +199,10 @@ function applyOne(doc: any, op: JsonPatchOp): any {
     if (parts.length === 0) throw new PatchError("Cannot remove root.");
     const [parent, key] = navigate(doc, parts);
     if (Array.isArray(parent)) {
-      const idx = key as number;
+      // RFC 6901: "-" names no existing element, so it cannot be removed.
+      // Left as a string it passes the numeric range check and then splice
+      // coerces it to zero, removing the first element instead.
+      const idx = key === "-" ? -1 : (key as number);
       if (idx < 0 || idx >= parent.length) {
         throw new PatchError(`Index out of range for remove: ${path}`);
       }
@@ -191,7 +213,7 @@ function applyOne(doc: any, op: JsonPatchOp): any {
       }
       delete parent[key as string];
     } else {
-      throw new PatchError(`Cannot remove from ${typeof parent}`);
+      throw new PatchError(`Cannot remove from ${jsonType(parent)}`);
     }
     return doc;
   }
