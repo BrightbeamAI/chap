@@ -5,8 +5,7 @@
   "description": "Descriptor for a CHAP workspace.",
   "type": "object",
   "required": [
-    "id", "name", "created", "state", "mode", "mode_ceiling",
-    "coordinator", "members", "evidence_head", "evidence_count"
+    "id", "created", "state", "mode", "mode_ceiling", "members", "profiles"
   ],
   "properties": {
     "id": {
@@ -106,12 +105,31 @@
     "evidence_head": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
-      "description": "Hash of the current chain head."
+      "description": "Hash of the current chain head. Omitted where the workspace has no chain, so it is not required."
     },
-    "evidence_count": {
+    "audit_count": {
       "type": "integer",
       "minimum": 0,
-      "description": "Number of entries currently in the chain."
+      "description": "Number of entries currently in the log. Named evidence_count in 0.1, which neither reference ever sent."
+    },
+    "task_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of tasks the workspace holds."
+    },
+    "override_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of override artefacts the workspace holds."
+    },
+    "profiles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The advertised profile set. Normative: SPECIFICATION 6.5 says what each entry means, and 15.4 refuses a method whose owning profile is absent."
+    },
+    "routing_policy_uri": {
+      "type": "string",
+      "description": "Where the routing policy is fetched from, when routing/1.0 is in force."
     },
     "anchors": {
       "type": "array",

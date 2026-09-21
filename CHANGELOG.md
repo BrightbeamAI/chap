@@ -50,6 +50,14 @@ participant that sends twice in one millisecond. Neither code was allocated in
 either reference. The chain is ordered by arrival and `prev_hash`, not by the
 sender's clock, and 15.1 now says so.
 
+**Specification.** 15.1 is regrouped by who has to do the work. It read as
+eight obligations on the Coordinator and three of them were not that:
+signature verification and step-up are turned on by a profile, TLS and
+delivery filtering belong to the deployment, and a `required_scope` is
+declared per method and enforced by neither reference, which the text now
+says. 11.3's shadow-observer MUST moves with it: a Coordinator answers the
+caller who asked, and no reference has a delivery layer to filter.
+
 ### Added
 
 - **One catalogue, generated into both references.** Which profile owns which
@@ -65,6 +73,13 @@ sender's clock, and 15.1 now says so.
 
 ### Fixed
 
+- **The workspace descriptor schema describes the descriptor.** It required
+  `name`, `coordinator` and `evidence_count`, none of which either reference
+  sends, and `evidence_head`, which a workspace with no chain cannot have. It
+  declared none of `profiles`, `audit_count`, `task_count`, `override_count`
+  or `routing_policy_uri`, all of which both references send. Nothing
+  validated a descriptor against it at runtime, so it had drifted unchecked;
+  a test in each reference now holds the two together.
 - **`workspace.describe` answers the same on both references.** Python sent
   `evidence_head: null` where TypeScript omitted the key, so the same call
   returned different JSON. A workspace with no chain has no head, and both now
