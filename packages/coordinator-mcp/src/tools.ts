@@ -271,6 +271,10 @@ export interface ToolAnnotations {
  */
 const READ_ONLY = new Set([
   "chap.workspace.describe", "chap.audit.read", "chap.audit.verify_chain", "chap.audit.verify_receipt",
+  // Submitting reads the chain and sends it onward. It changes nothing here,
+  // which is what readOnlyHint claims; openWorldHint carries the fact that it
+  // reaches a service outside this coordinator.
+  "chap.audit.submit_to_scitt",
 ]);
 
 /** Overwrites, removes, or settles state irreversibly. */
