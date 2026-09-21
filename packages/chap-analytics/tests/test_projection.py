@@ -38,6 +38,26 @@ def test_a_missing_column_is_null_not_absent(envelopes_only):
     assert g.deliberations["outcome"].isna().all()
 
 
+def test_fulfils_is_projected_onto_the_tasks_frame():
+    from chap_coordinator import Coordinator, CoordinatorOptions
+    from chap_coordinator.transports.wrap import wrap_mcp_tool_call
+
+    from chap_analytics import from_coordinator
+
+    c = Coordinator(CoordinatorOptions(
+        default_profiles=["core/1.0", "review/1.0", "audit-scitt/1.0"]))
+    c.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w"}})
+    c.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
+                "params": {"workspace": "w", "from": "agent:bot",
+                           "type": "agent", "role": "drafter"}})
+    res = wrap_mcp_tool_call(c, "w", caller="agent:bot", tool="t",
+                             args={}, result={"ok": True}, fulfils="art_decision_1")
+    g = frames(from_coordinator(c, "w"))
+    row = g.tasks[g.tasks["task_id"] == res["task_id"]].iloc[0]
+    assert row["fulfils"] == "art_decision_1"
+
+
 def test_tables_are_addressable_by_name(f):
     for name in BY_NAME:
         assert isinstance(f[name], pd.DataFrame)

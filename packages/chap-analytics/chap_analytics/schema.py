@@ -126,6 +126,7 @@ TASKS = Table(
         _c("criticality", "string", "envelopes", "Routing hint, where given."),
         _c("risk_tier", "string", "envelopes", "Routing hint, where given."),
         _c("supersedes", "string", "envelopes", "Task this one replaced, for a supersession or an escalation."),
+        _c("fulfils", "string", "envelopes", "On a wrapped tool call or exchange, the id of the decision the caller said it carries out. Asserted by the producer and not verified by the coordinator, so an incorrect id is a dangling reference; a link, not evidence. Null where none was given."),
     ),
 )
 
