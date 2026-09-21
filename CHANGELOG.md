@@ -11,6 +11,65 @@ incremented under the same rules.
 
 ## Unreleased
 
+**Behaviour change.** A Coordinator refuses a method whose owning profile the
+workspace does not advertise, which SPECIFICATION 15.4 has required since 0.1
+and neither reference did. Removing `control/1.0` from a workspace advertised
+nothing and changed nothing: the governance emergency brake stayed fully live.
+The refusal is `-32601`, the answer a Coordinator that never implemented the
+method would give, carrying `data: {"profile": …, "advertised": [...]}` for an
+operator. Two sets of methods are never refused: the reads
+(`workspace.describe`, `audit.read`, `audit.verify_chain`,
+`audit.verify_receipt`), because a workspace must be able to say what it is and
+check its own chain; and the key lifecycle (`participant.rotate_key`,
+`participant.revoke_key`), reattributed to Core so an operator's response to a
+compromised key does not depend on a profile entry. The rule is per method: six
+of the twelve namespaces span profiles, so it cannot be written per namespace.
+A workspace that calls a profile method now has to advertise that profile.
+
+**Behaviour change.** `workspace.create` refuses a configuration whose
+descriptor understates what is enforced. A Coordinator requiring signatures
+adds `security-signed/1.0` to the advertised set; advertising it with
+signatures off is refused with `-32602`. The same rule for `identity-oidc/1.0`
+and its token verifier. Advertising still does not turn enforcement on, because
+that would break existing workspaces at their second call rather than at
+configuration time.
+
+**Specification.** New 6.5, a normative table saying what advertising each
+profile does. Advertising had grown three meanings: changing behaviour, doing
+nothing while a separate option did the work, and doing nothing at all. 15.4's
+dispatch rule follows from the table and is rewritten as a per-method rule.
+
+Two requirements no reference met have left the normative voice for
+[SECURITY.md](SECURITY.md), which is where 15.4 already points for the
+operational model. Refusing a repeated envelope `id` with `-32701`: the size of
+a seen-id set is a deployment decision, and `idempotency_key` already covers
+the retry case it would break. Refusing a non-monotonic `ts` with `-32401`:
+4.3 said strictly monotonic and 15.4 said non-decreasing, so the two could not
+both be met, and millisecond precision makes the strict rule refuse a
+participant that sends twice in one millisecond. Neither code was allocated in
+either reference. The chain is ordered by arrival and `prev_hash`, not by the
+sender's clock, and 15.1 now says so.
+
+### Added
+
+- **One catalogue, generated into both references.** Which profile owns which
+  method is stated once, in `chap-methods.schema.json`, and
+  `scripts/sync-method-catalogue.mjs` writes the table each reference
+  dispatches against. CI fails when a committed copy is stale.
+- **Shared dispatch-gate vectors.** `conformance/profile-gate-vectors.json`
+  fixes the exact response for four refusals and four calls that pass the gate,
+  read by both suites.
+- **An error-code check.** Every code the normative tables allocate must exist
+  in both references, and a code in one reference alone is a divergence. Run in
+  CI.
+
+### Fixed
+
+- **`workspace.describe` answers the same on both references.** Python sent
+  `evidence_head: null` where TypeScript omitted the key, so the same call
+  returned different JSON. A workspace with no chain has no head, and both now
+  omit it. Found by the new dispatch-gate vectors.
+
 **Behaviour change.** Pausing a task is `control.pause` alone. `task.update`
 reached `paused` from `created` and from `in_progress`, while `control.resume`
 was already the only way out of a pause, so a workspace advertising `core/1.0`

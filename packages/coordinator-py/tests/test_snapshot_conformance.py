@@ -46,7 +46,7 @@ def _ready(store=None):
         return c.dispatch({"jsonrpc": "2.0", "id": method, "method": method,
                            "params": {"workspace": "w", "from": "human:a", **params}})
 
-    send("workspace.create")
+    send("workspace.create", profiles=["core/1.0", "review/1.0", "control/1.0"])
     send("participant.join", type="human", scopes=["review"])
     return c, send, store
 

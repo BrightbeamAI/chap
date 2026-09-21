@@ -9,7 +9,7 @@ function send(c: Coordinator, method: string, params: Record<string, unknown>): 
 
 test("control.snapshot detaches the captured state from live and returned values", () => {
   const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
-  send(c, "workspace.create", { workspace: "w" });
+  send(c, "workspace.create", { workspace: "w", profiles: ["core/1.0", "review/1.0", "control/1.0"] });
   send(c, "participant.join", {
     workspace: "w", from: "human:a", type: "human", scopes: ["review"],
   });

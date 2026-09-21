@@ -374,7 +374,8 @@ test("control.supersede cannot exceed the mode ceiling", () => {
   const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
   const send = (m: string, p: Record<string, unknown>) =>
     c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
-  send("workspace.create", { workspace: "w", mode_ceiling: "trial" });
+  send("workspace.create", { workspace: "w", mode_ceiling: "trial",
+    profiles: ["core/1.0", "review/1.0", "control/1.0", "modes/1.0"] });
   send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner" });
   send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
   const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "draft",
@@ -392,7 +393,7 @@ test("control.supersede forces review on a trial successor", () => {
   const send = (m: string, p: Record<string, unknown>) =>
     c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
   send("workspace.create", { workspace: "w", mode_ceiling: "production",
-    profiles: ["core/1.0", "review/1.0", "modes/1.0"] });
+    profiles: ["core/1.0", "review/1.0", "control/1.0", "modes/1.0"] });
   send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner" });
   send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
   const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "draft",
@@ -408,7 +409,7 @@ test("whisper.ask requires the asker to be a member", () => {
   const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
   const send = (m: string, p: Record<string, unknown>) =>
     c.dispatch({ jsonrpc: "2.0", id: `t-${m}`, method: m, params: p });
-  send("workspace.create", { workspace: "w" });
+  send("workspace.create", { workspace: "w", profiles: ["core/1.0", "review/1.0", "whisper/1.0"] });
   send("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner" });
   send("participant.join", { workspace: "w", from: "agent:bot", type: "agent", role: "drafter" });
   const tid = (send("task.create", { workspace: "w", from: "human:alice", kind: "k",

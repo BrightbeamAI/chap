@@ -40,7 +40,7 @@ function ready(store = new MemoryStore()) {
   const send = (method: string, params: Record<string, unknown> = {}): any =>
     c.dispatch({ jsonrpc: "2.0", id: method, method,
       params: { workspace: "w", from: "human:a", ...params } });
-  send("workspace.create");
+  send("workspace.create", { profiles: ["core/1.0", "review/1.0", "control/1.0"] });
   send("participant.join", { type: "human", scopes: ["review"] });
   return { c, send, store };
 }
