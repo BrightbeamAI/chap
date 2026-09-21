@@ -739,7 +739,8 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
 
         elif method == "control.pause" and tid and p.get("scope", "task") == "task":
             t = task(tid)
-            t.paused_from = t.state
+            if t.state != "paused":
+                t.paused_from = t.state
             t.state = "paused"
 
         elif method == "control.resume" and tid and p.get("scope", "task") == "task":
