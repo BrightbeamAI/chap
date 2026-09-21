@@ -1234,11 +1234,13 @@ The Coordinator MUST:
 - Reject any `task.create` or `control.supersede` whose mode exceeds the
   workspace's ceiling
   with error `-32040` (`mode_ceiling_exceeded`).
-- Refuse to dispatch shadow-mode artefacts to participants not on
-  the workspace's `shadow_observers` list.
 - Record every mode change as a first-class evidence entry.
 - Reject privileged mode transitions without valid step-up auth with
-  error `-32402` (`step_up_required`).
+  error `-32402` (`step_up_required`), where `identity-oidc/1.0` is in force.
+
+Delivery of shadow-mode output to the workspace's `shadow_observers` alone is
+a requirement on the deployment's delivery layer rather than on the
+Coordinator, which answers the caller who asked it. See §15.1.
 
 ### 11.4 Per-task overrides
 
@@ -1544,22 +1546,48 @@ section summarises requirements normative to the specification.
 
 ### 15.1 Mandatory protections
 
-Conformant implementations MUST:
+This section is grouped by who has to do the work, because the list read as
+eight flat obligations on the Coordinator and three of them were not that.
+A requirement the reference implementations do not meet is worse than no
+requirement, since the references are what conformance is measured against.
 
-1. Verify every signature before accepting any message into the
-   evidence chain.
-2. Order the chain by acceptance rather than by the sender's clock:
-   record arrival, assign a sequence, and link each entry to the
-   previous one. A sender-declared timestamp that goes backwards is an
-   operational signal, described in
+**A conformant Coordinator MUST:**
+
+1. Order the chain by acceptance rather than by the sender's clock: record
+   arrival, assign a sequence, and link each entry to the one before. A
+   sender-declared timestamp that goes backwards is an operational signal,
+   described in
    [SECURITY.md](./SECURITY.md#sender-declared-timestamps).
-3. Reject messages whose `prev_hash` does not match the current
-   chain head.
-4. Enforce role/method/scope checks before dispatching.
-5. Enforce the mode ceiling and shadow-observer routing rules.
-6. Require step-up authentication for privileged methods.
-7. Use TLS 1.3+ for all production transports.
-8. Use cryptographically random ULIDs for `id` generation.
+2. Record every accepted operation on the chain. The reads named in §6.5 are
+   the exception and are recorded nowhere, because appending on read would
+   grow and re-link the chain each time it was inspected.
+3. Refuse a method whose owning profile the workspace does not advertise
+   (§15.4), and refuse a `workspace.create` whose descriptor understates what
+   the Coordinator enforces (§6.5).
+4. Enforce the authorisation the workspace holds: membership where a profile
+   requires it, and the role checks the method defines. A `required_scope` is
+   declared per method in the catalogue and is not yet enforced by either
+   reference; treat it as descriptive until it is.
+5. Enforce the mode ceiling, refusing a `task.create` or `control.supersede`
+   above it with `-32040`, and record every mode change on the chain.
+6. Generate `id` values as cryptographically random ULIDs outside test mode.
+
+**A profile turns these on, and §6.5 binds advertising to enforcing, so a
+descriptor cannot understate them:**
+
+7. `security-signed/1.0`: verify every signature before accepting a message
+   into the chain, and refuse a message that does not verify.
+8. `identity-oidc/1.0`: require step-up authentication, within the workspace's
+   window, for the privileged methods.
+
+**The deployment MUST**, because a Coordinator library has no transport or
+delivery layer of its own to do it in:
+
+9. Use TLS 1.3 or later for every production transport.
+10. Filter delivery of shadow-mode output to the workspace's
+    `shadow_observers`. A Coordinator answers the caller who asked; which
+    participants are notified of what is the delivery layer's decision, and
+    no reference implements a delivery layer.
 
 ### 15.2 Recommended protections
 
