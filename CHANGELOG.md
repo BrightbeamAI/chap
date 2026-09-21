@@ -11,6 +11,51 @@ incremented under the same rules.
 
 ## Unreleased
 
+**Behaviour change.** `control.resume` restores the state the task held at the
+`control.pause` that preceded it. It set `in_progress` unconditionally, so a
+task paused during a review came back as `in_progress` with the review still
+attached, and `decide.*` then refused it: the pass was stranded with no way for
+a reviewer to act. A task paused before work began now resumes to `created`.
+Where no state was captured, such as a snapshot written before this change,
+`in_progress` is still the result.
+
+**Behaviour change.** An explicitly empty selection list is refused with
+`-32602`: `accepted_task_ids: []` on `handoff.accept`, `include: []` on
+`control.snapshot`, and `what_to_restore: []` on `control.rollback`. Honouring
+the empty list wrote an audit entry for an event that did not happen: a handoff
+marked accepted with nothing transferred, a snapshot that captured nothing, a
+rollback that restored nothing. Omitting the field keeps its meaning, which is
+all of them, and a non-empty list still selects a subset. The two references
+disagreed on these three, so the refusal closes a cross-language divergence as
+well.
+
+**Wire change.** `control.snapshot` returns the `Artefact` shape
+[`chap-task.schema.json`](schemas/core/chap-task.schema.json) defines: `id`,
+`kind`, `produced_by`, `produced_at`, `content_hash` and inline `content`, with
+`content_hash` the SHA-256 of the JCS bytes of `content`. Each `include` slice
+has one documented projection, absent and empty optional fields are omitted,
+and `control.rollback` reads the captured `content.state`. Records written by an
+earlier version are normalised when the store loads them, so a restart against
+an existing store keeps working. Shared conformance vectors fix the exact
+response and hash for each slice in both references.
+
+### Added
+
+- **A wrapped call can name the decision it carries out.** The wrap helpers
+  take an optional `fulfils`, which records the id of the authorising decision
+  on the result artefact. SPECIFICATION 9.4 defines the field: it is asserted
+  by the producer and not verified by the Coordinator, so a wrong id is a
+  dangling reference the chain still verifies. `chap-analytics` projects it as
+  a `fulfils` column on the `tasks` table and as a `fulfils` edge in the graph.
+
+### Fixed
+
+- **A captured snapshot no longer follows live state.** `control.snapshot`
+  held references to the workspace's own mutable structures, so later changes
+  to members or tasks, and callers modifying a returned response, reached the
+  saved snapshot. The capture is copied, and restored scopes are copied back,
+  so the content and its hash stay as they were at the capture.
+
 ---
 
 ## 0.2.13: the review gate closed on both routes, and descriptions that match the code
