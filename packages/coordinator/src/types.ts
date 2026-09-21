@@ -313,6 +313,7 @@ export interface Task {
   superseded_by?: TaskId;
   parent?:      TaskId;
   paused:       boolean;
+  paused_from?: TaskState;
   /** Transient: holds the artefact passed to review.request so
    *  decide.override can use it as the patch base. */
   pending_artefact?: unknown;

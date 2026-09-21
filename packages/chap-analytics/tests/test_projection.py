@@ -58,6 +58,38 @@ def test_fulfils_is_projected_onto_the_tasks_frame():
     assert row["fulfils"] == "art_decision_1"
 
 
+def test_a_repeated_pause_still_resumes_to_the_state_held_at_the_first_pause():
+    # control.pause on a paused task is a defined transition that changes
+    # nothing, so the state captured at the first pause is the one a later
+    # resume restores. Reading envelopes alone has to reach the same answer
+    # as the coordinator, which a stateful read would take from the server.
+    from chap_coordinator import Coordinator, CoordinatorOptions
+
+    from chap_analytics.load import Chain
+
+    profiles = ["core/1.0", "review/1.0", "control/1.0"]
+    c = Coordinator(CoordinatorOptions(default_profiles=profiles))
+
+    def call(method, params, actor="human:ana"):
+        return c.dispatch({"jsonrpc": "2.0", "id": method, "method": method,
+                           "params": {"workspace": "w", "from": actor, **params}})
+
+    call("workspace.create", {"profiles": profiles})
+    call("participant.join", {"type": "human"}, "human:ana")
+    call("participant.join", {"type": "agent"}, "agent:bot")
+    task_id = call("task.create", {"kind": "a", "input": {},
+                                   "assignee": "agent:bot"})["result"]["task_id"]
+    call("task.update", {"task_id": task_id, "state": "in_progress"}, "agent:bot")
+    for _ in range(2):
+        call("control.pause", {"task_id": task_id, "reason": "hold"})
+    call("control.resume", {"task_id": task_id})
+
+    entries = call("audit.read", {})["result"]["entries"]
+    g = frames(Chain(workspace="w", events=entries, state=None, source="audit.read"))
+    row = g.tasks[g.tasks["task_id"] == task_id].iloc[0]
+    assert row["state"] == c.get_workspace("w").tasks[task_id].state == "in_progress"
+
+
 def test_tables_are_addressable_by_name(f):
     for name in BY_NAME:
         assert isinstance(f[name], pd.DataFrame)

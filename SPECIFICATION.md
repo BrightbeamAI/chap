@@ -682,6 +682,12 @@ Preconditions that are narrower or wider than "non-terminal":
   `abstained` and `escalated`. A second escalation on an already escalated
   task replaces its `superseded_by` link with the newer successor.
 - **`control.pause` on a paused task succeeds and changes nothing.**
+- **`control.resume` restores the state captured at the corresponding
+  `control.pause`.** The `To` column above shows `in_progress`, which is the
+  result when no prior state was captured (for example a task resumed from a
+  snapshot written before this was recorded); otherwise the task returns to the
+  state it held when it was paused, so a review paused mid-flight is actionable
+  again on resume.
 - **`task.update` MUST NOT complete a task that requires review.**
   `in_progress → completed` is otherwise legal, so without this the review
   could be skipped: the task would finish carrying no artefact and no

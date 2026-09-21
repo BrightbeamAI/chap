@@ -59,6 +59,8 @@ def register_control(coord: "Coordinator") -> None:
                                            f"Cannot pause {task.state} task")}
             task.paused = True
             prior = task.state
+            if prior != "paused":
+                task.paused_from = prior
             task.state = "paused"
             task.updated_at = coord.now_iso()
             task.history.append(TaskHistoryEntry(
@@ -99,13 +101,15 @@ def register_control(coord: "Coordinator") -> None:
                 return {"error": rpc_error(E.CONTROL_NOT_AUTHORISED,
                                            f"Cannot resume {task.state} task")}
             task.paused = False
-            task.state = "in_progress"
+            restored = task.paused_from or "in_progress"
+            task.paused_from = None
+            task.state = restored
             task.updated_at = coord.now_iso()
             task.history.append(TaskHistoryEntry(
-                ts=task.updated_at, from_=p.get("from", ""), state="in_progress",
+                ts=task.updated_at, from_=p.get("from", ""), state=restored,
             ))
             return {"result": {"scope": "task", "task_id": task.id,
-                               "state": "in_progress"}}
+                               "state": restored}}
 
         if scope == "participant":
             uri = p.get("participant_uri") or p.get("uri")

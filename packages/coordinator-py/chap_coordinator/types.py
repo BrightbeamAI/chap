@@ -197,6 +197,7 @@ class Task:
     superseded_by: str | None = None
     parent: str | None = None
     paused: bool = False
+    paused_from: str | None = None
     history: list[TaskHistoryEntry] = field(default_factory=list)
     pending_artefact: Any = None  # transient: stored for override base
 
@@ -231,6 +232,8 @@ class Task:
             out["superseded_by"] = self.superseded_by
         if self.parent:
             out["parent"] = self.parent
+        if self.paused_from:
+            out["paused_from"] = self.paused_from
         return out
 
 

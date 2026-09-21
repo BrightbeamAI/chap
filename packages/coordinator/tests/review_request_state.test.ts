@@ -141,7 +141,7 @@ test("a paused task resumes before it can be reviewed", () => {
   assert.notEqual(send("review.request", { task_id: id, artefact: ARTEFACT, to: "human:a" }).error,
                   undefined);
   send("control.resume", { task_id: id, reason: "carry on" }, "human:a");
-  assert.equal(stateOf(c, id), "in_progress");
+  assert.equal(stateOf(c, id), "created");
   const r = send("review.request", { task_id: id, artefact: ARTEFACT, to: "human:a" });
   assert.equal(r.error, undefined, JSON.stringify(r.error));
   assert.equal(stateOf(c, id), "review_requested");
