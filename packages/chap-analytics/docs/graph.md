@@ -44,7 +44,7 @@ table, and `to_node_link` writes it into the export under `ontology`.
 | `decision_on` | decision | review | the pass the decision settled or contributed to |
 | `based_on` | artefact | artefact | an override's corrected artefact and the draft it was derived from |
 | `overrode` | decision | artefact | the corrected artefact an override decision produced |
-| `fulfils` | artefact | decision | `task.complete` `fulfils`: the decision an execution's artefact says it carries out; the producer's claim, recorded without verification |
+| `fulfils` | artefact | decision | the `fulfils` field of the artefact a `task.complete` carried: the decision an execution says it carries out; the producer's claim, recorded without verification |
 | `supersedes` | task | task | `escalate.raise` or `control.supersede`: the successor and the task it replaced |
 | `asked` | participant | whisper | `whisper.ask` |
 | `whispered_to` | whisper | participant | `whisper.ask` `to` |
@@ -78,10 +78,9 @@ above it and the exchanges below it reach it over the shortest spans. The
 two self-references, `based_on` on the artefact and `supersedes` on the
 task, are loops above their boxes. One edge is drawn dashed: `fulfils`
 records a claim the producer made, the decision its artefact carries out,
-which the chain holds without checking. It is read from the `fulfils`
-field of a `task.complete` envelope, the field CEP-001 (the CHAP change
-proposal on execution artefacts) introduces, and appears whenever a chain
-carries one. Every edge type appears whenever the chain holds the envelope
+which the chain holds without checking. SPECIFICATION 9.4 puts the field
+on the artefact, so it is read from the output a `task.complete` carried,
+and it appears whenever a chain carries one. Every edge type appears whenever the chain holds the envelope
 that records it.
 
 ## Building it
@@ -187,8 +186,9 @@ algorithm the package does not carry.
 
 An edge says an envelope was recorded, and no more. `fulfils` in particular
 is a claim the producer made about which decision its artefact carries
-out; the reference is kept as the producer wrote it, and where it names a
-task and a sequence number the edge lands on that decision's node.
+out; the id is kept as the producer wrote it, and the edge lands on a
+decision node marked `referenced`, since node ids here are built from the
+task and the sequence number rather than from the protocol's artefact ids.
 `assigned_to` is the assignee
 after any routing or handoff, which is certain from a snapshot and inferred
 from envelopes alone where `assignee_certain` on the `tasks` table says so.

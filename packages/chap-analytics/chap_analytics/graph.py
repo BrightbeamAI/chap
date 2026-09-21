@@ -68,7 +68,7 @@ EDGE_TYPES: dict[str, tuple[str, str, str]] = {
     "decision_on": ("decision", "review", "the pass the decision settled or contributed to"),
     "based_on": ("artefact", "artefact", "an override's corrected artefact and the draft it was derived from"),
     "overrode": ("decision", "artefact", "the corrected artefact an override decision produced"),
-    "fulfils": ("artefact", "decision", "task.complete `fulfils`: the decision an execution's artefact says it carries out; the producer's claim, recorded without verification"),
+    "fulfils": ("artefact", "decision", "the `fulfils` field of the artefact a `task.complete` carried: the decision an execution says it carries out; the producer's claim, recorded without verification"),
     "supersedes": ("task", "task", "escalate.raise or control.supersede: the successor and the task it replaced"),
     "asked": ("participant", "whisper", "whisper.ask"),
     "whispered_to": ("whisper", "participant", "whisper.ask `to`"),
@@ -328,20 +328,19 @@ def build(f: Frames) -> Graph:
         if pass_idx is not None:
             g.add_edge(corrected, f"draft:{o.task_id}:{pass_idx}", "based_on")
 
-    # Executions that name the decision they carry out: a task.complete whose
-    # params carry `fulfils` (CEP-001). The value is the producer's reference
-    # to a decision. A mapping with task_id and seq lands on that decision
-    # node; any other value becomes a referenced decision node under its own
-    # text, since the chain records the claim without resolving it.
+    # Executions that name the decision they carry out. SPECIFICATION 9.4 puts
+    # `fulfils` on the artefact, so it is read from the output a task.complete
+    # carried, the field the wrap helper writes and the `tasks` table reads.
+    # The value names the id of a decision the producer claims authorised the
+    # work. Node ids in this graph are built from the task and the sequence
+    # number, so a named id becomes a decision node of its own marked
+    # `referenced`: the chain holds the claim without resolving it.
     completes = ev[ev["method"] == "task.complete"].sort_values("seq")
     for r in completes.itertuples(index=False):
-        ref = params_by_seq.get(_seq(r.seq), {}).get("fulfils")
-        if ref is None or not _s(r.task_id):
+        out = params_by_seq.get(_seq(r.seq), {}).get("output")
+        target = out.get("fulfils") if isinstance(out, dict) else None
+        if not isinstance(target, str) or not target or not _s(r.task_id):
             continue
-        if isinstance(ref, dict) and _s(ref.get("task_id")) and isinstance(ref.get("seq"), int):
-            target = f"decision:{ref['task_id']}:{ref['seq']}"
-        else:
-            target = str(ref)
         art = f"output:{r.task_id}:{_seq(r.seq)}"
         g.add_node(art, "artefact", f"output of {r.task_id}", kind="output")
         a = participant(r.actor)

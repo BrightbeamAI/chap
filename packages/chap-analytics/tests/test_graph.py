@@ -180,16 +180,38 @@ def test_who_was_asked_comes_from_the_envelopes(desk, g):
 
 
 def test_a_fulfils_claim_on_the_wire_reaches_the_graph():
-    # task.complete may name the decision its artefact carries out (CEP-001).
-    # The claim is read from the envelope and lands on that decision's node.
-    chain = support_desk(envelopes_only=True)
-    completes = [e for e in chain.events if e["envelope"]["method"] == "task.complete"]
-    decision = next(e for e in chain.events if e["envelope"]["method"].startswith("decide."))
-    completes[-1]["envelope"]["params"]["fulfils"] = {"task_id": decision["envelope"]["params"]["task_id"],
-                                                      "seq": decision["seq"]}
-    g = graph.build(frames(chain))
+    # SPECIFICATION 9.4 puts `fulfils` on the artefact, so a producer writes it
+    # into the output a task.complete carries, which is what the wrap helper
+    # does and what the `tasks` table reads. Node ids here are built from the
+    # task and the sequence number, so the named decision cannot be one of
+    # them and the claim lands on a referenced decision node.
+    from chap_coordinator import Coordinator, CoordinatorOptions
+    from chap_coordinator.transports.wrap import wrap_mcp_tool_call
+
+    from chap_analytics import from_coordinator
+
+    c = Coordinator(CoordinatorOptions(default_profiles=["core/1.0", "review/1.0"]))
+    c.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w"}})
+    c.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
+                "params": {"workspace": "w", "from": "agent:bot",
+                           "type": "agent", "role": "drafter"}})
+    res = wrap_mcp_tool_call(c, "w", caller="agent:bot", tool="t", args={},
+                             result={"ok": True}, fulfils="art_decision_1")
+
+    g = graph.build(frames(from_coordinator(c, "w")))
     claims = [e for e in g.edges if e.type == "fulfils"]
     assert len(claims) == 1
-    assert g.nodes[claims[0].source].type == "artefact" and g.nodes[claims[0].source].attrs["kind"] == "output"
-    assert claims[0].target == f"decision:{decision['envelope']['params']['task_id']}:{decision['seq']}"
-    assert g.nodes[claims[0].target].attrs["kind"] == "approve"
+    source = g.nodes[claims[0].source]
+    assert source.type == "artefact" and source.attrs["kind"] == "output"
+    assert res["task_id"] in claims[0].source
+    assert claims[0].target == "art_decision_1"
+    assert g.nodes["art_decision_1"].type == "decision"
+    assert g.nodes["art_decision_1"].attrs["kind"] == "referenced"
+
+
+def test_a_task_complete_without_a_fulfils_claim_adds_no_edge():
+    # The output is an artefact like any other; only a named `fulfils` makes
+    # the claim, so an ordinary completion leaves the graph unchanged here.
+    g = graph.build(frames(support_desk(envelopes_only=True)))
+    assert not [e for e in g.edges if e.type == "fulfils"]

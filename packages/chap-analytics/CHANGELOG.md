@@ -4,6 +4,19 @@
 so a protocol release moves the coordinator packages together and leaves this
 one where it is until the tables or the analyses change.
 
+## Unreleased
+
+### Fixed
+
+- **The `fulfils` edge reads the field where the protocol puts it.**
+  SPECIFICATION 9.4 carries `fulfils` on the artefact, and the `tasks` table
+  reads it from the output a `task.complete` carried. `graph.build` read a
+  top-level field of the same name on the envelope instead, so the edge never
+  appeared on a chain a producer had actually written, including every chain
+  the wrap helper produces. The graph now reads the same field as the table.
+  The id is kept as the producer wrote it and lands on a decision node marked
+  `referenced`.
+
 ## 0.2.0
 
 The decision layer: every row of the roadmap's decision table, as a
