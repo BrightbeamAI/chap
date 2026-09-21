@@ -155,9 +155,15 @@ class Fuzzer:
             if self.call("control.cancel", {"task_id": t, "reason": "no longer needed"}):
                 self.live.remove(t)
         elif act == "pause":
-            if self.call("control.pause", {"task_id": t, "reason": "hold"}) \
-                    and rnd.random() < 0.7:
-                self.call("control.resume", {"task_id": t})
+            if self.call("control.pause", {"task_id": t, "reason": "hold"}):
+                # Pausing a paused task is a defined transition that changes
+                # nothing, and the resume after it has to clear the pause in
+                # one call. The projection has to hold the first captured
+                # state, as the coordinator does.
+                if rnd.random() < 0.3:
+                    self.call("control.pause", {"task_id": t, "reason": "still holding"})
+                if rnd.random() < 0.7:
+                    self.call("control.resume", {"task_id": t})
         elif act == "handoff":
             params = {"to": rnd.choice(HUMANS + ["group:oncall"]), "tasks": [{"task_id": t}]}
             hid = self.own_id("hnd")
