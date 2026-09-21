@@ -22,10 +22,19 @@ what it received: a handler that writes into the request makes the recorded
 envelope differ from the signed one, and would otherwise be replayed into the
 other reference as though both had produced it.
 
+Action selection reads the workspace as it stands: decisions go to tasks under
+review and to reviewers the review named, resumes go to paused tasks, handoffs
+are resolved by the participant they were offered to, votes come from
+participants who have not voted. A share of the steps is a deliberate miss, so
+the refusals are compared as well as the successes. Overrides draw from the
+whole JSON Patch operation set against documents with arrays and nesting,
+including the `1e1` and `1_0` index tokens behind #103.
+
 Usage:
     python fuzz.py --seeds 200          # sweep seeds 0..199
     python fuzz.py --seed 42            # one seed, verbose on divergence
     python fuzz.py --seeds 50 --steps 60
+    python fuzz.py --seeds 40 --stats   # with per-method coverage
 """
 from __future__ import annotations
 
@@ -34,6 +43,7 @@ import json
 import random
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 from chap_coordinator import Coordinator, CoordinatorOptions
@@ -63,6 +73,11 @@ class Recorder:
         self.snapshots: list[str] = []
         self.whispers: list[str] = []
         self.delibs: list[str] = []
+        # The artefact last put under review for a task, so an override can
+        # patch the document that is actually there.
+        self.artefacts: dict[str, dict] = {}
+        self.sent: Counter[str] = Counter()
+        self.ok: Counter[str] = Counter()
         self._n = 0
         self._bootstrap()
         for _ in range(steps):
@@ -82,6 +97,9 @@ class Recorder:
         self.dispatched.append(env)
         self.envelopes.append(sent)
         self.responses.append(resp)
+        self.sent[method] += 1
+        if "result" in resp:
+            self.ok[method] += 1
         return resp
 
     def recording_matches_what_was_sent(self) -> list[str]:
@@ -109,13 +127,114 @@ class Recorder:
     def _result(self, r: dict, key: str) -> str | None:
         return r.get("result", {}).get(key) if "result" in r else None
 
-    def _step(self) -> None:
+    # -- what the workspace can legally be asked to do right now -----------
+
+    def _by_state(self, *states: str) -> list[str]:
+        tasks = self.coord.get_workspace("w").tasks
+        return [t for t in self.tasks if t in tasks and tasks[t].state in states]
+
+    def _open_handoffs(self) -> list[str]:
+        hs = self.coord.get_workspace("w").handoffs
+        return [h for h in self.handoffs if h in hs and hs[h].state == "proposed"]
+
+    def _unanswered_whispers(self) -> list[str]:
+        ws = self.coord.get_workspace("w").whispers
+        return [w for w in self.whispers
+                if w in ws and ws[w].state == "pending"]
+
+    def _open_delibs(self) -> list[str]:
+        ds = self.coord.get_workspace("w").deliberations
+        return [d for d in self.delibs
+                if d in ds and ds[d].state == "open" and self._can_vote(d)]
+
+    def _can_vote(self, did: str) -> list[str]:
+        """Participants of this deliberation who have not voted yet."""
+        d = self.coord.get_workspace("w").deliberations[did]
+        voted = {v.get("voter") for v in (d.votes or [])}
+        return [p for p in (d.participants or []) if p not in voted and p in HUMANS]
+
+    def _reviewers(self, tid: str) -> list[str]:
+        """Who the open review on this task is addressed to."""
+        task = self.coord.get_workspace("w").tasks.get(tid)
+        if task is None or task.review is None:
+            return list(HUMANS)
+        named = [r for r in (task.review.requested_to or []) if r in HUMANS]
+        return named or list(HUMANS)
+
+    def _menu(self) -> list[str]:
+        """Actions weighted towards what the current state admits.
+
+        A generator that picks a random task for every decision spends its
+        budget comparing error responses. Weighting towards legal transitions
+        puts the review path, which is the profile CHAP is judged on, in the
+        middle of the run rather than at its edges. A fixed share of misses
+        keeps the refusals covered.
+        """
+        live = self._by_state("created", "in_progress")
+        menu = ["create", "create", "update", "complete", "complete",
+                "whisper", "deliberate", "snapshot", "miss"]
+        if live:
+            menu += ["review"] * 4
+        if self._by_state("review_requested"):
+            menu += ["decide"] * 8
+        if self._by_state("paused"):
+            menu += ["resume"] * 3
+        if live:
+            menu += ["pause", "handoff", "route", "depth", "auto", "escalate",
+                     "supersede", "cancel"]
+        if self._open_handoffs():
+            menu += ["resolve_handoff"] * 3
+        if self._unanswered_whispers():
+            menu += ["answer_whisper"] * 2
+        if self._open_delibs():
+            menu += ["vote"] * 2
+        if self.snapshots:
+            menu += ["rollback"] * 2
+        return menu
+
+    # -- the documents under review, and the patches applied to them -------
+
+    def _artefact(self) -> dict:
+        """A document with arrays and nesting, so a patch has somewhere to go."""
         rnd = self.rnd
-        a = rnd.choice([
-            "create", "create", "update", "review", "decide", "decide",
-            "complete", "pause", "resume", "escalate", "supersede", "cancel",
-            "handoff", "whisper", "deliberate", "route", "depth", "auto",
-            "snapshot", "rollback"])
+        return {
+            "text": rnd.choice(["draft", "second pass"]),
+            "items": [{"id": i, "note": f"n{i}"} for i in range(rnd.randint(1, 3))],
+            "meta": {"tags": rnd.sample(["tone", "fact", "legal"], rnd.randint(1, 3)),
+                     "score": rnd.randint(0, 9)},
+        }
+
+    def _patch(self, doc: dict) -> list[dict]:
+        """A JSON Patch against `doc`, drawn from the whole operation set.
+
+        The index tokens matter: `1e1` and `1_0` are the tokens behind #103,
+        where one reference parsed them as ten and the other refused. They are
+        generated deliberately so a divergence of that class shows up here.
+        """
+        rnd = self.rnd
+        last = len(doc["items"]) - 1
+        choices: list[list[dict]] = [
+            [{"op": "replace", "path": "/text", "value": "corrected"}],
+            [{"op": "add", "path": "/items/-", "value": {"id": 9, "note": "added"}}],
+            [{"op": "remove", "path": f"/items/{last}"}],
+            [{"op": "replace", "path": f"/items/{rnd.randint(0, last)}/note", "value": "fixed"}],
+            [{"op": "move", "from": "/meta/score", "path": "/score"}],
+            [{"op": "copy", "from": "/text", "path": "/meta/original"}],
+            [{"op": "test", "path": "/text", "value": doc["text"]},
+             {"op": "replace", "path": "/meta/score", "value": 5}],
+            [{"op": "add", "path": "/meta/tags/0", "value": "urgent"},
+             {"op": "remove", "path": "/meta/tags/-"}],
+            # Index tokens that are not plain digits. Both references must
+            # refuse them, and must refuse them the same way.
+            [{"op": "replace", "path": "/items/1e1/note", "value": "ten"}],
+            [{"op": "replace", "path": "/items/1_0/note", "value": "ten"}],
+            [{"op": "add", "path": "/items/01", "value": {"id": 1}}],
+        ]
+        return rnd.choice(choices)
+
+    def _step(self) -> None:  # noqa: C901 - a menu of actions
+        rnd = self.rnd
+        a = rnd.choice(self._menu())
         if a == "create" or not self.tasks:
             r = self._send("task.create", "human:a", kind=rnd.choice(["a", "b"]),
                            input={"n": self._n}, assignee=rnd.choice(AGENTS))
@@ -123,30 +242,116 @@ class Recorder:
             if tid:
                 self.tasks.append(tid)
             return
-        tid = self._task()
         human = rnd.choice(HUMANS)
-        if a == "update":
-            self._send("task.update", AGENTS[0], task_id=tid,
-                       state=rnd.choice(["in_progress", "declined"]))
-        elif a == "review":
-            self._send("review.request", AGENTS[0], task_id=tid,
-                       artefact={"text": rnd.choice(["x", "y"])},
-                       to=rnd.sample(HUMANS, rnd.randint(1, 2)))
-        elif a == "decide":
+
+        if a == "miss":
+            # A call aimed at a task that is in the wrong state for it, so the
+            # refusals stay compared as well as the successes.
+            self._miss()
+            return
+        if a == "decide":
+            tid = rnd.choice(self._by_state("review_requested"))
+            human = rnd.choice(self._reviewers(tid))
             kind = rnd.choice(["decide.approve", "decide.reject",
-                               "decide.override", "abstain.declare"])
-            p: dict = {"task_id": tid, "comment": "c", "rationale": "r"}
-            if kind == "decide.override":
-                p["diff"] = [{"op": "replace", "path": "/text", "value": "z"}]
+                               "decide.override", "decide.override",
+                               "abstain.declare"])
             if kind == "abstain.declare":
-                p = {"task_id": tid, "reason": "conflict of interest"}
-            self._send(kind, human, **p)
+                self._send(kind, human, task_id=tid, reason="conflict of interest")
+            elif kind == "decide.override":
+                doc = self.artefacts.get(tid) or {"text": "draft", "items": [{"id": 0}],
+                                                  "meta": {"tags": [], "score": 0}}
+                self._send(kind, human, task_id=tid, rationale="r",
+                           diff=self._patch(doc),
+                           tags=rnd.sample(["tone", "fact"], rnd.randint(0, 2)))
+            else:
+                p: dict = {"task_id": tid, "comment": "c"}
+                if kind == "decide.reject":
+                    p["request_revision"] = rnd.random() < 0.5
+                self._send(kind, human, **p)
+            return
+        if a == "resume":
+            self._send("control.resume", "human:a",
+                       task_id=rnd.choice(self._by_state("paused")))
+            return
+        if a == "resolve_handoff":
+            hid = rnd.choice(self._open_handoffs())
+            who = self.coord.get_workspace("w").handoffs[hid].recipient
+            roll = rnd.random()
+            if roll < 0.2:
+                # Refused since #151: an explicit empty acceptance is an audit
+                # record of a transfer that did not happen.
+                self._send("handoff.accept", who, handoff_id=hid, accepted_task_ids=[])
+            elif roll < 0.7:
+                self._send("handoff.accept", who, handoff_id=hid)
+            else:
+                self._send("handoff.decline", who, handoff_id=hid, reason="not mine")
+            return
+        if a == "answer_whisper":
+            wid = rnd.choice(self._unanswered_whispers())
+            asked = self.coord.get_workspace("w").whispers[wid].askee or list(HUMANS)
+            self._send("whisper.answer", rnd.choice(asked), whisper_id=wid,
+                       answer=rnd.choice(["yes", "no"]))
+            return
+        if a == "vote":
+            did = rnd.choice(self._open_delibs())
+            self._send("deliberate.vote", rnd.choice(self._can_vote(did)),
+                       deliberation_id=did, vote=rnd.choice(["yea", "nay", "abstain"]))
+            if rnd.random() < 0.4:
+                self._send("deliberate.close", human, deliberation_id=did)
+            return
+        if a == "rollback":
+            roll = rnd.random()
+            if roll < 0.2:
+                params = {"what_to_restore": []}      # refused since #152
+            elif roll < 0.6:
+                params = {}
+            else:
+                params = {"what_to_restore":
+                          rnd.sample(["members", "mode_ceiling"], rnd.randint(1, 2))}
+            self._send("control.rollback", human,
+                       to_snapshot_artefact_id=rnd.choice(self.snapshots), **params)
+            return
+        if a == "snapshot":
+            slices = ["members", "open_tasks", "mode_ceiling", "policy", "audit"]
+            roll = rnd.random()
+            if roll < 0.15:
+                params = {"include": []}              # refused since #152
+            elif roll < 0.45:
+                params = {}
+            else:
+                params = {"include": rnd.sample(slices, rnd.randint(1, len(slices)))}
+            snapshot_id = self._result(self._send("control.snapshot", human, **params),
+                                       "snapshot_artefact_id")
+            if snapshot_id:
+                self.snapshots.append(snapshot_id)
+            return
+
+        live = self._by_state("created", "in_progress")
+        if not live:
+            r = self._send("task.create", "human:a", kind=rnd.choice(["a", "b"]),
+                           input={"n": self._n}, assignee=rnd.choice(AGENTS))
+            tid = self._result(r, "task_id")
+            if tid:
+                self.tasks.append(tid)
+            return
+        tid = rnd.choice(live)
+        if a == "update":
+            self._send("task.update", self._assignee(tid), task_id=tid,
+                       state=rnd.choice(["in_progress", "in_progress", "declined"]))
+        elif a == "review":
+            doc = self._artefact()
+            self.artefacts[tid] = doc
+            r = self._send("review.request", self._assignee(tid), task_id=tid,
+                           artefact=doc, to=rnd.sample(HUMANS, rnd.randint(1, 2)),
+                           rule=rnd.choice(["any_one_approves", "all_approve", "quorum:2"]))
+            if "error" in r:
+                self.artefacts.pop(tid, None)
         elif a == "complete":
-            self._send("task.complete", AGENTS[0], task_id=tid, output={"text": "done"})
+            doc = self._artefact()
+            self.artefacts[tid] = doc
+            self._send("task.complete", self._assignee(tid), task_id=tid, output=doc)
         elif a == "pause":
             self._send("control.pause", "human:a", task_id=tid, reason="hold")
-        elif a == "resume":
-            self._send("control.resume", "human:a", task_id=tid)
         elif a == "escalate":
             r = self._send("escalate.raise", "human:a", original_task_id=tid, reason="up",
                            new_task={"kind": "k", "input": {}, "assignee": AGENTS[0]})
@@ -164,47 +369,26 @@ class Recorder:
         elif a == "cancel":
             if "result" in self._send("control.cancel", "human:a", task_id=tid, reason="no"):
                 self.tasks.remove(tid)
-        elif a == "snapshot":
-            slices = ["members", "open_tasks", "mode_ceiling", "policy", "audit"]
-            params = {} if rnd.random() < 0.3 else {
-                "include": rnd.sample(slices, rnd.randint(1, len(slices)))}
-            result = self._send("control.snapshot", human, **params)
-            snapshot_id = self._result(result, "snapshot_artefact_id")
-            if snapshot_id:
-                self.snapshots.append(snapshot_id)
-        elif a == "rollback" and self.snapshots:
-            params = {} if rnd.random() < 0.5 else {
-                "what_to_restore": rnd.sample(["members", "mode_ceiling"], rnd.randint(1, 2))}
-            self._send("control.rollback", human,
-                       to_snapshot_artefact_id=rnd.choice(self.snapshots), **params)
         elif a == "handoff":
             r = self._send("handoff.propose", self._assignee(tid),
                            to=rnd.choice(HUMANS), tasks=[{"task_id": tid}])
             hid = self._result(r, "handoff_id")
-            if hid and rnd.random() < 0.8:
-                who = rnd.choice(HUMANS)
-                if rnd.random() < 0.5:
-                    self._send("handoff.accept", who, handoff_id=hid,
-                               accepted_task_ids=[tid])
-                else:
-                    self._send("handoff.decline", who, handoff_id=hid, reason="not mine")
+            if hid:
+                self.handoffs.append(hid)
         elif a == "whisper":
             r = self._send("whisper.ask", self._assignee(tid), task_id=tid,
                            to=[rnd.choice(HUMANS)], question=f"q{self._n}",
                            deadline_ms=rnd.choice([0, 600_000]), default_if_lapsed="no")
             wid = self._result(r, "whisper_id")
-            if wid and rnd.random() < 0.6:
-                self._send("whisper.answer", rnd.choice(HUMANS), whisper_id=wid, answer="yes")
+            if wid:
+                self.whispers.append(wid)
         elif a == "deliberate":
             r = self._send("deliberate.open", human, to=rnd.sample(HUMANS, rnd.randint(1, 2)),
-                           rule="any_one_approves", question=f"Q{self._n}", task_id=tid)
+                           rule=rnd.choice(["any_one_approves", "quorum:2"]),
+                           question=f"Q{self._n}", task_id=tid)
             did = self._result(r, "deliberation_id")
             if did:
-                for who in rnd.sample(HUMANS, rnd.randint(0, 2)):
-                    self._send("deliberate.vote", who, deliberation_id=did,
-                               vote=rnd.choice(["yea", "nay"]))
-                if rnd.random() < 0.5:
-                    self._send("deliberate.close", human, deliberation_id=did)
+                self.delibs.append(did)
         elif a == "route":
             self._send("task.route", "human:a", task_id=tid, candidates=list(AGENTS))
         elif a == "depth":
@@ -213,6 +397,25 @@ class Recorder:
         elif a == "auto":
             self._send("escalate.auto", "human:a", task_id=tid,
                        default_escalation_target=rnd.choice(HUMANS))
+
+    def _miss(self) -> None:
+        """One call the current state refuses, so error paths stay compared."""
+        rnd = self.rnd
+        tid = self._task()
+        if tid is None:
+            return
+        rnd.choice([
+            lambda: self._send("decide.approve", rnd.choice(HUMANS), task_id=tid,
+                               comment="c"),
+            lambda: self._send("control.resume", "human:a", task_id=tid),
+            lambda: self._send("task.update", AGENTS[0], task_id=tid, state="paused"),
+            lambda: self._send("abstain.declare", rnd.choice(HUMANS), task_id=tid,
+                               reason="not mine"),
+            lambda: self._send("handoff.accept", rnd.choice(HUMANS),
+                               handoff_id="hnd_absent"),
+            lambda: self._send("whisper.answer", rnd.choice(HUMANS),
+                               whisper_id="whp_absent", answer="yes"),
+        ])()
 
     def _assignee(self, tid: str) -> str:
         t = self.coord.get_workspace("w").tasks.get(tid)
@@ -242,8 +445,12 @@ def _first_divergence(py: list[dict], ts: list[dict]) -> int | None:
     return None
 
 
-def check_seed(seed: int, steps: int) -> tuple[bool, str]:
+def check_seed(seed: int, steps: int,
+               tally: tuple[Counter, Counter] | None = None) -> tuple[bool, str]:
     rec = Recorder(seed, steps)
+    if tally is not None:
+        tally[0].update(rec.sent)
+        tally[1].update(rec.ok)
     altered = rec.recording_matches_what_was_sent()
     if altered:
         return False, (
@@ -269,21 +476,44 @@ def check_seed(seed: int, steps: int) -> tuple[bool, str]:
     return True, f"seed {seed}: ok ({len(rec.envelopes)} envelopes)"
 
 
+def _stats_table(sent: Counter, ok: Counter) -> str:
+    """Per method, how many envelopes were sent and how many were accepted.
+
+    A method whose calls are nearly all refused is being checked at the edge
+    of its profile rather than in the middle of it, which is what this table
+    makes visible.
+    """
+    width = max((len(m) for m in sent), default=6)
+    lines = [f"{'method'.ljust(width)}  {'sent':>5} {'accepted':>9} {'rate':>6}",
+             "-" * (width + 24)]
+    for method in sorted(sent):
+        accepted = ok[method]
+        rate = accepted / sent[method]
+        lines.append(f"{method.ljust(width)}  {sent[method]:5} {accepted:9} {rate:6.0%}")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--seeds", type=int, default=50, help="check seeds 0..N-1")
     p.add_argument("--seed", type=int, help="check a single seed")
     p.add_argument("--steps", type=int, default=40, help="random steps per run")
+    p.add_argument("--stats", action="store_true",
+                   help="print sent and succeeded per method, so coverage is "
+                        "visible in the log rather than assumed")
     args = p.parse_args(argv)
 
     seeds = [args.seed] if args.seed is not None else range(args.seeds)
+    tally: tuple[Counter, Counter] = (Counter(), Counter())
     failures = 0
     for seed in seeds:
-        ok, msg = check_seed(seed, args.steps)
+        ok, msg = check_seed(seed, args.steps, tally)
         if not ok:
             failures += 1
             print(msg)
     total = 1 if args.seed is not None else args.seeds
+    if args.stats:
+        print(_stats_table(*tally))
     print(f"\n{total - failures}/{total} seeds agreed")
     return 1 if failures else 0
 
