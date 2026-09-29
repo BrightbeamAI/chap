@@ -60,11 +60,26 @@ def test_the_same_method_works_once_the_profile_is_advertised():
     assert coord.get_workspace("w").tasks[tid].state == "paused"
 
 
-def test_a_refusal_writes_nothing_to_the_chain():
+def test_pulling_a_switched_off_brake_is_recorded_as_a_refusal():
+    # SPECIFICATION 10.1: the gate refusing a privileged method is exactly the
+    # event the log exists to keep. It is recorded under `request`, so no
+    # reader replays it as a pause that happened.
     coord, send = _ready()
     ws = coord.get_workspace("w")
     before = len(ws.audit)
     send("control.pause", task_id="t", reason="hold")
+    assert len(ws.audit) == before + 1
+    entry = ws.audit[before]
+    assert entry.envelope is None
+    assert entry.request["method"] == "control.pause"
+    assert entry.outcome == {"status": "refused", "code": -32601}
+
+
+def test_the_gate_refusing_an_ordinary_method_writes_nothing():
+    coord, send = _ready()
+    ws = coord.get_workspace("w")
+    before = len(ws.audit)
+    send("whisper.ask", task_id="t", question="?", options=["a"])
     assert len(ws.audit) == before
 
 

@@ -32,22 +32,36 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..canonical import ZERO_HASH, canonicalize, sha256_hex
+from ..audit import entry_call, entry_is_well_formed, entry_record, link_hash
+from ..canonical import ZERO_HASH, canonicalize
 from ..jsonrpc import E, rpc_error
 
 if TYPE_CHECKING:
     from ..coordinator import Coordinator
 
 
-def _build_statement(workspace_id: str, entry_envelope: dict,
-                     sender: str | None, issuer: str) -> dict:
-    """Build a SCITT-style signed statement for a CHAP envelope.
+# Carried forward past a malformed entry, so no later link can match.
+_MALFORMED = "sha256:malformed"
 
+
+def _sender(entry) -> str | None:
+    """The participant who sent the call an entry records."""
+    call = entry_call(entry) or {}
+    params = call.get("params")
+    return params.get("from") if isinstance(params, dict) else None
+
+
+def _build_statement(workspace_id: str, record: dict,
+                     sender: str | None, issuer: str) -> dict:
+    """Build a SCITT-style signed statement for an audit entry.
+
+    The payload is what the entry's chain link hashes: the envelope of an
+    accepted call, or the outcome together with the request of a refusal.
     The COSE_Sign1 structure here is JSON-modelled rather than binary
     CBOR; a real deployment will pass this to a SCITT client library
     that produces the actual COSE encoding before submission.
     """
-    payload_canonical = canonicalize(entry_envelope).decode("utf-8")
+    payload_canonical = canonicalize(record).decode("utf-8")
     return {
         "protected": {
             "alg": -8,  # Ed25519 per COSE
@@ -81,9 +95,8 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             # No deployment submitter; return the statements so the caller
             # can submit out-of-band themselves.
             statements = [
-                _build_statement(ws.id, entry.envelope,
-                                 entry.envelope.get("params", {}).get("from"),
-                                 issuer)
+                _build_statement(ws.id, entry_record(entry),
+                                 _sender(entry), issuer)
                 for entry in ws.audit[from_seq:to_seq]
             ]
             return {"result": {
@@ -93,9 +106,7 @@ def register_audit_scitt(coord: "Coordinator") -> None:
 
         for entry in ws.audit[from_seq:to_seq]:
             statement = _build_statement(
-                ws.id, entry.envelope,
-                entry.envelope.get("params", {}).get("from"),
-                issuer,
+                ws.id, entry_record(entry), _sender(entry), issuer,
             )
             try:
                 receipt = coord.options.scitt_submitter(statement)
@@ -172,7 +183,14 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             # a missing value is a defect, not a reason to skip the check.
             if e.prev_hash != expected_prev:
                 errors.append(f"seq {e.seq}: prev_hash mismatch")
-            prev = sha256_hex(canonicalize(e.envelope) + expected_prev.encode("utf-8"))
+            # An entry that records neither one accepted envelope nor one
+            # refused request with its outcome has been altered, and nothing
+            # after it can be linked to it.
+            if not entry_is_well_formed(e):
+                errors.append(f"seq {e.seq}: malformed entry")
+                prev = _MALFORMED
+                continue
+            prev = link_hash(entry_record(e), expected_prev)
         # The recomputed head must match the stored head; this is what
         # makes the final entry tamper-evident.
         # Explicit None check, matching TypeScript. A falsy-but-present

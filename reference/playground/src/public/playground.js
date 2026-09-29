@@ -640,9 +640,16 @@ function appendWireEntry(msg) {
   if (!$("wire-panel").hidden) renderWireEntry(msg);
 }
 
+// A refused attempt the coordinator recorded arrives with an `outcome`. It took
+// no effect, and the wire panel says so.
+function methodLabel(msg) {
+  const method = msg.envelope.method ?? "?";
+  return msg.outcome ? `${method} (refused ${msg.outcome.code})` : method;
+}
+
 function updateWireStrip(msg) {
   $("wire-strip-seq").textContent    = "#" + msg.seq;
-  $("wire-strip-method").textContent = msg.envelope.method ?? "?";
+  $("wire-strip-method").textContent = methodLabel(msg);
   const pill = $("wire-strip-pill");
   pill.classList.remove("pulse");
   // force reflow so the animation can restart
@@ -655,6 +662,7 @@ function renderWireEntry(msg) {
   const classes = ["wire-entry"];
   if (variant === "routing")  classes.push("is-routing");
   if (variant === "override") classes.push("is-override");
+  if (msg.outcome) classes.push("is-refused");
 
   const summary = summariseEnvelope(msg.envelope);
 
@@ -664,7 +672,7 @@ function renderWireEntry(msg) {
     },
     el("div", { class: "wire-entry-head" },
       el("span", { class: "wire-seq" }, "#" + msg.seq),
-      el("span", { class: "wire-method" }, msg.envelope.method ?? "?"),
+      el("span", { class: "wire-method" }, methodLabel(msg)),
       el("span", { class: "wire-ts" }, msg.ts ?? ""),
     ),
     summary

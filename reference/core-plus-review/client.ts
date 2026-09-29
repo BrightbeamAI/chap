@@ -138,6 +138,8 @@ async function main(): Promise<void> {
 
   console.log(`\nFound ${audit.entries.length} override entries.`);
   for (const e of audit.entries) {
+    // A refused override is held under `request` and did not take effect.
+    if (!e.envelope) continue;
     const p = e.envelope.params;
     console.log(`  • ${p.from} on ${p.task_id}`);
     console.log(`    tags: ${(p.tags ?? []).join(", ")}`);

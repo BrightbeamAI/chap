@@ -6,6 +6,19 @@ one where it is until the tables or the analyses change.
 
 ## Unreleased
 
+### Added
+
+- **A `refusals` table.** A coordinator from 0.3.0 records a member's refused
+  call when it was a governed attempt, such as a decision on a review
+  addressed to someone else or a pull on an emergency brake the workspace has
+  switched off. The entry holds the call under `request` with an `outcome`
+  beside it. The new table lists those attempts with the code each was
+  refused with, and no other table replays them, so a refused approval never
+  counts as a decision. `events` now holds the accepted entries, and the two
+  tables together hold the whole log. A chain written before refusals were
+  recorded reads exactly as before. The redaction hook applies to a refused
+  call's parameters as it does to an accepted one's.
+
 ### Fixed
 
 - **The `fulfils` edge reads the field where the protocol puts it.**

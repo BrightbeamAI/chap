@@ -173,5 +173,9 @@ test("task.complete refusal mutates nothing", () => {
   const t = ws.tasks.get(tid)!;
   assert.equal(t.pending_artefact, undefined);
   assert.equal(t.state, "in_progress");
-  assert.equal(ws.audit.length, auditBefore);
+  // One refusal entry, and no accepted entry: the output never reached the log.
+  assert.equal(ws.audit.length, auditBefore + 1);
+  const entry = ws.audit[auditBefore];
+  assert.equal(entry.envelope, undefined);
+  assert.deepEqual(entry.outcome, { status: "refused", code: -32011 });
 });

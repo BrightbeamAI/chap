@@ -100,8 +100,10 @@ def main(argv: list[str] | None = None) -> int:
     entries = r["result"]["entries"]
     print(f"-> audit.read         {emoji(True)}  {len(entries)} entries:")
     for e in entries:
-        env = e["envelope"]
-        print(f"     seq={e['seq']:2d}  {env['method']:25s}  from={env['params'].get('from','?')}")
+        env = e.get("envelope") or e.get("request") or {}
+        mark = f"  refused {e['outcome']['code']}" if e.get("outcome") else ""
+        print(f"     seq={e['seq']:2d}  {env.get('method', '?'):25s}  "
+              f"from={(env.get('params') or {}).get('from', '?')}{mark}")
 
     print()
     print("done.")

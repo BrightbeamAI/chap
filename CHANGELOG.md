@@ -11,6 +11,28 @@ incremented under the same rules.
 
 ## Unreleased
 
+**Behaviour change.** A refused call that is a governed attempt is recorded on
+the log (SPECIFICATION 10.1). A member's refused call is recorded unless it was
+malformed or invalid, failed a signature or key check, hit an internal error,
+or was refused by the profile gate for a method that is not privileged. So a
+decision on a review addressed to someone else is recorded, as are an approval
+whose artefact digest does not match, an act on a paused workspace, and
+`control.pause` on a workspace that has switched `control/1.0` off, while
+`whisper.ask` on a workspace without `whisper/1.0` is not. A call from a caller
+who is not a member is never recorded.
+
+**Wire change.** A refusal entry holds the call under `request` rather than
+`envelope`, with `outcome: {"status": "refused", "code": …}` beside it, so a
+reader that replays `envelope` never treats a refusal as a call that took
+effect. Its chain link hashes the outcome together with the request, so
+neither can be altered or stripped undetected. An entry with no outcome hashes
+exactly as before, so every existing chain still verifies. `audit.read` returns
+refusal entries, and a new `outcome` filter selects `accepted` or `refused`.
+Statements from `audit.submit_to_scitt` carry the record the link hashes. In
+the TypeScript package `AuditEntry.envelope` is now optional, and `entryCall`,
+`entryRecord`, `isRefusal` and `linkHash` are exported for readers. A reader
+that indexes `envelope` on every entry has to allow for entries without one.
+
 **Behaviour change.** A Coordinator refuses a method whose owning profile the
 workspace does not advertise, which SPECIFICATION 15.4 has required since 0.1
 and neither reference did. Removing `control/1.0` from a workspace advertised
@@ -70,6 +92,11 @@ caller who asked, and no reference has a delivery layer to filter.
 - **An error-code check.** Every code the normative tables allocate must exist
   in both references, and a code in one reference alone is a divergence. Run in
   CI.
+- **Shared refusal-recording vectors.** `conformance/refusal-record-vectors.json`
+  fixes, for eight refused calls, the response, whether the refusal is
+  recorded, the recorded entry, and the chain head after it. Both suites read
+  it, and the Python suite recomputes every head with a canonicaliser of its
+  own.
 
 ### Fixed
 

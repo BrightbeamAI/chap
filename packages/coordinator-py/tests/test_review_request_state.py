@@ -117,15 +117,25 @@ def test_a_stopped_task_cannot_be_pulled_back_into_review(state):
 
 
 @pytest.mark.parametrize("state", ["cancelled", "superseded", "paused"])
-def test_the_refusal_records_nothing(state):
-    # A refused call must not append. A stopped task that "grew" an entry would
-    # leave an audit chain describing a review that never opened.
+def test_the_refusal_opens_no_review_on_the_log(state):
+    # A stopped task that grew an accepted entry would leave an audit chain
+    # describing a review that never opened. The attempt is recorded as a
+    # refused request instead, which no reader replays as a review.
     c, s = _ready()
     tid = _task(s, state)
-    before = len(s("audit.read", actor="human:a")["result"]["entries"])
+
+    def accepted():
+        return len(s("audit.read", actor="human:a",
+                     filter={"outcome": "accepted"})["result"]["entries"])
+
+    before = accepted()
     s("review.request", task_id=tid, artefact=ARTEFACT, to="human:a")
-    after = len(s("audit.read", actor="human:a")["result"]["entries"])
-    assert after == before
+    assert accepted() == before
+    refused = s("audit.read", actor="human:a",
+                filter={"outcome": "refused"})["result"]["entries"]
+    assert len(refused) == 1
+    assert refused[0]["request"]["method"] == "review.request"
+    assert refused[0]["outcome"] == {"status": "refused", "code": E.NOT_REVIEWABLE}
 
 
 def test_a_paused_task_resumes_before_it_can_be_reviewed():

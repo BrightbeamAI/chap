@@ -182,7 +182,11 @@ def _verify(entries):
     for e in entries:
         if e.get("prev_hash") != running:
             return False, e["seq"]
-        running = sha256_hex(canonicalize(e["envelope"]) + running.encode("utf-8"))
+        # A refused attempt the coordinator recorded links its outcome
+        # together with its request; an accepted call links its envelope.
+        record = ({"outcome": e["outcome"], "request": e["request"]}
+                  if e.get("outcome") is not None else e["envelope"])
+        running = sha256_hex(canonicalize(record) + running.encode("utf-8"))
     return True, None
 
 

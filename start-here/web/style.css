@@ -142,6 +142,7 @@ button.danger { color: var(--bad); border-color: #fca5a5; }
   padding: .5rem .7rem; background: #fbfcfe;
 }
 .event.human { border-color: var(--accent); background: #eff6ff; }
+.event.refused { border-style: dashed; opacity: .85; }
 .event summary { display: grid; grid-template-columns: 1fr auto; gap: 0 .5rem; }
 .event summary strong { font-family: var(--mono); font-size: .85rem; }
 .seq { color: var(--muted); font-size: .8rem; }

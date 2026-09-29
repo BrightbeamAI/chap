@@ -194,6 +194,22 @@ costs:
 SPECIFICATION §4.3 carried this as a MUST refused with `-32401`. Neither
 reference implements it and no reference allocates the code.
 
+### Refused calls
+
+A member's refused call that is a governed attempt is recorded on the chain,
+under `request` with an `outcome` giving the code (SPECIFICATION §10.1): a
+decision on a review addressed to someone else, a pull on an emergency brake
+the workspace has switched off, an act on a paused workspace. Its link hashes
+the outcome together with the request, so a refusal cannot be recast as a
+call that took effect, or the reverse, without breaking the chain.
+
+What stays off the chain is chosen so that recording cannot be turned against
+the log. A caller who is not a member cannot add entries, and neither can a
+call whose signature or key failed, so an outsider cannot fill a workspace's
+log. A member can, by sending refused calls in a loop, as a member can by
+sending accepted ones. Rate-limit per participant at the transport where that
+matters.
+
 ---
 
 ## 6. Mode safety

@@ -27,7 +27,8 @@ import datetime as _dt
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .canonical import ZERO_HASH, canonicalize, content_hash, sha256_hex
+from .audit import entry_call, entry_record, link_hash, refusal_is_recorded
+from .canonical import ZERO_HASH, canonicalize, content_hash
 from .ids import IdFactory
 from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
 from .jsonrpc import E, is_valid_envelope, make_response, rpc_error
@@ -186,11 +187,6 @@ def _tags_error(params: dict) -> dict | None:
                              or not all(isinstance(t, str) for t in tags)):
         return {"error": rpc_error(E.PARAMS, "tags must be a list of strings")}
     return None
-
-
-def _link_hash(envelope: dict, prev: str) -> str:
-    """Chain link: sha256( JCS(envelope) || prev_hash )."""
-    return sha256_hex(canonicalize(envelope) + prev.encode("utf-8"))
 
 
 def _rehydrate_workspace(data: dict) -> "Workspace":
@@ -449,7 +445,11 @@ class Coordinator:
         """Process one JSON-RPC envelope; return the response."""
         self._frozen_now = self._advance_clock()
         try:
-            return self._dispatch(envelope)
+            response = self._dispatch(envelope)
+            error = response.get("error")
+            if error:
+                self._record_refusal(envelope, error)
+            return response
         finally:
             self._frozen_now = None
 
@@ -593,7 +593,9 @@ class Coordinator:
         if "error" in out:
             return make_response(env_id, error=out["error"])
 
-        # Record audit on successful operations that name a workspace
+        # Record audit on successful operations that name a workspace. A
+        # refusal is weighed in dispatch(), once this returns, against the
+        # rule in SPECIFICATION 10.1.
         ws_id = params.get("workspace")
         if isinstance(ws_id, str) and method not in _READ_ONLY_METHODS:
             ws = self.workspaces.get(ws_id)
@@ -605,15 +607,47 @@ class Coordinator:
     # -- audit recording -----------------------------------------------
 
     def _record_audit(self, ws: Workspace, envelope: dict) -> None:
-        entry = AuditEntry(
-            seq=len(ws.audit),
-            arrived=self.now_iso(),
-            envelope=copy.deepcopy(envelope),
-        )
+        self._append_entry(ws, envelope=copy.deepcopy(envelope))
+
+    def _record_refusal(self, envelope: Any, error: dict) -> None:
+        """SPECIFICATION 10.1: record a refused call when it is a governed attempt.
+
+        The caller must be a member of an existing workspace, the call must
+        be a well-formed request for a method that is not a read, and the
+        refusal must be one ``refusal_is_recorded`` names. The request is
+        kept as it arrived, so a signature on it still verifies.
+        """
+        if not is_valid_envelope(envelope) or not isinstance(envelope.get("method"), str):
+            return
+        method = envelope["method"]
+        if method in _READ_ONLY_METHODS:
+            return
+        if not refusal_is_recorded(method, error, PRIVILEGED_METHODS):
+            return
+        params = envelope.get("params")
+        if not isinstance(params, dict):
+            return
+        ws_id = params.get("workspace")
+        ws = self.workspaces.get(ws_id) if isinstance(ws_id, str) else None
+        sender = params.get("from")
+        if ws is None or not isinstance(sender, str) or sender not in ws.members:
+            return
+        # A request that cannot be canonicalised cannot be hashed into the chain.
+        try:
+            canonicalize(envelope)
+        except (ValueError, TypeError, RecursionError):
+            return
+        self._append_entry(ws, request=copy.deepcopy(envelope),
+                           outcome={"status": "refused", "code": error["code"]})
+
+    def _append_entry(self, ws: Workspace, *, envelope: dict | None = None,
+                      request: dict | None = None, outcome: dict | None = None) -> None:
+        entry = AuditEntry(seq=len(ws.audit), arrived=self.now_iso(),
+                           envelope=envelope, request=request, outcome=outcome)
         if ws.chain_enabled or self.options.enable_chain:
             prev = ws.chain_head or ZERO_HASH
             entry.prev_hash = prev
-            ws.chain_head = _link_hash(entry.envelope, prev)
+            ws.chain_head = link_hash(entry_record(entry), prev)
         ws.audit.append(entry)
         for listener in self._audit_listeners:
             try:
@@ -1230,12 +1264,23 @@ class Coordinator:
                 return not_member
         rng = p.get("range") or {}
         flt = p.get("filter") or {}
+        outcome_filter = flt.get("outcome")
+        if outcome_filter is not None and outcome_filter not in ("accepted", "refused"):
+            return {"error": rpc_error(
+                E.PARAMS, "filter.outcome must be 'accepted' or 'refused'")}
         from_seq = int(rng.get("from_seq", 0))
         to_seq = int(rng.get("to_seq", len(ws.audit)))
 
         out: list[dict] = []
         for entry in ws.audit[from_seq:to_seq]:
-            env = entry.envelope
+            # Filters read the call an entry records, accepted or refused, and
+            # `outcome` narrows to one kind.
+            refused = entry.outcome is not None
+            if outcome_filter == "accepted" and refused:
+                continue
+            if outcome_filter == "refused" and not refused:
+                continue
+            env = entry_call(entry) or {}
             ep = env.get("params") or {}
             if flt.get("method") and env.get("method") != flt["method"]:
                 continue

@@ -1069,18 +1069,58 @@ Coordinator that records them produces a different chain for the same
 sequence of state changes and so fails cross-implementation
 comparison.
 
-Entries are linked by SHA-256 hashes over the canonical envelope and
-the previous head:
+**Refused calls.** A Coordinator MUST also record a refused call when it is
+a governed attempt: the call is a well-formed request for a method other than
+the reads above, its `from` names a current member of an existing workspace,
+and its refusal is none of the following.
+
+- Malformed or invalid: `-32700`, `-32600` or `-32602`.
+- A fault in the Coordinator: `-32603`.
+- A signature or key that did not verify: `-32070` to `-32073`. The sender
+  of such a call is not authenticated. `-32074`, a decision whose artefact
+  digest does not match the artefact under review, is recorded.
+- `-32601` for a method the catalogue does not mark `privileged`. This covers
+  a method that does not exist and the profile gate (§15.4) refusing an
+  ordinary method. The gate refusing a privileged method, which is an attempt
+  to pull an emergency brake the workspace has switched off, is recorded.
+
+A request that cannot be canonicalised is not recorded, because it cannot be
+hashed. A Coordinator MUST NOT record any other refusal: as with the reads, a
+Coordinator that recorded a different set would produce a different chain for
+the same calls. A refusal entry holds the request exactly as it arrived,
+signature included, under `request` rather than `envelope`, with an `outcome`
+beside it:
+
+```json
+{
+  "seq":      7,
+  "arrived":  "2026-09-30T10:00:00.000Z",
+  "request":  { /* the refused call, as received */ },
+  "outcome":  { "status": "refused", "code": -32011 },
+  "prev_hash": "sha256:..."
+}
+```
+
+Holding the call under `request` keeps a reader that replays `envelope` from
+treating the refusal as a call that took effect. The entry takes a `seq`, and
+`audit_count` and `evidence_head` count it. A chain written before refusals
+were recorded holds none and reads as it always has.
+
+Entries are linked by SHA-256 hashes over the canonical record and the
+previous head:
 
 ```
 entry_n.prev_hash = chain head before entry_n
-chain_head        = SHA-256( JCS(envelope_n) || entry_n.prev_hash )
+chain_head        = SHA-256( JCS(record_n) || entry_n.prev_hash )
 ```
 
-Every digest is the string `sha256:` followed by 64 lowercase hex
-characters. `JCS(envelope_n)` is the canonical serialisation of the
-recorded envelope, and `prev_hash` is concatenated as its full UTF-8
-string form, prefix included. The genesis entry's `prev_hash` is
+`record_n` is the recorded envelope of an accepted call, and the object
+`{"outcome": outcome_n, "request": request_n}` of a refusal. An entry with no
+outcome hashes exactly as it always has, and neither half of a refusal can be
+altered or stripped without breaking the chain. Every digest is the string
+`sha256:` followed by 64 lowercase hex characters. `JCS(record_n)` is the
+canonical serialisation of the record, and `prev_hash` is concatenated as its
+full UTF-8 string form, prefix included. The genesis entry's `prev_hash` is
 `sha256:` followed by 64 zeros.
 
 The chain head is published in the workspace descriptor as
@@ -1097,8 +1137,10 @@ can replay the chain and confirm:
 3. Timestamps are monotonically non-decreasing.
 4. No `id` is reused.
 
-An `audit.verify_chain` request returns the result of this replay over the
-whole log. Range parameters are declared on the request but not honoured by
+Each entry holds an accepted `envelope` alone, or a refused `request` with an
+`outcome` of status `refused` and an integer code. An entry that holds
+neither, or both, is reported as malformed. An `audit.verify_chain` request
+returns the result of this replay over the whole log. Range parameters are declared on the request but not honoured by
 either implementation, and are refused rather than silently widened to the
 whole log.
 
@@ -1388,7 +1430,7 @@ artefacts. The full profile is specified in
 
 | Method               | Type         | Privileged | Description                                   |
 |----------------------|--------------|------------|-----------------------------------------------|
-| `audit.read`         | request      | no         | Read a range of evidence entries.             |
+| `audit.read`         | request      | no         | Read a range of evidence entries, accepted and refused (§10.1). |
 | `audit.verify`       | request      | no         | Verify the chain over a range.                |
 | `audit.checkpoint`   | notification | no         | Coordinator-emitted checkpoint.               |
 | `audit.redact`       | request      | yes        | Redact a prior entry (preserves hash).        |
@@ -1665,7 +1707,8 @@ by the `since` field on each entry.
 The refusal is `-32601`, the code a Coordinator that never implemented
 the method would return, so a deployment that omits a profile and one
 that has it compiled in but unadvertised are indistinguishable from
-outside. The error object SHOULD carry
+outside. A member's refused call to a privileged method is recorded as a
+refusal entry (§10.1). The error object SHOULD carry
 `data: {"profile": …, "advertised": [...]}` for an operator reading the
 log. Refusing with a distinct code would tell an adversary which
 capabilities a Coordinator holds back.

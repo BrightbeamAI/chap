@@ -242,6 +242,11 @@ export const SCHEMAS: Record<string, JsonSchema> = {
           method:  { type: "string", description: "Return only entries for this CHAP method, e.g. 'decide.override'. Matched in full, without the 'chap.' tool-name prefix." },
           from:    { type: "string", description: "Return only entries whose actor is this participant URI." },
           task_id: { type: "string", description: "Return only entries about this task." },
+          outcome: {
+            type: "string",
+            enum: ["accepted", "refused"],
+            description: "Return only accepted calls, or only the refused attempts the coordinator recorded. Omit for both.",
+          },
         },
       },
     },

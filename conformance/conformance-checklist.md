@@ -60,11 +60,12 @@ CHAP conformance.
 - [ ] Every actor-action method validates that `from` (the actor) is a current member, rejecting a non-member with `-32011` (the spec's `unknown_participant` condition; see SPECIFICATION.md §6.3.1). Verified by harness vectors `rv-07` and `rv-08`.
 - [ ] `task.update` enforces the transition table in [`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1; rejects a transition the table does not list with `-32602`.
 - [ ] `task.complete` is refused on a task in `cancelled`, `superseded`, `paused` or any state the §8.1 table does not list for it, with `-32602`.
-- [ ] `audit.read` supports `range` and at minimum the `method`, `from`, `task_id` filters; returns `entries` and `next_seq`.
+- [ ] `audit.read` supports `range` and at minimum the `method`, `from`, `task_id` and `outcome` filters; returns `entries` and `next_seq`.
 
 ### C4 · Audit log
 
 - [ ] Every accepted envelope is appended in arrival order.
+- [ ] Every refused call that [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1 names is appended as a refusal entry, with the call under `request` and an `outcome` giving the code, and no other refusal is appended. Verified by `refusal-record-vectors.json`.
 - [ ] Each entry records the Coordinator's arrival timestamp.
 - [ ] `audit.read` results are stable: the same range returns the same entries indefinitely.
 

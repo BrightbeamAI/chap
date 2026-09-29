@@ -10,11 +10,18 @@
  * builds the statement shape and routes through CoordinatorOptions.scittSubmitter.
  */
 import type { Coordinator } from "../coordinator.js";
-import { canonicalize, sha256Hex, ZERO_HASH } from "../canonical.js";
+import { entryIsWellFormed, entryRecord, linkHash } from "../audit.js";
+import { canonicalize, ZERO_HASH } from "../canonical.js";
 import { E, rpcError } from "../jsonrpc.js";
-import type { Envelope } from "../types.js";
 
-function buildStatement(workspaceId: string, envelope: Envelope, issuer: string): Record<string, unknown> {
+/** Carried forward past a malformed entry, so no later link can match. */
+const MALFORMED = "sha256:malformed";
+
+/**
+ * A statement's payload is what the entry's chain link hashes: the envelope
+ * of an accepted call, or the outcome together with the request of a refusal.
+ */
+function buildStatement(workspaceId: string, record: unknown, issuer: string): Record<string, unknown> {
   return {
     protected: {
       alg: -8,  // Ed25519 per COSE
@@ -23,7 +30,7 @@ function buildStatement(workspaceId: string, envelope: Envelope, issuer: string)
       cwt_claims: { sub: workspaceId, iat: null },
       "content-type": "application/chap+json;version=0.2",
     },
-    payload: canonicalize(envelope).toString("utf-8"),
+    payload: canonicalize(record).toString("utf-8"),
     signature: "<deployment-supplied>",
   };
 }
@@ -39,7 +46,7 @@ export function registerAuditScitt(coord: Coordinator): void {
 
     if (!coord.options.scittSubmitter) {
       const statements = ws.audit.slice(fromSeq, toSeq).map(e =>
-        buildStatement(ws.id, e.envelope, issuer));
+        buildStatement(ws.id, entryRecord(e), issuer));
       return { result: {
         statements,
         note: "No scittSubmitter configured; submit these out-of-band",
@@ -47,7 +54,7 @@ export function registerAuditScitt(coord: Coordinator): void {
     }
     const receipts: unknown[] = [];
     for (const entry of ws.audit.slice(fromSeq, toSeq)) {
-      const statement = buildStatement(ws.id, entry.envelope, issuer);
+      const statement = buildStatement(ws.id, entryRecord(entry), issuer);
       let receipt: Record<string, unknown> | null;
       try {
         receipt = coord.options.scittSubmitter(statement);
@@ -116,7 +123,15 @@ export function registerAuditScitt(coord: Coordinator): void {
       if (e.prev_hash !== expectedPrev) {
         errors.push(`seq ${e.seq}: prev_hash mismatch`);
       }
-      prev = sha256Hex(Buffer.concat([canonicalize(e.envelope), Buffer.from(expectedPrev, "utf-8")]));
+      // An entry that records neither one accepted envelope nor one refused
+      // request with its outcome has been altered, and nothing after it can
+      // be linked to it.
+      if (!entryIsWellFormed(e)) {
+        errors.push(`seq ${e.seq}: malformed entry`);
+        prev = MALFORMED;
+        continue;
+      }
+      prev = linkHash(entryRecord(e), expectedPrev);
     }
     // The recomputed head must match the stored head; this is what makes
     // the final entry tamper-evident.

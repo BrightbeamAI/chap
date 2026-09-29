@@ -150,15 +150,20 @@ def _verify(entries):
     """Re-walk the hash chain the way an auditor would.
 
     Each entry carries the prev_hash it was linked against; the next link is
-    sha256(JCS(envelope) || prev_hash). If any envelope was altered after
-    the fact, the recomputed links stop matching. Returns (intact, seq of
+    sha256(JCS(envelope) || prev_hash), or for a recorded refusal the outcome
+    together with the request. If any entry was altered after the fact, the
+    recomputed links stop matching. Returns (intact, seq of
     the first broken entry or None).
     """
     running = GENESIS
     for e in entries:
         if e.get("prev_hash") != running:
             return False, e["seq"]
-        running = sha256_hex(canonicalize(e["envelope"]) + running.encode("utf-8"))
+        # A refused attempt the coordinator recorded links its outcome
+        # together with its request; an accepted call links its envelope.
+        record = ({"outcome": e["outcome"], "request": e["request"]}
+                  if e.get("outcome") is not None else e["envelope"])
+        running = sha256_hex(canonicalize(record) + running.encode("utf-8"))
     return True, None
 
 

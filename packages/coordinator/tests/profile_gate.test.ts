@@ -58,11 +58,26 @@ test("the same method works once the profile is advertised", () => {
   assert.equal((c.workspaces.get("w") as any).tasks.get(id).state, "paused");
 });
 
-test("a refusal writes nothing to the chain", () => {
+test("pulling a switched-off brake is recorded as a refusal", () => {
+  // SPECIFICATION 10.1: the gate refusing a privileged method is exactly the
+  // event the log exists to keep. It is recorded under `request`, so no reader
+  // replays it as a pause that happened.
   const { c, send } = ready();
   const ws = c.workspaces.get("w") as any;
   const before = ws.audit.length;
   send("control.pause", { task_id: "t", reason: "hold" });
+  assert.equal(ws.audit.length, before + 1);
+  const entry = ws.audit[before];
+  assert.equal(entry.envelope, undefined);
+  assert.equal(entry.request.method, "control.pause");
+  assert.deepEqual(entry.outcome, { status: "refused", code: -32601 });
+});
+
+test("the gate refusing an ordinary method writes nothing", () => {
+  const { c, send } = ready();
+  const ws = c.workspaces.get("w") as any;
+  const before = ws.audit.length;
+  send("whisper.ask", { task_id: "t", question: "?", options: ["a"] });
   assert.equal(ws.audit.length, before);
 });
 

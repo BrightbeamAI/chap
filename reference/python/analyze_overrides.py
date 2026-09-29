@@ -86,9 +86,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         entries = r["result"]["entries"]
 
+    # A refused override the coordinator recorded is held under `request`
+    # with an `outcome`, and it did not take effect, so only accepted
+    # envelopes count.
     overrides = [
         e for e in entries
-        if e["envelope"].get("method") == "decide.override"
+        if (e.get("envelope") or {}).get("method") == "decide.override"
     ]
 
     print(f"Override Learning Report")

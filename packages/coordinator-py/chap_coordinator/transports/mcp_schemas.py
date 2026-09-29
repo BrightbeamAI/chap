@@ -401,6 +401,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                         "type": "string",
                         "description": "Return only entries about this task.",
                     },
+                    "outcome": {
+                        "type": "string",
+                        "enum": [
+                            "accepted",
+                            "refused",
+                        ],
+                        "description": "Return only accepted calls, or only the refused attempts the coordinator recorded. Omit for both.",
+                    },
                 },
             },
         },

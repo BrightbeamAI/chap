@@ -104,9 +104,9 @@ describe("typed facade - audit chain equivalence", () => {
     const b = c2.workspaces.get("wsp_path_b")!.audit;
     assert.equal(a.length, b.length);
     for (let i = 0; i < a.length; i++) {
-      assert.equal(a[i].envelope.method, b[i].envelope.method);
-      const ap = (a[i].envelope.params as Record<string, unknown>);
-      const bp = (b[i].envelope.params as Record<string, unknown>);
+      assert.equal(a[i].envelope!.method, b[i].envelope!.method);
+      const ap = (a[i].envelope!.params as Record<string, unknown>);
+      const bp = (b[i].envelope!.params as Record<string, unknown>);
       // Workspace ids differ but other fields are identical.
       delete ap.workspace; delete bp.workspace;
       assert.deepEqual(ap, bp);

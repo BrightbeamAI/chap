@@ -29,7 +29,7 @@ test("repeated idempotency_key returns the same task without a duplicate", () =>
 
   const w = c.workspaces.get("w")!;
   assert.equal(w.tasks.size, 1);
-  const creates = w.audit.filter(e => e.envelope.method === "task.create");
+  const creates = w.audit.filter(e => e.envelope?.method === "task.create");
   assert.equal(creates.length, 1);
 });
 

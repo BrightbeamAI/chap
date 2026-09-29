@@ -1,0 +1,822 @@
+{
+  "description": "SPECIFICATION 10.1, recording a refused call, as exact results shared by both references. Each case replays its setup, sends one call that is refused, and states whether the refusal is recorded. A recorded refusal is the last entry of the log, held under `request` with an `outcome` beside it, and the chain head after it is fixed, so both the entry and the bytes its link hashes are pinned.",
+  "vectors": [
+    {
+      "name": "recorded-switched-off-brake",
+      "note": "control/1.0 is not advertised. The gate refuses a privileged method, and the attempt is recorded.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "control.pause",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:a",
+          "task_id": "tsk_absent",
+          "reason": "hold"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32601,
+          "message": "Unknown method: control.pause",
+          "data": {
+            "profile": "control/1.0",
+            "advertised": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        }
+      },
+      "recorded": true,
+      "audit_count": 5,
+      "evidence_head": "sha256:00342183a250ab44d93876dfb973d3a29b4bf95ba21d7055901c7ada95bf71bf",
+      "entry": {
+        "seq": 4,
+        "arrived": "2023-11-14T22:13:25.000Z",
+        "request": {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "control.pause",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "task_id": "tsk_absent",
+            "reason": "hold"
+          }
+        },
+        "outcome": {
+          "status": "refused",
+          "code": -32601
+        },
+        "prev_hash": "sha256:de7461fdc9281c6fefab265b7dd5fad25a2543095d3b26041b0bdc7db0e92775"
+      }
+    },
+    {
+      "name": "recorded-unaddressed-decision",
+      "note": "A member approves a review addressed to someone else, and is refused -32011.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s5",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "kind": "draft",
+            "input": {},
+            "assignee": "agent:b"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s6",
+          "method": "task.update",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "state": "in_progress"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s7",
+          "method": "review.request",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "artefact": {
+              "body": "draft"
+            },
+            "to": "human:c"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "decide.approve",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "comment": "ok"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32011,
+          "message": "Not an addressed reviewer for this task: human:a"
+        }
+      },
+      "recorded": true,
+      "audit_count": 8,
+      "evidence_head": "sha256:d0e4f9a35441e9d2f541e04f84e98b24eb1923e30d82b324d118f364ca7d9109",
+      "entry": {
+        "seq": 7,
+        "arrived": "2023-11-14T22:13:28.000Z",
+        "request": {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "decide.approve",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "comment": "ok"
+          }
+        },
+        "outcome": {
+          "status": "refused",
+          "code": -32011
+        },
+        "prev_hash": "sha256:14d539f616f2f9fd0c2cece41e5c05cc75b69109c536e29babfdf9f2c8818d49"
+      }
+    },
+    {
+      "name": "recorded-wrong-digest",
+      "note": "The addressed reviewer approves with a digest that does not match the artefact under review, and is refused -32074 (CEP-001).",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s5",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "kind": "draft",
+            "input": {},
+            "assignee": "agent:b"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s6",
+          "method": "task.update",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "state": "in_progress"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s7",
+          "method": "review.request",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "artefact": {
+              "body": "draft"
+            },
+            "to": "human:c"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "decide.approve",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:c",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "comment": "ok",
+          "approved_artefact_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32074,
+          "message": "approved_artefact_digest does not match the artefact under review",
+          "data": {
+            "declared": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "actual": "sha256:95d6ea51e3e509ab1497e5abba80fb03c095a97a6d9844d5b1f7cc2218bae595"
+          }
+        }
+      },
+      "recorded": true,
+      "audit_count": 8,
+      "evidence_head": "sha256:e42fe94e873688b5014dca96071f85526ca884d70448aefa0ac98d19d418d78a",
+      "entry": {
+        "seq": 7,
+        "arrived": "2023-11-14T22:13:28.000Z",
+        "request": {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "decide.approve",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "comment": "ok",
+            "approved_artefact_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "outcome": {
+          "status": "refused",
+          "code": -32074
+        },
+        "prev_hash": "sha256:14d539f616f2f9fd0c2cece41e5c05cc75b69109c536e29babfdf9f2c8818d49"
+      }
+    },
+    {
+      "name": "recorded-paused-workspace",
+      "note": "A member acts on a workspace whose emergency brake is on, and is refused -32063.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s5",
+          "method": "control.pause",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "scope": "workspace",
+            "reason": "incident"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "agent:b",
+          "kind": "draft",
+          "input": {},
+          "assignee": "agent:b"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32063,
+          "message": "Workspace wsp_refusal is paused"
+        }
+      },
+      "recorded": true,
+      "audit_count": 6,
+      "evidence_head": "sha256:41921092140cdd7415b297570a6e0085f99893b8b8887faac8419e06f49b9daf",
+      "entry": {
+        "seq": 5,
+        "arrived": "2023-11-14T22:13:26.000Z",
+        "request": {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "kind": "draft",
+            "input": {},
+            "assignee": "agent:b"
+          }
+        },
+        "outcome": {
+          "status": "refused",
+          "code": -32063
+        },
+        "prev_hash": "sha256:480da669d76552137fb4ca4ee3698e220e3f815be88bf69439dedae81d83b048"
+      }
+    },
+    {
+      "name": "unrecorded-gate-ordinary-method",
+      "note": "whisper/1.0 is not advertised. The gate refusing an ordinary method is not recorded.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "whisper.ask",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:a",
+          "task_id": "tsk_absent",
+          "question": "?",
+          "options": [
+            "a"
+          ]
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32601,
+          "message": "Unknown method: whisper.ask",
+          "data": {
+            "profile": "whisper/1.0",
+            "advertised": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        }
+      },
+      "recorded": false,
+      "audit_count": 4,
+      "evidence_head": "sha256:de7461fdc9281c6fefab265b7dd5fad25a2543095d3b26041b0bdc7db0e92775"
+    },
+    {
+      "name": "unrecorded-unknown-method",
+      "note": "A method that does not exist is not recorded.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "nothing.here",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:a"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32601,
+          "message": "Unknown method: nothing.here"
+        }
+      },
+      "recorded": false,
+      "audit_count": 4,
+      "evidence_head": "sha256:de7461fdc9281c6fefab265b7dd5fad25a2543095d3b26041b0bdc7db0e92775"
+    },
+    {
+      "name": "unrecorded-invalid-params",
+      "note": "Invalid parameters (-32602) are not recorded.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:a",
+          "kind": "draft"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32602,
+          "message": "Missing field: input"
+        }
+      },
+      "recorded": false,
+      "audit_count": 4,
+      "evidence_head": "sha256:de7461fdc9281c6fefab265b7dd5fad25a2543095d3b26041b0bdc7db0e92775"
+    },
+    {
+      "name": "unrecorded-non-member",
+      "note": "A caller who is not a member is not recorded.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "control.pause",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:stranger",
+          "task_id": "tsk_absent",
+          "reason": "hold"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32011,
+          "message": "Not a workspace member: human:stranger"
+        }
+      },
+      "recorded": false,
+      "audit_count": 4,
+      "evidence_head": "sha256:1173928ddbbc0f10a6bd51e759b41a181f7e5f420d3465f2dec3560c7512c667"
+    }
+  ]
+}

@@ -20,11 +20,12 @@
  *   - identity-oidc/1.0 + identity-vc/1.0 (binding hooks at join)
  */
 
-import { canonicalize, contentHash, sha256Hex, ZERO_HASH } from "./canonical.js";
+import { canonicalize, contentHash, ZERO_HASH } from "./canonical.js";
 import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "./catalogue.js";
 import { publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
+import { entryCall, entryRecord, linkHash, refusalIsRecorded } from "./audit.js";
 import { applyJsonPatch } from "./patch.js";
 import type { Store, WorkspaceRecord } from "./storage/store.js";
 import { MemoryStore } from "./storage/store.js";
@@ -153,10 +154,6 @@ function tagsError(p: Record<string, unknown>): { error: ReturnType<typeof rpcEr
     return { error: rpcError(E.PARAMS, "tags must be a list of strings") };
   }
   return null;
-}
-
-function linkHash(envelope: Envelope, prev: string): string {
-  return sha256Hex(Buffer.concat([canonicalize(envelope), Buffer.from(prev, "utf-8")]));
 }
 
 function reviewRuleSupported(rule: string): boolean {
@@ -533,7 +530,9 @@ export class Coordinator {
   dispatch(envelope: Envelope): Envelope {
     this.frozenNow = this.advanceClock();
     try {
-      return this._dispatch(envelope);
+      const response = this._dispatch(envelope);
+      if (response.error) this.recordRefusal(envelope, response.error);
+      return response;
     } finally {
       this.frozenNow = undefined;
     }
@@ -666,7 +665,8 @@ export class Coordinator {
     }
     if (out.error) return reply(envelope, { error: out.error });
 
-    // Record audit on success
+    // Record audit on success. A refusal is weighed in dispatch(), once this
+    // returns, against the rule in SPECIFICATION 10.1.
     const wsId = params.workspace as string | undefined;
     if (typeof wsId === "string" && !READ_ONLY_METHODS.has(method)) {
       const ws = this.workspaces.get(wsId);
@@ -678,15 +678,40 @@ export class Coordinator {
   // -- audit ---------------------------------------------------------
 
   recordAudit(ws: Workspace, envelope: Envelope): void {
-    const entry: AuditEntry = {
-      seq: ws.audit.length,
-      arrived: this.now(),
-      envelope: JSON.parse(JSON.stringify(envelope)) as Envelope,
-    };
+    this.appendEntry(ws, { envelope: JSON.parse(JSON.stringify(envelope)) as Envelope });
+  }
+
+  /**
+   * SPECIFICATION 10.1: record a refused call when it is a governed attempt.
+   * The caller must be a member of an existing workspace, the call must be a
+   * well-formed request for a method that is not a read, and the refusal must
+   * be one `refusalIsRecorded` names. The request is kept as it arrived, so a
+   * signature on it still verifies.
+   */
+  private recordRefusal(envelope: Envelope, error: { code: number; data?: unknown }): void {
+    if (!isValidEnvelope(envelope) || typeof envelope.method !== "string") return;
+    const method = envelope.method;
+    if (READ_ONLY_METHODS.has(method)) return;
+    if (!refusalIsRecorded(method, error, PRIVILEGED_METHODS)) return;
+    const raw = envelope.params;
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return;
+    const params = raw as Record<string, unknown>;
+    const ws = typeof params.workspace === "string" ? this.workspaces.get(params.workspace) : undefined;
+    if (!ws || typeof params.from !== "string" || !ws.members.has(params.from)) return;
+    // A request that cannot be canonicalised cannot be hashed into the chain.
+    try { canonicalize(envelope); } catch { return; }
+    this.appendEntry(ws, {
+      request: JSON.parse(JSON.stringify(envelope)) as Envelope,
+      outcome: { status: "refused", code: error.code },
+    });
+  }
+
+  private appendEntry(ws: Workspace, record: Pick<AuditEntry, "envelope" | "request" | "outcome">): void {
+    const entry: AuditEntry = { seq: ws.audit.length, arrived: this.now(), ...record };
     if (ws.chain_enabled || this.options.enableChain) {
       const prev = ws.chain_head ?? ZERO_HASH;
       entry.prev_hash = prev;
-      ws.chain_head = linkHash(entry.envelope, prev);
+      ws.chain_head = linkHash(entryRecord(entry), prev);
     }
     ws.audit.push(entry);
     for (const l of this.auditListeners) {
@@ -1230,25 +1255,40 @@ export class Coordinator {
       if (notMember) return notMember;
     }
     const range = (p.range as { from_seq?: number; to_seq?: number } | undefined) ?? {};
-    const filter = (p.filter as { method?: string; from?: string; task_id?: string } | undefined) ?? {};
+    const filter = (p.filter as {
+      method?: string; from?: string; task_id?: string; outcome?: unknown;
+    } | undefined) ?? {};
+    if (filter.outcome !== undefined && filter.outcome !== "accepted" && filter.outcome !== "refused") {
+      return { error: rpcError(E.PARAMS, "filter.outcome must be 'accepted' or 'refused'") };
+    }
     const fromSeq = range.from_seq ?? 0;
     const toSeq = range.to_seq ?? ws.audit.length;
     const out: unknown[] = [];
     for (const entry of ws.audit.slice(fromSeq, toSeq)) {
-      const ep = (entry.envelope.params ?? {}) as Record<string, unknown>;
-      if (filter.method && entry.envelope.method !== filter.method) continue;
+      // Filters read the call an entry records, accepted or refused, and
+      // `outcome` narrows to one kind.
+      const refused = entry.outcome !== undefined;
+      if (filter.outcome === "accepted" && refused) continue;
+      if (filter.outcome === "refused" && !refused) continue;
+      const call = entryCall(entry) ?? ({} as Envelope);
+      const ep = (call.params ?? {}) as Record<string, unknown>;
+      if (filter.method && call.method !== filter.method) continue;
       if (filter.from && ep.from !== filter.from) continue;
       if (filter.task_id) {
         let taskId = ep.task_id;
-        if (entry.envelope.method === "whisper.answer") {
+        if (call.method === "whisper.answer") {
           const prompt = ws.whispers.get(ep.whisper_id as string);
           taskId = prompt ? (prompt as { task_id?: string }).task_id : undefined;
         }
         if (taskId !== filter.task_id) continue;
       }
-      const item: Record<string, unknown> = {
-        seq: entry.seq, arrived: entry.arrived, envelope: entry.envelope,
-      };
+      const item: Record<string, unknown> = { seq: entry.seq, arrived: entry.arrived };
+      if (refused) {
+        item.request = entry.request;
+        item.outcome = entry.outcome;
+      } else {
+        item.envelope = entry.envelope;
+      }
       if (entry.prev_hash) item.prev_hash = entry.prev_hash;
       out.push(item);
     }

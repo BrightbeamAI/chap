@@ -110,9 +110,12 @@ function renderTimeline(entries) {
   const timeline = $("timeline");
   timeline.replaceChildren();
   for (const entry of entries) {
-    const envelope = entry.envelope;
+    // A refused attempt is held under `request`, with an `outcome` beside it.
+    const envelope = entry.envelope || entry.request;
+    const refused = Boolean(entry.outcome);
     const node = document.createElement("details");
-    node.className = "event" + (envelope.method.startsWith("decide.") ? " human" : "");
+    node.className = "event" + (envelope.method.startsWith("decide.") ? " human" : "")
+      + (refused ? " refused" : "");
     const summary = document.createElement("summary");
     const method = document.createElement("strong");
     method.textContent = envelope.method;
@@ -121,7 +124,9 @@ function renderTimeline(entries) {
     seq.textContent = "#" + String(entry.seq).padStart(2, "0");
     const label = document.createElement("div");
     label.className = "event-label";
-    label.textContent = LABELS[envelope.method] || "CHAP event";
+    label.textContent = refused
+      ? `Refused (${entry.outcome.code}), no effect`
+      : LABELS[envelope.method] || "CHAP event";
     const actor = document.createElement("div");
     actor.className = "event-actor";
     actor.textContent = envelope.params.from || "workspace";

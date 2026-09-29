@@ -32,7 +32,7 @@ import pandas as pd
 
 from . import schema
 from ._patch import PatchError, apply_json_patch
-from .load import Chain
+from .load import Chain, is_refusal
 
 __all__ = ["frames", "Frames"]
 
@@ -424,6 +424,8 @@ class _Index:
     overrides: list[dict] = field(default_factory=list)
     routing: list[dict] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
+    #: Refused calls the coordinator recorded. Never replayed.
+    refusals: list[dict] = field(default_factory=list)
     #: Task ids in the order the replay first saw them, wherever they appeared.
     #: Derived from the events table instead, this missed every id that
     #: arrives nested, as handoff.propose's do.
@@ -437,6 +439,33 @@ class _Index:
     #: state has been consulted.
     creations: list[_Creation] = field(default_factory=list)
     claimed_by: list[str | None] = field(default_factory=list)
+
+
+def _refusal_row(entry: dict, workspace: str | None) -> dict:
+    """One row of the refusals table, from an entry that holds a refused call."""
+    req = entry.get("request")
+    req = req if isinstance(req, dict) else {}
+    p = req.get("params")
+    p = p if isinstance(p, dict) else {}
+    outcome = entry.get("outcome")
+    outcome = outcome if isinstance(outcome, dict) else {}
+    actor = p.get("from")
+    tid = p.get("task_id") or p.get("original_task_id")
+    arrived = _ts(entry.get("arrived"))
+    return {
+        "seq": entry.get("seq") if isinstance(entry.get("seq"), int) else None,
+        "workspace": p.get("workspace") or workspace,
+        "ts": _ts(p.get("ts")) or arrived,
+        "arrived": arrived,
+        "method": req.get("method"),
+        "actor": actor,
+        "actor_kind": _uri_kind(actor),
+        "task_id": tid if isinstance(tid, str) else None,
+        "code": outcome.get("code") if isinstance(outcome.get("code"), int) else None,
+        "prev_hash": entry.get("prev_hash"),
+        "chained": entry.get("prev_hash") is not None,
+        "signed": isinstance(req.get("sig"), str),
+    }
 
 
 def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per method
@@ -510,6 +539,11 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
         if not isinstance(entry, dict):
             # A stray element in a hand-assembled export. Skipped, so the
             # entries after it still reach the analysis.
+            continue
+        if is_refusal(entry):
+            # A refused call, recorded under `request`. It did not take effect,
+            # so it is listed and never replayed into any other table.
+            ix.refusals.append(_refusal_row(entry, chain.workspace))
             continue
         env = entry.get("envelope")
         env = env if isinstance(env, dict) else {}
@@ -1460,6 +1494,7 @@ class Frames:
     whispers: pd.DataFrame
     handoffs: pd.DataFrame
     routing: pd.DataFrame
+    refusals: pd.DataFrame
 
     def __getitem__(self, name: str) -> pd.DataFrame:
         if name not in schema.BY_NAME:
@@ -1730,4 +1765,5 @@ def frames(chain: Chain) -> Frames:
         whispers=_enforce(schema.WHISPERS, whisper_rows),
         handoffs=_enforce(schema.HANDOFFS, handoff_rows),
         routing=_enforce(schema.ROUTING, ix.routing),
+        refusals=_enforce(schema.REFUSALS, ix.refusals),
     )

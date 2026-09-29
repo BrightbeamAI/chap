@@ -216,6 +216,21 @@ Each log entry has at minimum:
 }
 ```
 
+A refused call that is a governed attempt MUST be appended too, as a
+refusal entry. It holds the call under `request` rather than `envelope`, with an
+`outcome` giving the refusal code, so a reader that replays `envelope` never
+treats it as a call that took effect. Which refusals are recorded is set out
+in [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1:
+
+```json
+{
+  "seq":      143,
+  "request":  { "...": "the full received envelope" },
+  "outcome":  { "status": "refused", "code": -32011 },
+  "arrived":  "2026-05-17T09:14:23.100Z"
+}
+```
+
 The Coordinator MUST be able to return ranges of the log via
 `audit.read` (§4.7). There is **no cryptographic chaining
 requirement at this layer**. Cryptographic audit is the `audit-scitt`
@@ -464,6 +479,10 @@ Filters supported in Core:
 | `method`    | Only entries whose envelope method matches.  |
 | `from`      | Only entries whose envelope `from` matches.  |
 | `task_id`   | Only entries referencing this task id.       |
+| `outcome`   | `accepted` or `refused`: only accepted calls, or only recorded refusals. Omitted, both. |
+
+The other filters read the call an entry records, whether it was accepted or
+refused.
 | `ts_range`  | Only entries within the time window.         |
 
 Implementations MAY support additional filters; clients MUST

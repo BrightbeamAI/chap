@@ -117,7 +117,13 @@ test("a workspace with no human refuses the completion", () => {
   assert.equal(task(c, id).state, "created", "the refused completion still moved the task");
   assert.equal(task(c, id).output, undefined, "unreviewed output was written anyway");
   assert.equal(task(c, id).review, undefined);
-  assert.equal(send("audit.read").result.entries.length, before);
+  // The attempt is on the log as a refused request, beside nothing accepted.
+  const after = send("audit.read").result.entries;
+  assert.equal(after.length, before + 1);
+  const last = after[after.length - 1];
+  assert.equal(last.envelope, undefined);
+  assert.equal(last.request.method, "task.complete");
+  assert.deepEqual(last.outcome, { status: "refused", code: E.NOT_AUTHORISED });
 });
 
 test("the only human cannot review their own work", () => {

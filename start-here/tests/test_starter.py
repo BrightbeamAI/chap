@@ -339,6 +339,22 @@ class HTTPTests(unittest.TestCase):
         self.assertIn("verification", body)
         self.assertNotEqual(body["verification"].get("status"), "verified")
 
+    def test_the_desk_shows_a_refused_attempt(self):
+        # A refused attempt the coordinator recorded is held under `request`
+        # with an `outcome`. The desk shows it on the task's timeline and does
+        # not fail on it.
+        task_id = self.propose()
+        with self.assertRaises(ChapError):
+            self.gate._send("decide.approve", actor=AGENTS[0], task_id=task_id,
+                            comment="mine", rationale="mine", tags=[],
+                            approved_artefact_digest=self.gate.inspect(task_id)["digest"])
+        status, body, _ = self.request(f"/api/desk?task={task_id}", headers=self.reviewer())
+        self.assertEqual(status, 200, body)
+        refused = [e for e in body["entries"] if "outcome" in e]
+        self.assertEqual(len(refused), 1)
+        self.assertEqual(refused[0]["request"]["method"], "decide.approve")
+        self.assertEqual(refused[0]["outcome"], {"status": "refused", "code": -32011})
+
     def test_the_desk_payload_does_not_grow_with_the_log(self):
         self.propose()
         _, small, _ = self.request("/api/desk", headers=self.reviewer())

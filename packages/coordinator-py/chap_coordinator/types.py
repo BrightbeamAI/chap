@@ -564,19 +564,28 @@ class Handoff:
 
 @dataclass
 class AuditEntry:
-    """One row in the audit log."""
+    """One row in the audit log.
+
+    An accepted call is held under ``envelope``. A refused call that
+    SPECIFICATION 10.1 records is held under ``request``, with ``outcome``
+    beside it, so a reader keyed on ``envelope`` passes the refusal by
+    instead of replaying it.
+    """
 
     seq: int
     arrived: str
-    envelope: dict
+    envelope: dict | None = None
     prev_hash: str | None = None  # set when chain linkage is enabled
+    request: dict | None = None
+    outcome: dict | None = None  # {"status": "refused", "code": <int>}
 
     def to_dict(self) -> dict:
-        out: dict[str, Any] = {
-            "seq": self.seq,
-            "arrived": self.arrived,
-            "envelope": self.envelope,
-        }
+        out: dict[str, Any] = {"seq": self.seq, "arrived": self.arrived}
+        if self.outcome is not None:
+            out["request"] = self.request
+            out["outcome"] = self.outcome
+        else:
+            out["envelope"] = self.envelope
         if self.prev_hash is not None:
             out["prev_hash"] = self.prev_hash
         return out

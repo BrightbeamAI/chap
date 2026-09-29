@@ -55,8 +55,10 @@ that all implementations support. Profiles add more, `review.request`,
 `decide.override`, `abstain.declare`, and so on.
 
 Underneath everything is an **audit log**: every accepted envelope
-is appended in arrival order. This log is the source of truth for
-what happened, who decided what, and on what basis.
+is appended in arrival order, and so is a member's governed attempt
+that the Coordinator refuses, marked as refused. This log is the
+source of truth for what happened, who decided what, and on what
+basis.
 
 If you remember three things:
 

@@ -58,7 +58,9 @@ owning profile is not on the list is refused with `-32601 Method not found`,
 the same answer a Coordinator that never implemented it would give, so a
 client cannot tell from the response which of the two it is talking to. The
 error carries `data: {"profile": …, "advertised": [...]}` for an operator
-reading the log.
+reading the log. A member's refused call to a privileged method, such as
+`control.pause` on a workspace that has switched `control/1.0` off, is
+recorded as a refusal entry (SPECIFICATION §10.1).
 
 Two sets of methods answer whatever the list says. The reads,
 `workspace.describe`, `audit.read`, `audit.verify_chain` and
