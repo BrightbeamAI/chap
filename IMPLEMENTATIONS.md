@@ -17,8 +17,8 @@ and whether they pass the published conformance harness.
 
 | Name                        | Language    | CHAP version | Profile surface | Conformance | Status      | License      | Authors            |
 | --------------------------- | ----------- | ------------ | --------------- | ----------- | ----------- | ------------ | ------------------ |
-| `@brightbeamai/chap-coordinator`         | TypeScript  | 0.2.13        | Full v0.2 (39 methods) | 27/27 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
-| `chap-coordinator` (Python) | Python 3.10+ | 0.2.13        | Full v0.2 (39 methods) | 27/27 passing on canonical harness | Stable | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/chap-coordinator`         | TypeScript  | 0.2.13        | Full v0.2 (39 methods) | Passes the canonical harness | Stable | Apache-2.0 | Brightbeam AI |
+| `chap-coordinator` (Python) | Python 3.10+ | 0.2.13        | Full v0.2 (39 methods) | Passes the canonical harness | Stable | Apache-2.0 | Brightbeam AI |
 | `@brightbeamai/chap-coordinator-mcp`     | TypeScript  | 0.2.13        | All 39 methods as MCP tools | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
 | `@brightbeamai/chap-coordinator-a2a`     | TypeScript  | 0.2.13        | All 39 methods as A2A skills | Adapter, inherits underlying coordinator's score | Stable | Apache-2.0 | Brightbeam AI |
 | `chap-langgraph`            | Python 3.10+ | 0.2.13        | Bridge: HIL path (`review`/`decide`) | Bridge test suite passing | Beta | Apache-2.0 | Brightbeam AI |

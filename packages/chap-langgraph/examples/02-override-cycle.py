@@ -54,11 +54,14 @@ def main() -> None:
     # The audit chain now contains the full provenance.
     print("\nAudit chain:")
     for entry in bridge.audit():
-        env = entry["envelope"]
+        # A refused call is recorded under "request", with its outcome.
+        env = entry.get("envelope") or entry["request"]
         method = env["method"]
         params = env.get("params", {})
         extra = ""
-        if method == "decide.override":
+        if "outcome" in entry:
+            extra = f"  refused {entry['outcome']['code']}"
+        elif method == "decide.override":
             extra = (f"  tags={params.get('tags')} "
                      f"rationale={params.get('rationale')!r}")
         print(f"  seq={entry['seq']:<3} {method:<25} {params.get('from','')}{extra}")

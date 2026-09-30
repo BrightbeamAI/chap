@@ -188,10 +188,10 @@ handoffs, and the median time to a resolution.
 
 ## Chain assurance
 
-**`assurance(f, freq="D")`.** Per period, how many entries the chain holds
-and the share that are hash-linked (`prev_hash` present), signed (the
-envelope carried a `sig`), and covered by a recorded `audit.submit_to_scitt`
-range. SCITT is the IETF's transparency-log architecture (Supply Chain
+**`assurance(f, freq="D")`.** Per period, how many entries the chain holds,
+accepted calls and recorded refusals together, and the share that are
+hash-linked (`prev_hash` present), signed (the call carried a `sig`), and
+covered by a recorded `audit.submit_to_scitt` range. SCITT is the IETF's transparency-log architecture (Supply Chain
 Integrity, Transparency and Trust). The three columns record what the
 chain carries; they do not verify a hash, check a signature or fetch a
 receipt. A hash-linked entry can be checked against the one before it; a

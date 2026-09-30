@@ -1061,35 +1061,44 @@ entries. Every accepted state-changing CHAP message produces exactly
 one entry.
 
 The read-only methods `workspace.describe`, `audit.read`,
-`audit.verify_chain` and `audit.verify_receipt` are **not** recorded.
-A chain that grew when it was read would change the very state the
-read reports, and verifying a chain would alter the chain just
-verified. Implementations MUST NOT record these four methods, since a
-Coordinator that records them produces a different chain for the same
-sequence of state changes and so fails cross-implementation
-comparison.
+`audit.verify_chain` and `audit.verify_receipt` are **not** recorded,
+and neither is `audit.submit_to_scitt`, which reads the chain and sends
+it to a transparency service. A chain that grew when it was read would
+change the very state the read reports, verifying a chain would alter
+the chain just verified, and a recorded submission would leave the
+receipt attesting a chain one entry shorter than the log. Implementations
+MUST NOT record these five methods, since a Coordinator that records
+them produces a different chain for the same sequence of state changes
+and so fails cross-implementation comparison.
 
 **Refused calls.** A Coordinator MUST also record a refused call when it is
-a governed attempt: the call is a well-formed request for a method other than
-the reads above, its `from` names a current member of an existing workspace,
-and its refusal is none of the following.
+a governed attempt: the call is a JSON-RPC request or notification for a
+method other than the five above, its `from` names a current member of an
+existing workspace, and its refusal is none of the following.
 
 - Malformed or invalid: `-32700`, `-32600` or `-32602`.
 - A fault in the Coordinator: `-32603`.
-- A signature or key that did not verify: `-32070` to `-32073`. The sender
-  of such a call is not authenticated. `-32074`, a decision whose artefact
-  digest does not match the artefact under review, is recorded.
-- `-32601` for a method the catalogue does not mark `privileged`. This covers
-  a method that does not exist and the profile gate (§15.4) refusing an
-  ordinary method. The gate refusing a privileged method, which is an attempt
-  to pull an emergency brake the workspace has switched off, is recorded.
+- A signature or key code, `-32070` to `-32073`. Most of these mean the
+  sender is not authenticated, so an entry in its name would attribute to it
+  a call it may not have made. The same codes answer a key rotation or
+  revocation that fails, and those are left off with them. `-32074`, a
+  decision whose artefact digest does not match the artefact under review,
+  is recorded.
+- `-32601`, except where the profile gate (§15.4) refuses a method the
+  catalogue marks `privileged`. That refusal is an attempt to pull an
+  emergency brake the workspace has switched off, and is recorded. A
+  `-32601` for a method that does not exist or is not implemented, or for an
+  ordinary method the gate refuses, is not.
 
-A request that cannot be canonicalised is not recorded, because it cannot be
-hashed. A Coordinator MUST NOT record any other refusal: as with the reads, a
-Coordinator that recorded a different set would produce a different chain for
-the same calls. A refusal entry holds the request exactly as it arrived,
-signature included, under `request` rather than `envelope`, with an `outcome`
-beside it:
+A refused `workspace.create` or `participant.join` is not recorded. These are
+how a sender comes to be a member, and they run before the sender has a key
+registered to check a signature against, so a refusal of either says nothing
+reliable about who sent it. A request that cannot be canonicalised is not
+recorded either, because it cannot be hashed. A Coordinator MUST NOT record
+any other refusal: as with the reads, a Coordinator that recorded a different
+set would produce a different chain for the same calls. A refusal entry holds
+the request exactly as it arrived, signature included, under `request` rather
+than `envelope`, with an `outcome` beside it:
 
 ```json
 {
@@ -1102,9 +1111,19 @@ beside it:
 ```
 
 Holding the call under `request` keeps a reader that replays `envelope` from
-treating the refusal as a call that took effect. The entry takes a `seq`, and
-`audit_count` and `evidence_head` count it. A chain written before refusals
-were recorded holds none and reads as it always has.
+treating the refusal as a call that took effect. The entry takes a `seq`,
+`audit_count` counts it and `evidence_head` covers it. A chain written before
+refusals were recorded holds none and reads as it always has.
+
+**A refused request is not evaluated again.** Every reader of the log can see
+a recorded refusal, signature included. A Coordinator MUST answer a request
+identical to a recorded refusal, compared by the digest of its canonical
+form, with the recorded code and `data.refused_at_seq` set to the refusal's
+`seq`, and MUST NOT evaluate or record it again. Otherwise a refused signed
+request copied from the log could be sent again once the reason for the
+refusal had passed, and take effect in its signer's name. A client that
+retries a refused call sends a new request with a new `id`, as §4.1 requires
+of every message.
 
 Entries are linked by SHA-256 hashes over the canonical record and the
 previous head:
@@ -1116,12 +1135,13 @@ chain_head        = SHA-256( JCS(record_n) || entry_n.prev_hash )
 
 `record_n` is the recorded envelope of an accepted call, and the object
 `{"outcome": outcome_n, "request": request_n}` of a refusal. An entry with no
-outcome hashes exactly as it always has, and neither half of a refusal can be
-altered or stripped without breaking the chain. Every digest is the string
-`sha256:` followed by 64 lowercase hex characters. `JCS(record_n)` is the
-canonical serialisation of the record, and `prev_hash` is concatenated as its
-full UTF-8 string form, prefix included. The genesis entry's `prev_hash` is
-`sha256:` followed by 64 zeros.
+outcome hashes exactly as it always has. Altering or removing either half of
+a refusal breaks the chain, and moving the record under `envelope` leaves an
+entry whose `envelope` is not a JSON-RPC call, which §10.2 reports as
+malformed. Every digest is the string `sha256:` followed by 64 lowercase hex
+characters. `JCS(record_n)` is the canonical serialisation of the record, and
+`prev_hash` is concatenated as its full UTF-8 string form, prefix included.
+The genesis entry's `prev_hash` is `sha256:` followed by 64 zeros.
 
 The chain head is published in the workspace descriptor as
 `evidence_head` and the chain length as `audit_count`.
@@ -1138,11 +1158,12 @@ can replay the chain and confirm:
 4. No `id` is reused.
 
 Each entry holds an accepted `envelope` alone, or a refused `request` with an
-`outcome` of status `refused` and an integer code. An entry that holds
-neither, or both, is reported as malformed. An `audit.verify_chain` request
-returns the result of this replay over the whole log. Range parameters are declared on the request but not honoured by
-either implementation, and are refused rather than silently widened to the
-whole log.
+`outcome` of status `refused` and an integer code, and the call it holds is a
+JSON-RPC 2.0 call with a string `method`. Any other entry is reported as
+malformed. An `audit.verify_chain` request returns the result of this replay
+over the whole log. Range parameters are declared on the request but not
+honoured by either implementation, and are refused rather than silently
+widened to the whole log.
 
 **What verification does not establish.** A successful replay proves the
 entries a verifier holds are internally consistent. It does not prove they
@@ -1707,11 +1728,12 @@ by the `since` field on each entry.
 The refusal is `-32601`, the code a Coordinator that never implemented
 the method would return, so a deployment that omits a profile and one
 that has it compiled in but unadvertised are indistinguishable from
-outside. A member's refused call to a privileged method is recorded as a
-refusal entry (§10.1). The error object SHOULD carry
+outside. The error object SHOULD carry
 `data: {"profile": …, "advertised": [...]}` for an operator reading the
 log. Refusing with a distinct code would tell an adversary which
-capabilities a Coordinator holds back.
+capabilities a Coordinator holds back. A member can tell the two apart,
+since when the gate refuses a privileged method the member's attempt is
+recorded as a refusal entry (§10.1) and the log shows it.
 
 **Key rotation.** A participant rotates a signing key mid-chain.
 *Countermeasures:* `identity-oidc/1.0` and `identity-vc/1.0` define

@@ -465,6 +465,7 @@ def _refusal_row(entry: dict, workspace: str | None) -> dict:
         "prev_hash": entry.get("prev_hash"),
         "chained": entry.get("prev_hash") is not None,
         "signed": isinstance(req.get("sig"), str),
+        "scitt_submitted": False,
     }
 
 
@@ -589,7 +590,7 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
             lo = rng.get("from_seq", 0)
             hi = rng.get("to_seq", pos)
             if isinstance(lo, int) and isinstance(hi, int):
-                for row in ix.events:
+                for row in (*ix.events, *ix.refusals):
                     s = row["seq"]
                     if isinstance(s, int) and lo <= s < hi:
                         row["scitt_submitted"] = True

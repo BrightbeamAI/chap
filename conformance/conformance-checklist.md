@@ -65,7 +65,7 @@ CHAP conformance.
 ### C4 · Audit log
 
 - [ ] Every accepted envelope is appended in arrival order.
-- [ ] Every refused call that [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1 names is appended as a refusal entry, with the call under `request` and an `outcome` giving the code, and no other refusal is appended. Verified by `refusal-record-vectors.json`.
+- [ ] Every refused call that [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1 names is appended as a refusal entry, with the call under `request` and an `outcome` giving the code, and no other refusal is appended. Verified by `refusal-record-vectors.json`, and over HTTP by harness vector `rv-13`.
 - [ ] Each entry records the Coordinator's arrival timestamp.
 - [ ] `audit.read` results are stable: the same range returns the same entries indefinitely.
 

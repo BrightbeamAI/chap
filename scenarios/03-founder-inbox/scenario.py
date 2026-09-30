@@ -193,7 +193,7 @@ def print_integrity(entries) -> None:
 
     forged = copy.deepcopy(entries)
     for e in forged:
-        if e["envelope"]["method"] == "decide.approve":
+        if e.get("envelope", {}).get("method") == "decide.approve":
             e["envelope"]["params"]["from"] = "human:not-you@saas.com"
             break
     intact_after, broken_seq = _verify(forged)
@@ -214,7 +214,8 @@ def print_reconstruction(send, ctx) -> None:
     # its input (not a task_id, which the coordinator only returns in the
     # result), so match it separately; everything else carries task_id.
     story = []
-    for e in send("audit.read", workspace=WORKSPACE)["entries"]:
+    for e in send("audit.read", workspace=WORKSPACE,
+                  filter={"outcome": "accepted"})["entries"]:
         p = e["envelope"].get("params", {})
         if p.get("task_id") == task_id or (
             e["envelope"]["method"] == "task.create"
@@ -248,7 +249,7 @@ def print_reconstruction(send, ctx) -> None:
 
 def print_pattern_scan(send) -> None:
     completed = send("audit.read", workspace=WORKSPACE,
-                     filter={"method": "task.complete"})["entries"]
+                     filter={"method": "task.complete", "outcome": "accepted"})["entries"]
     wrong = []
     for e in completed:
         out = e["envelope"]["params"].get("output") or {}

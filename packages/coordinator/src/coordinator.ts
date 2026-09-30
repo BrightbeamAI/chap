@@ -25,7 +25,7 @@ import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "./catalogue.js";
 import { publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
-import { entryCall, entryRecord, linkHash, refusalIsRecorded } from "./audit.js";
+import { entryCall, entryRecord, linkHash, refusalIsRecorded, requestDigest } from "./audit.js";
 import { applyJsonPatch } from "./patch.js";
 import type { Store, WorkspaceRecord } from "./storage/store.js";
 import { MemoryStore } from "./storage/store.js";
@@ -211,6 +211,8 @@ export class Coordinator {
   private clockMs?: number;
   private frozenNow?: string;
   private auditListeners: AuditListener[] = [];
+  /** Recorded refusals by request digest, rebuilt from the log when missing. */
+  private refusedIndex = new WeakMap<Workspace, Map<string, { seq: number; code: number }>>();
   /** Method handler registry; profiles plug into this. */
   readonly handlers = new Map<string, Handler>();
   /** Custom lapse-check function (whisper/1.0). Set by the whisper profile. */
@@ -563,6 +565,25 @@ export class Coordinator {
     }
     const params = (rawParams ?? {}) as Record<string, unknown>;
 
+    // SPECIFICATION 10.1: a request identical to a recorded refusal is answered
+    // with that refusal and not evaluated again. The log publishes a refused
+    // request, signature and all, so without this anyone who can read the log
+    // could resubmit it once whatever refused it had changed.
+    {
+      const wsId = params.workspace;
+      const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
+      if (ws) {
+        let digest: string | undefined;
+        try { digest = requestDigest(envelope); } catch { digest = undefined; }
+        const prior = digest === undefined ? undefined : this.refusedRequests(ws).get(digest);
+        if (prior) {
+          return reply(envelope, { error: rpcError(prior.code,
+            `Refused at seq ${prior.seq}; a refused request is not evaluated again`,
+            { refused_at_seq: prior.seq }) });
+        }
+      }
+    }
+
     // security-signed/1.0: verify top-level sig if required.
     // participant.join and workspace.create are bootstrap operations that
     // run before any signing key is registered for the actor, so they cannot
@@ -699,11 +720,31 @@ export class Coordinator {
     const ws = typeof params.workspace === "string" ? this.workspaces.get(params.workspace) : undefined;
     if (!ws || typeof params.from !== "string" || !ws.members.has(params.from)) return;
     // A request that cannot be canonicalised cannot be hashed into the chain.
-    try { canonicalize(envelope); } catch { return; }
+    let digest: string;
+    try { digest = requestDigest(envelope); } catch { return; }
+    // The same request refused again is already on the log.
+    if (this.refusedRequests(ws).has(digest)) return;
+    const seq = ws.audit.length;
     this.appendEntry(ws, {
       request: JSON.parse(JSON.stringify(envelope)) as Envelope,
       outcome: { status: "refused", code: error.code },
     });
+    this.refusedRequests(ws).set(digest, { seq, code: error.code });
+  }
+
+  /** Recorded refusals in this workspace, by the digest of their request. */
+  private refusedRequests(ws: Workspace): Map<string, { seq: number; code: number }> {
+    let index = this.refusedIndex.get(ws);
+    if (!index) {
+      index = new Map();
+      for (const entry of ws.audit) {
+        if (entry.outcome == null || entry.request == null) continue;
+        try { index.set(requestDigest(entry.request), { seq: entry.seq, code: entry.outcome.code }); }
+        catch { /* an entry that cannot be canonicalised was altered; verify_chain reports it */ }
+      }
+      this.refusedIndex.set(ws, index);
+    }
+    return index;
   }
 
   private appendEntry(ws: Workspace, record: Pick<AuditEntry, "envelope" | "request" | "outcome">): void {
@@ -1258,7 +1299,7 @@ export class Coordinator {
     const filter = (p.filter as {
       method?: string; from?: string; task_id?: string; outcome?: unknown;
     } | undefined) ?? {};
-    if (filter.outcome !== undefined && filter.outcome !== "accepted" && filter.outcome !== "refused") {
+    if (filter.outcome != null && filter.outcome !== "accepted" && filter.outcome !== "refused") {
       return { error: rpcError(E.PARAMS, "filter.outcome must be 'accepted' or 'refused'") };
     }
     const fromSeq = range.from_seq ?? 0;
@@ -1267,7 +1308,7 @@ export class Coordinator {
     for (const entry of ws.audit.slice(fromSeq, toSeq)) {
       // Filters read the call an entry records, accepted or refused, and
       // `outcome` narrows to one kind.
-      const refused = entry.outcome !== undefined;
+      const refused = entry.outcome != null;
       if (filter.outcome === "accepted" && refused) continue;
       if (filter.outcome === "refused" && !refused) continue;
       const call = entryCall(entry) ?? ({} as Envelope);

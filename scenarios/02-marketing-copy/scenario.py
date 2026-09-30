@@ -201,7 +201,7 @@ def print_integrity(entries) -> None:
     # re-verify. The real chain is untouched.
     forged = copy.deepcopy(entries)
     for e in forged:
-        if e["envelope"]["method"] == "decide.reject":
+        if e.get("envelope", {}).get("method") == "decide.reject":
             e["envelope"]["params"]["from"] = "human:someone-else@studio.com"
             break
     intact_after, broken_seq = _verify(forged)
@@ -218,7 +218,7 @@ def print_integrity(entries) -> None:
 
 def print_reconstruction(send) -> None:
     overrides = send("audit.read", workspace=WORKSPACE,
-                     filter={"method": "decide.override"})["entries"]
+                     filter={"method": "decide.override", "outcome": "accepted"})["entries"]
     task_to_brief = _task_to_brief(send)
 
     print("2. Two months later: what did the editor change on the ACME brief?")
@@ -247,7 +247,7 @@ def print_reconstruction(send) -> None:
 
 def print_override_report(send) -> None:
     overrides = send("audit.read", workspace=WORKSPACE,
-                     filter={"method": "decide.override"})["entries"]
+                     filter={"method": "decide.override", "outcome": "accepted"})["entries"]
     total = len(overrides)
     counts: Counter = Counter()
     for e in overrides:
@@ -275,7 +275,7 @@ def _task_to_brief(send):
     both the task_id and the artefact (the artefact holds the brief)."""
     mapping = {}
     for e in send("audit.read", workspace=WORKSPACE,
-                  filter={"method": "review.request"})["entries"]:
+                  filter={"method": "review.request", "outcome": "accepted"})["entries"]:
         p = e["envelope"]["params"]
         tid = p.get("task_id")
         brief = (p.get("artefact") or {}).get("brief")

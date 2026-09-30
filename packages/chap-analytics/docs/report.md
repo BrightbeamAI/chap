@@ -71,8 +71,8 @@ JavaScript mirror of the library's statistics, `stats.js`; the page logic,
 
 The payload holds the row-level tables the statistics need, with artefact
 content left out: tasks, decisions, overrides, patch operations, review
-passes, whispers, handoffs, the events reduced to what the assurance chart
-reads, the collaboration edges with their layout and centrality, and the
+passes, whispers, handoffs, the events and recorded refusals reduced to
+what the assurance chart reads, the collaboration edges with their layout and centrality, and the
 lineage rows of every task. It also holds the chart specifications as
 `charts.everything` produced them, the briefs as `briefs.everything`
 produced them, and a lookup table of CUSUM decision intervals simulated in

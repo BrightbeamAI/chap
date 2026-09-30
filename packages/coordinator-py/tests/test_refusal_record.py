@@ -265,3 +265,217 @@ def test_refusals_survive_a_restart_and_the_chain_still_verifies():
     v = restarted.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
                             "params": {"workspace": "w", "from": "human:a"}})
     assert "error" not in v, v.get("error")
+
+
+# ------------------------------------------------------------ resubmission
+
+def _late_approve(tid):
+    return {"jsonrpc": "2.0", "id": "late", "method": "decide.approve",
+            "params": {"workspace": "w", "from": "human:a", "task_id": tid, "comment": "ok"}}
+
+
+def test_a_request_identical_to_a_recorded_refusal_is_answered_with_it_even_once_it_would_pass():
+    # The log publishes a refused request, signature and all. Resubmitting the
+    # same bytes after the review is re-addressed must not make it take effect.
+    coord, send, ws = _ready()
+    tid = _under_review(send)
+    assert coord.dispatch(_late_approve(tid))["error"]["code"] == -32011
+    at = len(ws.audit) - 1
+    send("review.request", {"task_id": tid, "artefact": {"body": "draft"}, "to": "human:a"},
+         "agent:b")
+    before = len(ws.audit)
+
+    replay = coord.dispatch(_late_approve(tid))
+    assert replay["error"]["code"] == -32011
+    assert replay["error"]["message"] == f"Refused at seq {at}; a refused request is not evaluated again"
+    assert replay["error"]["data"] == {"refused_at_seq": at}
+    assert len(ws.audit) == before, "the resubmission was recorded"
+    assert ws.tasks[tid].state == "review_requested", "the resubmission took effect"
+
+    fresh = coord.dispatch({**_late_approve(tid), "id": "fresh"})
+    assert "error" not in fresh, fresh
+
+
+def test_the_resubmission_rule_survives_a_restart():
+    store = MemoryStore()
+    coord, send, _ = _ready(store=store)
+    tid = _under_review(send)
+    coord.dispatch(_late_approve(tid))
+    restarted = Coordinator(CoordinatorOptions(
+        deterministic_ids=True, deterministic_clock=True, default_profiles=CHAINED, store=store))
+    assert "refused_at_seq" in restarted.dispatch(_late_approve(tid))["error"]["data"]
+
+
+# ------------------------------------------------------------ what stays off
+
+def test_a_refused_join_is_not_recorded_even_from_a_members_uri():
+    # participant.join is exempt from signature checks, so its refusal proves
+    # nothing about who sent it.
+    coord = Coordinator(CoordinatorOptions(
+        require_signatures=True, deterministic_ids=True, deterministic_clock=True,
+        verify_oidc_token=lambda token: None, default_profiles=["core/1.0", "review/1.0"]))
+    jwk = public_jwk("human:a", derive_private_key("human:a"))
+    coord.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
+                    "params": {"workspace": "w", "from": "human:a", "type": "human",
+                               "jwks": {"keys": [jwk]}}})
+    ws = coord.get_workspace("w")
+    before = len(ws.audit)
+    r = coord.dispatch({"jsonrpc": "2.0", "id": "forged", "method": "participant.join",
+                        "params": {"workspace": "w", "from": "human:a", "type": "human",
+                                   "oidc_token": "forged"}})
+    assert "error" in r
+    assert len(ws.audit) == before
+
+
+def test_a_method_the_catalogue_lists_but_no_coordinator_implements_is_not_recorded():
+    _, send, ws = _ready()
+    before = len(ws.audit)
+    assert send("workspace.invite", {"invitee": "human:z"})["error"]["code"] == -32601
+    assert len(ws.audit) == before
+
+
+def test_a_refused_submit_to_scitt_is_not_recorded():
+    _, send, ws = _ready()
+    send("control.pause", {"scope": "workspace", "reason": "incident"})
+    before = len(ws.audit)
+    assert "error" in send("audit.submit_to_scitt")
+    assert len(ws.audit) == before
+
+
+def test_a_refusal_whose_code_is_not_an_integer_is_not_recorded():
+    coord, send, ws = _ready()
+    coord._handlers["custom.broken"] = lambda p: {"error": {"code": "bad", "message": "no"}}
+    before = len(ws.audit)
+    send("custom.broken")
+    assert len(ws.audit) == before
+
+
+def test_a_step_up_refusal_is_recorded():
+    _, send, ws = _ready(enforce_step_up=True)
+    before = len(ws.audit)
+    r = send("control.pause", {"scope": "workspace", "reason": "incident"})
+    assert r["error"]["code"] == -32402
+    assert len(ws.audit) == before + 1
+    assert ws.audit[before].outcome == {"status": "refused", "code": -32402}
+
+
+def test_a_refused_notification_is_recorded_without_an_id():
+    coord, send, ws = _ready()
+    tid = _under_review(send)
+    before = len(ws.audit)
+    coord.dispatch({"jsonrpc": "2.0", "method": "decide.approve",
+                    "params": {"workspace": "w", "from": "human:a", "task_id": tid,
+                               "comment": "ok"}})
+    assert len(ws.audit) == before + 1
+    assert "id" not in ws.audit[before].request
+
+
+# ------------------------------------------------------------ entry shape
+
+def _move_record_under_envelope(e):
+    e.envelope, e.request, e.outcome = {"outcome": e.outcome, "request": e.request}, None, None
+
+
+def _hold_both(e):
+    e.envelope = e.request
+
+
+def _other_status(e):
+    e.outcome["status"] = "accepted"
+
+
+def _string_code(e):
+    e.outcome["code"] = "-32011"
+
+
+def _null_outcome(e):
+    e.outcome = None
+
+
+@pytest.mark.parametrize("tamper", [_move_record_under_envelope, _hold_both, _other_status,
+                                    _string_code, _null_outcome],
+                         ids=["moving-the-refusals-record-under-envelope",
+                              "holding-both-an-envelope-and-a-request",
+                              "an-outcome-of-another-status", "a-code-that-is-not-an-integer",
+                              "a-null-outcome"])
+def test_a_malformed_refusal_breaks_the_chain(tamper):
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    refusal = next(e for e in ws.audit if e.outcome is not None)
+    tamper(refusal)
+    assert "error" in send("audit.verify_chain")
+
+
+def test_adding_an_outcome_to_an_accepted_entry_breaks_the_chain():
+    _, send, ws = _ready()
+    ws.audit[-1].outcome = {"status": "refused", "code": -32011}
+    assert "error" in send("audit.verify_chain")
+
+
+# ------------------------------------------------------------ filters
+
+def test_a_null_outcome_filter_reads_as_no_filter():
+    _, send, _ = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    everything = send("audit.read")["result"]["entries"]
+    r = send("audit.read", {"filter": {"outcome": None}})
+    assert "error" not in r, r
+    assert len(r["result"]["entries"]) == len(everything)
+
+
+def test_a_filter_that_is_not_an_object_reads_as_no_filter():
+    _, send, _ = _ready()
+    everything = send("audit.read")["result"]["entries"]
+    assert len(send("audit.read", {"filter": "x"})["result"]["entries"]) == len(everything)
+
+
+def test_from_matches_a_refused_calls_sender():
+    _, send, _ = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    mine = send("audit.read", {"filter": {"from": "human:a", "outcome": "refused"}})["result"]["entries"]
+    assert len(mine) == 1
+
+
+def test_a_refused_whisper_answer_with_a_malformed_whisper_id_leaves_task_filters_working():
+    _, send, _ = _ready(CHAINED + ["whisper/1.0"])
+    send("control.pause", {"scope": "workspace", "reason": "incident"})
+    r = send("whisper.answer", {"whisper_id": {"x": 1}, "answer_option": "a"}, "human:c")
+    assert r["error"]["code"] == -32063
+    read = send("audit.read", {"filter": {"task_id": "tsk_absent"}})
+    assert "error" not in read, read
+
+
+def test_an_answer_option_that_is_an_object_is_refused_as_outside_the_set_and_recorded():
+    _, send, ws = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    wid = send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                               "deadline_ms": 60000, "default_if_lapsed": "a",
+                               "options": [{"id": "a"}]}, "agent:b")["result"]["whisper_id"]
+    before = len(ws.audit)
+    r = send("whisper.answer", {"whisper_id": wid, "answer_option": {"x": 1}}, "human:c")
+    assert r["error"]["code"] == -32022
+    assert r["error"]["message"] == 'Answer option {"x":1} not in option set'
+    assert len(ws.audit) == before + 1
+
+
+# ------------------------------------------------------------ persistence
+
+def test_refusals_survive_a_sqlite_restart(tmp_path):
+    from chap_coordinator.storage.sqlite import SqliteStore
+    path = tmp_path / "chap.db"
+    _, send, ws = _ready(store=SqliteStore(str(path)))
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    expected = [e.to_dict() for e in ws.audit]
+
+    restarted = Coordinator(CoordinatorOptions(
+        deterministic_ids=True, deterministic_clock=True, default_profiles=CHAINED,
+        store=SqliteStore(str(path))))
+    assert [e.to_dict() for e in restarted.get_workspace("w").audit] == expected
+    v = restarted.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
+                            "params": {"workspace": "w", "from": "human:a"}})
+    assert "error" not in v, v.get("error")

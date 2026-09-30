@@ -9,6 +9,7 @@ each case covers.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -26,9 +27,16 @@ def _replay(vector):
     coord = Coordinator(CoordinatorOptions(
         deterministic_ids=True, deterministic_clock=True,
         default_profiles=vector["profiles"]))
-    for envelope in vector["setup"]:
-        assert "error" not in coord.dispatch(envelope), envelope["method"]
-    response = coord.dispatch(vector["envelope"])
+    # refused_setup is sent after the first refused_setup_at setup envelopes,
+    # and each of those calls is refused.
+    at = vector.get("refused_setup_at", len(vector["setup"]))
+    for envelope in vector["setup"][:at]:
+        assert "error" not in coord.dispatch(copy.deepcopy(envelope)), envelope["method"]
+    for envelope in vector.get("refused_setup", []):
+        assert "error" in coord.dispatch(copy.deepcopy(envelope)), envelope["method"]
+    for envelope in vector["setup"][at:]:
+        assert "error" not in coord.dispatch(copy.deepcopy(envelope)), envelope["method"]
+    response = coord.dispatch(copy.deepcopy(vector["envelope"]))
     entries = coord.dispatch({"jsonrpc": "2.0", "id": "r", "method": "audit.read",
                               "params": {"workspace": vector["workspace"],
                                          "from": "human:a"}})["result"]["entries"]
@@ -40,10 +48,10 @@ def test_the_refusal_and_the_log_are_the_recorded_ones(vector):
     coord, response, entries = _replay(vector)
     assert response == vector["response"]
     assert len(entries) == vector["audit_count"]
+    assert sum("outcome" in e for e in entries) == vector["refusal_count"]
     if vector["recorded"]:
-        assert entries[-1] == vector["entry"]
-    else:
-        assert all("outcome" not in e for e in entries)
+        # Compared as text too, so the order of keys is pinned as well.
+        assert json.dumps(entries[-1]) == json.dumps(vector["entry"])
     assert coord.get_workspace(vector["workspace"]).chain_head == vector["evidence_head"]
 
 

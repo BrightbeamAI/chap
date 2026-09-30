@@ -165,10 +165,14 @@ What a deployment needs to decide before implementing it:
   for first: it dedupes one method by an explicit caller-supplied key, rather
   than refusing any envelope whose id has been seen.
 
-Chain-level defences are already in force and need no decision:
-`prev_hash` must match the current head, so a replay against a chain that
-has advanced is refused at acceptance, and `ts` must be monotonically
-non-decreasing per `from`.
+Neither reference refuses a repeated accepted envelope. The Coordinator
+computes the chain itself, so a client sends no `prev_hash` for it to check,
+and `ts` is not required to increase (see sender-declared timestamps below).
+A replayed accepted envelope is evaluated again, and whether it takes effect
+depends on the state it meets: a second approval of a closed review is
+refused, and a second `task.create` without an `idempotency_key` creates a
+second task. The one replay rule the protocol does require concerns refused
+calls, below.
 
 ### Sender-declared timestamps
 
@@ -200,15 +204,32 @@ A member's refused call that is a governed attempt is recorded on the chain,
 under `request` with an `outcome` giving the code (SPECIFICATION §10.1): a
 decision on a review addressed to someone else, a pull on an emergency brake
 the workspace has switched off, an act on a paused workspace. Its link hashes
-the outcome together with the request, so a refusal cannot be recast as a
-call that took effect, or the reverse, without breaking the chain.
+the outcome together with the request, so altering either half breaks the
+chain. Moving the record under `envelope`, to pass the refusal off as a call
+that took effect, leaves an entry that is not a JSON-RPC call, and
+`audit.verify_chain` reports it as malformed.
 
-What stays off the chain is chosen so that recording cannot be turned against
-the log. A caller who is not a member cannot add entries, and neither can a
-call whose signature or key failed, so an outsider cannot fill a workspace's
-log. A member can, by sending refused calls in a loop, as a member can by
-sending accepted ones. Rate-limit per participant at the transport where that
-matters.
+A recorded refusal can be read by anyone who can read the log, signature
+included. A refused signed request could otherwise be copied from the log and
+sent again once the reason for the refusal had passed, for instance after the
+review was re-addressed or the workspace resumed, and take effect in its
+signer's name. A Coordinator therefore answers a request identical to a
+recorded refusal with that refusal, and does not evaluate it again. A
+legitimate retry is a new request with a new `id`.
+
+What stays off the chain is chosen so that recording refusals opens no new
+way to write to the log. A call from a sender who is not a member is not
+recorded, and neither is a call whose signature or key failed, nor a refused
+`workspace.create` or `participant.join`, which run before the sender has a
+key to check. This does not close the log to outsiders: in the reference
+coordinators `participant.join` admits any sender who asks, and a member can
+add entries by sending calls in a loop, refused or accepted. Rate-limit per
+participant at the transport where that matters.
+
+A refusal entry keeps the refused request's content for the life of the log,
+as an accepted entry does. A call refused because its sender had no authority
+still puts its parameters on the chain, so a deployment that redacts or
+expires content applies the same policy to refusals.
 
 ---
 

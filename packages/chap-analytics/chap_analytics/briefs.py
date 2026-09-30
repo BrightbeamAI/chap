@@ -333,7 +333,8 @@ def handoffs(f: Frames) -> Brief:
 
 def assurance(f: Frames) -> Brief:
     """How much of the chain is hash-linked, signed and submitted to a transparency log."""
-    e = f.events
+    # Accepted calls and recorded refusals are both entries on the chain.
+    e = _stats._log_entries(f)
     if e.empty:
         return Brief("assurance", "Whether the record holds up", "No entries.", "The chain is empty.",
                      "Nothing to verify.", False, e)

@@ -19,31 +19,47 @@ import type { AuditEntry, Envelope } from "./types.js";
 
 /** The value an entry's chain link hashes. */
 export function entryRecord(entry: AuditEntry): unknown {
-  if (entry.outcome !== undefined) return { outcome: entry.outcome, request: entry.request };
+  if (entry.outcome != null) return { outcome: entry.outcome, request: entry.request };
   return entry.envelope;
 }
 
 /** The call an entry records, whether it took effect or was refused. */
 export function entryCall(entry: AuditEntry): Envelope | undefined {
-  return entry.envelope ?? entry.request;
+  return entry.envelope ?? entry.request ?? undefined;
 }
 
 /** True when an entry records a refused call. */
 export function isRefusal(entry: AuditEntry): boolean {
-  return entry.outcome !== undefined;
+  return entry.outcome != null;
+}
+
+/** A JSON-RPC call: an object with `jsonrpc` "2.0" and a string `method`. */
+function isCall(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return v.jsonrpc === "2.0" && typeof v.method === "string";
 }
 
 /**
- * An entry is well formed when it records an accepted envelope alone, or a
- * refused request with an outcome of status `refused` and an integer code.
+ * An entry is well formed when it records an accepted call alone, under
+ * `envelope`, or a refused call alone, under `request`, with an outcome of
+ * status `refused` and an integer code. Requiring a JSON-RPC call on either
+ * side is what stops a refusal's record being moved under `envelope`, where it
+ * would hash to the same bytes and read as a call that took effect.
  */
 export function entryIsWellFormed(entry: AuditEntry): boolean {
-  const accepted = entry.envelope !== undefined;
-  const refused = entry.request !== undefined;
+  const accepted = entry.envelope != null;
+  const refused = entry.request != null;
   if (accepted === refused) return false;
-  if (accepted) return entry.outcome === undefined;
-  const o = entry.outcome;
-  return o !== undefined && o.status === "refused" && Number.isInteger(o.code);
+  if (accepted) return isCall(entry.envelope) && entry.outcome == null;
+  const o = entry.outcome as unknown as Record<string, unknown> | null | undefined;
+  return isCall(entry.request) && o != null && typeof o === "object"
+    && o.status === "refused" && Number.isInteger(o.code);
+}
+
+/** The digest that identifies a request byte for byte: SHA-256 of its JCS. */
+export function requestDigest(request: unknown): string {
+  return sha256Hex(canonicalize(request));
 }
 
 /** chain_head = SHA-256( JCS(record) || prev_hash ). */
@@ -54,12 +70,19 @@ export function linkHash(record: unknown, prev: string): string {
 /**
  * Refusals the log never records: a call that was malformed or invalid, a
  * fault in the Coordinator, and a call whose signature or key did not check
- * out, which leaves its sender unauthenticated.
+ * out.
  */
 const UNRECORDED_CODES: ReadonlySet<number> = new Set([
   E.PARSE, E.REQUEST, E.PARAMS, E.INTERNAL,
   E.SIG_VERIFY_FAILED, E.SIG_KEY_NOT_FOUND, E.SIG_KEY_REVOKED, E.SIG_ROTATION_KEY_MISMATCH,
 ]);
+
+/**
+ * Methods whose refusals are never recorded. They run before the caller is
+ * established as a member and are exempt from signature checks, so a refusal
+ * of one proves nothing about who sent it.
+ */
+const UNRECORDED_METHODS: ReadonlySet<string> = new Set(["workspace.create", "participant.join"]);
 
 /**
  * Whether a refusal with this error is one the log records, before the test
@@ -75,6 +98,8 @@ export function refusalIsRecorded(
   error: { code: number; data?: unknown },
   privileged: ReadonlySet<string>,
 ): boolean {
+  if (!Number.isInteger(error.code)) return false;
+  if (UNRECORDED_METHODS.has(method)) return false;
   if (UNRECORDED_CODES.has(error.code)) return false;
   if (error.code === E.METHOD) {
     const data = error.data as { profile?: unknown } | undefined;

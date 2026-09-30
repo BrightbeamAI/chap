@@ -15,6 +15,8 @@ short-running demos can advance the timer deterministically.
 """
 from __future__ import annotations
 
+import json
+
 import datetime as _dt
 from typing import TYPE_CHECKING
 
@@ -100,11 +102,14 @@ def register_whisper(coord: "Coordinator") -> None:
             if answer_option is None:
                 return {"error": rpc_error(E.PARAMS,
                                            "answer_option is required when options are defined")}
-            valid_ids = {o.get("id") for o in prompt.options if isinstance(o, dict)}
+            # A list rather than a set: an option of any JSON type, an object
+            # included, is compared rather than hashed, as in TypeScript.
+            valid_ids = [o.get("id") for o in prompt.options if isinstance(o, dict)]
             if answer_option not in valid_ids:
+                shown = json.dumps(answer_option, ensure_ascii=False, separators=(",", ":"))
                 return {"error": rpc_error(
                     E.WHISPER_OPTION_NOT_IN_SET,
-                    f"Answer option {answer_option!r} not in option set")}
+                    f"Answer option {shown} not in option set")}
         else:
             if not answer_text and answer_option is None:
                 return {"error": rpc_error(E.PARAMS,

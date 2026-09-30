@@ -178,7 +178,7 @@ def print_integrity(entries) -> None:
     # re-verify. The real chain is untouched.
     forged = copy.deepcopy(entries)
     for e in forged:
-        if e["envelope"]["method"] == "decide.reject":
+        if e.get("envelope", {}).get("method") == "decide.reject":
             e["envelope"]["params"]["from"] = "human:someone-else@local"
             break
     intact_after, broken_seq = _verify(forged)
@@ -195,7 +195,7 @@ def print_integrity(entries) -> None:
 
 def print_reconstruction(send) -> None:
     overrides = send("audit.read", workspace=WORKSPACE,
-                     filter={"method": "decide.override"})["entries"]
+                     filter={"method": "decide.override", "outcome": "accepted"})["entries"]
     task_to_pr = _task_to_pr(send)
 
     print('2. Three months later: what did I change on PR-472, and why?')
@@ -224,7 +224,7 @@ def print_reconstruction(send) -> None:
 
 def print_override_report(send) -> None:
     overrides = send("audit.read", workspace=WORKSPACE,
-                     filter={"method": "decide.override"})["entries"]
+                     filter={"method": "decide.override", "outcome": "accepted"})["entries"]
     total = len(overrides)
     counts: Counter = Counter()
     for e in overrides:
@@ -250,7 +250,7 @@ def _task_to_pr(send):
     """Map task_id -> PR label, read from each task.create input."""
     mapping = {}
     for e in send("audit.read", workspace=WORKSPACE,
-                  filter={"method": "task.create"})["entries"]:
+                  filter={"method": "task.create", "outcome": "accepted"})["entries"]:
         p = e["envelope"]["params"]
         pr = (p.get("input") or {}).get("pr")
         # task.create's own result carries the task_id; the audit entry keeps
@@ -265,7 +265,7 @@ def _task_to_pr(send):
     # from review.request entries, which carry both task_id and the artefact
     # (the artefact holds the PR label).
     for e in send("audit.read", workspace=WORKSPACE,
-                  filter={"method": "review.request"})["entries"]:
+                  filter={"method": "review.request", "outcome": "accepted"})["entries"]:
         p = e["envelope"]["params"]
         tid = p.get("task_id")
         pr = (p.get("artefact") or {}).get("pr")

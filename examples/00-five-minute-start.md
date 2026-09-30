@@ -223,12 +223,13 @@ curl -s -X POST http://localhost:8080/chap \
       "ts":        "2026-05-17T09:02:00Z",
       "range":     { "from_seq": 0, "to_seq": 100 }
     }
-  }' | jq '.result.entries | length, map(.envelope.method)'
+  }' | jq '.result.entries | length, map((.envelope // .request).method)'
 ```
 
 You get back the full ordered list of envelopes, every join, every
-task transition, every progress note. The audit log is the source
-of truth.
+task transition, every progress note. A refused call the coordinator
+recorded is held under `request`, with an `outcome` beside it. The
+audit log is the source of truth.
 
 ---
 

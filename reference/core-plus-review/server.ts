@@ -120,10 +120,16 @@ interface Task {
   supersedes?: TaskId;
 }
 
+/**
+ * An accepted call is held under `envelope`. A refused call that is recorded
+ * (SPECIFICATION §10.1) is held under `request`, with its `outcome`.
+ */
 interface AuditEntry {
-  seq:      number;
-  arrived:  string;
-  envelope: Envelope;
+  seq:       number;
+  arrived:   string;
+  envelope?: Envelope;
+  request?:  Envelope;
+  outcome?:  { status: "refused"; code: number };
 }
 
 interface Workspace {
@@ -135,6 +141,8 @@ interface Workspace {
   overrides: Map<ArtefactId, OverrideArtefact>;
   audit:     AuditEntry[];
   profiles:  string[];
+  /** Recorded refusals by the digest of the request, for the resubmission rule. */
+  refused:   Map<string, { seq: number; code: number }>;
 }
 
 // ============================================================
@@ -274,6 +282,7 @@ function ensureWorkspace(id: string): Workspace {
       overrides: new Map(),
       audit:     [],
       profiles:  ["core/1.0", "review/1.0"],
+      refused:   new Map(),
     };
     workspaces.set(id, ws);
   }
@@ -288,12 +297,45 @@ function ulid(): string {
   return (t + r).slice(0, 26);
 }
 
+// Reads are never recorded: a log that grew when read would change what the
+// read reports (core/SPEC.md §3.2). Neither are their refusals.
+const READ_ONLY = new Set(["workspace.describe", "audit.read"]);
+
+// The refusals SPECIFICATION §10.1 leaves off the log. This server has no
+// profile gate, so -32601 only ever means a method it does not implement.
+const UNRECORDED_CODES = new Set<number>([
+  E.PARSE, E.REQUEST, E.METHOD, E.PARAMS, E.INTERNAL,
+  -32070, -32071, -32072, -32073,
+]);
+
 function recordAudit(ws: Workspace, env: Envelope): void {
   ws.audit.push({
     seq:      ws.audit.length,
     arrived:  new Date().toISOString(),
     envelope: env,
   });
+}
+
+/**
+ * Record a refused call when it is a governed attempt: its sender is a member
+ * of the workspace, and its refusal is not one §10.1 leaves off the log.
+ * participant.join is the bootstrap method, so its refusals are not recorded.
+ */
+function recordRefusal(ws: Workspace, env: Envelope, error: { code: number }): void {
+  if (!Number.isInteger(error.code) || UNRECORDED_CODES.has(error.code)) return;
+  if (env.method === "participant.join") return;
+  const from = (env.params as Params).from;
+  if (typeof from !== "string" || !ws.members.has(from)) return;
+  const digest = contentDigest(env);
+  if (ws.refused.has(digest)) return;
+  const seq = ws.audit.length;
+  ws.audit.push({
+    seq,
+    arrived: new Date().toISOString(),
+    request: env,
+    outcome: { status: "refused", code: error.code },
+  });
+  ws.refused.set(digest, { seq, code: error.code });
 }
 
 // ============================================================
@@ -496,15 +538,22 @@ const handlers: Record<string, Handler> = {
     if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
 
     const range  = (p.range  as { from_seq?: number; to_seq?: number }) ?? {};
-    const filter = (p.filter as { method?: string; from?: string; task_id?: string }) ?? {};
+    const filter = (p.filter as { method?: string; from?: string; task_id?: string; outcome?: string }) ?? {};
+    if (filter.outcome != null && filter.outcome !== "accepted" && filter.outcome !== "refused") {
+      return { error: err(E.PARAMS, "filter.outcome must be 'accepted' or 'refused'") };
+    }
     const fromSeq = range.from_seq ?? 0;
     const toSeq   = range.to_seq   ?? ws.audit.length;
 
+    // The other filters read the call an entry records, accepted or refused.
     const entries = ws.audit
       .slice(fromSeq, toSeq)
       .filter((e) => {
-        const params = e.envelope.params as Params | undefined;
-        if (filter.method && e.envelope.method !== filter.method) return false;
+        const call = (e.envelope ?? e.request) as Envelope;
+        const params = call.params as Params | undefined;
+        if (filter.outcome === "accepted" && e.outcome) return false;
+        if (filter.outcome === "refused" && !e.outcome) return false;
+        if (filter.method && call.method !== filter.method) return false;
         if (filter.from && params?.from !== filter.from) return false;
         if (filter.task_id && params?.task_id !== filter.task_id) return false;
         return true;
@@ -761,11 +810,20 @@ export function dispatch(env: Envelope): Envelope {
   }
   try {
     const params = env.params ?? {};
-    const out = handler(params);
     const wsId = params.workspace as string;
-    if (wsId) {
+    // SPECIFICATION §10.1: a request identical to a recorded refusal is
+    // answered with that refusal, and is neither evaluated nor recorded again.
+    const prior = wsId ? getWorkspace(wsId)?.refused.get(contentDigest(env)) : undefined;
+    if (prior) {
+      return { jsonrpc: "2.0", id: env.id ?? null as any, error: err(prior.code,
+        `Refused at seq ${prior.seq}; a refused request is not evaluated again`,
+        { refused_at_seq: prior.seq }) };
+    }
+    const out = handler(params);
+    if (wsId && !READ_ONLY.has(env.method)) {
       const ws = getWorkspace(wsId);
       if (ws && !out.error) recordAudit(ws, env);
+      else if (ws && out.error) recordRefusal(ws, env, out.error);
     }
     if (out.error) return { jsonrpc: "2.0", id: env.id ?? null as any, error: out.error };
     return { jsonrpc: "2.0", id: env.id ?? null as any, result: out.result };

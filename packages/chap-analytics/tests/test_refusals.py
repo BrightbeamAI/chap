@@ -1,9 +1,9 @@
 """
 Refused calls on the chain.
 
-A coordinator from 0.3.0 records a member's refused call when it was a
-governed attempt, under ``request`` with an ``outcome`` beside it
-(SPECIFICATION 10.1). The projection lists those attempts and replays none of
+A coordinator records a member's refused call when it was a governed
+attempt, under ``request`` with an ``outcome`` beside it (SPECIFICATION
+10.1). The projection lists those attempts and replays none of
 them, so a refused approval never counts as a decision. The chains here are
 driven through the real coordinator, read both as a snapshot and as an
 ``audit.read`` export.
@@ -19,7 +19,7 @@ pytest.importorskip("chap_coordinator")
 
 from chap_coordinator import Coordinator, CoordinatorOptions  # noqa: E402
 
-from chap_analytics import frames, from_coordinator, from_json, redact_artefacts  # noqa: E402
+from chap_analytics import briefs, frames, from_coordinator, from_json, redact_artefacts, stats  # noqa: E402
 
 PROFILES = ["core/1.0", "review/1.0", "control/1.0", "audit-scitt/1.0"]
 MARKER = "refused-call-content-marker"
@@ -99,3 +99,12 @@ def test_the_summary_names_refusals():
     text = from_coordinator(coord, "w").summary()
     assert "decide.approve (refused)" in text
     assert "review.request (refused)" in text
+
+
+def test_assurance_counts_a_refusal_as_an_entry_on_the_chain(chain):
+    # A recorded refusal is linked into the chain like any other entry, so the
+    # shares are taken over both tables.
+    f = frames(chain)
+    entries = len(f.events) + len(f.refusals)
+    assert int(stats.assurance(f, "D")["n"].sum()) == entries
+    assert briefs.assurance(f).numbers["n"] == entries

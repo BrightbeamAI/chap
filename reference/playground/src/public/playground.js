@@ -640,10 +640,14 @@ function appendWireEntry(msg) {
   if (!$("wire-panel").hidden) renderWireEntry(msg);
 }
 
-// A refused attempt the coordinator recorded arrives with an `outcome`. It took
-// no effect, and the wire panel says so.
+// A refused attempt the coordinator recorded arrives under `request`, with an
+// `outcome`. It took no effect, and the wire panel says so.
+function callOf(msg) {
+  return msg.envelope ?? msg.request ?? {};
+}
+
 function methodLabel(msg) {
-  const method = msg.envelope.method ?? "?";
+  const method = callOf(msg).method ?? "?";
   return msg.outcome ? `${method} (refused ${msg.outcome.code})` : method;
 }
 
@@ -658,13 +662,13 @@ function updateWireStrip(msg) {
 }
 
 function renderWireEntry(msg) {
-  const variant = classifyMethod(msg.envelope.method);
+  const variant = classifyMethod(callOf(msg).method);
   const classes = ["wire-entry"];
   if (variant === "routing")  classes.push("is-routing");
   if (variant === "override") classes.push("is-override");
   if (msg.outcome) classes.push("is-refused");
 
-  const summary = summariseEnvelope(msg.envelope);
+  const summary = summariseEnvelope(callOf(msg));
 
   const entry = el("div", {
       class: classes.join(" "),
@@ -678,7 +682,7 @@ function renderWireEntry(msg) {
     summary
       ? el("div", { class: "wire-entry-summary" }, summary)
       : null,
-    el("div", { class: "wire-body-detail" }, JSON.stringify(msg.envelope, null, 2)),
+    el("div", { class: "wire-body-detail" }, JSON.stringify(callOf(msg), null, 2)),
   );
   const body = $("wire-body");
   // Only auto-scroll if the user is already at (or near) the bottom.

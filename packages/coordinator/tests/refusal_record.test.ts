@@ -242,3 +242,177 @@ test("refusals survive a snapshot and a restore, and the chain still verifies", 
                          params: { workspace: "w", from: "human:a" } } as never) as any;
   assert.equal(v.error, undefined, JSON.stringify(v.error));
 });
+
+// ------------------------------------------------------------ resubmission
+
+test("a request identical to a recorded refusal is answered with it, even once it would pass", () => {
+  // The log publishes a refused request, signature and all. Resubmitting the
+  // same bytes after the review is re-addressed must not make it take effect.
+  const { c, send, ws } = ready();
+  const id = underReview(send);
+  const env = { jsonrpc: "2.0", id: "late", method: "decide.approve",
+                params: { workspace: "w", from: "human:a", task_id: id, comment: "ok" } };
+  assert.equal((c.dispatch(JSON.parse(JSON.stringify(env)) as never) as any).error.code, -32011);
+  const at = ws.audit.length - 1;
+  send("review.request", { task_id: id, artefact: { body: "draft" }, to: "human:a" }, "agent:b");
+  const before = ws.audit.length;
+
+  const replay = c.dispatch(JSON.parse(JSON.stringify(env)) as never) as any;
+  assert.equal(replay.error.code, -32011);
+  assert.equal(replay.error.message, `Refused at seq ${at}; a refused request is not evaluated again`);
+  assert.deepEqual(replay.error.data, { refused_at_seq: at });
+  assert.equal(ws.audit.length, before, "the resubmission was recorded");
+  assert.equal(ws.tasks.get(id).state, "review_requested", "the resubmission took effect");
+
+  const fresh = c.dispatch({ ...JSON.parse(JSON.stringify(env)), id: "fresh" } as never) as any;
+  assert.equal(fresh.error, undefined, JSON.stringify(fresh.error));
+});
+
+test("the resubmission rule survives a snapshot and a restore", () => {
+  const { c, send } = ready();
+  const id = underReview(send);
+  const env = { jsonrpc: "2.0", id: "late", method: "decide.approve",
+                params: { workspace: "w", from: "human:a", task_id: id, comment: "ok" } };
+  c.dispatch(JSON.parse(JSON.stringify(env)) as never);
+  const d = new Coordinator({ deterministicIds: true, deterministicClock: true,
+                              defaultProfiles: CHAINED } as never);
+  d.restore(JSON.parse(JSON.stringify(c.snapshot())));
+  const replay = d.dispatch(JSON.parse(JSON.stringify(env)) as never) as any;
+  assert.deepEqual(replay.error.data?.refused_at_seq !== undefined, true);
+});
+
+// ------------------------------------------------------------ what stays off
+
+test("a refused join is not recorded, even from a member's URI", () => {
+  // participant.join is exempt from signature checks, so its refusal proves
+  // nothing about who sent it.
+  const c = new Coordinator({ requireSignatures: true, deterministicIds: true, deterministicClock: true,
+                              verifyOidcToken: () => null,
+                              defaultProfiles: ["core/1.0", "review/1.0"] } as never);
+  const { jwk } = deriveKeypair("human:a");
+  c.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
+    params: { workspace: "w", from: "human:a", type: "human", jwks: { keys: [jwk] } } } as never);
+  const ws = c.workspaces.get("w") as any;
+  const before = ws.audit.length;
+  const r = c.dispatch({ jsonrpc: "2.0", id: "forged", method: "participant.join",
+    params: { workspace: "w", from: "human:a", type: "human", oidc_token: "forged" } } as never) as any;
+  assert.notEqual(r.error, undefined);
+  assert.equal(ws.audit.length, before);
+});
+
+test("a method the catalogue lists but no coordinator implements is not recorded", () => {
+  const { send, ws } = ready();
+  const before = ws.audit.length;
+  assert.equal(send("workspace.invite", { invitee: "human:z" }).error.code, -32601);
+  assert.equal(ws.audit.length, before);
+});
+
+test("a refused audit.submit_to_scitt is not recorded", () => {
+  const { send, ws } = ready();
+  send("control.pause", { scope: "workspace", reason: "incident" });
+  const before = ws.audit.length;
+  assert.notEqual(send("audit.submit_to_scitt").error, undefined);
+  assert.equal(ws.audit.length, before);
+});
+
+test("a refusal whose code is not an integer is not recorded", () => {
+  const { c, send, ws } = ready();
+  c.handlers.set("custom.broken", () => ({ error: { code: "bad" as never, message: "no" } }));
+  const before = ws.audit.length;
+  send("custom.broken");
+  assert.equal(ws.audit.length, before);
+});
+
+test("a step-up refusal is recorded", () => {
+  const { send, ws } = ready(CHAINED, { enforceStepUp: true });
+  const before = ws.audit.length;
+  const r = send("control.pause", { scope: "workspace", reason: "incident" });
+  assert.equal(r.error.code, -32402);
+  assert.equal(ws.audit.length, before + 1);
+  assert.deepEqual(ws.audit[before].outcome, { status: "refused", code: -32402 });
+});
+
+test("a refused notification is recorded without an id", () => {
+  const { c, send, ws } = ready();
+  const id = underReview(send);
+  const before = ws.audit.length;
+  c.dispatch({ jsonrpc: "2.0", method: "decide.approve",
+               params: { workspace: "w", from: "human:a", task_id: id, comment: "ok" } } as never);
+  assert.equal(ws.audit.length, before + 1);
+  assert.equal("id" in ws.audit[before].request, false);
+});
+
+// ------------------------------------------------------------ entry shape
+
+for (const [name, tamper] of [
+  ["moving the refusal's record under envelope",
+    (e: any) => { e.envelope = { outcome: e.outcome, request: e.request }; delete e.request; delete e.outcome; }],
+  ["holding both an envelope and a request", (e: any) => { e.envelope = e.request; }],
+  ["an outcome of another status", (e: any) => { e.outcome.status = "accepted"; }],
+  ["a code that is not an integer", (e: any) => { e.outcome.code = "-32011"; }],
+  ["a null outcome", (e: any) => { e.outcome = null; }],
+] as const) {
+  test(`${name} breaks the chain`, () => {
+    const { send, ws } = ready();
+    const id = underReview(send);
+    send("decide.approve", { task_id: id, comment: "ok" }, "human:a");
+    const refusal = ws.audit.find((e: any) => e.outcome !== undefined);
+    (tamper as (e: unknown) => void)(refusal);
+    assert.notEqual(send("audit.verify_chain").error, undefined);
+  });
+}
+
+test("adding an outcome to an accepted entry breaks the chain", () => {
+  const { send, ws } = ready();
+  ws.audit[ws.audit.length - 1].outcome = { status: "refused", code: -32011 };
+  assert.notEqual(send("audit.verify_chain").error, undefined);
+});
+
+// ------------------------------------------------------------ filters
+
+test("a null outcome filter reads as no filter", () => {
+  const { send } = ready();
+  const id = underReview(send);
+  send("decide.approve", { task_id: id, comment: "ok" }, "human:a");
+  const all = send("audit.read").result.entries;
+  const r = send("audit.read", { filter: { outcome: null } });
+  assert.equal(r.error, undefined, JSON.stringify(r.error));
+  assert.equal(r.result.entries.length, all.length);
+});
+
+test("a filter that is not an object reads as no filter", () => {
+  const { send } = ready();
+  const all = send("audit.read").result.entries;
+  assert.equal(send("audit.read", { filter: "x" }).result.entries.length, all.length);
+});
+
+test("from matches a refused call's sender", () => {
+  const { send } = ready();
+  const id = underReview(send);
+  send("decide.approve", { task_id: id, comment: "ok" }, "human:a");
+  const mine = send("audit.read", { filter: { from: "human:a", outcome: "refused" } }).result.entries;
+  assert.equal(mine.length, 1);
+});
+
+test("a refused whisper.answer with a malformed whisper_id leaves task filters working", () => {
+  const profiles = [...CHAINED, "whisper/1.0"];
+  const { send } = ready(profiles);
+  send("control.pause", { scope: "workspace", reason: "incident" });
+  const r = send("whisper.answer", { whisper_id: { x: 1 }, answer_option: "a" }, "human:c");
+  assert.equal(r.error.code, -32063);
+  const read = send("audit.read", { filter: { task_id: "tsk_absent" } });
+  assert.equal(read.error, undefined, JSON.stringify(read.error));
+});
+
+test("an answer option that is an object is refused as outside the set, and recorded", () => {
+  const profiles = [...CHAINED, "whisper/1.0"];
+  const { send, ws } = ready(profiles);
+  const tid = send("task.create", { kind: "k", input: {}, assignee: "agent:b" }, "agent:b").result.task_id;
+  const wid = send("whisper.ask", { to: "human:c", task_id: tid, question: "?", deadline_ms: 60000,
+                                   default_if_lapsed: "a", options: [{ id: "a" }] }, "agent:b").result.whisper_id;
+  const before = ws.audit.length;
+  const r = send("whisper.answer", { whisper_id: wid, answer_option: { x: 1 } }, "human:c");
+  assert.equal(r.error.code, -32022);
+  assert.equal(r.error.message, 'Answer option {"x":1} not in option set');
+  assert.equal(ws.audit.length, before + 1);
+});

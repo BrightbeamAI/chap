@@ -5,8 +5,9 @@
 attempt, and no other refusal. Both coordinator test suites replay the same
 envelopes with deterministic ids and a deterministic clock. Each case sends
 one call that is refused and compares the response whole, the length of the
-log after it, and the chain head. Where the refusal is recorded, the last
-entry of the log is compared whole as well.
+log after it, the number of refusal entries on it, and the chain head. Where
+the refusal is recorded, the last entry of the log is compared whole as well,
+as text, so the order of its keys is pinned too.
 
 A recorded refusal holds the call under `request`, with an `outcome` beside
 it, and its chain link hashes `{"outcome": …, "request": …}`. The fixed chain
@@ -14,9 +15,13 @@ head pins those bytes. The Python suite also recomputes every head from the
 entries with a canonicaliser of its own, so the formula is checked apart from
 either coordinator.
 
-Eight cases, in two halves.
+A case may carry `refused_setup`: calls sent after the first
+`refused_setup_at` setup envelopes, each of which is refused, before the rest
+of the setup runs.
 
-**Four refusals that are recorded**, one for each kind of governed attempt:
+The cases come in two halves.
+
+**Refusals that are recorded**, examples of governed attempts:
 
 - `control.pause` with `control/1.0` not advertised: the gate refuses a
   privileged method, `-32601`.
@@ -24,15 +29,21 @@ Eight cases, in two halves.
 - `decide.approve` by the addressed reviewer with an artefact digest that does
   not match, `-32074` (CEP-001).
 - `task.create` on a workspace whose emergency brake is on, `-32063`.
+- `whisper.answer` with an option that is an object, which is outside the
+  option set, `-32022`. The message shows the option as JSON.
 
-**Four refusals that are not recorded**, which is the half that makes the
-fixture worth having:
+**Refusals that are not recorded**, which is the half that makes the fixture
+worth having:
 
 - `whisper.ask` with `whisper/1.0` not advertised: the gate refusing an
   ordinary method.
 - A method that does not exist.
 - `task.create` with invalid parameters, `-32602`.
 - `control.pause` from a caller who is not a member.
+- A `decide.approve` identical to one refused and recorded earlier, sent
+  after the review has been re-addressed to its sender. It is answered with
+  the recorded refusal and `data.refused_at_seq`, and is neither evaluated nor
+  recorded again.
 
 Run them:
 

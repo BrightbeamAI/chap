@@ -41,20 +41,42 @@ def is_refusal(entry: "AuditEntry") -> bool:
     return entry.outcome is not None
 
 
-def entry_is_well_formed(entry: "AuditEntry") -> bool:
-    """An accepted envelope alone, or a refused request with its outcome.
+def _is_call(value: Any) -> bool:
+    """A JSON-RPC call: an object with ``jsonrpc`` "2.0" and a string ``method``."""
+    return (isinstance(value, dict) and value.get("jsonrpc") == "2.0"
+            and isinstance(value.get("method"), str))
 
-    The outcome of a refusal has status ``refused`` and an integer code.
+
+def _is_integer(value: Any) -> bool:
+    """An integer, as JSON carries one: ``-32011`` or ``-32011.0``, never a boolean."""
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, int) or (isinstance(value, float) and value.is_integer())
+
+
+def entry_is_well_formed(entry: "AuditEntry") -> bool:
+    """An accepted call alone, or a refused call alone with its outcome.
+
+    The accepted call is under ``envelope``; the refused call is under
+    ``request``, with an outcome of status ``refused`` and an integer code.
+    Requiring a JSON-RPC call on either side is what stops a refusal's
+    record being moved under ``envelope``, where it would hash to the same
+    bytes and read as a call that took effect.
     """
     accepted = entry.envelope is not None
     refused = entry.request is not None
     if accepted == refused:
         return False
     if accepted:
-        return entry.outcome is None
+        return _is_call(entry.envelope) and entry.outcome is None
     o = entry.outcome
-    return (isinstance(o, dict) and o.get("status") == "refused"
-            and isinstance(o.get("code"), int) and not isinstance(o.get("code"), bool))
+    return (_is_call(entry.request) and isinstance(o, dict)
+            and o.get("status") == "refused" and _is_integer(o.get("code")))
+
+
+def request_digest(request: Any) -> str:
+    """The digest that identifies a request byte for byte: SHA-256 of its JCS."""
+    return sha256_hex(canonicalize(request))
 
 
 def link_hash(record: Any, prev: str) -> str:
@@ -64,12 +86,17 @@ def link_hash(record: Any, prev: str) -> str:
 
 # Refusals the log never records: a call that was malformed or invalid, a
 # fault in the Coordinator, and a call whose signature or key did not check
-# out, which leaves its sender unauthenticated.
+# out.
 _UNRECORDED_CODES = frozenset({
     E.PARSE, E.REQUEST, E.PARAMS, E.INTERNAL,
     E.SIG_VERIFY_FAILED, E.SIG_KEY_NOT_FOUND, E.SIG_KEY_REVOKED,
     E.SIG_ROTATION_KEY_MISMATCH,
 })
+
+# Methods whose refusals are never recorded. They run before the caller is
+# established as a member and are exempt from signature checks, so a refusal
+# of one proves nothing about who sent it.
+_UNRECORDED_METHODS = frozenset({"workspace.create", "participant.join"})
 
 
 def refusal_is_recorded(method: str, error: dict, privileged: frozenset[str]) -> bool:
@@ -82,6 +109,10 @@ def refusal_is_recorded(method: str, error: dict, privileged: frozenset[str]) ->
     exist, are not recorded.
     """
     code = error.get("code")
+    if not _is_integer(code):
+        return False
+    if method in _UNRECORDED_METHODS:
+        return False
     if code in _UNRECORDED_CODES:
         return False
     if code == E.METHOD:

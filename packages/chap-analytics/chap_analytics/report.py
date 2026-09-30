@@ -130,6 +130,8 @@ def embedded_data(f: Frames, *, threshold: float = 0.10, freq: str = "W", ration
         "handoffs": _plain_records(f.handoffs, ["handoff_id", "proposer", "recipient", "resolution", "resolved_by",
                                                 "response_s", "proposed_at", "n_tasks"]),
         "events": _plain_records(ev, ["seq", "ts", "method", "actor", "task_id", "chained", "signed", "scitt_submitted"]),
+        "refusals": _plain_records(f.refusals, ["seq", "ts", "method", "actor", "task_id", "code",
+                                                "chained", "signed", "scitt_submitted"]),
         "edges": _plain_records(edges, ["source", "target", "relation", "weight", "mean_latency_s"]),
         "positions": _plain_records(positions, ["node", "x", "y"]),
         "centrality": _plain_records(centrality, ["participant", "kind", "in_weight", "out_weight", "betweenness"]),

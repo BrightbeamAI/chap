@@ -85,6 +85,7 @@
       },
       "recorded": true,
       "audit_count": 5,
+      "refusal_count": 1,
       "evidence_head": "sha256:00342183a250ab44d93876dfb973d3a29b4bf95ba21d7055901c7ada95bf71bf",
       "entry": {
         "seq": 4,
@@ -220,6 +221,7 @@
       },
       "recorded": true,
       "audit_count": 8,
+      "refusal_count": 1,
       "evidence_head": "sha256:d0e4f9a35441e9d2f541e04f84e98b24eb1923e30d82b324d118f364ca7d9109",
       "entry": {
         "seq": 7,
@@ -360,6 +362,7 @@
       },
       "recorded": true,
       "audit_count": 8,
+      "refusal_count": 1,
       "evidence_head": "sha256:e42fe94e873688b5014dca96071f85526ca884d70448aefa0ac98d19d418d78a",
       "entry": {
         "seq": 7,
@@ -473,6 +476,7 @@
       },
       "recorded": true,
       "audit_count": 6,
+      "refusal_count": 1,
       "evidence_head": "sha256:41921092140cdd7415b297570a6e0085f99893b8b8887faac8419e06f49b9daf",
       "entry": {
         "seq": 5,
@@ -495,6 +499,289 @@
         },
         "prev_hash": "sha256:480da669d76552137fb4ca4ee3698e220e3f815be88bf69439dedae81d83b048"
       }
+    },
+    {
+      "name": "recorded-answer-option-outside-set",
+      "note": "The askee answers with an option that is an object, which is outside the set: -32022, with the option shown as JSON.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "audit-scitt/1.0",
+        "whisper/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0",
+              "whisper/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s5",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "kind": "draft",
+            "input": {},
+            "assignee": "agent:b"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s6",
+          "method": "whisper.ask",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "to": "human:c",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "question": "?",
+            "deadline_ms": 60000,
+            "default_if_lapsed": "a",
+            "options": [
+              {
+                "id": "a"
+              }
+            ]
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "whisper.answer",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:c",
+          "whisper_id": "art_01HF7YAT02000KRVQKEBZ99Y1A",
+          "answer_option": {
+            "x": 1
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32022,
+          "message": "Answer option {\"x\":1} not in option set"
+        }
+      },
+      "recorded": true,
+      "audit_count": 7,
+      "refusal_count": 1,
+      "evidence_head": "sha256:688b8045edd99ac06785b1e3d529e01524ce02abeded26d9735ca09db66cede7",
+      "entry": {
+        "seq": 6,
+        "arrived": "2023-11-14T22:13:27.000Z",
+        "request": {
+          "jsonrpc": "2.0",
+          "id": "e1",
+          "method": "whisper.answer",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "whisper_id": "art_01HF7YAT02000KRVQKEBZ99Y1A",
+            "answer_option": {
+              "x": 1
+            }
+          }
+        },
+        "outcome": {
+          "status": "refused",
+          "code": -32022
+        },
+        "prev_hash": "sha256:5e4a4e20a0a1fdf7287ad88e531b4714149a09d0087a178ae1652708b92d6965"
+      }
+    },
+    {
+      "name": "unrecorded-resubmitted-refusal",
+      "note": "A request identical to a recorded refusal, resubmitted after the review is re-addressed to its sender, is answered with the recorded refusal and neither evaluated nor recorded again.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s5",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "kind": "draft",
+            "input": {},
+            "assignee": "agent:b"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s6",
+          "method": "task.update",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "state": "in_progress"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s7",
+          "method": "review.request",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "artefact": {
+              "body": "draft"
+            },
+            "to": "human:c"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s8",
+          "method": "review.request",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "artefact": {
+              "body": "draft"
+            },
+            "to": "human:a"
+          }
+        }
+      ],
+      "refused_setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "late",
+          "method": "decide.approve",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "comment": "ok"
+          }
+        }
+      ],
+      "refused_setup_at": 7,
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "late",
+        "method": "decide.approve",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "comment": "ok"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "late",
+        "error": {
+          "code": -32011,
+          "message": "Refused at seq 7; a refused request is not evaluated again",
+          "data": {
+            "refused_at_seq": 7
+          }
+        }
+      },
+      "recorded": false,
+      "audit_count": 9,
+      "refusal_count": 1,
+      "evidence_head": "sha256:113e31ec49ee05d56b2cb403b41f2a3742234cc0fb94bb68cd31d9be208abbab"
     },
     {
       "name": "unrecorded-gate-ordinary-method",
@@ -583,6 +870,7 @@
       },
       "recorded": false,
       "audit_count": 4,
+      "refusal_count": 0,
       "evidence_head": "sha256:de7461fdc9281c6fefab265b7dd5fad25a2543095d3b26041b0bdc7db0e92775"
     },
     {
@@ -659,6 +947,7 @@
       },
       "recorded": false,
       "audit_count": 4,
+      "refusal_count": 0,
       "evidence_head": "sha256:de7461fdc9281c6fefab265b7dd5fad25a2543095d3b26041b0bdc7db0e92775"
     },
     {
@@ -736,6 +1025,7 @@
       },
       "recorded": false,
       "audit_count": 4,
+      "refusal_count": 0,
       "evidence_head": "sha256:de7461fdc9281c6fefab265b7dd5fad25a2543095d3b26041b0bdc7db0e92775"
     },
     {
@@ -816,6 +1106,7 @@
       },
       "recorded": false,
       "audit_count": 4,
+      "refusal_count": 0,
       "evidence_head": "sha256:1173928ddbbc0f10a6bd51e759b41a181f7e5f420d3465f2dec3560c7512c667"
     }
   ]

@@ -148,7 +148,12 @@ test("a paused task resumes before it can be reviewed", () => {
                   undefined);
   send("control.resume", { task_id: id, reason: "carry on" }, "human:a");
   assert.equal(stateOf(c, id), "created");
-  const r = send("review.request", { task_id: id, artefact: ARTEFACT, to: "human:a" });
+  // The identical request is answered with the refusal already recorded
+  // (SPECIFICATION 10.1). Asking again is a new request, with a new id.
+  const again = send("review.request", { task_id: id, artefact: ARTEFACT, to: "human:a" });
+  assert.equal(again.error.data.refused_at_seq !== undefined, true);
+  const r = c.dispatch({ jsonrpc: "2.0", id: "review.request-2", method: "review.request",
+    params: { workspace: "w", from: "agent:b", task_id: id, artefact: ARTEFACT, to: "human:a" } }) as any;
   assert.equal(r.error, undefined, JSON.stringify(r.error));
   assert.equal(stateOf(c, id), "review_requested");
 });

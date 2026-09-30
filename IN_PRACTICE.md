@@ -200,6 +200,7 @@ const assignments = await coord.dispatch({
     filter: {
       method: "handoff.accept",
       from: "group:emea-shift",
+      outcome: "accepted",
       since: shiftStart
     }
   }
@@ -210,12 +211,12 @@ for (const a of assignments.result.entries) {
   const history = await coord.dispatch({
     jsonrpc: "2.0", id: nextId(),
     method: "audit.read",
-    params: { workspace: "wsp_support", filter: { task_id: taskId } }
+    params: { workspace: "wsp_support", filter: { task_id: taskId, outcome: "accepted" } }
   });
   // the segment carries the original handoff note, the routing hints,
   // every state change, the policy reference in effect.
   const latest = history.result.entries.at(-1);
-  console.log(`${taskId}: ${latest.envelope.method} at ${latest.envelope.ts}`);
+  console.log(`${taskId}: ${latest.envelope.method} at ${latest.envelope.params.ts}`);
 }
 ```
 

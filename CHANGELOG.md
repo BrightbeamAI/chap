@@ -14,19 +14,28 @@ incremented under the same rules.
 **Behaviour change.** A refused call that is a governed attempt is recorded on
 the log (SPECIFICATION 10.1). A member's refused call is recorded unless it was
 malformed or invalid, failed a signature or key check, hit an internal error,
-or was refused by the profile gate for a method that is not privileged. So a
-decision on a review addressed to someone else is recorded, as are an approval
-whose artefact digest does not match, an act on a paused workspace, and
-`control.pause` on a workspace that has switched `control/1.0` off, while
-`whisper.ask` on a workspace without `whisper/1.0` is not. A call from a caller
-who is not a member is never recorded.
+or was answered `-32601` other than by the profile gate refusing a privileged
+method. Refusals of the reads, of `audit.submit_to_scitt`, of
+`workspace.create` and `participant.join`, and of a request that cannot be
+canonicalised are not recorded either. So a decision on a review addressed to
+someone else is recorded, as are an approval whose artefact digest does not
+match, an act on a paused workspace, and `control.pause` on a workspace that
+has switched `control/1.0` off, while `whisper.ask` on a workspace without
+`whisper/1.0` and a method that does not exist are not. A call from a caller
+who is not a member is never recorded. A request identical to a recorded
+refusal is answered with that refusal, with `data.refused_at_seq`, and is
+neither evaluated nor recorded again, so a refused signed request read from
+the log cannot be sent again to take effect later. A retry is a new request
+with a new `id`.
 
 **Wire change.** A refusal entry holds the call under `request` rather than
 `envelope`, with `outcome: {"status": "refused", "code": …}` beside it, so a
 reader that replays `envelope` never treats a refusal as a call that took
 effect. Its chain link hashes the outcome together with the request, so
-neither can be altered or stripped undetected. An entry with no outcome hashes
-exactly as before, so every existing chain still verifies. `audit.read` returns
+altering either breaks the chain, and `audit.verify_chain` reports an entry as
+malformed unless it holds exactly one JSON-RPC call, under `envelope` or under
+`request` with a valid outcome. An entry with no outcome hashes exactly as
+before, so every existing chain still verifies. `audit.read` returns
 refusal entries, and a new `outcome` filter selects `accepted` or `refused`.
 Statements from `audit.submit_to_scitt` carry the record the link hashes. In
 the TypeScript package `AuditEntry.envelope` is now optional, and `entryCall`,
@@ -93,13 +102,21 @@ caller who asked, and no reference has a delivery layer to filter.
   in both references, and a code in one reference alone is a divergence. Run in
   CI.
 - **Shared refusal-recording vectors.** `conformance/refusal-record-vectors.json`
-  fixes, for eight refused calls, the response, whether the refusal is
+  fixes, for each refused call it holds, the response, whether the refusal is
   recorded, the recorded entry, and the chain head after it. Both suites read
   it, and the Python suite recomputes every head with a canonicaliser of its
-  own.
+  own. Harness vector `rv-13` checks the same rule over HTTP.
 
 ### Fixed
 
+- **The reference servers keep the log rules.** `reference/core` and
+  `reference/core-plus-review` recorded every accepted call with a workspace,
+  reads included, which core/SPEC.md 3.2 forbids. Both now leave reads off the
+  log and accept the `outcome` filter, and `reference/core-plus-review`
+  records governed refusals and answers a resubmitted refusal as the
+  coordinators do.
+- **The authorisation walkthrough runs.** It passed `confidence` as `0.82`,
+  which the canonical number rule refuses, so it stopped at `task.complete`.
 - **The workspace descriptor schema describes the descriptor.** It required
   `name`, `coordinator` and `evidence_count`, none of which either reference
   sends, and `evidence_head`, which a workspace with no chain cannot have. It

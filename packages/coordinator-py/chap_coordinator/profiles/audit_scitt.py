@@ -4,10 +4,11 @@ chap_coordinator.profiles.audit_scitt
 The audit-scitt/1.0 profile (profiles/audit-scitt.md).
 
 The spec defers entirely to SCITT for transparency-log semantics:
-each accepted envelope is wrapped as a COSE_Sign1 signed statement
-and submitted to a SCITT transparency service that returns a
-receipt. Receipts are verified by anyone with the TS's public key,
-out-of-band.
+each audit entry's record, the envelope of an accepted call or the
+outcome together with the request of a recorded refusal, is wrapped
+as a COSE_Sign1 signed statement and submitted to a SCITT
+transparency service that returns a receipt. Receipts are verified
+by anyone with the TS's public key, out-of-band.
 
 CHAP does not run a SCITT TS itself. This module provides:
   - audit.submit_to_scitt : produce a SCITT-style statement for a
@@ -32,7 +33,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..audit import entry_call, entry_is_well_formed, entry_record, link_hash
+from ..audit import entry_is_well_formed, entry_record, link_hash
 from ..canonical import ZERO_HASH, canonicalize
 from ..jsonrpc import E, rpc_error
 
@@ -44,15 +45,7 @@ if TYPE_CHECKING:
 _MALFORMED = "sha256:malformed"
 
 
-def _sender(entry) -> str | None:
-    """The participant who sent the call an entry records."""
-    call = entry_call(entry) or {}
-    params = call.get("params")
-    return params.get("from") if isinstance(params, dict) else None
-
-
-def _build_statement(workspace_id: str, record: dict,
-                     sender: str | None, issuer: str) -> dict:
+def _build_statement(workspace_id: str, record: dict, issuer: str) -> dict:
     """Build a SCITT-style signed statement for an audit entry.
 
     The payload is what the entry's chain link hashes: the envelope of an
@@ -95,8 +88,7 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             # No deployment submitter; return the statements so the caller
             # can submit out-of-band themselves.
             statements = [
-                _build_statement(ws.id, entry_record(entry),
-                                 _sender(entry), issuer)
+                _build_statement(ws.id, entry_record(entry), issuer)
                 for entry in ws.audit[from_seq:to_seq]
             ]
             return {"result": {
@@ -105,9 +97,7 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             }}
 
         for entry in ws.audit[from_seq:to_seq]:
-            statement = _build_statement(
-                ws.id, entry_record(entry), _sender(entry), issuer,
-            )
+            statement = _build_statement(ws.id, entry_record(entry), issuer)
             try:
                 receipt = coord.options.scitt_submitter(statement)
             except Exception as exc:
@@ -146,9 +136,11 @@ def register_audit_scitt(coord: "Coordinator") -> None:
     def audit_verify_chain(p: dict) -> dict:
         """Local prev_hash chain replay (supplementary to SCITT).
 
-        Recomputes the chain from the envelopes and checks (a) that every
-        entry's stored prev_hash equals the recomputed running hash, and
-        (b) that the final recomputed head equals the stored chain_head.
+        Recomputes the chain from each entry's record, the envelope of an
+        accepted call or the outcome and request of a refusal, and checks
+        (a) that every entry is well formed and its stored prev_hash equals
+        the recomputed running hash, and (b) that the final recomputed head
+        equals the stored chain_head.
         The head check is essential: without it the last entry is
         unprotected, since no stored prev_hash covers it.
         """

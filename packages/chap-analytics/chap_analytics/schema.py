@@ -376,6 +376,7 @@ REFUSALS = Table(
         _c("prev_hash", "string", "envelopes", "Hash link to the previous entry, when chaining is on."),
         _c("chained", "boolean", "derived", "Whether this entry carries a chain link."),
         _c("signed", "boolean", "derived", "Whether the refused call carried a top-level signature."),
+        _c("scitt_submitted", "boolean", "derived", "Whether a later audit.submit_to_scitt call recorded on the chain covered this entry's position, as for events."),
     ),
 )
 

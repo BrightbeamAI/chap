@@ -27,7 +27,7 @@ import datetime as _dt
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .audit import entry_call, entry_record, link_hash, refusal_is_recorded
+from .audit import entry_call, entry_record, link_hash, refusal_is_recorded, request_digest
 from .canonical import ZERO_HASH, canonicalize, content_hash
 from .ids import IdFactory
 from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
@@ -491,6 +491,24 @@ class Coordinator:
             return make_response(env_id, error=rpc_error(
                 E.PARAMS, "Invalid params: expected an object"))
 
+        # SPECIFICATION 10.1: a request identical to a recorded refusal is
+        # answered with that refusal and not evaluated again. The log publishes
+        # a refused request, signature and all, so without this anyone who can
+        # read the log could resubmit it once whatever refused it had changed.
+        target_id = params.get("workspace")
+        target = self.workspaces.get(target_id) if isinstance(target_id, str) else None
+        if target is not None:
+            try:
+                digest = request_digest(envelope)
+            except (ValueError, TypeError, RecursionError):
+                digest = None
+            prior = self._refused_requests(target).get(digest) if digest is not None else None
+            if prior is not None:
+                seq, code = prior
+                return make_response(env_id, error=rpc_error(
+                    code, f"Refused at seq {seq}; a refused request is not evaluated again",
+                    data={"refused_at_seq": seq}))
+
         # security-signed/1.0: verify top-level `sig` field if required.
         # participant.join and workspace.create are bootstrap operations that
         # run before any signing key is registered for the actor, so they
@@ -634,11 +652,36 @@ class Coordinator:
             return
         # A request that cannot be canonicalised cannot be hashed into the chain.
         try:
-            canonicalize(envelope)
+            digest = request_digest(envelope)
         except (ValueError, TypeError, RecursionError):
             return
+        # The same request refused again is already on the log.
+        if digest in self._refused_requests(ws):
+            return
+        code = int(error["code"])
+        seq = len(ws.audit)
         self._append_entry(ws, request=copy.deepcopy(envelope),
-                           outcome={"status": "refused", "code": error["code"]})
+                           outcome={"status": "refused", "code": code})
+        self._refused_requests(ws)[digest] = (seq, code)
+
+    def _refused_requests(self, ws: Workspace) -> dict[str, tuple[int, int]]:
+        """Recorded refusals in this workspace, by the digest of their request.
+
+        Held beside the workspace rather than in it, so a snapshot never
+        carries it, and rebuilt from the log when missing.
+        """
+        index = getattr(ws, "_refused_requests", None)
+        if index is None:
+            index = {}
+            for entry in ws.audit:
+                if entry.outcome is None or entry.request is None:
+                    continue
+                try:
+                    index[request_digest(entry.request)] = (entry.seq, entry.outcome.get("code"))
+                except (ValueError, TypeError, RecursionError, AttributeError):
+                    continue  # an altered entry; audit.verify_chain reports it
+            object.__setattr__(ws, "_refused_requests", index)
+        return index
 
     def _append_entry(self, ws: Workspace, *, envelope: dict | None = None,
                       request: dict | None = None, outcome: dict | None = None) -> None:
@@ -675,6 +718,9 @@ class Coordinator:
         from dataclasses import asdict
         from .storage.store import WorkspaceRecord
         data = asdict(ws)
+        # Entries are stored in their wire shape, so an accepted entry carries
+        # no null request or outcome, and a refusal no null envelope.
+        data["audit"] = [copy.deepcopy(e.to_dict()) for e in ws.audit]
         version = len(ws.audit)
         return WorkspaceRecord(
             id=ws.id, data=data, version=version, updated_at=self.now_iso(),
@@ -1263,7 +1309,8 @@ class Coordinator:
             if not_member:
                 return not_member
         rng = p.get("range") or {}
-        flt = p.get("filter") or {}
+        flt = p.get("filter")
+        flt = flt if isinstance(flt, dict) else {}
         outcome_filter = flt.get("outcome")
         if outcome_filter is not None and outcome_filter not in ("accepted", "refused"):
             return {"error": rpc_error(
@@ -1289,7 +1336,8 @@ class Coordinator:
             if flt.get("task_id"):
                 task_id = ep.get("task_id")
                 if env.get("method") == "whisper.answer":
-                    prompt = ws.whispers.get(ep.get("whisper_id", ""))
+                    whisper_id = ep.get("whisper_id")
+                    prompt = ws.whispers.get(whisper_id) if isinstance(whisper_id, str) else None
                     task_id = prompt.task_id if prompt else None
                 if task_id != flt["task_id"]:
                     continue
