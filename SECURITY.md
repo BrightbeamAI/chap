@@ -240,7 +240,9 @@ participant at the transport where that matters.
 A refusal entry keeps the refused request's content for the life of the log,
 as an accepted entry does. A call refused because its sender had no authority
 still puts its parameters on the chain, so a deployment that redacts or
-expires content applies the same policy to refusals.
+expires content applies the same policy to refusals. A redaction scheme keeps
+what the signer of a refused call signed, or its digest, because the rules
+above compare a signed copy with it.
 
 ---
 

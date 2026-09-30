@@ -59,6 +59,8 @@ def test_integer_confidence_still_accepted():
 
 
 def test_deeply_nested_envelope_is_rejected_not_crashed():
+    # Refused as an invalid request by the nesting limit (SPECIFICATION
+    # 10.1), before anything recurses through it.
     c = Coordinator(CoordinatorOptions(deterministic_ids=True))
     nested: dict = {}
     for _ in range(5000):
@@ -66,4 +68,4 @@ def test_deeply_nested_envelope_is_rejected_not_crashed():
     r = c.dispatch({"jsonrpc": "2.0", "id": "deep", "method": "workspace.describe",
                     "params": {"workspace": "w", "x": nested}})
     assert "error" in r
-    assert r["error"]["code"] == E.PARAMS
+    assert r["error"]["code"] == E.REQUEST

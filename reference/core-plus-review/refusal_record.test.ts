@@ -86,6 +86,12 @@ test("a signed copy of a recorded refusal is answered with it, and not recorded 
   });
   assert.equal(log("r4", { outcome: "refused" }).length, 1);
 
+  // A signature in another encoding is the same call: the comparison leaves
+  // the signature out.
+  const variant = dispatch({ jsonrpc: "2.0", id: "same", method: "decide.approve", params,
+                             sig: "ed25519:k1:AAAB" } as never) as any;
+  assert.deepEqual(variant.error.data, { refused_at_seq: seq });
+
   // A retry under a new id is a new request, and is evaluated.
   assert.equal(signed("decide.approve", params, "retry").result.state, "completed");
 });

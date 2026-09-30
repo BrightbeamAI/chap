@@ -104,6 +104,26 @@ const MAX_IDEMPOTENCY_KEYS = 10_000;
 // Largest envelope accepted, published in the workspace descriptor (SPEC S4.4).
 const DEFAULT_MAX_ENVELOPE_BYTES = 1_048_576;
 
+// How deeply a request may nest, counting the envelope as level one. The
+// reference HTTP servers refuse deeper bodies before dispatch; the same limit
+// here means an in-process caller cannot send what the canonicaliser, the
+// copy of a recorded call and the two references handle differently.
+const MAX_NESTING = 64;
+
+function withinNesting(value: unknown, limit: number): boolean {
+  const stack: Array<[unknown, number]> = [[value, 1]];
+  while (stack.length) {
+    const [node, depth] = stack.pop()!;
+    if (depth > limit) return false;
+    if (Array.isArray(node)) {
+      for (const v of node) stack.push([v, depth + 1]);
+    } else if (node !== null && typeof node === "object") {
+      for (const v of Object.values(node as Record<string, unknown>)) stack.push([v, depth + 1]);
+    }
+  }
+  return true;
+}
+
 export interface CoordinatorOptions {
   deterministicIds?: boolean;
   deterministicClock?: boolean;
@@ -286,12 +306,11 @@ export class Coordinator {
   }
 
   private applyRecords(records: WorkspaceRecord[]): void {
-    this.workspaces.clear();
+    // One restore for every record: restore replaces the workspaces it
+    // holds, so restoring record by record kept only the last.
     this.wsVersions.clear();
-    for (const r of records) {
-      this.restore([r.data]);
-      this.wsVersions.set(r.id, r.version);
-    }
+    this.restore(records.map(r => r.data));
+    for (const r of records) this.wsVersions.set(r.id, r.version);
   }
 
   /** Persist the current snapshot of one workspace to the store. */
@@ -566,6 +585,9 @@ export class Coordinator {
     // request itself, none of whose refusals is recorded.
     if (!isValidEnvelope(envelope) || typeof envelope.method !== "string" || !envelope.method) {
       return reply(envelope, { error: rpcError(E.REQUEST, "Invalid JSON-RPC 2.0 request") });
+    }
+    if (!withinNesting(envelope, MAX_NESTING)) {
+      return reply(envelope, { error: rpcError(E.REQUEST, `Envelope nests deeper than ${MAX_NESTING} levels`) });
     }
     const maxBytes = this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES;
     // Canonicalised once: the length is what the size limit measures, and a

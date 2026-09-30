@@ -1389,6 +1389,191 @@
       "audit_count": 4,
       "refusal_count": 0,
       "evidence_head": "sha256:1173928ddbbc0f10a6bd51e759b41a181f7e5f420d3465f2dec3560c7512c667"
+    },
+    {
+      "name": "unrecorded-unknown-method-on-a-paused-workspace",
+      "note": "The request itself is checked before the pause, so a method that does not exist is refused -32601 on a paused workspace, and not recorded.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s5",
+          "method": "control.pause",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "scope": "workspace",
+            "reason": "incident"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "nothing.here",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:a"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32601,
+          "message": "Unknown method: nothing.here"
+        }
+      },
+      "recorded": false,
+      "audit_count": 5,
+      "refusal_count": 0,
+      "evidence_head": "sha256:480da669d76552137fb4ca4ee3698e220e3f815be88bf69439dedae81d83b048"
+    },
+    {
+      "name": "unrecorded-non-canonical-request-on-a-paused-workspace",
+      "note": "The request itself is checked before the pause, so a number that is not an integer is refused -32602 on a paused workspace, and not recorded.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "control/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "control/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s5",
+          "method": "control.pause",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "scope": "workspace",
+            "reason": "incident"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "agent:b",
+          "kind": "draft",
+          "input": {
+            "weight": 1.5
+          },
+          "assignee": "agent:b"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "e1",
+        "error": {
+          "code": -32602,
+          "message": "CHAP canonical numbers must be integers; represent decimals as strings (e.g. \"8.2\") so the hash is deterministic across implementations."
+        }
+      },
+      "recorded": false,
+      "audit_count": 5,
+      "refusal_count": 0,
+      "evidence_head": "sha256:480da669d76552137fb4ca4ee3698e220e3f815be88bf69439dedae81d83b048"
     }
   ]
 }

@@ -85,6 +85,26 @@ _READ_ONLY_METHODS = frozenset({
 })
 
 
+# How deeply a request may nest, counting the envelope as level one. The
+# reference HTTP servers refuse deeper bodies before dispatch; the same limit
+# here means an in-process caller cannot send what the canonicaliser, the copy
+# of a recorded call and the two references handle differently.
+_MAX_NESTING = 64
+
+
+def _within_nesting(value: Any, limit: int) -> bool:
+    stack = [(value, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > limit:
+            return False
+        if isinstance(node, list):
+            stack.extend((v, depth + 1) for v in node)
+        elif isinstance(node, dict):
+            stack.extend((v, depth + 1) for v in node.values())
+    return True
+
+
 def _index_signed(index: dict, entry: AuditEntry) -> None:
     """Add one entry to a workspace's index of signed calls, if it is signed."""
     call = entry_call(entry)
@@ -480,6 +500,14 @@ class Coordinator:
                 envelope.get("id") if isinstance(envelope, dict) else None,
                 error=rpc_error(E.REQUEST, "Invalid JSON-RPC 2.0 request"),
             )
+        method = envelope.get("method")
+        env_id = envelope.get("id")
+        if not isinstance(method, str) or not method:
+            return make_response(env_id, error=rpc_error(
+                E.REQUEST, "Invalid JSON-RPC 2.0 request"))
+        if not _within_nesting(envelope, _MAX_NESTING):
+            return make_response(env_id, error=rpc_error(
+                E.REQUEST, f"Envelope nests deeper than {_MAX_NESTING} levels"))
 
         # Canonicalised once: the length is what the size limit measures, and
         # a request that cannot be canonicalised is refused below, once its
@@ -498,13 +526,6 @@ class Coordinator:
                     f"Envelope exceeds max_envelope_bytes "
                     f"({size} > {self.options.max_envelope_bytes})"),
             )
-
-        method = envelope.get("method")
-        env_id = envelope.get("id")
-
-        if not isinstance(method, str) or not method:
-            return make_response(env_id, error=rpc_error(
-                E.REQUEST, "Invalid JSON-RPC 2.0 request"))
 
         # JSON-RPC params, when present, must be a structured value (object).
         # CHAP methods use by-name params; reject non-object params cleanly as
@@ -683,11 +704,7 @@ class Coordinator:
             digest = signed_digest(envelope)
             if digest in index["refused"] or digest in index["accepted"]:
                 return
-        try:
-            request = copy.deepcopy(envelope)
-        except RecursionError:
-            return  # nested too deeply to copy, so it is not recorded
-        self._append_entry(ws, request=request,
+        self._append_entry(ws, request=copy.deepcopy(envelope),
                            outcome={"status": "refused", "code": int(error["code"])})
 
     def _signed_index(self, ws: Workspace) -> dict:

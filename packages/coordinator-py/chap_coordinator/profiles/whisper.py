@@ -16,9 +16,9 @@ short-running demos can advance the timer deterministically.
 from __future__ import annotations
 
 import datetime as _dt
-import json
 from typing import TYPE_CHECKING
 
+from ..canonical import canonicalize
 from ..jsonrpc import E, rpc_error
 from ..types import WhisperPrompt
 
@@ -59,6 +59,8 @@ def register_whisper(coord: "Coordinator") -> None:
                 return {"error": rpc_error(E.PARAMS, f"Missing field: {f}")}
         if p["task_id"] not in ws.tasks:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
+        if p.get("options") is not None and not isinstance(p["options"], list):
+            return {"error": rpc_error(E.PARAMS, "options must be a list")}
 
         askee = p["to"] if isinstance(p["to"], list) else [p["to"]]
         prompt_id = p.get("whisper_id") or coord.ids.artefact_id()
@@ -119,7 +121,7 @@ def register_whisper(coord: "Coordinator") -> None:
                                            "answer_option is required when options are defined")}
             valid_ids = [o.get("id") for o in prompt.options if isinstance(o, dict)]
             if not any(_same_value(answer_option, i) for i in valid_ids):
-                shown = json.dumps(answer_option, ensure_ascii=False, separators=(",", ":"))
+                shown = canonicalize(answer_option).decode("utf-8")
                 return {"error": rpc_error(
                     E.WHISPER_OPTION_NOT_IN_SET,
                     f"Answer option {shown} not in option set")}

@@ -45,6 +45,10 @@ them off:
 - A method that does not exist.
 - `task.create` with invalid parameters, `-32602`.
 - `control.pause` from a caller who is not a member.
+- A method that does not exist, and a `task.create` with a number that is
+  not an integer, each on a paused workspace. The request itself is checked
+  before the pause, so they are refused `-32601` and `-32602` where the pause
+  would have refused them `-32063`, which is recorded.
 - A signed `decide.approve`, a copy of one refused and recorded earlier, sent
   after the review has been re-addressed to its sender. It is answered with
   the recorded refusal and `data.refused_at_seq`, and is neither evaluated nor

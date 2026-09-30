@@ -119,8 +119,8 @@ export function registerAuditScitt(coord: Coordinator): void {
     let resync = false;
     for (const e of ws.audit.slice(start)) {
       // After a malformed entry the next link is taken as stored, so the
-      // entries after it are judged on their own links and the report names
-      // the altered entry alone. The chain is reported broken either way.
+      // entries after it are judged on their own links. The chain is
+      // reported broken either way.
       const expectedPrev = resync && typeof e.prev_hash === "string" ? e.prev_hash : prev;
       resync = false;
       // A chain-enabled workspace must have prev_hash on every entry; a

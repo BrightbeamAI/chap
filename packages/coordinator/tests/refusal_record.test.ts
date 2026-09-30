@@ -532,3 +532,57 @@ test("a null answer option is no option, and its refusal is not recorded", () =>
   assert.equal(send("whisper.answer", { whisper_id: wid, answer_option: null }, "human:c").error.code, -32602);
   assert.equal(ws.audit.length, before);
 });
+
+/** An extra parameter nested so that the whole envelope is `depth` levels deep. */
+function nestedTo(depth: number): unknown {
+  let v: unknown = 1;
+  for (let i = 0; i < depth - 3; i++) v = { x: v };
+  return v;
+}
+
+test("a request nested deeper than the limit is an invalid request, and not recorded", () => {
+  const { send, ws } = ready();
+  const id = underReview(send);
+  const before = ws.audit.length;
+  assert.equal(send("decide.approve", { task_id: id, deep: nestedTo(64) }, "human:a").error.code, -32011);
+  assert.equal(ws.audit.length, before + 1);
+  assert.equal(send("decide.approve", { task_id: id, deep: nestedTo(65) }, "human:a").error.code, -32600);
+  assert.equal(ws.audit.length, before + 1);
+});
+
+test("an empty answer is no answer, in both references", () => {
+  const profiles = [...CHAINED, "whisper/1.0"];
+  const { send, ws } = ready(profiles);
+  const tid = send("task.create", { kind: "k", input: {}, assignee: "agent:b" }, "agent:b").result.task_id;
+  const wid = send("whisper.ask", { to: "human:c", task_id: tid, question: "?", deadline_ms: 60000,
+                                   default_if_lapsed: "a" }, "agent:b").result.whisper_id;
+  const before = ws.audit.length;
+  assert.equal(send("whisper.answer", { whisper_id: wid, answer: "" }, "human:c").error.code, -32602);
+  assert.equal(send("whisper.answer", { whisper_id: wid, answer_option: null }, "human:c").error.code, -32602);
+  assert.equal(ws.audit.length, before);
+  assert.equal(send("whisper.answer", { whisper_id: wid, answer: "yes" }, "human:c").error, undefined);
+});
+
+test("whisper options must be a list", () => {
+  const profiles = [...CHAINED, "whisper/1.0"];
+  const { send } = ready(profiles);
+  const tid = send("task.create", { kind: "k", input: {}, assignee: "agent:b" }, "agent:b").result.task_id;
+  const r = send("whisper.ask", { to: "human:c", task_id: tid, question: "?", deadline_ms: 60000,
+                                 default_if_lapsed: "a", options: "abc" }, "agent:b");
+  assert.equal(r.error.code, -32602);
+});
+
+test("an option id matches an equal number, and the refusal shows the option canonically", () => {
+  const profiles = [...CHAINED, "whisper/1.0"];
+  const { c, send } = ready(profiles);
+  const tid = send("task.create", { kind: "k", input: {}, assignee: "agent:b" }, "agent:b").result.task_id;
+  const ask = (options: unknown) => send("whisper.ask", { to: "human:c", task_id: tid, question: "?",
+    deadline_ms: 60000, default_if_lapsed: 1, options }, "agent:b").result.whisper_id;
+  const refused = send("whisper.answer", { whisper_id: ask([{ id: "a" }]), answer_option: { b: 1, "2": 0 } }, "human:c");
+  assert.equal(refused.error.message, 'Answer option {"2":0,"b":1} not in option set');
+  // JSON 1.0 is the number 1, which is the option's id.
+  const wid = ask([{ id: 1 }]);
+  const r = c.dispatch(JSON.parse(`{"jsonrpc":"2.0","id":"n","method":"whisper.answer",
+    "params":{"workspace":"w","from":"human:c","whisper_id":"${wid}","answer_option":1.0}}`)) as any;
+  assert.equal(r.error, undefined, JSON.stringify(r.error));
+});

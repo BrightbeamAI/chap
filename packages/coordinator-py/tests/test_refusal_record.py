@@ -637,3 +637,70 @@ def test_the_store_holds_each_entry_in_its_wire_shape():
     accepted = [a for a in stored if "outcome" not in a]
     assert "envelope" not in refusal
     assert all("request" not in a and "envelope" in a for a in accepted)
+
+
+def _nested_to(depth):
+    """An extra parameter nested so that the whole envelope is ``depth`` levels deep."""
+    v = 1
+    for _ in range(depth - 3):
+        v = {"x": v}
+    return v
+
+
+def test_a_request_nested_deeper_than_the_limit_is_an_invalid_request_and_not_recorded():
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    before = len(ws.audit)
+    assert send("decide.approve", {"task_id": tid, "deep": _nested_to(64)},
+                "human:a")["error"]["code"] == -32011
+    assert len(ws.audit) == before + 1
+    assert send("decide.approve", {"task_id": tid, "deep": _nested_to(65)},
+                "human:a")["error"]["code"] == -32600
+    assert len(ws.audit) == before + 1
+
+
+def test_an_empty_answer_is_no_answer_in_both_references():
+    _, send, ws = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    wid = send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                               "deadline_ms": 60000, "default_if_lapsed": "a"},
+               "agent:b")["result"]["whisper_id"]
+    before = len(ws.audit)
+    assert send("whisper.answer", {"whisper_id": wid, "answer": ""},
+                "human:c")["error"]["code"] == -32602
+    assert send("whisper.answer", {"whisper_id": wid, "answer_option": None},
+                "human:c")["error"]["code"] == -32602
+    assert len(ws.audit) == before
+    assert "error" not in send("whisper.answer", {"whisper_id": wid, "answer": "yes"}, "human:c")
+
+
+def test_whisper_options_must_be_a_list():
+    _, send, _ = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    r = send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                             "deadline_ms": 60000, "default_if_lapsed": "a",
+                             "options": "abc"}, "agent:b")
+    assert r["error"]["code"] == -32602
+
+
+def test_an_option_id_matches_an_equal_number_and_the_refusal_shows_the_option_canonically():
+    coord, send, _ = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+
+    def ask(options):
+        return send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                                    "deadline_ms": 60000, "default_if_lapsed": 1,
+                                    "options": options}, "agent:b")["result"]["whisper_id"]
+
+    refused = send("whisper.answer", {"whisper_id": ask([{"id": "a"}]),
+                                      "answer_option": {"b": 1, "2": 0}}, "human:c")
+    assert refused["error"]["message"] == 'Answer option {"2":0,"b":1} not in option set'
+    # JSON 1.0 is the number 1, which is the option's id.
+    wid = ask([{"id": 1}])
+    r = coord.dispatch(json.loads(
+        '{"jsonrpc":"2.0","id":"n","method":"whisper.answer","params":{"workspace":"w",'
+        f'"from":"human:c","whisper_id":"{wid}","answer_option":1.0}}}}'))
+    assert "error" not in r, r

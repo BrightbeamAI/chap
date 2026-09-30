@@ -182,3 +182,31 @@ test("a refusal for a key that is unknown, revoked or the wrong one for a rotati
   assert.equal(send("task.create", { kind: "k", input: {}, assignee: "agent:b" }, "human:a").error.code, -32072);
   assert.equal(ws.audit.length, before);
 });
+
+test("an unsigned refusal does not answer a signed call with the same content", () => {
+  // Only signed calls are indexed, so a refusal anyone could have sent in the
+  // member's name cannot stand in for the member's signed call.
+  const { c, envelope, ws, underReview } = signedReady();
+  const id = underReview("human:c");
+  const late = envelope("decide.approve", { task_id: id, comment: "ok" }, "human:a");
+  const { sig: _s, ...unsigned } = late;
+  // The unsigned copy is refused -32070, since signatures are required, and
+  // is not recorded. Record an unsigned refusal directly to plant it.
+  ws.audit.push({ seq: ws.audit.length, arrived: "2026-01-01T00:00:00.000Z",
+                  request: unsigned, outcome: { status: "refused", code: -32011 } });
+  const d = new Coordinator({ requireSignatures: true, defaultProfiles: PROFILES } as never);
+  d.restore(JSON.parse(JSON.stringify(c.snapshot())));
+  const r = d.dispatch(JSON.parse(JSON.stringify(late)) as never) as any;
+  assert.equal(r.error.code, -32011);
+  assert.equal(r.error.data, undefined, "the unsigned refusal answered the signed call");
+});
+
+test("a signed call that cannot be canonicalised is refused first, not answered from the log", () => {
+  const { c, keys, ws } = signedReady();
+  const env: Record<string, unknown> = { jsonrpc: "2.0", id: "f", method: "task.create",
+    params: { workspace: "w", from: "human:a", kind: "k", input: { weight: 1.5 }, assignee: "agent:b" } };
+  env.sig = "ed25519:" + keys.get("human:a")!.jwk.kid + ":" + "A".repeat(86) + "==";
+  const before = ws.audit.length;
+  assert.equal((c.dispatch(env as never) as any).error.code, -32602);
+  assert.equal(ws.audit.length, before);
+});

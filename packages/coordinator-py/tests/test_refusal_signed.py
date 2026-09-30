@@ -205,3 +205,35 @@ def test_a_refusal_for_a_key_that_is_unknown_revoked_or_the_wrong_one_for_a_rota
     assert w.send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
                   "human:a")["error"]["code"] == -32072
     assert len(w.ws.audit) == before
+
+
+def test_an_unsigned_refusal_does_not_answer_a_signed_call_with_the_same_content():
+    # Only signed calls are indexed, so a refusal anyone could have sent in
+    # the member's name cannot stand in for the member's signed call.
+    from chap_coordinator.types import AuditEntry
+    store = MemoryStore()
+    w = _Signed(store=store)
+    tid = w.under_review("human:c")
+    late = w.envelope("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    unsigned = {k: v for k, v in late.items() if k != "sig"}
+    w.ws.audit.append(AuditEntry(seq=len(w.ws.audit), arrived="2026-01-01T00:00:00.000Z",
+                                 request=unsigned,
+                                 outcome={"status": "refused", "code": -32011}))
+    w.coord._persist(w.ws)
+    restarted = Coordinator(CoordinatorOptions(
+        require_signatures=True, default_profiles=PROFILES, store=store))
+    r = restarted.dispatch(copy.deepcopy(late))
+    assert r["error"]["code"] == -32011
+    assert "data" not in r["error"], "the unsigned refusal answered the signed call"
+
+
+def test_a_signed_call_that_cannot_be_canonicalised_is_refused_first_not_answered_from_the_log():
+    w = _Signed()
+    env = {"jsonrpc": "2.0", "id": "f", "method": "task.create",
+           "params": {"workspace": "w", "from": "human:a", "kind": "k",
+                      "input": {"weight": 1.5}, "assignee": "agent:b"},
+           "sig": "ed25519:" + public_jwk("human:a", w.keys["human:a"])["kid"] + ":"
+                  + "A" * 86 + "=="}
+    before = len(w.ws.audit)
+    assert w.coord.dispatch(env)["error"]["code"] == -32602
+    assert len(w.ws.audit) == before

@@ -40,7 +40,10 @@ canonicalised are refused before the signature, the gate and the pause, so on
 a paused workspace they are answered `-32601` and `-32602` where they were
 answered `-32063`. An empty method is `-32600` in both references, and the
 TypeScript reference answers a method that is not a string with `-32600`
-where it failed with an internal error.
+where it failed with an internal error. A request nested deeper than 64
+levels is refused `-32600`. The reference HTTP servers already refused such a
+body, and in process the two coordinators failed on it at different depths,
+after the call had taken effect.
 
 **Wire change.** A refusal entry holds the call under `request` rather than
 `envelope`, with `outcome: {"status": "refused", "code": …}` beside it, so a
@@ -56,7 +59,9 @@ the TypeScript package `AuditEntry.envelope` is now optional, and `entryCall`,
 `entryRecord`, `isRefusal` and `linkHash` are exported for readers. A reader
 that indexes `envelope` on every entry has to allow for entries without one.
 A store the Python coordinator writes with a refusal entry in it cannot be
-read by an earlier release, which skips that workspace.
+read by an earlier release, which skips that workspace, and the next call that
+names the workspace re-creates it empty and overwrites the stored log. Back up
+the store before going back to an earlier release.
 
 **Behaviour change.** A Coordinator refuses a method whose owning profile the
 workspace does not advertise, which SPECIFICATION 15.4 has required since 0.1
@@ -125,6 +130,10 @@ caller who asked, and no reference has a delivery layer to filter.
 
 ### Fixed
 
+- **A TypeScript coordinator started on a store brings back every workspace.**
+  It restored the stored records one at a time, each restore replacing the
+  last, so only one workspace came back. The next call naming a lost
+  workspace re-created it empty and overwrote its stored log.
 - **The reference servers keep the log rules.** `reference/core` and
   `reference/core-plus-review` recorded every accepted call with a workspace,
   reads included, which core/SPEC.md 3.2 forbids. Both now leave reads off the
@@ -138,7 +147,8 @@ caller who asked, and no reference has a delivery layer to filter.
   id of the same JSON type, and the refusal shows the option as JSON. Python
   failed with an internal error on an object, matched `true` against `1` and
   showed the option in Python notation. TypeScript refused a null option as
-  outside the set.
+  outside the set. An empty answer is no answer in both, where TypeScript
+  accepted one, and `whisper.ask` refuses `options` that are not a list.
 - **The workspace descriptor schema describes the descriptor.** It required
   `name`, `coordinator` and `evidence_count`, none of which either reference
   sends, and `evidence_head`, which a workspace with no chain cannot have. It

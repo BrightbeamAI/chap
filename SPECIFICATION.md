@@ -1120,8 +1120,9 @@ recorded, so a Coordinator MUST make these checks in this order and answer
 with the first that fails:
 
 1. The request itself: a JSON-RPC 2.0 call with a non-empty string `method`,
-   within the size limit, with `params` an object when present, for a method
-   the Coordinator implements, with a canonical form (`-32600`, `-32601`,
+   nested no deeper than 64 levels counting the envelope as the first, within
+   the size limit, with `params` an object when present, for a method the
+   Coordinator implements, with a canonical form (`-32600`, `-32601`,
    `-32602`).
 2. Whether it is a signed copy of a recorded refusal (below).
 3. The signature, where signatures are required (`-32070` to `-32073`).
@@ -1138,11 +1139,11 @@ with the first that fails:
 Where a caller who is not a member is refused makes no difference to the log,
 since that refusal is never recorded. When a call fails more than one of its
 method's own checks, this specification does not fix which it is answered
-with, and two Coordinators can record different codes for it. The shared
-conformance vectors pin what the reference implementations answer.
+with, and two Coordinators can record different codes for it. The two
+reference implementations make each method's checks in the same order.
 
-**Signed copies.** A call is signed when it carries a top-level `sig`,
-whether or not the Coordinator requires signatures. Every reader of the log
+**Signed copies.** A call is signed when it carries a top-level `sig` that is
+a string, whether or not the Coordinator requires signatures. Every reader of the log
 holds a copy of each signed call on it, signature included. Two signed calls
 are the same call when what their senders signed, the call without its `sig`,
 has the same canonical form, however the signature is encoded.
@@ -1659,9 +1660,9 @@ requirement, since the references are what conformance is measured against.
    described in
    [SECURITY.md](./SECURITY.md#sender-declared-timestamps).
 2. Record every accepted operation on the chain, and the refused calls §10.1
-   names. The methods §10.1 leaves unrecorded, the reads among them, are the
-   exception, because appending on read would grow and re-link the chain each
-   time it was inspected.
+   names. The five methods §10.1 names as unrecorded are the exception,
+   because appending on read would grow and re-link the chain each time it
+   was inspected.
 3. Refuse a method whose owning profile the workspace does not advertise
    (§15.4), and refuse a `workspace.create` whose descriptor understates what
    the Coordinator enforces (§6.5).

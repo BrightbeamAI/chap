@@ -172,9 +172,8 @@ def register_audit_scitt(coord: "Coordinator") -> None:
         resync = False
         for e in ws.audit[start:]:
             # After a malformed entry the next link is taken as stored, so
-            # the entries after it are judged on their own links and the
-            # report names the altered entry alone. The chain is reported
-            # broken either way.
+            # the entries after it are judged on their own links. The chain
+            # is reported broken either way.
             expected_prev = e.prev_hash if resync and isinstance(e.prev_hash, str) else prev
             resync = False
             # A chain-enabled workspace must have prev_hash on every entry;
