@@ -44,11 +44,13 @@ def main() -> None:
     # 3. Inspect the audit chain.
     print("\nAudit chain:")
     for entry in bridge.audit():
-        env = entry["envelope"]
+        # A refused call is recorded under "request", with its outcome.
+        env = entry.get("envelope") or entry["request"]
         method = env["method"]
         params = env.get("params", {})
         actor = params.get("from", "")
-        print(f"  seq={entry['seq']:<3} {method:<25} {actor}")
+        refused = f"  refused {entry['outcome']['code']}" if "outcome" in entry else ""
+        print(f"  seq={entry['seq']:<3} {method:<25} {actor}{refused}")
 
 
 if __name__ == "__main__":

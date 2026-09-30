@@ -116,13 +116,13 @@ to implement as a refusal that quietly does not.
 | Vector  | Sends                                                        | Expects                                   |
 |---------|--------------------------------------------------------------|-------------------------------------------|
 | `rv-09` | `decide.approve` with `approved_artefact_digest` equal to `sha256:` + SHA-256 over the JCS form of the artefact under review | approval proceeds, task `completed`       |
-| `rv-10` | the same with a digest of different content                   | `-32074`, no decision recorded, and the review still open so the reviewer can decide afterwards |
+| `rv-10` | the same with a digest of different content                   | `-32074`, no decision takes effect, and the review still open so the reviewer can decide afterwards |
 | `rv-11` | `review.request` on an open review carrying different content  | `-32014`; then the identical artefact returns `amended: true` |
 | `rv-12` | `task.complete` on a `review_required` task, then `decide.approve` from a second agent in the workspace | the completion opens a review; the agent's decision is refused with `-32011`; a human the review was addressed to completes it |
 
-`rv-10` deliberately decides again after the refusal. A Coordinator that
-recorded the refused decision, or that closed the review, fails on the second
-call rather than the first.
+`rv-10` deliberately decides again after the refusal. A Coordinator that let
+the refused decision take effect, or that closed the review, fails on the
+second call rather than the first.
 
 ---
 
@@ -157,6 +157,20 @@ identically.
 
 ---
 
+## 2c. Refused calls on the log
+
+SPECIFICATION §10.1 has a Coordinator record a member's refused call under
+`request`, with an `outcome`, and leave a non-member's off the log.
+`refusal-record-vectors.json` pins the recorded entries and chain heads for
+the two coordinator packages. Over HTTP, one harness vector reads back the
+refusals of `rv-07` and `rv-08`:
+
+| Vector  | Sends                                                        | Expects                                   |
+|---------|--------------------------------------------------------------|-------------------------------------------|
+| `rv-13` | `audit.read` with `filter: {task_id, outcome: "refused"}` for the task of `rv-07` and `rv-08` | one entry: the bystander's `decide.approve` under `request`, no `envelope`, and `outcome` `{"status": "refused", "code": -32011}`. The non-member's attempt is absent |
+
+---
+
 ## 3. Evidence-chain linkage
 
 The chain is a sequence of entries. Each entry carries the chain head
@@ -167,6 +181,10 @@ entry's canonical envelope concatenated with that previous head.
 entry[N].prev_hash = head before entry N   (sha256:0*64 at genesis)
 head after entry N = sha256( JCS(envelope[N]) || entry[N].prev_hash )
 ```
+
+For a recorded refusal (SPECIFICATION §10.1), `envelope[N]` is replaced by
+the object `{"outcome": …, "request": …}`. `refusal-record-vectors.json`
+pins worked examples.
 
 Every digest is `sha256:` followed by 64 lowercase hex characters.
 `JCS(envelope[N])` is the canonical serialisation of the recorded

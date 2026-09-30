@@ -35,7 +35,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "chap.task.complete":
         "Submit a task's output. A task that requires review does not complete: the output is held as the artefact under review, the task moves to review_requested, and a reviewer decision completes it. Any other task completes immediately.",
     "chap.audit.read":
-        "Read entries from a workspace's audit log, optionally within a sequence range and filtered by method, sender or task. This is the query surface for everything the workspace has recorded, decisions and overrides included. Reads only: it records nothing, so it never appears in its own output. Entries come back as recorded, without aggregation, so grouping them, by tag for instance, is the reader's job.",
+        "Read entries from a workspace's audit log, optionally within a sequence range and filtered by method, sender, task or outcome. This is the query surface for everything the workspace has recorded, decisions and overrides included. An accepted call is under 'envelope'. A refused attempt the coordinator recorded, such as a decision by someone the review was not addressed to, is under 'request' with an 'outcome' giving the error code, and it did not take effect. Reads only: it records nothing, so it never appears in its own output. Entries come back as recorded, without aggregation, so grouping them, by tag for instance, is the reader's job.",
     "chap.review.request":
         "Open a review on a task and address it to one or more reviewers. They then call chap.decide.approve, chap.decide.reject, chap.decide.override or chap.abstain.declare. Repeating the request with the same artefact adds reviewers to the open review.",
     "chap.decide.approve":

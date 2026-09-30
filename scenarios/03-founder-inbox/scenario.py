@@ -170,13 +170,18 @@ def build_history(send) -> dict:
 def _verify(entries):
     """Re-walk the hash chain the way an auditor would. Each entry carries the
     prev_hash it was linked against; the next link is
-    sha256(JCS(envelope) || prev_hash). If any envelope was altered after the
-    fact, the recomputed links stop matching."""
+    sha256(JCS(envelope) || prev_hash), or for a recorded refusal the outcome
+    together with the request. If any entry was altered after the fact, the
+    recomputed links stop matching."""
     running = GENESIS
     for e in entries:
         if e.get("prev_hash") != running:
             return False, e["seq"]
-        running = sha256_hex(canonicalize(e["envelope"]) + running.encode("utf-8"))
+        # A refused attempt the coordinator recorded links its outcome
+        # together with its request; an accepted call links its envelope.
+        record = ({"outcome": e["outcome"], "request": e["request"]}
+                  if e.get("outcome") is not None else e["envelope"])
+        running = sha256_hex(canonicalize(record) + running.encode("utf-8"))
     return True, None
 
 
@@ -189,7 +194,7 @@ def print_integrity(entries) -> None:
 
     forged = copy.deepcopy(entries)
     for e in forged:
-        if e["envelope"]["method"] == "decide.approve":
+        if e.get("envelope", {}).get("method") == "decide.approve":
             e["envelope"]["params"]["from"] = "human:not-you@saas.com"
             break
     intact_after, broken_seq = _verify(forged)
@@ -210,7 +215,8 @@ def print_reconstruction(send, ctx) -> None:
     # its input (not a task_id, which the coordinator only returns in the
     # result), so match it separately; everything else carries task_id.
     story = []
-    for e in send("audit.read", workspace=WORKSPACE)["entries"]:
+    for e in send("audit.read", workspace=WORKSPACE,
+                  filter={"outcome": "accepted"})["entries"]:
         p = e["envelope"].get("params", {})
         if p.get("task_id") == task_id or (
             e["envelope"]["method"] == "task.create"
@@ -244,7 +250,7 @@ def print_reconstruction(send, ctx) -> None:
 
 def print_pattern_scan(send) -> None:
     completed = send("audit.read", workspace=WORKSPACE,
-                     filter={"method": "task.complete"})["entries"]
+                     filter={"method": "task.complete", "outcome": "accepted"})["entries"]
     wrong = []
     for e in completed:
         out = e["envelope"]["params"].get("output") or {}

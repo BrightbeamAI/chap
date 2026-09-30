@@ -4,10 +4,11 @@ chap_coordinator.profiles.audit_scitt
 The audit-scitt/1.0 profile (profiles/audit-scitt.md).
 
 The spec defers entirely to SCITT for transparency-log semantics:
-each accepted envelope is wrapped as a COSE_Sign1 signed statement
-and submitted to a SCITT transparency service that returns a
-receipt. Receipts are verified by anyone with the TS's public key,
-out-of-band.
+each audit entry's record, the envelope of an accepted call or the
+outcome together with the request of a recorded refusal, is wrapped
+as a COSE_Sign1 signed statement and submitted to a SCITT
+transparency service that returns a receipt. Receipts are verified
+by anyone with the TS's public key, out-of-band.
 
 CHAP does not run a SCITT TS itself. This module provides:
   - audit.submit_to_scitt : produce a SCITT-style statement for a
@@ -32,22 +33,28 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..canonical import ZERO_HASH, canonicalize, sha256_hex
+from ..audit import entry_is_well_formed, entry_record, link_hash
+from ..canonical import ZERO_HASH, canonicalize
 from ..jsonrpc import E, rpc_error
 
 if TYPE_CHECKING:
     from ..coordinator import Coordinator
 
 
-def _build_statement(workspace_id: str, entry_envelope: dict,
-                     sender: str | None, issuer: str) -> dict:
-    """Build a SCITT-style signed statement for a CHAP envelope.
+# The head after a malformed entry, which no stored head can match.
+_MALFORMED = "sha256:malformed"
 
+
+def _build_statement(workspace_id: str, record: dict, issuer: str) -> dict:
+    """Build a SCITT-style signed statement for an audit entry.
+
+    The payload is what the entry's chain link hashes: the envelope of an
+    accepted call, or the outcome together with the request of a refusal.
     The COSE_Sign1 structure here is JSON-modelled rather than binary
     CBOR; a real deployment will pass this to a SCITT client library
     that produces the actual COSE encoding before submission.
     """
-    payload_canonical = canonicalize(entry_envelope).decode("utf-8")
+    payload_canonical = canonicalize(record).decode("utf-8")
     return {
         "protected": {
             "alg": -8,  # Ed25519 per COSE
@@ -81,9 +88,7 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             # No deployment submitter; return the statements so the caller
             # can submit out-of-band themselves.
             statements = [
-                _build_statement(ws.id, entry.envelope,
-                                 entry.envelope.get("params", {}).get("from"),
-                                 issuer)
+                _build_statement(ws.id, entry_record(entry), issuer)
                 for entry in ws.audit[from_seq:to_seq]
             ]
             return {"result": {
@@ -92,11 +97,7 @@ def register_audit_scitt(coord: "Coordinator") -> None:
             }}
 
         for entry in ws.audit[from_seq:to_seq]:
-            statement = _build_statement(
-                ws.id, entry.envelope,
-                entry.envelope.get("params", {}).get("from"),
-                issuer,
-            )
+            statement = _build_statement(ws.id, entry_record(entry), issuer)
             try:
                 receipt = coord.options.scitt_submitter(statement)
             except Exception as exc:
@@ -135,9 +136,11 @@ def register_audit_scitt(coord: "Coordinator") -> None:
     def audit_verify_chain(p: dict) -> dict:
         """Local prev_hash chain replay (supplementary to SCITT).
 
-        Recomputes the chain from the envelopes and checks (a) that every
-        entry's stored prev_hash equals the recomputed running hash, and
-        (b) that the final recomputed head equals the stored chain_head.
+        Recomputes the chain from each entry's record, the envelope of an
+        accepted call or the outcome and request of a refusal, and checks
+        (a) that every entry is well formed and its stored prev_hash equals
+        the recomputed running hash, and (b) that the final recomputed head
+        equals the stored chain_head.
         The head check is essential: without it the last entry is
         unprotected, since no stored prev_hash covers it.
         """
@@ -166,13 +169,26 @@ def register_audit_scitt(coord: "Coordinator") -> None:
                      len(ws.audit))
         errors: list[str] = []
         prev = ZERO_HASH
+        resync = False
         for e in ws.audit[start:]:
-            expected_prev = prev
+            # After a malformed entry the next link is taken as stored, so
+            # the entries after it are judged on their own links. The chain
+            # is reported broken either way.
+            expected_prev = e.prev_hash if resync and isinstance(e.prev_hash, str) else prev
+            resync = False
             # A chain-enabled workspace must have prev_hash on every entry;
             # a missing value is a defect, not a reason to skip the check.
             if e.prev_hash != expected_prev:
                 errors.append(f"seq {e.seq}: prev_hash mismatch")
-            prev = sha256_hex(canonicalize(e.envelope) + expected_prev.encode("utf-8"))
+            # An entry that records neither one accepted envelope nor one
+            # refused request with its outcome has been altered, and cannot
+            # be linked.
+            if not entry_is_well_formed(e):
+                errors.append(f"seq {e.seq}: malformed entry")
+                prev = _MALFORMED
+                resync = True
+                continue
+            prev = link_hash(entry_record(e), expected_prev)
         # The recomputed head must match the stored head; this is what
         # makes the final entry tamper-evident.
         # Explicit None check, matching TypeScript. A falsy-but-present

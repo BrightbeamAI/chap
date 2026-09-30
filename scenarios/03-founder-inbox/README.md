@@ -33,8 +33,9 @@ services, no config.
 ## What you'll see
 
 1. **Is this record trustworthy?** It re-walks the hash chain the way an
-   auditor would (recomputing `sha256(JCS(envelope) || prev_hash)` for
-   every entry), confirms it is intact, then shows that quietly
+   auditor would (recomputing `sha256(JCS(record) || prev_hash)` for
+   every entry, where the record is the envelope, or the outcome and request
+   of a refused call the coordinator recorded), confirms it is intact, then shows that quietly
    reattributing one past approval on a copy breaks verification at that
    entry. When the chargeback lands, the record is provable, not a story
    about expired logs.

@@ -40,6 +40,8 @@ export type {
   MethodTable,
 } from "./methods.js";
 
+export { entryCall, entryRecord, isRefusal, linkHash } from "./audit.js";
+
 export { MemoryStore } from "./storage/store.js";
 export type { Store, WorkspaceRecord } from "./storage/store.js";
 

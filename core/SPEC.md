@@ -167,7 +167,7 @@ Workspace
 ├─ tasks[]
 │  └─ Task { id, state, kind, assignee, input, output?, history }
 ├─ messages[]           (free-form chat / notifications)
-└─ audit_log[]          (every accepted envelope in arrival order)
+└─ audit_log[]          (accepted envelopes and recorded refusals, in arrival order)
 ```
 
 The state may live in memory for testing or in any durable store
@@ -206,7 +206,7 @@ workspace's audit log in arrival order, with the Coordinator's own
 arrival timestamp. Read-only methods, `workspace.describe` and
 `audit.read` among the Core seven, MUST NOT be appended: a log that
 grew when read would change what the read reports.
-Each log entry has at minimum:
+Each entry for an accepted call has at minimum:
 
 ```json
 {
@@ -215,6 +215,27 @@ Each log entry has at minimum:
   "arrived":  "2026-05-17T09:14:22.300Z"
 }
 ```
+
+A refused call that is a governed attempt MUST be appended too, as a
+refusal entry. It holds the call under `request` rather than `envelope`,
+with an `outcome` giving the refusal code, so a reader that replays
+`envelope` never treats it as a call that took effect. Which refusals are
+recorded is set out in [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1:
+
+```json
+{
+  "seq":      143,
+  "request":  { "...": "the full received envelope" },
+  "outcome":  { "status": "refused", "code": -32011 },
+  "arrived":  "2026-05-17T09:14:23.100Z"
+}
+```
+
+A signed request that is a copy of a recorded refusal, in what its sender
+signed, MUST be answered with that refusal, and is not evaluated or recorded
+again, so a retry is sent as a new request with a new `id`. The rule, and the
+order in which a Coordinator checks a call, are in
+[`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1.
 
 The Coordinator MUST be able to return ranges of the log via
 `audit.read` (§4.7). There is **no cryptographic chaining
@@ -450,7 +471,9 @@ Response:
   "result": {
     "entries": [
       { "seq": 7,  "envelope": { "...": "..." }, "arrived": "2026-05-17T09:14:27.300Z" },
-      { "seq": 15, "envelope": { "...": "..." }, "arrived": "2026-05-17T10:02:11.812Z" }
+      { "seq": 15, "envelope": { "...": "..." }, "arrived": "2026-05-17T10:02:11.812Z" },
+      { "seq": 16, "request": { "...": "..." },
+        "outcome": { "status": "refused", "code": -32011 }, "arrived": "2026-05-17T10:02:12.040Z" }
     ],
     "next_seq": 201
   }
@@ -461,10 +484,14 @@ Filters supported in Core:
 
 | Filter key  | Behaviour                                    |
 |-------------|----------------------------------------------|
-| `method`    | Only entries whose envelope method matches.  |
-| `from`      | Only entries whose envelope `from` matches.  |
+| `method`    | Only entries whose call has this method.     |
+| `from`      | Only entries whose call has this `from`.     |
 | `task_id`   | Only entries referencing this task id.       |
+| `outcome`   | `accepted` or `refused`: only accepted calls, or only recorded refusals. Omitted or null, both. Any other value is refused with `-32602`. |
 | `ts_range`  | Only entries within the time window.         |
+
+The call an entry records is its `envelope` when the call was accepted and
+its `request` when it was refused, and the other filters read it either way.
 
 Implementations MAY support additional filters; clients MUST
 gracefully handle responses that ignore unknown filters.

@@ -20,11 +20,12 @@
  *   - identity-oidc/1.0 + identity-vc/1.0 (binding hooks at join)
  */
 
-import { canonicalize, contentHash, sha256Hex, ZERO_HASH } from "./canonical.js";
+import { canonicalize, contentHash, ZERO_HASH } from "./canonical.js";
 import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "./catalogue.js";
 import { publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
+import { entryCall, entryRecord, isSigned, linkHash, refusalIsRecorded, signedDigest } from "./audit.js";
 import { applyJsonPatch } from "./patch.js";
 import type { Store, WorkspaceRecord } from "./storage/store.js";
 import { MemoryStore } from "./storage/store.js";
@@ -103,6 +104,26 @@ const MAX_IDEMPOTENCY_KEYS = 10_000;
 // Largest envelope accepted, published in the workspace descriptor (SPEC S4.4).
 const DEFAULT_MAX_ENVELOPE_BYTES = 1_048_576;
 
+// How deeply a request may nest, counting the envelope as level one. The
+// reference HTTP servers refuse deeper bodies before dispatch; the same limit
+// here means an in-process caller cannot send what the canonicaliser, the
+// copy of a recorded call and the two references handle differently.
+const MAX_NESTING = 64;
+
+function withinNesting(value: unknown, limit: number): boolean {
+  const stack: Array<[unknown, number]> = [[value, 1]];
+  while (stack.length) {
+    const [node, depth] = stack.pop()!;
+    if (depth > limit) return false;
+    if (Array.isArray(node)) {
+      for (const v of node) stack.push([v, depth + 1]);
+    } else if (node !== null && typeof node === "object") {
+      for (const v of Object.values(node as Record<string, unknown>)) stack.push([v, depth + 1]);
+    }
+  }
+  return true;
+}
+
 export interface CoordinatorOptions {
   deterministicIds?: boolean;
   deterministicClock?: boolean;
@@ -155,10 +176,6 @@ function tagsError(p: Record<string, unknown>): { error: ReturnType<typeof rpcEr
   return null;
 }
 
-function linkHash(envelope: Envelope, prev: string): string {
-  return sha256Hex(Buffer.concat([canonicalize(envelope), Buffer.from(prev, "utf-8")]));
-}
-
 function reviewRuleSupported(rule: string): boolean {
   if (rule === "any_one_approves" || rule === "all_approve") return true;
   if (rule.startsWith("quorum:")) {
@@ -189,6 +206,22 @@ function reply(env: Envelope, body: { result?: unknown; error?: { code: number; 
   return out;
 }
 
+/** The signed calls on a log, keyed by `signedDigest`. */
+interface SignedIndex {
+  refused: Map<string, { seq: number; code: number }>;
+  accepted: Set<string>;
+}
+
+function indexSigned(index: SignedIndex, entry: AuditEntry): void {
+  const call = entryCall(entry);
+  if (!isSigned(call)) return;
+  let digest: string;
+  try { digest = signedDigest(call as Envelope); }
+  catch { return; /* an entry that cannot be canonicalised was altered; verify_chain reports it */ }
+  if (entry.outcome != null) index.refused.set(digest, { seq: entry.seq, code: entry.outcome.code });
+  else index.accepted.add(digest);
+}
+
 // ============================================================
 //   Handler type for profile modules
 // ============================================================
@@ -214,6 +247,12 @@ export class Coordinator {
   private clockMs?: number;
   private frozenNow?: string;
   private auditListeners: AuditListener[] = [];
+  /**
+   * The signed calls on each workspace's log, by what their senders signed:
+   * recorded refusals with their seq and code, and accepted calls. Rebuilt
+   * from the log when missing, so a snapshot never carries it.
+   */
+  private signedIndexes = new WeakMap<Workspace, SignedIndex>();
   /** Method handler registry; profiles plug into this. */
   readonly handlers = new Map<string, Handler>();
   /** Custom lapse-check function (whisper/1.0). Set by the whisper profile. */
@@ -267,12 +306,11 @@ export class Coordinator {
   }
 
   private applyRecords(records: WorkspaceRecord[]): void {
-    this.workspaces.clear();
+    // One restore for every record: restore replaces the workspaces it
+    // holds, so restoring record by record kept only the last.
     this.wsVersions.clear();
-    for (const r of records) {
-      this.restore([r.data]);
-      this.wsVersions.set(r.id, r.version);
-    }
+    this.restore(records.map(r => r.data));
+    for (const r of records) this.wsVersions.set(r.id, r.version);
   }
 
   /** Persist the current snapshot of one workspace to the store. */
@@ -533,19 +571,31 @@ export class Coordinator {
   dispatch(envelope: Envelope): Envelope {
     this.frozenNow = this.advanceClock();
     try {
-      return this._dispatch(envelope);
+      const response = this._dispatch(envelope);
+      if (response.error) this.recordRefusal(envelope, response.error);
+      return response;
     } finally {
       this.frozenNow = undefined;
     }
   }
 
   private _dispatch(envelope: Envelope): Envelope {
-    if (!isValidEnvelope(envelope) || !envelope.method) {
+    // SPECIFICATION 10.1 fixes the order of the checks below, because which
+    // refusal a call receives decides whether it is recorded. First the
+    // request itself, none of whose refusals is recorded.
+    if (!isValidEnvelope(envelope) || typeof envelope.method !== "string" || !envelope.method) {
       return reply(envelope, { error: rpcError(E.REQUEST, "Invalid JSON-RPC 2.0 request") });
     }
+    if (!withinNesting(envelope, MAX_NESTING)) {
+      return reply(envelope, { error: rpcError(E.REQUEST, `Envelope nests deeper than ${MAX_NESTING} levels`) });
+    }
     const maxBytes = this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES;
+    // Canonicalised once: the length is what the size limit measures, and a
+    // request that cannot be canonicalised is refused below, once its method
+    // is known to exist.
     let size = 0;
-    try { size = canonicalize(envelope).length; } catch { /* not canonicalisable; rejected by the ingress check below */ }
+    let canonicalError: unknown;
+    try { size = canonicalize(envelope).length; } catch (e) { canonicalError = e; }
     if (size > maxBytes) {
       return reply(envelope, { error: rpcError(E.REQUEST,
         `Envelope exceeds max_envelope_bytes (${size} > ${maxBytes})`) });
@@ -563,6 +613,32 @@ export class Coordinator {
       return reply(envelope, { error: rpcError(E.PARAMS, "Invalid params: expected an object") });
     }
     const params = (rawParams ?? {}) as Record<string, unknown>;
+    const handler = this.handlers.get(method);
+    if (!handler) {
+      return reply(envelope, { error: rpcError(E.METHOD, `Unknown method: ${method}`) });
+    }
+    if (canonicalError !== undefined) {
+      const msg = canonicalError instanceof Error ? canonicalError.message : String(canonicalError);
+      return reply(envelope, { error: rpcError(E.PARAMS, msg) });
+    }
+
+    // SPECIFICATION 10.1: a signed request whose signed content matches a
+    // recorded refusal is answered with that refusal and not evaluated again.
+    // The log publishes a refused request, signature and all, so without this
+    // anyone who can read the log could send it again once whatever refused
+    // it had changed, and it would take effect in its signer's name.
+    if (isSigned(envelope)) {
+      const wsId = params.workspace;
+      const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
+      if (ws) {
+        const prior = this.signedIndex(ws).refused.get(signedDigest(envelope));
+        if (prior) {
+          return reply(envelope, { error: rpcError(prior.code,
+            `Refused at seq ${prior.seq}; a refused request is not evaluated again`,
+            { refused_at_seq: prior.seq }) });
+        }
+      }
+    }
 
     // security-signed/1.0: verify top-level sig if required.
     // participant.join and workspace.create are bootstrap operations that
@@ -642,18 +718,6 @@ export class Coordinator {
       }
     }
 
-    const handler = this.handlers.get(method);
-    if (!handler) {
-      return reply(envelope, { error: rpcError(E.METHOD, `Unknown method: ${method}`) });
-    }
-
-    try {
-      canonicalize(envelope);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return reply(envelope, { error: rpcError(E.PARAMS, msg) });
-    }
-
     let out: { result?: unknown; error?: { code: number; message: string; data?: unknown } };
     try {
       out = handler(params);
@@ -666,7 +730,8 @@ export class Coordinator {
     }
     if (out.error) return reply(envelope, { error: out.error });
 
-    // Record audit on success
+    // Record audit on success. A refusal is weighed in dispatch(), once this
+    // returns, against the rule in SPECIFICATION 10.1.
     const wsId = params.workspace as string | undefined;
     if (typeof wsId === "string" && !READ_ONLY_METHODS.has(method)) {
       const ws = this.workspaces.get(wsId);
@@ -678,17 +743,63 @@ export class Coordinator {
   // -- audit ---------------------------------------------------------
 
   recordAudit(ws: Workspace, envelope: Envelope): void {
-    const entry: AuditEntry = {
-      seq: ws.audit.length,
-      arrived: this.now(),
-      envelope: JSON.parse(JSON.stringify(envelope)) as Envelope,
-    };
+    this.appendEntry(ws, { envelope: JSON.parse(JSON.stringify(envelope)) as Envelope });
+  }
+
+  /**
+   * SPECIFICATION 10.1: record a refused call when it is a governed attempt.
+   * The caller must be a member of an existing workspace, the call must be a
+   * JSON-RPC call for a method that is not a read, and the refusal must be one
+   * `refusalIsRecorded` names. The request is kept as it arrived, so a
+   * signature on it still verifies. Every call that reaches a recorded refusal
+   * has passed the canonical check, so it can be hashed into the chain.
+   */
+  private recordRefusal(envelope: Envelope, error: { code: number; data?: unknown }): void {
+    if (!isValidEnvelope(envelope) || typeof envelope.method !== "string") return;
+    const method = envelope.method;
+    if (READ_ONLY_METHODS.has(method)) return;
+    if (!refusalIsRecorded(method, error, PRIVILEGED_METHODS)) return;
+    const raw = envelope.params;
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return;
+    const params = raw as Record<string, unknown>;
+    const ws = typeof params.workspace === "string" ? this.workspaces.get(params.workspace) : undefined;
+    if (!ws || typeof params.from !== "string" || !ws.members.has(params.from)) return;
+    // A signed copy of a call already on the log is not a new attempt by its
+    // signer. A copy of a refusal was answered with it, and a copy of a call
+    // that took effect repeats a call its signer made once. Anyone who can
+    // read the log can send either.
+    if (isSigned(envelope)) {
+      const index = this.signedIndex(ws);
+      const digest = signedDigest(envelope);
+      if (index.refused.has(digest) || index.accepted.has(digest)) return;
+    }
+    this.appendEntry(ws, {
+      request: JSON.parse(JSON.stringify(envelope)) as Envelope,
+      outcome: { status: "refused", code: error.code },
+    });
+  }
+
+  /** The signed calls on this workspace's log, built from the log when missing. */
+  private signedIndex(ws: Workspace): SignedIndex {
+    let index = this.signedIndexes.get(ws);
+    if (!index) {
+      index = { refused: new Map(), accepted: new Set() };
+      for (const entry of ws.audit) indexSigned(index, entry);
+      this.signedIndexes.set(ws, index);
+    }
+    return index;
+  }
+
+  private appendEntry(ws: Workspace, record: Pick<AuditEntry, "envelope" | "request" | "outcome">): void {
+    const entry: AuditEntry = { seq: ws.audit.length, arrived: this.now(), ...record };
     if (ws.chain_enabled || this.options.enableChain) {
       const prev = ws.chain_head ?? ZERO_HASH;
       entry.prev_hash = prev;
-      ws.chain_head = linkHash(entry.envelope, prev);
+      ws.chain_head = linkHash(entryRecord(entry), prev);
     }
     ws.audit.push(entry);
+    const index = this.signedIndexes.get(ws);
+    if (index) indexSigned(index, entry);
     for (const l of this.auditListeners) {
       try { l(ws, entry); } catch { /* listeners never break dispatch */ }
     }
@@ -1230,25 +1341,40 @@ export class Coordinator {
       if (notMember) return notMember;
     }
     const range = (p.range as { from_seq?: number; to_seq?: number } | undefined) ?? {};
-    const filter = (p.filter as { method?: string; from?: string; task_id?: string } | undefined) ?? {};
+    const filter = (p.filter as {
+      method?: string; from?: string; task_id?: string; outcome?: unknown;
+    } | undefined) ?? {};
+    if (filter.outcome != null && filter.outcome !== "accepted" && filter.outcome !== "refused") {
+      return { error: rpcError(E.PARAMS, "filter.outcome must be 'accepted' or 'refused'") };
+    }
     const fromSeq = range.from_seq ?? 0;
     const toSeq = range.to_seq ?? ws.audit.length;
     const out: unknown[] = [];
     for (const entry of ws.audit.slice(fromSeq, toSeq)) {
-      const ep = (entry.envelope.params ?? {}) as Record<string, unknown>;
-      if (filter.method && entry.envelope.method !== filter.method) continue;
+      // Filters read the call an entry records, accepted or refused, and
+      // `outcome` narrows to one kind.
+      const refused = entry.outcome != null;
+      if (filter.outcome === "accepted" && refused) continue;
+      if (filter.outcome === "refused" && !refused) continue;
+      const call = entryCall(entry) ?? ({} as Envelope);
+      const ep = (call.params ?? {}) as Record<string, unknown>;
+      if (filter.method && call.method !== filter.method) continue;
       if (filter.from && ep.from !== filter.from) continue;
       if (filter.task_id) {
         let taskId = ep.task_id;
-        if (entry.envelope.method === "whisper.answer") {
+        if (call.method === "whisper.answer") {
           const prompt = ws.whispers.get(ep.whisper_id as string);
           taskId = prompt ? (prompt as { task_id?: string }).task_id : undefined;
         }
         if (taskId !== filter.task_id) continue;
       }
-      const item: Record<string, unknown> = {
-        seq: entry.seq, arrived: entry.arrived, envelope: entry.envelope,
-      };
+      const item: Record<string, unknown> = { seq: entry.seq, arrived: entry.arrived };
+      if (refused) {
+        item.request = entry.request;
+        item.outcome = entry.outcome;
+      } else {
+        item.envelope = entry.envelope;
+      }
       if (entry.prev_hash) item.prev_hash = entry.prev_hash;
       out.push(item);
     }

@@ -212,4 +212,8 @@ def test_task_complete_refusal_mutates_nothing():
     t = ws.tasks[tid]
     assert t.pending_artefact is None
     assert t.state == "in_progress"
-    assert len(ws.audit) == audit_before
+    # One refusal entry, and no accepted entry: the output never reached the log.
+    assert len(ws.audit) == audit_before + 1
+    entry = ws.audit[audit_before]
+    assert entry.envelope is None
+    assert entry.outcome == {"status": "refused", "code": -32011}

@@ -1,0 +1,706 @@
+"""SPECIFICATION 10.1: a refused call that is a governed attempt is recorded.
+
+The attempt sits on the log under ``request``, with an ``outcome`` beside
+it, so a reader keyed on ``envelope`` passes it by instead of replaying it.
+The chain link hashes the outcome together with the request, so altering
+either half breaks the chain, and moving the record under ``envelope``
+fails the shape check. What happens to a signed request sent again is in
+test_refusal_signed.py.
+
+The mirror of this file is
+packages/coordinator/tests/refusal_record.test.ts.
+"""
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
+
+import pytest
+
+from chap_coordinator import Coordinator, CoordinatorOptions
+from chap_coordinator.catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
+from chap_coordinator.coordinator import PRIVILEGED_METHODS
+from chap_coordinator.audit import entry_record, link_hash
+from chap_coordinator.canonical import ZERO_HASH, canonicalize
+from chap_coordinator.crypto import derive_private_key, public_jwk, sign, verify
+from chap_coordinator.storage.store import MemoryStore
+
+CHAINED = ["core/1.0", "review/1.0", "control/1.0", "audit-scitt/1.0"]
+
+
+def _ready(profiles=CHAINED, **options):
+    coord = Coordinator(CoordinatorOptions(
+        deterministic_ids=True, deterministic_clock=True,
+        default_profiles=profiles, **options))
+
+    def send(method, params=None, actor="human:a"):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"id-{method}", "method": method,
+                               "params": {"workspace": "w", "from": actor, **(params or {})}})
+
+    send("workspace.create", {"profiles": profiles})
+    for uri, kind in (("human:a", "human"), ("human:c", "human"), ("agent:b", "agent")):
+        send("participant.join", {"type": kind}, uri)
+    return coord, send, coord.get_workspace("w")
+
+
+def _under_review(send) -> str:
+    """A task drafted by agent:b and put up for review to human:c alone."""
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    send("task.update", {"task_id": tid, "state": "in_progress"}, "agent:b")
+    send("review.request", {"task_id": tid, "artefact": {"body": "draft"}, "to": "human:c"},
+         "agent:b")
+    return tid
+
+
+# ------------------------------------------------------------ what is recorded
+
+def test_an_unauthorised_decision_is_recorded_as_a_refusal():
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    before = len(ws.audit)
+    r = send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    assert r["error"]["code"] == -32011
+    assert len(ws.audit) == before + 1
+    entry = ws.audit[before]
+    assert entry.envelope is None
+    assert entry.request["method"] == "decide.approve"
+    assert entry.outcome == {"status": "refused", "code": -32011}
+
+
+def test_acting_on_a_paused_workspace_is_recorded_as_a_refusal():
+    _, send, ws = _ready()
+    send("control.pause", {"scope": "workspace", "reason": "incident"})
+    before = len(ws.audit)
+    r = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"}, "agent:b")
+    assert r["error"]["code"] == -32063
+    assert len(ws.audit) == before + 1
+    assert ws.audit[before].outcome == {"status": "refused", "code": -32063}
+
+
+@pytest.mark.parametrize("method,params,actor", [
+    ("whisper.ask", {"task_id": "t", "question": "?", "options": ["a"]}, "human:a"),
+    ("nothing.here", {}, "human:a"),
+    ("task.create", {"kind": "k"}, "human:a"),
+    ("control.pause", {"task_id": "t", "reason": "hold"}, "human:stranger"),
+    ("audit.verify_receipt", {"receipt": {}}, "human:a"),
+], ids=["gate-refusal-of-an-ordinary-method", "method-that-does-not-exist",
+        "invalid-parameters", "call-from-a-non-member", "refused-read"])
+def test_not_recorded(method, params, actor):
+    _, send, ws = _ready()
+    before = len(ws.audit)
+    r = send(method, params, actor)
+    assert "error" in r, "the call under test was not refused"
+    assert len(ws.audit) == before
+
+
+def _signed_workspace(profiles):
+    key = derive_private_key("human:a")
+    jwk = public_jwk("human:a", key)
+    coord = Coordinator(CoordinatorOptions(
+        require_signatures=True, deterministic_ids=True, deterministic_clock=True,
+        default_profiles=profiles))
+    coord.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
+                    "params": {"workspace": "w", "from": "human:a", "type": "human",
+                               "jwks": {"keys": [jwk]}, "profiles": profiles}})
+    return coord, key, jwk
+
+
+def test_a_call_whose_signature_fails_is_not_recorded():
+    coord, key, jwk = _signed_workspace(["core/1.0", "review/1.0", "security-signed/1.0"])
+    ws = coord.get_workspace("w")
+    before = len(ws.audit)
+    env = {"jsonrpc": "2.0", "id": "x", "method": "task.create",
+           "params": {"workspace": "w", "from": "human:a", "kind": "k", "input": {},
+                      "assignee": "human:a"}}
+    env["sig"] = sign(canonicalize(env), key, jwk["kid"])
+    env["params"]["kind"] = "altered after signing"
+    r = coord.dispatch(env)
+    assert r["error"]["code"] == -32070
+    assert len(ws.audit) == before
+
+
+def test_the_refused_request_is_kept_as_it_arrived_signature_and_all():
+    profiles = ["core/1.0", "review/1.0", "security-signed/1.0", "audit-scitt/1.0"]
+    coord, key, jwk = _signed_workspace(profiles)
+    # control/1.0 is not advertised, so the gate refuses a privileged method.
+    env = {"jsonrpc": "2.0", "id": "x", "method": "control.pause",
+           "params": {"workspace": "w", "from": "human:a", "task_id": "tsk_absent",
+                      "reason": "hold"}}
+    env["sig"] = sign(canonicalize(env), key, jwk["kid"])
+    sent = copy.deepcopy(env)
+    r = coord.dispatch(env)
+    assert r["error"]["code"] == -32601
+    entry = coord.get_workspace("w").audit[-1]
+    assert entry.request == sent
+    unsigned = {k: v for k, v in entry.request.items() if k != "sig"}
+    assert verify(canonicalize(unsigned), entry.request["sig"], key.public_key())
+
+
+def test_a_request_that_cannot_be_canonicalised_is_refused_before_the_gate_and_not_recorded():
+    # The request itself is checked first (SPECIFICATION 10.1), so a
+    # non-integer number is refused -32602 before the gate could refuse the
+    # privileged method, which would be recorded.
+    _, send, ws = _ready(["core/1.0", "review/1.0", "audit-scitt/1.0"])
+    before = len(ws.audit)
+    r = send("control.pause", {"task_id": "t", "reason": "hold", "weight": 1.5})
+    assert r["error"]["code"] == -32602
+    assert len(ws.audit) == before
+
+
+def test_a_method_that_does_not_exist_is_refused_before_the_pause_and_not_recorded():
+    _, send, ws = _ready()
+    send("control.pause", {"scope": "workspace", "reason": "incident"})
+    before = len(ws.audit)
+    assert send("nothing.here")["error"]["code"] == -32601
+    assert len(ws.audit) == before
+
+
+def test_an_empty_or_non_string_method_is_an_invalid_request():
+    coord, _, ws = _ready()
+    before = len(ws.audit)
+    for method in ("", 5):
+        r = coord.dispatch({"jsonrpc": "2.0", "id": "m", "method": method,
+                            "params": {"workspace": "w", "from": "human:a"}})
+        assert r["error"]["code"] == -32600, method
+    assert len(ws.audit) == before
+
+
+def test_an_oversized_request_from_a_member_is_not_recorded():
+    _, send, ws = _ready(max_envelope_bytes=400)
+    tid = _under_review(send)
+    before = len(ws.audit)
+    r = send("decide.approve", {"task_id": tid, "comment": "x" * 500}, "human:a")
+    assert r["error"]["code"] == -32600
+    assert len(ws.audit) == before
+
+
+def test_a_fault_in_the_coordinator_is_not_recorded():
+    coord, send, ws = _ready()
+
+    def boom(params):
+        raise RuntimeError("boom")
+
+    coord._handlers["task.create"] = boom
+    before = len(ws.audit)
+    r = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"}, "agent:b")
+    assert r["error"]["code"] == -32603
+    assert len(ws.audit) == before
+
+
+def test_the_privileged_methods_the_gate_can_refuse_agree_with_the_catalogue():
+    # A gate refusal is recorded only for a privileged method. The catalogue's
+    # `privileged` flag and the coordinators' list differ on methods the gate
+    # never refuses, and they must agree on every method it can.
+    root = Path(__file__).resolve().parents[3]
+    methods = json.loads((root / "schemas/profiles/chap-methods.schema.json").read_text(
+        encoding="utf-8"))["examples"][0]["methods"]
+    for method, owner in OWNING_PROFILE.items():
+        if owner == "core/1.0" or method in ALWAYS_AVAILABLE:
+            continue
+        assert (method in PRIVILEGED_METHODS) == (methods[method].get("privileged") is True), method
+
+
+# ------------------------------------------------------------ the chain
+
+def test_a_chain_with_refusals_on_it_verifies():
+    _, send, _ = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:c")
+    v = send("audit.verify_chain")
+    assert "error" not in v, v.get("error")
+    assert v["result"]["ok"] is True
+
+
+def _change_code(e):
+    e.outcome["code"] = -32602
+
+
+def _strip_outcome(e):
+    e.outcome = None
+
+
+def _recast_as_accepted(e):
+    e.envelope, e.request, e.outcome = e.request, None, None
+
+
+def _alter_request(e):
+    e.request["params"]["comment"] = "altered"
+
+
+@pytest.mark.parametrize("tamper", [_change_code, _strip_outcome, _recast_as_accepted,
+                                    _alter_request],
+                         ids=["changing-the-refusal-code", "stripping-the-outcome",
+                              "recasting-the-refusal-as-an-accepted-call",
+                              "altering-the-refused-request"])
+def test_tampering_with_a_refusal_breaks_the_chain(tamper):
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    refusal = next((e for e in ws.audit if e.outcome is not None), None)
+    assert refusal is not None, "no refusal was recorded"
+    tamper(refusal)
+    assert "error" in send("audit.verify_chain")
+
+
+# ------------------------------------------------------------ readers
+
+def test_audit_read_returns_refusals_under_request_and_outcome_narrows():
+    _, send, _ = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+
+    everything = send("audit.read")["result"]["entries"]
+    refused = send("audit.read", {"filter": {"outcome": "refused"}})["result"]["entries"]
+    accepted = send("audit.read", {"filter": {"outcome": "accepted"}})["result"]["entries"]
+    assert len(refused) == 1
+    assert len(accepted) + len(refused) == len(everything)
+    assert sorted(refused[0]) == ["arrived", "outcome", "prev_hash", "request", "seq"]
+    assert all("envelope" in e and "request" not in e for e in accepted)
+
+    by_method = send("audit.read", {"filter": {"method": "decide.approve"}})["result"]["entries"]
+    assert len(by_method) == 1
+    assert by_method[0]["request"]["params"]["from"] == "human:a"
+    by_task = send("audit.read", {"filter": {"task_id": tid, "outcome": "refused"}})["result"]["entries"]
+    assert len(by_task) == 1
+
+
+def test_an_unknown_outcome_filter_is_refused():
+    _, send, _ = _ready()
+    r = send("audit.read", {"filter": {"outcome": "maybe"}})
+    assert r["error"]["code"] == -32602
+    assert r["error"]["message"] == "filter.outcome must be 'accepted' or 'refused'"
+
+
+def test_a_scitt_statement_for_a_refusal_carries_what_the_link_hashes():
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    at = next(i for i, e in enumerate(ws.audit) if e.outcome is not None)
+    r = send("audit.submit_to_scitt")
+    e = ws.audit[at]
+    assert r["result"]["statements"][at]["payload"] == canonicalize(
+        {"outcome": e.outcome, "request": e.request}).decode("utf-8")
+
+
+def test_listeners_hear_refusals():
+    coord, send, _ = _ready()
+    heard = []
+    coord.add_audit_listener(lambda ws_id, entry: heard.append(entry))
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    assert heard[-1].request["method"] == "decide.approve"
+    assert heard[-1].outcome == {"status": "refused", "code": -32011}
+
+
+def test_refusals_survive_a_restart_and_the_chain_still_verifies():
+    store = MemoryStore()
+    _, send, ws = _ready(store=store)
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+
+    restarted = Coordinator(CoordinatorOptions(
+        deterministic_ids=True, deterministic_clock=True, default_profiles=CHAINED,
+        store=store))
+    after = restarted.get_workspace("w").audit
+    assert [e.to_dict() for e in after] == [e.to_dict() for e in ws.audit]
+    v = restarted.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
+                            "params": {"workspace": "w", "from": "human:a"}})
+    assert "error" not in v, v.get("error")
+
+
+# ------------------------------------------------------------ unsigned calls sent again
+
+def _late_approve(tid):
+    return {"jsonrpc": "2.0", "id": "late", "method": "decide.approve",
+            "params": {"workspace": "w", "from": "human:a", "task_id": tid, "comment": "ok"}}
+
+
+def test_an_unsigned_request_identical_to_a_recorded_refusal_is_evaluated_again():
+    # Without a signature anyone can send any call in any name, so there is
+    # nothing for the resubmission rule to protect (test_refusal_signed.py).
+    coord, send, ws = _ready()
+    tid = _under_review(send)
+    assert coord.dispatch(_late_approve(tid))["error"]["code"] == -32011
+    send("review.request", {"task_id": tid, "artefact": {"body": "draft"}, "to": "human:a"},
+         "agent:b")
+    again = coord.dispatch(_late_approve(tid))
+    assert "error" not in again, again
+    assert ws.tasks[tid].state == "completed"
+
+
+def test_an_unsigned_refusal_is_recorded_each_time_it_is_refused():
+    coord, send, ws = _ready()
+    tid = _under_review(send)
+    before = len(ws.audit)
+    for _ in range(2):
+        assert coord.dispatch(_late_approve(tid))["error"]["code"] == -32011
+    assert len(ws.audit) == before + 2
+
+
+def test_the_recorded_request_is_a_copy_of_the_one_sent():
+    coord, send, ws = _ready()
+    tid = _under_review(send)
+    env = _late_approve(tid)
+    coord.dispatch(env)
+    env["params"]["comment"] = "changed by the caller afterwards"
+    assert ws.audit[-1].request["params"]["comment"] == "ok"
+
+
+def test_a_scitt_submitter_receives_what_the_link_hashes_for_a_refusal():
+    statements = []
+
+    def submit(statement):
+        statements.append(statement)
+        return {"ok": True}
+
+    _, send, ws = _ready(scitt_submitter=submit)
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    at = next(i for i, e in enumerate(ws.audit) if e.outcome is not None)
+    assert "error" not in send("audit.submit_to_scitt")
+    e = ws.audit[at]
+    assert statements[at]["payload"] == canonicalize(
+        {"outcome": e.outcome, "request": e.request}).decode("utf-8")
+
+
+# ------------------------------------------------------------ what stays off
+
+def test_a_refused_join_is_not_recorded_even_from_a_members_uri():
+    # participant.join is exempt from signature checks, so its refusal proves
+    # nothing about who sent it.
+    coord = Coordinator(CoordinatorOptions(
+        require_signatures=True, deterministic_ids=True, deterministic_clock=True,
+        verify_oidc_token=lambda token: None, default_profiles=["core/1.0", "review/1.0"]))
+    jwk = public_jwk("human:a", derive_private_key("human:a"))
+    coord.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
+                    "params": {"workspace": "w", "from": "human:a", "type": "human",
+                               "jwks": {"keys": [jwk]}}})
+    ws = coord.get_workspace("w")
+    before = len(ws.audit)
+    r = coord.dispatch({"jsonrpc": "2.0", "id": "forged", "method": "participant.join",
+                        "params": {"workspace": "w", "from": "human:a", "type": "human",
+                                   "oidc_token": "forged"}})
+    assert "error" in r
+    assert len(ws.audit) == before
+
+
+def test_a_method_the_catalogue_lists_but_no_coordinator_implements_is_not_recorded():
+    _, send, ws = _ready()
+    before = len(ws.audit)
+    assert send("workspace.invite", {"invitee": "human:z"})["error"]["code"] == -32601
+    assert len(ws.audit) == before
+
+
+def test_a_refused_submit_to_scitt_is_not_recorded():
+    _, send, ws = _ready()
+    send("control.pause", {"scope": "workspace", "reason": "incident"})
+    before = len(ws.audit)
+    assert "error" in send("audit.submit_to_scitt")
+    assert len(ws.audit) == before
+
+
+def test_a_refusal_whose_code_is_not_an_integer_is_not_recorded():
+    coord, send, ws = _ready()
+    coord._handlers["custom.broken"] = lambda p: {"error": {"code": "bad", "message": "no"}}
+    before = len(ws.audit)
+    send("custom.broken")
+    assert len(ws.audit) == before
+
+
+def test_a_step_up_refusal_is_recorded():
+    _, send, ws = _ready(enforce_step_up=True)
+    before = len(ws.audit)
+    r = send("control.pause", {"scope": "workspace", "reason": "incident"})
+    assert r["error"]["code"] == -32402
+    assert len(ws.audit) == before + 1
+    assert ws.audit[before].outcome == {"status": "refused", "code": -32402}
+
+
+def test_a_refused_notification_is_recorded_without_an_id():
+    coord, send, ws = _ready()
+    tid = _under_review(send)
+    before = len(ws.audit)
+    coord.dispatch({"jsonrpc": "2.0", "method": "decide.approve",
+                    "params": {"workspace": "w", "from": "human:a", "task_id": tid,
+                               "comment": "ok"}})
+    assert len(ws.audit) == before + 1
+    assert "id" not in ws.audit[before].request
+
+
+# ------------------------------------------------------------ entry shape
+
+def _move_record_under_envelope(e):
+    e.envelope, e.request, e.outcome = {"outcome": e.outcome, "request": e.request}, None, None
+
+
+def _hold_both(e):
+    e.envelope = e.request
+
+
+def _other_status(e):
+    e.outcome["status"] = "accepted"
+
+
+def _string_code(e):
+    e.outcome["code"] = "-32011"
+
+
+def _null_outcome(e):
+    e.outcome = None
+
+
+@pytest.mark.parametrize("tamper", [_move_record_under_envelope, _hold_both, _other_status,
+                                    _string_code, _null_outcome],
+                         ids=["moving-the-refusals-record-under-envelope",
+                              "holding-both-an-envelope-and-a-request",
+                              "an-outcome-of-another-status", "a-code-that-is-not-an-integer",
+                              "a-null-outcome"])
+def test_a_malformed_refusal_breaks_the_chain(tamper):
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    refusal = next(e for e in ws.audit if e.outcome is not None)
+    tamper(refusal)
+    assert "error" in send("audit.verify_chain")
+
+
+def test_adding_an_outcome_to_an_accepted_entry_breaks_the_chain():
+    _, send, ws = _ready()
+    ws.audit[-1].outcome = {"status": "refused", "code": -32011}
+    assert "error" in send("audit.verify_chain")
+
+
+def _relink(ws):
+    """Recompute every link after a tamper, so only the shape check can catch it."""
+    prev = ZERO_HASH
+    for e in ws.audit:
+        e.prev_hash = prev
+        prev = link_hash(entry_record(e), prev)
+    ws.chain_head = prev
+
+
+def _status_accepted(e):
+    e.outcome = {**e.outcome, "status": "accepted"}
+
+
+def _code_a_string(e):
+    e.outcome = {**e.outcome, "code": "-32011"}
+
+
+def _request_not_a_call(e):
+    e.request = {k: v for k, v in e.request.items() if k != "jsonrpc"}
+
+
+def _method_not_a_string(e):
+    e.request = {**e.request, "method": 5}
+
+
+def _request_beside_an_envelope(e):
+    e.envelope, e.outcome = e.request, None
+
+
+@pytest.mark.parametrize("tamper", [_status_accepted, _code_a_string, _request_not_a_call,
+                                    _method_not_a_string, _request_beside_an_envelope],
+                         ids=["an-outcome-of-another-status", "a-code-that-is-not-an-integer",
+                              "a-request-that-is-not-a-json-rpc-call",
+                              "a-request-whose-method-is-not-a-string",
+                              "a-request-left-beside-an-accepted-envelope"])
+def test_a_malformed_entry_is_reported_even_with_every_link_recomputed(tamper):
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    refusal = next(e for e in ws.audit if e.outcome is not None)
+    tamper(refusal)
+    _relink(ws)
+    r = send("audit.verify_chain")
+    assert f"seq {refusal.seq}: malformed entry" in r["error"]["message"]
+
+
+def test_the_report_names_a_malformed_entry_alone_and_not_the_entries_after_it():
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:c")
+    refusal = next(e for e in ws.audit if e.outcome is not None)
+    _move_record_under_envelope(refusal)
+    r = send("audit.verify_chain")
+    assert r["error"]["message"] == f"seq {refusal.seq}: malformed entry"
+
+
+# ------------------------------------------------------------ filters
+
+def test_a_null_outcome_filter_reads_as_no_filter():
+    _, send, _ = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    everything = send("audit.read")["result"]["entries"]
+    r = send("audit.read", {"filter": {"outcome": None}})
+    assert "error" not in r, r
+    assert len(r["result"]["entries"]) == len(everything)
+
+
+def test_a_filter_that_is_not_an_object_reads_as_no_filter():
+    _, send, _ = _ready()
+    everything = send("audit.read")["result"]["entries"]
+    assert len(send("audit.read", {"filter": "x"})["result"]["entries"]) == len(everything)
+
+
+def test_from_matches_a_refused_calls_sender():
+    _, send, _ = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    mine = send("audit.read", {"filter": {"from": "human:a", "outcome": "refused"}})["result"]["entries"]
+    assert len(mine) == 1
+
+
+def test_a_refused_whisper_answer_with_a_malformed_whisper_id_leaves_task_filters_working():
+    _, send, _ = _ready(CHAINED + ["whisper/1.0"])
+    send("control.pause", {"scope": "workspace", "reason": "incident"})
+    r = send("whisper.answer", {"whisper_id": {"x": 1}, "answer_option": "a"}, "human:c")
+    assert r["error"]["code"] == -32063
+    read = send("audit.read", {"filter": {"task_id": "tsk_absent"}})
+    assert "error" not in read, read
+
+
+def test_an_answer_option_that_is_an_object_is_refused_as_outside_the_set_and_recorded():
+    _, send, ws = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    wid = send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                               "deadline_ms": 60000, "default_if_lapsed": "a",
+                               "options": [{"id": "a"}]}, "agent:b")["result"]["whisper_id"]
+    before = len(ws.audit)
+    r = send("whisper.answer", {"whisper_id": wid, "answer_option": {"x": 1}}, "human:c")
+    assert r["error"]["code"] == -32022
+    assert r["error"]["message"] == 'Answer option {"x":1} not in option set'
+    assert len(ws.audit) == before + 1
+
+
+def test_an_option_id_that_is_an_object_never_matches_as_both_coordinators_compare_ids():
+    _, send, ws = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    wid = send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                               "deadline_ms": 60000, "default_if_lapsed": "a",
+                               "options": [{"id": {"k": 1}}, {"id": 1}]},
+               "agent:b")["result"]["whisper_id"]
+    before = len(ws.audit)
+    assert send("whisper.answer", {"whisper_id": wid, "answer_option": {"k": 1}},
+                "human:c")["error"]["code"] == -32022
+    assert send("whisper.answer", {"whisper_id": wid, "answer_option": True},
+                "human:c")["error"]["code"] == -32022
+    assert len(ws.audit) == before + 2
+
+
+def test_a_null_answer_option_is_no_option_and_its_refusal_is_not_recorded():
+    _, send, ws = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    wid = send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                               "deadline_ms": 60000, "default_if_lapsed": "a",
+                               "options": [{"id": "a"}]}, "agent:b")["result"]["whisper_id"]
+    before = len(ws.audit)
+    assert send("whisper.answer", {"whisper_id": wid, "answer_option": None},
+                "human:c")["error"]["code"] == -32602
+    assert len(ws.audit) == before
+
+
+# ------------------------------------------------------------ persistence
+
+def test_refusals_survive_a_sqlite_restart(tmp_path):
+    from chap_coordinator.storage.sqlite import SqliteStore
+    path = tmp_path / "chap.db"
+    _, send, ws = _ready(store=SqliteStore(str(path)))
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    expected = [e.to_dict() for e in ws.audit]
+
+    restarted = Coordinator(CoordinatorOptions(
+        deterministic_ids=True, deterministic_clock=True, default_profiles=CHAINED,
+        store=SqliteStore(str(path))))
+    assert [e.to_dict() for e in restarted.get_workspace("w").audit] == expected
+    v = restarted.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
+                            "params": {"workspace": "w", "from": "human:a"}})
+    assert "error" not in v, v.get("error")
+
+
+def test_the_store_holds_each_entry_in_its_wire_shape():
+    store = MemoryStore()
+    coord, send, ws = _ready(store=store)
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    stored = coord._snapshot_workspace(ws).data["audit"]
+    refusal = next(a for a in stored if "outcome" in a)
+    accepted = [a for a in stored if "outcome" not in a]
+    assert "envelope" not in refusal
+    assert all("request" not in a and "envelope" in a for a in accepted)
+
+
+def _nested_to(depth):
+    """An extra parameter nested so that the whole envelope is ``depth`` levels deep."""
+    v = 1
+    for _ in range(depth - 3):
+        v = {"x": v}
+    return v
+
+
+def test_a_request_nested_deeper_than_the_limit_is_an_invalid_request_and_not_recorded():
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    before = len(ws.audit)
+    assert send("decide.approve", {"task_id": tid, "deep": _nested_to(64)},
+                "human:a")["error"]["code"] == -32011
+    assert len(ws.audit) == before + 1
+    assert send("decide.approve", {"task_id": tid, "deep": _nested_to(65)},
+                "human:a")["error"]["code"] == -32600
+    assert len(ws.audit) == before + 1
+
+
+def test_an_empty_answer_is_no_answer_in_both_references():
+    _, send, ws = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    wid = send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                               "deadline_ms": 60000, "default_if_lapsed": "a"},
+               "agent:b")["result"]["whisper_id"]
+    before = len(ws.audit)
+    assert send("whisper.answer", {"whisper_id": wid, "answer": ""},
+                "human:c")["error"]["code"] == -32602
+    assert send("whisper.answer", {"whisper_id": wid, "answer_option": None},
+                "human:c")["error"]["code"] == -32602
+    assert len(ws.audit) == before
+    assert "error" not in send("whisper.answer", {"whisper_id": wid, "answer": "yes"}, "human:c")
+
+
+def test_whisper_options_must_be_a_list():
+    _, send, _ = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    r = send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                             "deadline_ms": 60000, "default_if_lapsed": "a",
+                             "options": "abc"}, "agent:b")
+    assert r["error"]["code"] == -32602
+
+
+def test_an_option_id_matches_an_equal_number_and_the_refusal_shows_the_option_canonically():
+    coord, send, _ = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+
+    def ask(options):
+        return send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                                    "deadline_ms": 60000, "default_if_lapsed": 1,
+                                    "options": options}, "agent:b")["result"]["whisper_id"]
+
+    refused = send("whisper.answer", {"whisper_id": ask([{"id": "a"}]),
+                                      "answer_option": {"b": 1, "2": 0}}, "human:c")
+    assert refused["error"]["message"] == 'Answer option {"2":0,"b":1} not in option set'
+    # JSON 1.0 is the number 1, which is the option's id.
+    wid = ask([{"id": 1}])
+    r = coord.dispatch(json.loads(
+        '{"jsonrpc":"2.0","id":"n","method":"whisper.answer","params":{"workspace":"w",'
+        f'"from":"human:c","whisper_id":"{wid}","answer_option":1.0}}}}'))
+    assert "error" not in r, r

@@ -95,6 +95,7 @@
     .entry.approve  { border-left-color: var(--good) }
     .entry.reject   { border-left-color: var(--bad) }
     .entry.abstain  { border-left-color: var(--warn) }
+    .entry.refused  { border-left-style: dashed; border-left-color: var(--muted) }
     .entry-head { display: flex; gap: 8px; align-items: baseline; font-weight: 600 }
     .entry-head .seq { color: var(--muted); font-weight: 400; min-width: 50px }
     .entry-head .m   { color: var(--fg) }
@@ -284,9 +285,14 @@ function render(data) {
   const chain = $("chain");
   chain.innerHTML = "";
   for (const e of audit) {
-    const env = e.envelope || {};
+    // A refused call the coordinator recorded is held under `request`, with
+    // an `outcome`. It took no effect.
+    const refused = e.outcome != null;
+    const env = e.envelope || e.request || {};
     const m = env.method || "?";
+    const label = refused ? `${m} (refused ${Number(e.outcome.code)|0})` : m;
     const cls =
+      refused                 ? "refused"  :
       m === "decide.override" ? "override" :
       m === "decide.approve"  ? "approve"  :
       m === "decide.reject"   ? "reject"   :
@@ -296,7 +302,7 @@ function render(data) {
 
     const head = document.createElement("div");
     head.className = "entry-head";
-    head.innerHTML = `<span class="seq">seq=${Number(e.seq)|0}</span><span class="m">${escapeHtml(m)}</span>` +
+    head.innerHTML = `<span class="seq">seq=${Number(e.seq)|0}</span><span class="m">${escapeHtml(label)}</span>` +
                      `<span class="from">${escapeHtml((env.params && env.params.from) || "")}</span>`;
     div.appendChild(head);
 
@@ -307,7 +313,7 @@ function render(data) {
     div.appendChild(body);
 
     // Override detail panel
-    if (m === "decide.override") {
+    if (m === "decide.override" && !refused) {
       const p = env.params || {};
       const det = document.createElement("div");
       det.className = "override-detail";

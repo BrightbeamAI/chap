@@ -133,11 +133,14 @@ async function main(): Promise<void> {
 
   const audit = await call("audit.read", {
     workspace: WS, from: ALICE, to: COORD, ts: ts(),
-    filter: { method: "decide.override" },
+    filter: { method: "decide.override", outcome: "accepted" },
   });
 
   console.log(`\nFound ${audit.entries.length} override entries.`);
   for (const e of audit.entries) {
+    // A refused override is held under `request` and did not take effect. A
+    // server that ignores the outcome filter can still return one.
+    if (!e.envelope) continue;
     const p = e.envelope.params;
     console.log(`  • ${p.from} on ${p.task_id}`);
     console.log(`    tags: ${(p.tags ?? []).join(", ")}`);

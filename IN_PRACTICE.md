@@ -155,9 +155,12 @@ const audit = await coord.dispatch({
 });
 
 for (const entry of audit.result.entries) {
-  console.log(`[${entry.envelope.ts}] ${entry.envelope.method}`);
-  console.log(`  from: ${entry.envelope.params.from}`);
-  console.log(`  ${JSON.stringify(entry.envelope.params).slice(0, 120)}`);
+  // A refused attempt is held under `request`, with an `outcome` beside it.
+  const call = entry.envelope ?? entry.request;
+  const refused = entry.outcome ? ` (refused ${entry.outcome.code})` : "";
+  console.log(`[${call.params.ts}] ${call.method}${refused}`);
+  console.log(`  from: ${call.params.from}`);
+  console.log(`  ${JSON.stringify(call.params).slice(0, 120)}`);
 }
 ```
 
@@ -197,6 +200,7 @@ const assignments = await coord.dispatch({
     filter: {
       method: "handoff.accept",
       from: "group:emea-shift",
+      outcome: "accepted",
       since: shiftStart
     }
   }
@@ -207,12 +211,12 @@ for (const a of assignments.result.entries) {
   const history = await coord.dispatch({
     jsonrpc: "2.0", id: nextId(),
     method: "audit.read",
-    params: { workspace: "wsp_support", filter: { task_id: taskId } }
+    params: { workspace: "wsp_support", filter: { task_id: taskId, outcome: "accepted" } }
   });
   // the segment carries the original handoff note, the routing hints,
   // every state change, the policy reference in effect.
   const latest = history.result.entries.at(-1);
-  console.log(`${taskId}: ${latest.envelope.method} at ${latest.envelope.ts}`);
+  console.log(`${taskId}: ${latest.envelope.method} at ${latest.envelope.params.ts}`);
 }
 ```
 
@@ -251,6 +255,7 @@ const dismissals = await coord.dispatch({
     workspace: "wsp_eng_reviews",
     filter: {
       method: "decide.reject",
+      outcome: "accepted",
       since: "2026-01-01T00:00:00Z",
       until: "2026-04-01T00:00:00Z",
       artefact_tags: ["security-flag"]
@@ -308,6 +313,7 @@ const misses = await coord.dispatch({
     workspace: "wsp_legal_review",
     filter: {
       method: "decide.override",
+      outcome: "accepted",
       tags: ["junior-escalation-miss"],
       since: lastQuarterStart
     }
@@ -358,7 +364,7 @@ async function generateDSAStatement(taskId: string): Promise<string> {
   const chain = await coord.dispatch({
     jsonrpc: "2.0", id: nextId(),
     method: "audit.read",
-    params: { workspace: "wsp_ts", filter: { task_id: taskId } }
+    params: { workspace: "wsp_ts", filter: { task_id: taskId, outcome: "accepted" } }
   });
 
   const decision = chain.result.entries.find(

@@ -45,7 +45,7 @@ to the one before it.
 `chap-analytics` reads that log back. This notebook follows one week of work
 through the whole pipeline: the raw envelopes as `audit.read` returns them; a
 `Chain`, which is the package's view of a workspace; `frames()`, which replays
-the chain into eleven tables; the contract each table keeps; the tables
+the chain into a set of tables; the contract each table keeps; the tables
 themselves; the analyses they make routine; what an MCP client with
 `audit.read` alone can recover, and how the tables say where they are unsure;
 redaction; and export. It then goes on to the decision layer: the statistics
@@ -91,7 +91,9 @@ call to get the log. Each entry carries its position in the log (`seq`), when
 the coordinator accepted it (`arrived`), the hash link to the previous entry
 (`prev_hash`, present because this coordinator chains its log), and the
 envelope itself: the method, and the request parameters exactly as the caller
-sent them.
+sent them. A refused call that the coordinator recorded holds the request
+under `request` rather than `envelope`, with an `outcome` beside it, so the
+code below reads the call from either key.
 
 The sample coordinator runs a deterministic clock, so `arrived` is an
 artificial timeline. The sender stamps its own `ts` into every envelope, and
@@ -105,7 +107,8 @@ result = coord.dispatch({
 })
 entries = result["result"]["entries"]
 print(f"{len(entries)} entries in the log")
-pd.Series([e["envelope"]["method"] for e in entries]).value_counts().rename("count").to_frame()
+calls = [e.get("envelope") or e["request"] for e in entries]
+pd.Series([c["method"] for c in calls]).value_counts().rename("count").to_frame()
 """)
 
 md("""
@@ -122,7 +125,7 @@ matters later.
 
 code("""
 def first(method):
-    return next(e for e in entries if e["envelope"]["method"] == method)
+    return next(e for e in entries if e.get("envelope", {}).get("method") == method)
 
 for method in ("task.create", "review.request", "decide.override"):
     entry = first(method)

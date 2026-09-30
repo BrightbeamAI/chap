@@ -305,7 +305,10 @@ const handlers: Record<string, Handler> = {
     if (!ws) return { error: err(E.PARAMS, `Unknown workspace: ${p.workspace}`) };
 
     const range  = (p.range  as { from_seq?: number; to_seq?: number }) ?? {};
-    const filter = (p.filter as { method?: string; from?: string; task_id?: string }) ?? {};
+    const filter = (p.filter as { method?: string; from?: string; task_id?: string; outcome?: string }) ?? {};
+    if (filter.outcome != null && filter.outcome !== "accepted" && filter.outcome !== "refused") {
+      return { error: err(E.PARAMS, "filter.outcome must be 'accepted' or 'refused'") };
+    }
 
     const fromSeq = range.from_seq ?? 0;
     const toSeq   = range.to_seq   ?? ws.audit.length;
@@ -313,6 +316,9 @@ const handlers: Record<string, Handler> = {
     const entries = ws.audit
       .slice(fromSeq, toSeq)
       .filter((e) => {
+        // This log holds accepted calls only (see dispatch), so a filter for
+        // refusals matches nothing.
+        if (filter.outcome === "refused") return false;
         if (filter.method && e.envelope.method !== filter.method) return false;
         if (filter.from   && e.envelope.params?.from !== filter.from) return false;
         if (filter.task_id) {
@@ -349,9 +355,13 @@ function dispatch(env: Envelope): Envelope {
     const params = env.params ?? {};
     const out = handler(params);
 
-    // Audit every accepted envelope to its workspace.
+    // Audit every accepted call to its workspace, except the reads: a log
+    // that grew when read would change what the read reports (core/SPEC.md
+    // §3.2). Every refusal this server gives is -32600, -32601, -32602 or
+    // -32603, which SPECIFICATION §10.1 leaves off the log, so no refusal is
+    // recorded.
     const wsId = params.workspace as string;
-    if (wsId) {
+    if (wsId && env.method !== "workspace.describe" && env.method !== "audit.read") {
       const ws = getWorkspace(wsId);
       if (ws && !out.error) recordAudit(ws, env);
     }

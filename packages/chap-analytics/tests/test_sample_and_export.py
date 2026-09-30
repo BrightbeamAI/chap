@@ -23,6 +23,8 @@ def test_the_sample_week_carries_every_kind_of_row():
     for table in TABLES:
         if table.name == "routing":
             continue  # the desk has no routing profile, and says so in its profiles list
+        if table.name == "refusals":
+            continue  # every call the desk makes is one the coordinator accepts
         assert len(f[table.name]) > 0, f"the sample should give the {table.name} table something to show"
     outcomes = set(f.tasks["outcome"])
     assert {"approved", "overridden", "escalated", "abstained", "open"} <= outcomes

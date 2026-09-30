@@ -90,13 +90,14 @@ async function main(): Promise<void> {
     ? await loadAuditFromSqlite(DB_PATH, WS)
     : await call("audit.read", {
         workspace: WS,
-        filter: { method: "decide.override" },
+        filter: { method: "decide.override", outcome: "accepted" },
       });
 
+  // Accepted overrides only, checked here as well: the SQLite path reads the
+  // whole log, and a refused call is recorded under `request` with no
+  // `envelope`.
   const allEntries = audit.entries ?? [];
-  const overrideEnvelopes = DB_PATH
-    ? allEntries.filter((e: any) => e.envelope?.method === "decide.override")
-    : allEntries; // HTTP path already filtered server-side
+  const overrideEnvelopes = allEntries.filter((e: any) => e.envelope?.method === "decide.override");
   const entries: OverrideParams[] = overrideEnvelopes.map((e: any) => e.envelope.params);
   const total = entries.length;
 

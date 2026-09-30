@@ -18,6 +18,9 @@ reviewer-set rules are visible end to end:
     3. a participant who never joined tries to decide
     4. a joined member who was not an addressed reviewer tries to decide
 
+  The member's refused attempt is recorded on the audit log; the other is
+  not, because its sender never joined (SPECIFICATION.md S10.1).
+
 See SPECIFICATION.md S6.3.1 (actor membership) and profiles/review.md
 S3.2 (reviewer-set eligibility).
 """
@@ -85,7 +88,7 @@ def main() -> None:
     draft = {"verdict": "request_changes", "severity": "warning",
              "comment": "Refactor before merge."}
     call("task.complete", workspace=WS, **{"from": BOT}, task_id=task_id,
-         output=draft, confidence=0.82)
+         output=draft, confidence="0.82")
     call("review.request", workspace=WS, **{"from": BOT}, task_id=task_id,
          to=[ALICE], artefact=draft, rule="any_one_approves")
 
@@ -109,7 +112,8 @@ def main() -> None:
 
     banner("The audit log: the override is now structured learning data")
     audit = call("audit.read", workspace=WS,
-                 filter={"method": "decide.override", "task_id": task_id})
+                 filter={"method": "decide.override", "task_id": task_id,
+                         "outcome": "accepted"})
     entries = audit["result"]["entries"]
     assert len(entries) == 1, f"expected 1 override, got {len(entries)}"
     ov = entries[0]["envelope"]["params"]
@@ -117,7 +121,18 @@ def main() -> None:
     print(f"    tags:      {ov['tags']}")
     print(f"    rationale: {ov['rationale']}")
 
-    print("\nWalkthrough complete: 2 decisions refused, 1 override recorded.")
+    banner("The audit log: the bystander's refused attempt is recorded too")
+    # The bystander is a member, so the refused attempt is on the log, held
+    # under "request" with its outcome. The ghost never joined, so its
+    # attempt is not recorded.
+    refused = call("audit.read", workspace=WS,
+                   filter={"outcome": "refused"})["result"]["entries"]
+    assert [e["request"]["params"]["from"] for e in refused] == [BYSTANDER]
+    print(f"    {refused[0]['request']['method']} from {BYSTANDER}:"
+          f" refused {refused[0]['outcome']['code']}")
+
+    print("\nWalkthrough complete: 2 decisions refused, 1 of them recorded,"
+          " and 1 override recorded.")
 
 
 if __name__ == "__main__":

@@ -62,6 +62,17 @@ SCENARIOS = {
                 "The result contains your edited arguments, not the draft.",
     },
 }
+
+
+def _call(entry):
+    """The call a log entry records: the accepted envelope, or a refused request.
+
+    A refused attempt is held under ``request`` with an ``outcome`` beside it,
+    and the timeline shows it as refused.
+    """
+    return entry.get("envelope") or entry.get("request") or {}
+
+
 # The reviewer's guidance must not be selectable by whoever wrote the draft, so
 # hints are held per task id on the server (ReviewServer.hints) and set only
 # where the server itself created the task from one of the scenarios above.
@@ -156,9 +167,9 @@ class Handler(BaseHTTPRequestHandler):
             detail = gate.inspect(summaries[-1]["task_id"])
         entries = gate.audit()
         opening = [entry for entry in entries
-                   if entry["envelope"]["method"] in ("workspace.create", "participant.join")]
+                   if _call(entry).get("method") in ("workspace.create", "participant.join")]
         focus = ([entry for entry in entries
-                  if entry["envelope"]["params"].get("task_id") == (detail or {}).get("task_id")]
+                  if (_call(entry).get("params") or {}).get("task_id") == (detail or {}).get("task_id")]
                  if detail else [])
         return {
             "workspace": gate.workspace, "reviewer": gate.reviewer,

@@ -77,8 +77,10 @@
     const handoffs = D.handoffs.filter((h) => inRange(h.proposed_at) &&
       (!state.agent || h.proposer === state.agent || h.recipient === state.agent) &&
       (!state.reviewer || h.proposer === state.reviewer || h.recipient === state.reviewer));
-    const events = D.events.filter((e) => inRange(e.ts) && (!e.task_id || !(state.kind || state.agent || state.mode || state.tag || state.reviewer) || ids.has(e.task_id)));
-    return { tasks, decisions, overrides, patch_ops, passes, whispers, handoffs, events };
+    const onTask = (e) => inRange(e.ts) && (!e.task_id || !(state.kind || state.agent || state.mode || state.tag || state.reviewer) || ids.has(e.task_id));
+    const events = D.events.filter(onTask);
+    const refusals = (D.refusals || []).filter(onTask);
+    return { tasks, decisions, overrides, patch_ops, passes, whispers, handoffs, events, refusals };
   }
 
   // ------------------------------------------------------------ chart data builders
@@ -165,7 +167,8 @@
     },
     assurance(F) {
       const out = [];
-      for (const r of S.assurance(F.events, "D")) {
+      // Accepted calls and recorded refusals are both entries on the chain.
+      for (const r of S.assurance(F.events.concat(F.refusals), "D")) {
         out.push({ period: r.period, n: r.n, share: r.chained_share, property: "hash-linked" });
         out.push({ period: r.period, n: r.n, share: r.signed_share, property: "signed" });
         out.push({ period: r.period, n: r.n, share: r.scitt_share, property: "SCITT submitted" });
@@ -264,8 +267,9 @@
     const h = S.handoffs(F.handoffs)[0];
     cards.push({ id: "handoffs", label: "Handoffs accepted", value: h ? pct(h.accept_rate) : "n/a",
       detail: h ? `${h.n} proposed; ${h.declined} declined; ${h.open} open` : "no handoffs", thin: !(h && h.sufficient) });
-    const n = F.events.length;
-    const chained = F.events.filter((e) => e.chained).length, signed = F.events.filter((e) => e.signed).length, sub = F.events.filter((e) => e.scitt_submitted).length;
+    const entries = F.events.concat(F.refusals);
+    const n = entries.length;
+    const chained = entries.filter((e) => e.chained).length, signed = entries.filter((e) => e.signed).length, sub = entries.filter((e) => e.scitt_submitted).length;
     cards.push({ id: "assurance", label: "Entries hash-linked", value: n ? pct(chained / n) : "n/a",
       detail: n ? `${n} entries; ${pct(signed / n)} signed; ${pct(sub / n)} SCITT submitted` : "no entries", thin: !n, tone: n && chained === n ? "ok" : "warn" });
     const cs = S.cusum(F.tasks, { shift: META.shift, threshold: thresholdFor });

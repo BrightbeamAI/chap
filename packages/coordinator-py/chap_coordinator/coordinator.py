@@ -27,7 +27,10 @@ import datetime as _dt
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .canonical import ZERO_HASH, canonicalize, content_hash, sha256_hex
+from .audit import (
+    entry_call, entry_record, is_signed, link_hash, refusal_is_recorded, signed_digest,
+)
+from .canonical import ZERO_HASH, canonicalize, content_hash
 from .ids import IdFactory
 from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
 from .jsonrpc import E, is_valid_envelope, make_response, rpc_error
@@ -80,6 +83,42 @@ _READ_ONLY_METHODS = frozenset({
     # submitted, so the receipt would attest a chain one entry shorter.
     "audit.submit_to_scitt",
 })
+
+
+# How deeply a request may nest, counting the envelope as level one. The
+# reference HTTP servers refuse deeper bodies before dispatch; the same limit
+# here means an in-process caller cannot send what the canonicaliser, the copy
+# of a recorded call and the two references handle differently.
+_MAX_NESTING = 64
+
+
+def _within_nesting(value: Any, limit: int) -> bool:
+    stack = [(value, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > limit:
+            return False
+        if isinstance(node, list):
+            stack.extend((v, depth + 1) for v in node)
+        elif isinstance(node, dict):
+            stack.extend((v, depth + 1) for v in node.values())
+    return True
+
+
+def _index_signed(index: dict, entry: AuditEntry) -> None:
+    """Add one entry to a workspace's index of signed calls, if it is signed."""
+    call = entry_call(entry)
+    if not is_signed(call):
+        return
+    try:
+        digest = signed_digest(call)
+    except (ValueError, TypeError, RecursionError):
+        return  # an altered entry; audit.verify_chain reports it
+    if entry.outcome is not None:
+        code = entry.outcome.get("code") if isinstance(entry.outcome, dict) else None
+        index["refused"][digest] = (entry.seq, code)
+    else:
+        index["accepted"].add(digest)
 
 
 # Cap on a workspace's task.create idempotency map. Older keys are evicted, so
@@ -186,11 +225,6 @@ def _tags_error(params: dict) -> dict | None:
                              or not all(isinstance(t, str) for t in tags)):
         return {"error": rpc_error(E.PARAMS, "tags must be a list of strings")}
     return None
-
-
-def _link_hash(envelope: dict, prev: str) -> str:
-    """Chain link: sha256( JCS(envelope) || prev_hash )."""
-    return sha256_hex(canonicalize(envelope) + prev.encode("utf-8"))
 
 
 def _rehydrate_workspace(data: dict) -> "Workspace":
@@ -449,21 +483,41 @@ class Coordinator:
         """Process one JSON-RPC envelope; return the response."""
         self._frozen_now = self._advance_clock()
         try:
-            return self._dispatch(envelope)
+            response = self._dispatch(envelope)
+            error = response.get("error")
+            if error:
+                self._record_refusal(envelope, error)
+            return response
         finally:
             self._frozen_now = None
 
     def _dispatch(self, envelope: dict) -> dict:
+        # SPECIFICATION 10.1 fixes the order of the checks below, because
+        # which refusal a call receives decides whether it is recorded. First
+        # the request itself, none of whose refusals is recorded.
         if not is_valid_envelope(envelope):
             return make_response(
                 envelope.get("id") if isinstance(envelope, dict) else None,
                 error=rpc_error(E.REQUEST, "Invalid JSON-RPC 2.0 request"),
             )
+        method = envelope.get("method")
+        env_id = envelope.get("id")
+        if not isinstance(method, str) or not method:
+            return make_response(env_id, error=rpc_error(
+                E.REQUEST, "Invalid JSON-RPC 2.0 request"))
+        if not _within_nesting(envelope, _MAX_NESTING):
+            return make_response(env_id, error=rpc_error(
+                E.REQUEST, f"Envelope nests deeper than {_MAX_NESTING} levels"))
 
+        # Canonicalised once: the length is what the size limit measures, and
+        # a request that cannot be canonicalised is refused below, once its
+        # method is known to exist.
+        canonical_error: Exception | None = None
         try:
             size = len(canonicalize(envelope))
-        except (ValueError, TypeError, RecursionError):
-            size = 0  # not canonicalisable; the ingress check below rejects it
+        except (ValueError, TypeError, RecursionError) as exc:
+            size = 0
+            canonical_error = exc
         if size > self.options.max_envelope_bytes:
             return make_response(
                 envelope.get("id"),
@@ -472,12 +526,6 @@ class Coordinator:
                     f"Envelope exceeds max_envelope_bytes "
                     f"({size} > {self.options.max_envelope_bytes})"),
             )
-
-        method = envelope.get("method")
-        env_id = envelope.get("id")
-
-        if not isinstance(method, str):
-            return make_response(env_id, error=rpc_error(E.REQUEST, "Missing method"))
 
         # JSON-RPC params, when present, must be a structured value (object).
         # CHAP methods use by-name params; reject non-object params cleanly as
@@ -490,6 +538,30 @@ class Coordinator:
         else:
             return make_response(env_id, error=rpc_error(
                 E.PARAMS, "Invalid params: expected an object"))
+
+        handler = self._handlers.get(method)
+        if handler is None:
+            return make_response(
+                env_id, error=rpc_error(E.METHOD, f"Unknown method: {method}")
+            )
+        if canonical_error is not None:
+            return make_response(env_id, error=rpc_error(E.PARAMS, str(canonical_error)))
+
+        # SPECIFICATION 10.1: a signed request whose signed content matches a
+        # recorded refusal is answered with that refusal and not evaluated
+        # again. The log publishes a refused request, signature and all, so
+        # without this anyone who can read the log could send it again once
+        # whatever refused it had changed, and it would take effect in its
+        # signer's name.
+        target_id = params.get("workspace")
+        target = self.workspaces.get(target_id) if isinstance(target_id, str) else None
+        if target is not None and is_signed(envelope):
+            prior = self._signed_index(target)["refused"].get(signed_digest(envelope))
+            if prior is not None:
+                seq, code = prior
+                return make_response(env_id, error=rpc_error(
+                    code, f"Refused at seq {seq}; a refused request is not evaluated again",
+                    data={"refused_at_seq": seq}))
 
         # security-signed/1.0: verify top-level `sig` field if required.
         # participant.join and workspace.create are bootstrap operations that
@@ -568,17 +640,6 @@ class Coordinator:
                     return make_response(env_id, result={
                         "task_id": existing_id, "state": task.state})
 
-        handler = self._handlers.get(method)
-        if handler is None:
-            return make_response(
-                env_id, error=rpc_error(E.METHOD, f"Unknown method: {method}")
-            )
-
-        try:
-            canonicalize(envelope)
-        except (ValueError, TypeError, RecursionError) as exc:
-            return make_response(env_id, error=rpc_error(E.PARAMS, str(exc)))
-
         try:
             out = handler(params)
         except Exception as exc:
@@ -593,7 +654,9 @@ class Coordinator:
         if "error" in out:
             return make_response(env_id, error=out["error"])
 
-        # Record audit on successful operations that name a workspace
+        # Record audit on successful operations that name a workspace. A
+        # refusal is weighed in dispatch(), once this returns, against the
+        # rule in SPECIFICATION 10.1.
         ws_id = params.get("workspace")
         if isinstance(ws_id, str) and method not in _READ_ONLY_METHODS:
             ws = self.workspaces.get(ws_id)
@@ -605,16 +668,73 @@ class Coordinator:
     # -- audit recording -----------------------------------------------
 
     def _record_audit(self, ws: Workspace, envelope: dict) -> None:
-        entry = AuditEntry(
-            seq=len(ws.audit),
-            arrived=self.now_iso(),
-            envelope=copy.deepcopy(envelope),
-        )
+        self._append_entry(ws, envelope=copy.deepcopy(envelope))
+
+    def _record_refusal(self, envelope: Any, error: dict) -> None:
+        """SPECIFICATION 10.1: record a refused call when it is a governed attempt.
+
+        The caller must be a member of an existing workspace, the call must
+        be a JSON-RPC call for a method that is not a read, and the refusal
+        must be one ``refusal_is_recorded`` names. The request is kept as it
+        arrived, so a signature on it still verifies. Every call that
+        reaches a recorded refusal has passed the canonical check, so it can
+        be hashed into the chain.
+        """
+        if not is_valid_envelope(envelope) or not isinstance(envelope.get("method"), str):
+            return
+        method = envelope["method"]
+        if method in _READ_ONLY_METHODS:
+            return
+        if not refusal_is_recorded(method, error, PRIVILEGED_METHODS):
+            return
+        params = envelope.get("params")
+        if not isinstance(params, dict):
+            return
+        ws_id = params.get("workspace")
+        ws = self.workspaces.get(ws_id) if isinstance(ws_id, str) else None
+        sender = params.get("from")
+        if ws is None or not isinstance(sender, str) or sender not in ws.members:
+            return
+        # A signed copy of a call already on the log is not a new attempt by
+        # its signer. A copy of a refusal was answered with it, and a copy of
+        # a call that took effect repeats a call its signer made once. Anyone
+        # who can read the log can send either.
+        if is_signed(envelope):
+            index = self._signed_index(ws)
+            digest = signed_digest(envelope)
+            if digest in index["refused"] or digest in index["accepted"]:
+                return
+        self._append_entry(ws, request=copy.deepcopy(envelope),
+                           outcome={"status": "refused", "code": int(error["code"])})
+
+    def _signed_index(self, ws: Workspace) -> dict:
+        """The signed calls on this workspace's log, by what their senders signed.
+
+        ``refused`` maps a recorded refusal to its ``(seq, code)``, and
+        ``accepted`` holds the calls that took effect. Held beside the
+        workspace rather than in it, so a snapshot never carries it, and
+        rebuilt from the log when missing.
+        """
+        index = getattr(ws, "_signed_index", None)
+        if index is None:
+            index = {"refused": {}, "accepted": set()}
+            for entry in ws.audit:
+                _index_signed(index, entry)
+            object.__setattr__(ws, "_signed_index", index)
+        return index
+
+    def _append_entry(self, ws: Workspace, *, envelope: dict | None = None,
+                      request: dict | None = None, outcome: dict | None = None) -> None:
+        entry = AuditEntry(seq=len(ws.audit), arrived=self.now_iso(),
+                           envelope=envelope, request=request, outcome=outcome)
         if ws.chain_enabled or self.options.enable_chain:
             prev = ws.chain_head or ZERO_HASH
             entry.prev_hash = prev
-            ws.chain_head = _link_hash(entry.envelope, prev)
+            ws.chain_head = link_hash(entry_record(entry), prev)
         ws.audit.append(entry)
+        index = getattr(ws, "_signed_index", None)
+        if index is not None:
+            _index_signed(index, entry)
         for listener in self._audit_listeners:
             try:
                 listener(ws.id, entry)
@@ -641,6 +761,9 @@ class Coordinator:
         from dataclasses import asdict
         from .storage.store import WorkspaceRecord
         data = asdict(ws)
+        # Entries are stored in their wire shape, so an accepted entry carries
+        # no null request or outcome, and a refusal no null envelope.
+        data["audit"] = [copy.deepcopy(e.to_dict()) for e in ws.audit]
         version = len(ws.audit)
         return WorkspaceRecord(
             id=ws.id, data=data, version=version, updated_at=self.now_iso(),
@@ -1229,13 +1352,25 @@ class Coordinator:
             if not_member:
                 return not_member
         rng = p.get("range") or {}
-        flt = p.get("filter") or {}
+        flt = p.get("filter")
+        flt = flt if isinstance(flt, dict) else {}
+        outcome_filter = flt.get("outcome")
+        if outcome_filter is not None and outcome_filter not in ("accepted", "refused"):
+            return {"error": rpc_error(
+                E.PARAMS, "filter.outcome must be 'accepted' or 'refused'")}
         from_seq = int(rng.get("from_seq", 0))
         to_seq = int(rng.get("to_seq", len(ws.audit)))
 
         out: list[dict] = []
         for entry in ws.audit[from_seq:to_seq]:
-            env = entry.envelope
+            # Filters read the call an entry records, accepted or refused, and
+            # `outcome` narrows to one kind.
+            refused = entry.outcome is not None
+            if outcome_filter == "accepted" and refused:
+                continue
+            if outcome_filter == "refused" and not refused:
+                continue
+            env = entry_call(entry) or {}
             ep = env.get("params") or {}
             if flt.get("method") and env.get("method") != flt["method"]:
                 continue
@@ -1244,7 +1379,8 @@ class Coordinator:
             if flt.get("task_id"):
                 task_id = ep.get("task_id")
                 if env.get("method") == "whisper.answer":
-                    prompt = ws.whispers.get(ep.get("whisper_id", ""))
+                    whisper_id = ep.get("whisper_id")
+                    prompt = ws.whispers.get(whisper_id) if isinstance(whisper_id, str) else None
                     task_id = prompt.task_id if prompt else None
                 if task_id != flt["task_id"]:
                     continue

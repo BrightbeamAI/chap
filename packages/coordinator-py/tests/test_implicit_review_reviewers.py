@@ -124,7 +124,13 @@ def test_a_workspace_with_no_human_refuses_the_completion():
     assert task.state == "created", "the refused completion still moved the task"
     assert task.output is None, "unreviewed output was written anyway"
     assert task.review is None
-    assert len(send("audit.read")["result"]["entries"]) == before
+    # The attempt is on the log as a refused request, beside nothing accepted.
+    after = send("audit.read")["result"]["entries"]
+    assert len(after) == before + 1
+    last = after[-1]
+    assert "envelope" not in last
+    assert last["request"]["method"] == "task.complete"
+    assert last["outcome"] == {"status": "refused", "code": E.NOT_AUTHORISED}
 
 
 def test_the_only_human_cannot_review_their_own_work():

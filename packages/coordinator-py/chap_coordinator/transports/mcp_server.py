@@ -102,9 +102,10 @@ LIST_TTL_MS = 3_600_000
 _LIST_CACHE_HINT = CacheHint(ttl_ms=LIST_TTL_MS, scope="public")
 
 _INSTRUCTIONS = (
-    "CHAP Coordinator exposed as MCP tools. Every tool call is recorded "
-    "on the CHAP audit log; governed methods enforce membership and "
-    "review rules server-side."
+    "CHAP Coordinator exposed as MCP tools. Every accepted call that "
+    "changes state is recorded on the CHAP audit log, as is a member's "
+    "refused attempt at a governed action. Governed methods enforce "
+    "membership and review rules server-side."
 )
 
 __all__ = [

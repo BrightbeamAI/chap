@@ -15,10 +15,22 @@
  *   -32022 WHISPER_OPTION_NOT_IN_SET
  */
 import type { Coordinator } from "../coordinator.js";
+import { canonicalize } from "../canonical.js";
 import { E, rpcError } from "../jsonrpc.js";
 import type { WhisperPrompt, Envelope } from "../types.js";
 
 function parseIso(ts: string): number { return new Date(ts).getTime(); }
+
+/**
+ * Whether an answer field holds anything, read as Python reads a value's
+ * truth, so both references agree that an empty answer is no answer.
+ */
+function present(v: unknown): boolean {
+  if (v === undefined || v === null || v === false || v === 0 || v === "") return false;
+  if (Array.isArray(v)) return v.length > 0;
+  if (typeof v === "object") return Object.keys(v as object).length > 0;
+  return true;
+}
 
 export function registerWhisper(coord: Coordinator): void {
   coord.handlers.set("whisper.ask", (p) => {
@@ -29,6 +41,9 @@ export function registerWhisper(coord: Coordinator): void {
     }
     if (!ws.tasks.has(p.task_id as string)) {
       return { error: rpcError(E.PARAMS, "Unknown task") };
+    }
+    if (p.options !== undefined && p.options !== null && !Array.isArray(p.options)) {
+      return { error: rpcError(E.PARAMS, "options must be a list") };
     }
     const to = p.to;
     const askee: string[] = Array.isArray(to) ? (to as string[]) : [to as string];
@@ -77,21 +92,21 @@ export function registerWhisper(coord: Coordinator): void {
       return { error: rpcError(E.WHISPER_LAPSED, "Whisper already lapsed") };
     }
 
+    // A null option is no option, and an empty answer no answer, as in Python.
     const answerOption = p.answer_option as string | undefined;
-    const answerText = (p.answer as string | undefined) ?? (p.answer_text as string | undefined);
+    const hasOption = answerOption !== undefined && answerOption !== null;
+    const answerText = (present(p.answer) ? p.answer : p.answer_text) as string | undefined;
     if (prompt.options && prompt.options.length) {
-      if (answerOption === undefined) {
+      if (!hasOption) {
         return { error: rpcError(E.PARAMS, "answer_option is required when options are defined") };
       }
       const valid = new Set(prompt.options.map(o => o.id));
       if (!valid.has(answerOption)) {
         return { error: rpcError(E.WHISPER_OPTION_NOT_IN_SET,
-          `Answer option ${JSON.stringify(answerOption)} not in option set`) };
+          `Answer option ${canonicalize(answerOption as never).toString("utf-8")} not in option set`) };
       }
-    } else {
-      if (answerText === undefined && answerOption === undefined) {
-        return { error: rpcError(E.PARAMS, "answer or answer_option required") };
-      }
+    } else if (!present(answerText) && !hasOption) {
+      return { error: rpcError(E.PARAMS, "answer or answer_option required") };
     }
 
     prompt.state = "answered";

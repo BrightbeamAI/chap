@@ -11,6 +11,58 @@ incremented under the same rules.
 
 ## Unreleased
 
+**Behaviour change.** A refused call that is a governed attempt is recorded on
+the log (SPECIFICATION 10.1). A member's refused call is recorded unless it was
+malformed or invalid, failed a signature or key check, hit an internal error,
+or was answered `-32601` other than by the profile gate refusing a privileged
+method. Refusals of the reads, of `audit.submit_to_scitt`, of
+`workspace.create` and `participant.join`, and of a request that cannot be
+canonicalised are not recorded either. So a decision on a review addressed to
+someone else is recorded, as are an approval whose artefact digest does not
+match, an act on a paused workspace, and `control.pause` on a workspace that
+has switched `control/1.0` off, while `whisper.ask` on a workspace without
+`whisper/1.0` and a method that does not exist are not. A call from a caller
+who is not a member is never recorded.
+
+**Behaviour change.** A signed request that is a copy of a recorded refusal is
+answered with that refusal, with `data.refused_at_seq`, and is neither
+evaluated nor recorded again, so a refused request read from the log cannot
+be sent later to take effect. A signed copy of a call that took effect is
+evaluated, and its refusal is not recorded. Both rules compare what the signer
+signed, the request without its `sig`, so re-encoding a signature does not
+make a new request. A retry is a new request with a new `id`. Unsigned calls
+are not compared with the log, and each of their refusals is recorded.
+
+**Behaviour change.** A Coordinator checks a call in the order SPECIFICATION
+10.1 now fixes, since which refusal a call receives decides whether it is
+recorded. A method that does not exist and a request that cannot be
+canonicalised are refused before the signature, the gate and the pause, so on
+a paused workspace they are answered `-32601` and `-32602` where they were
+answered `-32063`. An empty method is `-32600` in both references, and the
+TypeScript reference answers a method that is not a string with `-32600`
+where it failed with an internal error. A request nested deeper than 64
+levels is refused `-32600`. The reference HTTP servers already refused such a
+body, and in process the two coordinators failed on it at different depths,
+after the call had taken effect.
+
+**Wire change.** A refusal entry holds the call under `request` rather than
+`envelope`, with `outcome: {"status": "refused", "code": …}` beside it, so a
+reader that replays `envelope` never treats a refusal as a call that took
+effect. Its chain link hashes the outcome together with the request, so
+altering either breaks the chain, and `audit.verify_chain` reports an entry as
+malformed unless it holds exactly one JSON-RPC call, under `envelope` or under
+`request` with a valid outcome. An entry with no outcome hashes exactly as
+before, so every existing chain still verifies. `audit.read` returns
+refusal entries, and a new `outcome` filter selects `accepted` or `refused`.
+Statements from `audit.submit_to_scitt` carry the record the link hashes. In
+the TypeScript package `AuditEntry.envelope` is now optional, and `entryCall`,
+`entryRecord`, `isRefusal` and `linkHash` are exported for readers. A reader
+that indexes `envelope` on every entry has to allow for entries without one.
+A store the Python coordinator writes with a refusal entry in it cannot be
+read by an earlier release, which skips that workspace, and the next call that
+names the workspace re-creates it empty and overwrites the stored log. Back up
+the store before going back to an earlier release.
+
 **Behaviour change.** A Coordinator refuses a method whose owning profile the
 workspace does not advertise, which SPECIFICATION 15.4 has required since 0.1
 and neither reference did. Removing `control/1.0` from a workspace advertised
@@ -70,9 +122,33 @@ caller who asked, and no reference has a delivery layer to filter.
 - **An error-code check.** Every code the normative tables allocate must exist
   in both references, and a code in one reference alone is a divergence. Run in
   CI.
+- **Shared refusal-recording vectors.** `conformance/refusal-record-vectors.json`
+  fixes, for each refused call it holds, the response, whether the refusal is
+  recorded, the recorded entry, and the chain head after it. Both suites read
+  it, and the Python suite recomputes every head with a canonicaliser of its
+  own. Harness vector `rv-13` checks the same rule over HTTP.
 
 ### Fixed
 
+- **A TypeScript coordinator started on a store brings back every workspace.**
+  It restored the stored records one at a time, each restore replacing the
+  last, so only one workspace came back. The next call naming a lost
+  workspace re-created it empty and overwrote its stored log.
+- **The reference servers keep the log rules.** `reference/core` and
+  `reference/core-plus-review` recorded every accepted call with a workspace,
+  reads included, which core/SPEC.md 3.2 forbids. Both now leave reads off the
+  log and accept the `outcome` filter, and `reference/core-plus-review`
+  records governed refusals and answers a resubmitted refusal as the
+  coordinators do.
+- **The authorisation walkthrough runs.** It passed `confidence` as `0.82`,
+  which the canonical number rule refuses, so it stopped at `task.complete`.
+- **`whisper.answer` matches an option the same way in both references.** A
+  null `answer_option` is refused `-32602`, an option id matches only an equal
+  id of the same JSON type, and the refusal shows the option as JSON. Python
+  failed with an internal error on an object, matched `true` against `1` and
+  showed the option in Python notation. TypeScript refused a null option as
+  outside the set. An empty answer is no answer in both, where TypeScript
+  accepted one, and `whisper.ask` refuses `options` that are not a list.
 - **The workspace descriptor schema describes the descriptor.** It required
   `name`, `coordinator` and `evidence_count`, none of which either reference
   sends, and `evidence_head`, which a workspace with no chain cannot have. It

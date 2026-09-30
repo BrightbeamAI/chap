@@ -880,12 +880,20 @@ def handoffs(f: Frames, by: str | None = "recipient", *, minimum: int = 5) -> pd
 #   Assurance
 # ============================================================================
 
+def _log_entries(f: Frames) -> pd.DataFrame:
+    """Every entry on the log, accepted and refused, with the columns assurance reads."""
+    cols = ["ts", "chained", "signed", "scitt_submitted"]
+    parts = [t[cols] for t in (f.events, f.refusals) if not t.empty]
+    return pd.concat(parts, ignore_index=True) if parts else f.events[cols]
+
+
 def assurance(f: Frames, freq: str = "D") -> pd.DataFrame:
     """
-    Per period: how many entries the chain holds, and the share that are
-    hash-linked, signed, and covered by a recorded SCITT submission.
+    Per period: how many entries the chain holds, accepted calls and recorded
+    refusals together, and the share that are hash-linked, signed, and covered
+    by a recorded SCITT submission.
     """
-    e = f.events.dropna(subset=["ts"]).copy()
+    e = _log_entries(f).dropna(subset=["ts"]).copy()
     cols = ["period", "n", "chained", "signed", "scitt_submitted",
             "chained_share", "signed_share", "scitt_share"]
     if e.empty:

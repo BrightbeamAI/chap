@@ -21,7 +21,7 @@ lighter mode, whether reviewers agree, and who is deciding on whose work.
 
 The layers, bottom up:
 
-* ``frames``: eleven documented tables projected from the chain. Every column
+* ``frames``: documented tables projected from the chain. Every column
   is declared in ``schema.py`` with its dtype and its provenance.
 * ``stats``: the estimates with their intervals, and a statement of what
   each one needs before it should be read.

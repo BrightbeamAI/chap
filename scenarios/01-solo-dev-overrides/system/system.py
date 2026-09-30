@@ -186,7 +186,9 @@ def report(bridge) -> None:
     entries = bridge.audit()
 
     # The record is real: show the decisions the agent loop produced.
-    decisions = [e for e in entries if e["envelope"]["method"].startswith("decide.")]
+    # Accepted decisions only. A refused call is recorded under "request".
+    decisions = [e for e in entries
+                 if "envelope" in e and e["envelope"]["method"].startswith("decide.")]
     print("Decisions CHAP recorded from the live agent loop")
     print("=" * 52)
     for e in decisions:

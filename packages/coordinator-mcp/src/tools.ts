@@ -77,9 +77,12 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
 
   "chap.audit.read":
     "Read entries from a workspace's audit log, optionally within a sequence range and filtered by method, " +
-    "sender or task. This is the query surface for everything the workspace has recorded, decisions and " +
-    "overrides included. Reads only: it records nothing, so it never appears in its own output. Entries come " +
-    "back as recorded, without aggregation, so grouping them, by tag for instance, is the reader's job.",
+    "sender, task or outcome. This is the query surface for everything the workspace has recorded, decisions " +
+    "and overrides included. An accepted call is under 'envelope'. A refused attempt the coordinator recorded, " +
+    "such as a decision by someone the review was not addressed to, is under 'request' with an 'outcome' " +
+    "giving the error code, and it did not take effect. Reads only: it records nothing, so it never appears in " +
+    "its own output. Entries come back as recorded, without aggregation, so grouping them, by tag for " +
+    "instance, is the reader's job.",
 
   // review/1.0
   "chap.review.request":

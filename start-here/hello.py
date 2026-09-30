@@ -10,6 +10,8 @@ with ReviewGate() as chap:
         print("\nStopped:", exc)
     print("\nYour real CHAP events:")
     for entry in chap.audit():
-        envelope = entry["envelope"]
-        print(f"  {entry['seq']:2}  {envelope['method']:18}  {envelope['params'].get('from', '')}")
+        # A refused call is recorded under "request", with its outcome.
+        call = entry.get("envelope") or entry["request"]
+        refused = "  (refused)" if "outcome" in entry else ""
+        print(f"  {entry['seq']:2}  {call['method']:18}  {call['params'].get('from', '')}{refused}")
     print("\nLocal chain:", chap.verdict()["status"])

@@ -122,15 +122,21 @@ for (const state of ["cancelled", "superseded", "paused"]) {
     assert.equal(stateOf(c, id), state, "the refused request still moved the task");
   });
 
-  test(`the refusal on a ${state} task records nothing`, () => {
-    // A refused call must not append. A stopped task that "grew" an entry would
-    // leave an audit chain describing a review that never opened.
+  test(`the refusal on a ${state} task opens no review on the log`, () => {
+    // A stopped task that grew an accepted entry would leave an audit chain
+    // describing a review that never opened. The attempt is recorded as a
+    // refused request instead, which no reader replays as a review.
     const { send } = ready();
     const id = taskIn(send, state);
-    const before = send("audit.read", {}, "human:a").result.entries.length;
+    const accepted = () =>
+      send("audit.read", { filter: { outcome: "accepted" } }, "human:a").result.entries.length;
+    const before = accepted();
     send("review.request", { task_id: id, artefact: ARTEFACT, to: "human:a" });
-    const after = send("audit.read", {}, "human:a").result.entries.length;
-    assert.equal(after, before);
+    assert.equal(accepted(), before);
+    const refused = send("audit.read", { filter: { outcome: "refused" } }, "human:a").result.entries;
+    assert.equal(refused.length, 1);
+    assert.equal(refused[0].request.method, "review.request");
+    assert.deepEqual(refused[0].outcome, { status: "refused", code: E.NOT_REVIEWABLE });
   });
 }
 

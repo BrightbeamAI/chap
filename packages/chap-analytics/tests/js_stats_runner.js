@@ -26,7 +26,7 @@ process.stdin.on("end", () => {
     pairwise: S.pairwiseAgreement(D.decisions),
     whispers: S.whispers(D.whispers, "asker"),
     handoffs: S.handoffs(D.handoffs, "recipient"),
-    assurance: S.assurance(D.events, "D"),
+    assurance: S.assurance(D.events.concat(D.refusals || []), "D"),
     cusum: S.cusum(D.tasks, { shift: D.meta.shift, threshold: hFor }),
     coverage: S.coverage(D.tasks, D.decisions),
     concentration: S.concentration(D.decisions),

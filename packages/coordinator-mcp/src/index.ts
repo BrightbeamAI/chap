@@ -191,9 +191,10 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
     supportedVersions: SUPPORTED_PROTOCOL_VERSIONS,
     capabilities:     { tools: {} },
     instructions:
-      "CHAP Coordinator exposed as MCP tools. Every tool call is recorded " +
-      "on the CHAP audit log; governed methods enforce membership and " +
-      "review rules server-side.",
+      "CHAP Coordinator exposed as MCP tools. Every accepted call that " +
+      "changes state is recorded on the CHAP audit log, as is a member's " +
+      "refused attempt at a governed action. Governed methods enforce " +
+      "membership and review rules server-side.",
     ttlMs:      LIST_TTL_MS,
     cacheScope: "public",
     _meta:      { [META_SERVER_INFO]: serverInfo },

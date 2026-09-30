@@ -55,8 +55,10 @@ that all implementations support. Profiles add more, `review.request`,
 `decide.override`, `abstain.declare`, and so on.
 
 Underneath everything is an **audit log**: every accepted envelope
-is appended in arrival order. This log is the source of truth for
-what happened, who decided what, and on what basis.
+is appended in arrival order, and so is a member's governed attempt
+that the Coordinator refuses, marked as refused. This log is the
+source of truth for what happened, who decided what, and on what
+basis.
 
 If you remember three things:
 
@@ -416,9 +418,10 @@ and profiles/review.md §3.2.
 ### 8.1 What the audit log contains
 
 Every accepted envelope, verbatim, in arrival order, with the
-Coordinator's arrival timestamp. With `security-signed`, the
-signatures are preserved; with `audit-scitt`, each entry produces a
-SCITT receipt.
+Coordinator's arrival timestamp, and every refused call that
+[SPECIFICATION §10.1](./SPECIFICATION.md) records, under `request` with
+its outcome. With `security-signed`, the signatures are preserved;
+with `audit-scitt`, each entry produces a SCITT receipt.
 
 ### 8.2 Retention
 

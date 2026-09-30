@@ -259,12 +259,12 @@ states each method, what it assumes, and the minimum it asks for.
 
 ## The tables
 
-Underneath the statistics are eleven documented tables, projected from the
-chain by replaying the envelope stream.
+Underneath the statistics are documented tables, projected from the chain by
+replaying the envelope stream.
 
 | Table | Grain |
 |---|---|
-| `events` | one row per audit log entry |
+| `events` | one row per accepted audit log entry |
 | `tasks` | one row per task |
 | `decisions` | one row per approve, reject, override or abstain |
 | `overrides` | one row per correction, with its diff summarised |
@@ -275,6 +275,7 @@ chain by replaying the envelope stream.
 | `whispers` | one row per deadline-bound question |
 | `handoffs` | one row per proposed handoff |
 | `routing` | one row per routing decision |
+| `refusals` | one row per refused call the coordinator recorded |
 
 Every column is declared in
 [`schema.py`](https://github.com/BrightbeamAI/chap/blob/main/packages/chap-analytics/chap_analytics/schema.py)

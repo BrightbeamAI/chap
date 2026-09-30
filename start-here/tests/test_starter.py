@@ -5,6 +5,7 @@ red. Nothing asserts on an event count: a count changes whenever the flow
 changes for a good reason, which turns the suite into an argument against
 fixing things. Assert on the state the guard exists to protect instead.
 """
+import importlib.util
 import json
 import os
 import stat
@@ -27,6 +28,10 @@ from server import (  # noqa: E402
 )
 
 DRAFT = {"text": "Your order is guaranteed to arrive tomorrow.", "confident": True}
+
+# A coordinator that records refused attempts ships chap_coordinator.audit. The
+# published-package job runs these tests against the last release too.
+RECORDS_REFUSALS = importlib.util.find_spec("chap_coordinator.audit") is not None
 
 
 class GateTests(unittest.TestCase):
@@ -338,6 +343,23 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertIn("verification", body)
         self.assertNotEqual(body["verification"].get("status"), "verified")
+
+    @unittest.skipUnless(RECORDS_REFUSALS, "the installed coordinator does not record refusals")
+    def test_the_desk_shows_a_refused_attempt(self):
+        # A refused attempt the coordinator recorded is held under `request`
+        # with an `outcome`. The desk shows it on the task's timeline and does
+        # not fail on it.
+        task_id = self.propose()
+        with self.assertRaises(ChapError):
+            self.gate._send("decide.approve", actor=AGENTS[0], task_id=task_id,
+                            comment="mine", rationale="mine", tags=[],
+                            approved_artefact_digest=self.gate.inspect(task_id)["digest"])
+        status, body, _ = self.request(f"/api/desk?task={task_id}", headers=self.reviewer())
+        self.assertEqual(status, 200, body)
+        refused = [e for e in body["entries"] if "outcome" in e]
+        self.assertEqual(len(refused), 1)
+        self.assertEqual(refused[0]["request"]["method"], "decide.approve")
+        self.assertEqual(refused[0]["outcome"], {"status": "refused", "code": -32011})
 
     def test_the_desk_payload_does_not_grow_with_the_log(self):
         self.propose()

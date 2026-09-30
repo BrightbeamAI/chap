@@ -75,7 +75,10 @@ class Chain:
     def summary(self) -> str:
         methods: dict[str, int] = {}
         for e in self.events:
-            m = (e.get("envelope") or {}).get("method", "?")
+            if is_refusal(e):
+                m = f"{(e.get('request') or {}).get('method', '?')} (refused)"
+            else:
+                m = (e.get("envelope") or {}).get("method", "?")
             methods[m] = methods.get(m, 0) + 1
         lines = [repr(self)]
         for m, n in sorted(methods.items(), key=lambda kv: (-kv[1], kv[0])):
@@ -126,14 +129,36 @@ def _redact_params(params: Any, redact: Redactor) -> None:
                     spec[inner] = redact(spec[inner])
 
 
+def is_refusal(entry: Any) -> bool:
+    """Whether a log entry records a refused call rather than an accepted one.
+
+    Read by value: a snapshot written by ``dataclasses.asdict`` carries every
+    field of an entry, with ``None`` in the ones that do not apply.
+    """
+    return (isinstance(entry, dict) and isinstance(entry.get("outcome"), dict)
+            and not isinstance(entry.get("envelope"), dict))
+
+
+def _call(entry: dict[str, Any]) -> dict[str, Any]:
+    """The call a log entry records: the accepted envelope, or a refused request."""
+    call = entry.get("envelope")
+    if not isinstance(call, dict):
+        call = entry.get("request")
+    return call if isinstance(call, dict) else {}
+
+
 def _apply_redaction(events: list[dict[str, Any]], redact: Redactor | None) -> list[dict[str, Any]]:
-    """Rewrite artefact-bearing params on a copy, before anything reads them."""
+    """Rewrite artefact-bearing params on a copy, before anything reads them.
+
+    A refused call carries content as much as an accepted one, so the
+    request of a refusal entry is redacted too.
+    """
     if redact is None:
         return events
     out: list[dict[str, Any]] = []
     for e in events:
         e = json.loads(json.dumps(e))  # deep copy; events may be shared
-        _redact_params((e.get("envelope") or {}).get("params"), redact)
+        _redact_params(_call(e).get("params"), redact)
         out.append(e)
     return out
 
@@ -155,7 +180,7 @@ def _redact_state(state: dict | None, redact: Redactor | None) -> dict | None:
 
     for entry in state.get("audit") or []:
         if isinstance(entry, dict):
-            _redact_params((entry.get("envelope") or {}).get("params"), redact)
+            _redact_params(_call(entry).get("params"), redact)
 
     for task in (state.get("tasks") or {}).values():
         if not isinstance(task, dict):

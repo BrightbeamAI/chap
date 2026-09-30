@@ -778,6 +778,10 @@ button {
   font-weight: 500;
 }
 
+/* Variant: a refused attempt the coordinator recorded, which took no effect */
+.wire-entry.is-refused { border-left-color: var(--grey-2); border-left-style: dashed; }
+.wire-entry.is-refused .wire-method { color: var(--grey-2); }
+
 /* Chain hash badge (subtle, on hover) */
 .wire-hash {
   display: none;

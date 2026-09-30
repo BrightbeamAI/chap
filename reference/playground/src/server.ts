@@ -93,7 +93,10 @@ coord.onAudit((ws, entry) => {
   // workspace. Real systems would filter by addressing; this is a
   // demo with 2 humans + 1 bot.
   for (const uri of sseClients.keys()) {
-    sseBroadcast(uri, { kind: "audit", seq: entry.seq, envelope: entry.envelope, ts: entry.arrived });
+    // The message keeps the entry's own shape: an accepted call under
+    // `envelope`, and a refused attempt under `request` with its `outcome`.
+    const call = entry.outcome ? { request: entry.request, outcome: entry.outcome } : { envelope: entry.envelope };
+    sseBroadcast(uri, { kind: "audit", seq: entry.seq, ...call, ts: entry.arrived });
   }
   // Persist asynchronously; if it fails we log but don't break dispatch.
   store.save().catch((e) => console.warn("state-store: save failed", e));

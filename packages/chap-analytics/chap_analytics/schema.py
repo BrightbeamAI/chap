@@ -72,13 +72,15 @@ def _c(name: str, dtype: str, provenance: Provenance, doc: str) -> Column:
 
 EVENTS = Table(
     name="events",
-    grain="one row per audit log entry",
+    grain="one row per accepted audit log entry",
     doc=(
-        "The chain itself, flattened. Every other table is a projection of "
-        "this one, so every count below reconciles with a count here."
+        "The accepted calls on the chain, flattened. Every other table except "
+        "refusals is a projection of this one, so every count below reconciles "
+        "with a count here. A refused call the coordinator recorded is in "
+        "refusals instead, and the two tables together hold the whole log."
     ),
     columns=(
-        _c("seq", "Int64", "envelopes", "Position in the log. Gapless from zero within a workspace."),
+        _c("seq", "Int64", "envelopes", "Position in the log. Gapless from zero within a workspace across events and refusals together."),
         _c("workspace", "string", "envelopes", "Workspace id."),
         _c("ts", "datetime64[ns, UTC]", "envelopes", "Envelope timestamp, as the sender set it."),
         _c("arrived", "datetime64[ns, UTC]", "envelopes", "When the coordinator accepted it. Differs from ts under clock skew or replay."),
@@ -350,9 +352,37 @@ HANDOFFS = Table(
     ),
 )
 
+REFUSALS = Table(
+    name="refusals",
+    grain="one row per refused call the coordinator recorded",
+    doc=(
+        "Attempts that did not take effect. A coordinator records a member's "
+        "refused call when it was a governed attempt, such as a decision on a "
+        "review addressed to someone else or a pull on an emergency brake the "
+        "workspace has switched off (SPECIFICATION 10.1). The entry holds the "
+        "call under `request` rather than `envelope`, so no other table replays "
+        "it. A chain written before refusals were recorded has none."
+    ),
+    columns=(
+        _c("seq", "Int64", "envelopes", "Position in the log."),
+        _c("workspace", "string", "envelopes", "Workspace id."),
+        _c("ts", "datetime64[ns, UTC]", "envelopes", "Timestamp on the refused call, as the sender set it."),
+        _c("arrived", "datetime64[ns, UTC]", "envelopes", "When the coordinator refused it."),
+        _c("method", "string", "envelopes", "The method the caller attempted."),
+        _c("actor", "string", "envelopes", "The 'from' participant URI: who attempted it."),
+        _c("actor_kind", "string", "derived", "URI scheme of the actor."),
+        _c("task_id", "string", "envelopes", "Task the attempt concerned, where it names one."),
+        _c("code", "Int64", "envelopes", "The error code the caller was answered with: -32011 for a caller without authority, -32601 for a switched-off profile, -32063 for a paused workspace."),
+        _c("prev_hash", "string", "envelopes", "Hash link to the previous entry, when chaining is on."),
+        _c("chained", "boolean", "derived", "Whether this entry carries a chain link."),
+        _c("signed", "boolean", "derived", "Whether the refused call carried a top-level signature."),
+        _c("scitt_submitted", "boolean", "derived", "Whether a later audit.submit_to_scitt call recorded on the chain covered this entry's position, as for events."),
+    ),
+)
+
 TABLES: tuple[Table, ...] = (
     EVENTS, TASKS, DECISIONS, OVERRIDES, PATCH_OPS,
-    PARTICIPANTS, DELIBERATIONS, VOTES, WHISPERS, HANDOFFS, ROUTING,
+    PARTICIPANTS, DELIBERATIONS, VOTES, WHISPERS, HANDOFFS, ROUTING, REFUSALS,
 )
 
 BY_NAME: dict[str, Table] = {t.name: t for t in TABLES}

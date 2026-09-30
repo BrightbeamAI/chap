@@ -49,6 +49,8 @@ test("an integer confidence is still accepted", () => {
 });
 
 test("a deeply nested envelope is rejected, not thrown", () => {
+  // Refused as an invalid request by the nesting limit (SPECIFICATION 10.1),
+  // before anything recurses through it.
   const c = new Coordinator({ deterministicIds: true });
   let nested: Record<string, unknown> = {};
   for (let i = 0; i < 100000; i++) nested = { a: nested };
@@ -56,5 +58,5 @@ test("a deeply nested envelope is rejected, not thrown", () => {
     jsonrpc: "2.0", id: "deep", method: "workspace.describe",
     params: { workspace: "w", x: nested },
   } as never);
-  assert.equal(r.error.code, E.PARAMS);
+  assert.equal(r.error.code, E.REQUEST);
 });

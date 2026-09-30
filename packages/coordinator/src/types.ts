@@ -326,8 +326,24 @@ export interface Task {
 export interface AuditEntry {
   seq:      number;
   arrived:  string;
-  envelope: Envelope;
+  /** The accepted call. Absent on a refusal entry. */
+  envelope?: Envelope;
+  /**
+   * The refused call, as received. Present only on a refusal entry, and held
+   * here rather than under `envelope` so a reader keyed on `envelope` passes
+   * the refusal by instead of replaying it (SPECIFICATION 10.1).
+   */
+  request?:  Envelope;
+  /** Present only on a refusal entry. */
+  outcome?:  RefusalOutcome;
   prev_hash?: string;
+}
+
+/** Why a recorded call did not take effect. */
+export interface RefusalOutcome {
+  status: "refused";
+  /** The error code the caller was answered with. */
+  code:   number;
 }
 
 // ============================================================

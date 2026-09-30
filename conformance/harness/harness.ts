@@ -302,8 +302,10 @@ async function runCoreTests(client: HapClient, ws: string): Promise<void> {
       filter:    { method: "task.create" },
     });
     assert(Array.isArray(result?.entries), "entries should be an array");
+    // The filter reads the call an entry records: an accepted call's envelope,
+    // or a recorded refusal's request.
     for (const e of result.entries) {
-      assertEq(e.envelope.method, "task.create", "filter should restrict by method");
+      assertEq((e.envelope ?? e.request)?.method, "task.create", "filter should restrict by method");
     }
   });
 
@@ -390,7 +392,7 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
   await test("Review profile", "rv-03", "override audit entry contains structured data", async () => {
     const { result } = await client.call("audit.read", {
       workspace: ws,
-      filter:    { method: "decide.override", task_id: taskId },
+      filter:    { method: "decide.override", task_id: taskId, outcome: "accepted" },
     });
     assert(result.entries.length === 1, `expected exactly 1 override entry, got ${result.entries.length}`);
     const params = result.entries[0].envelope.params;
@@ -616,6 +618,23 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
       ts: new Date().toISOString(), task_id: t.task_id, comment: "fine",
     });
     assertEq(result?.state, "completed", "a human the review was addressed to must be able to decide");
+  });
+
+  await test("Review profile", "rv-13", "a member's refused decision is recorded under request, and a non-member's is not", async () => {
+    // rv-07 and rv-08 were both refused -32011 on this task. The bystander is
+    // a member, so that attempt is recorded; the ghost never joined.
+    const { result } = await client.call("audit.read", {
+      workspace: ws, from: "human:alice@example.org", to: "service:coordinator@example.org",
+      ts: new Date().toISOString(), filter: { task_id: authTaskId, outcome: "refused" },
+    });
+    const refused = result?.entries ?? [];
+    assert(refused.length === 1, `expected the bystander's refusal alone, got ${JSON.stringify(refused)}`);
+    const [entry] = refused;
+    assert(entry.envelope === undefined, "a refusal entry holds no envelope");
+    assertEq(entry.request?.method, "decide.approve", "the refused call is held under request");
+    assertEq(entry.request?.params?.from, "human:bystander@example.org", "the recorded refusal is the member's");
+    assertEq(entry.outcome?.status, "refused", "the outcome marks the call refused");
+    assertEq(entry.outcome?.code, -32011, "the outcome carries the refusal code");
   });
 }
 

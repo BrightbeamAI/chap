@@ -165,10 +165,14 @@ What a deployment needs to decide before implementing it:
   for first: it dedupes one method by an explicit caller-supplied key, rather
   than refusing any envelope whose id has been seen.
 
-Chain-level defences are already in force and need no decision:
-`prev_hash` must match the current head, so a replay against a chain that
-has advanced is refused at acceptance, and `ts` must be monotonically
-non-decreasing per `from`.
+Neither reference refuses a repeated accepted envelope. The Coordinator
+computes the chain itself, so a client sends no `prev_hash` for it to check,
+and `ts` is not required to increase (see sender-declared timestamps below).
+A replayed accepted envelope is evaluated again, and whether it takes effect
+depends on the state it meets: a second approval of a closed review is
+refused, and a second `task.create` without an `idempotency_key` creates a
+second task. The one replay rule the protocol does require concerns refused
+calls, below.
 
 ### Sender-declared timestamps
 
@@ -193,6 +197,52 @@ costs:
 
 SPECIFICATION §4.3 carried this as a MUST refused with `-32401`. Neither
 reference implements it and no reference allocates the code.
+
+### Refused calls
+
+A member's refused call that is a governed attempt is recorded on the chain,
+under `request` with an `outcome` giving the code (SPECIFICATION §10.1): a
+decision on a review addressed to someone else, a pull on an emergency brake
+the workspace has switched off, an act on a paused workspace. Its link hashes
+the outcome together with the request, so altering either half breaks the
+chain. Moving the record under `envelope`, to pass the refusal off as a call
+that took effect, leaves an entry that is not a JSON-RPC call, and
+`audit.verify_chain` reports it as malformed.
+
+Anyone who can read the log holds a copy of every signed request on it. Two
+rules keep those copies from acting in their signers' names (SPECIFICATION
+§10.1), and both compare what the signer signed, the request without its
+`sig`, so re-encoding a signature does not make a new request:
+
+- A copy of a recorded refusal is answered with that refusal and not
+  evaluated. Without this, a refused request could be sent once the reason for
+  the refusal had passed, for instance after the review was re-addressed or
+  the workspace resumed, and take effect.
+- A copy of a call that took effect is evaluated as any request is, and a
+  refusal of it is not recorded, so a copy cannot put refused attempts on the
+  log in its signer's name.
+
+A legitimate retry is a new request with a new `id`. An accepted call sent
+again can still take effect again where the method allows it, as described
+under envelope id replay above.
+
+What stays off the chain is chosen so that, where signatures are required,
+recording refusals opens no new way to write to the log in someone else's
+name. A call from a sender who is not a member is not recorded, and neither
+is a call whose signature or key failed, nor a refused `workspace.create` or
+`participant.join`, which run before the sender has a key to check. Without
+required signatures there is no sender to protect, since anyone can send any
+call in any name. Nor is the log closed to outsiders: in the reference
+coordinators `participant.join` admits any sender who asks, and a member can
+add entries by sending calls in a loop, refused or accepted. Rate-limit per
+participant at the transport where that matters.
+
+A refusal entry keeps the refused request's content for the life of the log,
+as an accepted entry does. A call refused because its sender had no authority
+still puts its parameters on the chain, so a deployment that redacts or
+expires content applies the same policy to refusals. A redaction scheme keeps
+what the signer of a refused call signed, or its digest, because the rules
+above compare a signed copy with it.
 
 ---
 

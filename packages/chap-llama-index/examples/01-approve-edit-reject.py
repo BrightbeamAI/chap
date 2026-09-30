@@ -84,11 +84,14 @@ async def main() -> None:
     print("Audit chain")
     print("===========")
     for entry in bridge.audit():
-        env = entry["envelope"]
+        # A refused call is recorded under "request", with its outcome.
+        env = entry.get("envelope") or entry["request"]
         params = env.get("params", {})
         who = params.get("from", "")
         detail = ""
-        if env["method"] == "decide.override":
+        if "outcome" in entry:
+            detail = f"  refused {entry['outcome']['code']}"
+        elif env["method"] == "decide.override":
             detail = (f"  intent_preserved={params['intent_preserved']}"
                       f" diff={params['diff']} tags={params['tags']}")
         elif env["method"] in ("decide.approve", "decide.reject"):

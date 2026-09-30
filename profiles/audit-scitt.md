@@ -4,10 +4,10 @@
 
 The `audit-scitt` profile says: **the workspace's audit log is a
 [SCITT](https://datatracker.ietf.org/wg/scitt/about/) transparency
-service.** Every accepted CHAP envelope becomes a SCITT signed
-statement; every accepted envelope produces a SCITT receipt that any
-party can verify offline against the transparency service's signed
-log root.
+service.** Every entry on the log, an accepted CHAP envelope or a
+recorded refusal (SPECIFICATION §10.1), becomes a SCITT signed
+statement, and every statement produces a SCITT receipt that any party
+can verify offline against the transparency service's signed log root.
 
 CHAP does not define its own transparency primitive; this profile
 defers entirely to SCITT.
@@ -68,7 +68,7 @@ operated by the same party as the Coordinator, by a third party
 
 ## 3. Statement format
 
-Each accepted envelope is wrapped as a SCITT signed statement:
+Each entry is wrapped as a SCITT signed statement:
 
 ```
 COSE_Sign1 {
@@ -82,14 +82,18 @@ COSE_Sign1 {
     }
     content-type: "application/chap+json;version=0.2"
   }
-  payload: <JCS canonicalisation of the CHAP envelope>
+  payload: <JCS canonicalisation of the entry's record>
   signature: <Ed25519 signature over the protected headers + payload>
 }
 ```
 
 The protected headers identify the workspace and the issuing
-participant. The payload is the canonical CHAP envelope; receivers
-can extract and process it normally.
+participant. The payload is the record the entry's chain link hashes
+(SPECIFICATION §10.1). For an accepted call it is the canonical CHAP
+envelope, which a receiver can extract and process normally. For a
+recorded refusal it is the object `{"outcome": …, "request": …}`: the
+call took no effect, and a receiver MUST NOT process its `request` as a
+call.
 
 ---
 
@@ -132,9 +136,10 @@ When adopting `audit-scitt` against an existing audit store (a
 plain database log, a custom transparency log, or a different
 append-only store), the recommended procedure:
 
-1. For each historical envelope in arrival order, construct a SCITT
-   signed statement whose payload is the envelope's JCS
-   canonicalisation.
+1. For each historical entry in arrival order, construct a SCITT
+   signed statement whose payload is the JCS canonicalisation of its
+   record: the envelope, or for a recorded refusal the object
+   `{"outcome": …, "request": …}`.
 2. Preserve any pre-existing integrity metadata (chain hashes,
    coordinator signatures) inside the protected headers as
    informative fields.
