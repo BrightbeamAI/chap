@@ -203,3 +203,37 @@ def test_the_browser_statistics_agree_on_the_sample_week_too():
     cov = graph.coverage(f)
     assert cov.attrs["share"] == js["coverage"]["share"]
     assert len(js["duties"]) == 0
+
+
+@needs_node
+def test_the_browser_counts_refusals_in_assurance_as_python_does():
+    # A chain with a recorded refusal on it: an approval by a member the
+    # review was not addressed to.
+    from chap_coordinator import Coordinator, CoordinatorOptions
+    from chap_analytics import from_coordinator
+
+    profiles = ["core/1.0", "review/1.0", "audit-scitt/1.0"]
+    coord = Coordinator(CoordinatorOptions(default_profiles=profiles))
+
+    def send(method, params, actor):
+        return coord.dispatch({"jsonrpc": "2.0", "id": method, "method": method,
+                               "params": {"workspace": "w", "from": actor, **params}})
+
+    send("workspace.create", {"profiles": profiles}, "human:ana")
+    for uri, kind in (("human:ana", "human"), ("human:bo", "human"), ("agent:drafter", "agent")):
+        send("participant.join", {"type": kind}, uri)
+    tid = send("task.create", {"kind": "reply", "input": {}, "assignee": "agent:drafter"},
+               "agent:drafter")["result"]["task_id"]
+    send("task.update", {"task_id": tid, "state": "in_progress"}, "agent:drafter")
+    send("review.request", {"task_id": tid, "artefact": {"body": "draft"}, "to": "human:bo"},
+         "agent:drafter")
+    assert send("decide.approve", {"task_id": tid}, "human:ana")["error"]["code"] == -32011
+
+    f = frames(from_coordinator(coord, "w"))
+    assert len(f.refusals) == 1
+    js = _js(report.embedded_data(f))
+    a = stats.assurance(f, "D")
+    assert int(a["n"].sum()) == len(f.events) + len(f.refusals)
+    py_a = [dict(r) for r in _rows(a, ["period", "n", "chained", "signed", "scitt_submitted"])]
+    js_a = [dict(r, period=r["period"].replace(".000Z", "+00:00").replace("Z", "+00:00")) for r in js["assurance"]]
+    _match(py_a, js_a, ["period"], ["n", "chained", "signed", "scitt_submitted"])

@@ -25,7 +25,7 @@ import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "./catalogue.js";
 import { publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
-import { entryCall, entryRecord, linkHash, refusalIsRecorded, requestDigest } from "./audit.js";
+import { entryCall, entryRecord, isSigned, linkHash, refusalIsRecorded, signedDigest } from "./audit.js";
 import { applyJsonPatch } from "./patch.js";
 import type { Store, WorkspaceRecord } from "./storage/store.js";
 import { MemoryStore } from "./storage/store.js";
@@ -186,6 +186,22 @@ function reply(env: Envelope, body: { result?: unknown; error?: { code: number; 
   return out;
 }
 
+/** The signed calls on a log, keyed by `signedDigest`. */
+interface SignedIndex {
+  refused: Map<string, { seq: number; code: number }>;
+  accepted: Set<string>;
+}
+
+function indexSigned(index: SignedIndex, entry: AuditEntry): void {
+  const call = entryCall(entry);
+  if (!isSigned(call)) return;
+  let digest: string;
+  try { digest = signedDigest(call as Envelope); }
+  catch { return; /* an entry that cannot be canonicalised was altered; verify_chain reports it */ }
+  if (entry.outcome != null) index.refused.set(digest, { seq: entry.seq, code: entry.outcome.code });
+  else index.accepted.add(digest);
+}
+
 // ============================================================
 //   Handler type for profile modules
 // ============================================================
@@ -211,8 +227,12 @@ export class Coordinator {
   private clockMs?: number;
   private frozenNow?: string;
   private auditListeners: AuditListener[] = [];
-  /** Recorded refusals by request digest, rebuilt from the log when missing. */
-  private refusedIndex = new WeakMap<Workspace, Map<string, { seq: number; code: number }>>();
+  /**
+   * The signed calls on each workspace's log, by what their senders signed:
+   * recorded refusals with their seq and code, and accepted calls. Rebuilt
+   * from the log when missing, so a snapshot never carries it.
+   */
+  private signedIndexes = new WeakMap<Workspace, SignedIndex>();
   /** Method handler registry; profiles plug into this. */
   readonly handlers = new Map<string, Handler>();
   /** Custom lapse-check function (whisper/1.0). Set by the whisper profile. */
@@ -541,12 +561,19 @@ export class Coordinator {
   }
 
   private _dispatch(envelope: Envelope): Envelope {
-    if (!isValidEnvelope(envelope) || !envelope.method) {
+    // SPECIFICATION 10.1 fixes the order of the checks below, because which
+    // refusal a call receives decides whether it is recorded. First the
+    // request itself, none of whose refusals is recorded.
+    if (!isValidEnvelope(envelope) || typeof envelope.method !== "string" || !envelope.method) {
       return reply(envelope, { error: rpcError(E.REQUEST, "Invalid JSON-RPC 2.0 request") });
     }
     const maxBytes = this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES;
+    // Canonicalised once: the length is what the size limit measures, and a
+    // request that cannot be canonicalised is refused below, once its method
+    // is known to exist.
     let size = 0;
-    try { size = canonicalize(envelope).length; } catch { /* not canonicalisable; rejected by the ingress check below */ }
+    let canonicalError: unknown;
+    try { size = canonicalize(envelope).length; } catch (e) { canonicalError = e; }
     if (size > maxBytes) {
       return reply(envelope, { error: rpcError(E.REQUEST,
         `Envelope exceeds max_envelope_bytes (${size} > ${maxBytes})`) });
@@ -564,18 +591,25 @@ export class Coordinator {
       return reply(envelope, { error: rpcError(E.PARAMS, "Invalid params: expected an object") });
     }
     const params = (rawParams ?? {}) as Record<string, unknown>;
+    const handler = this.handlers.get(method);
+    if (!handler) {
+      return reply(envelope, { error: rpcError(E.METHOD, `Unknown method: ${method}`) });
+    }
+    if (canonicalError !== undefined) {
+      const msg = canonicalError instanceof Error ? canonicalError.message : String(canonicalError);
+      return reply(envelope, { error: rpcError(E.PARAMS, msg) });
+    }
 
-    // SPECIFICATION 10.1: a request identical to a recorded refusal is answered
-    // with that refusal and not evaluated again. The log publishes a refused
-    // request, signature and all, so without this anyone who can read the log
-    // could resubmit it once whatever refused it had changed.
-    {
+    // SPECIFICATION 10.1: a signed request whose signed content matches a
+    // recorded refusal is answered with that refusal and not evaluated again.
+    // The log publishes a refused request, signature and all, so without this
+    // anyone who can read the log could send it again once whatever refused
+    // it had changed, and it would take effect in its signer's name.
+    if (isSigned(envelope)) {
       const wsId = params.workspace;
       const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
       if (ws) {
-        let digest: string | undefined;
-        try { digest = requestDigest(envelope); } catch { digest = undefined; }
-        const prior = digest === undefined ? undefined : this.refusedRequests(ws).get(digest);
+        const prior = this.signedIndex(ws).refused.get(signedDigest(envelope));
         if (prior) {
           return reply(envelope, { error: rpcError(prior.code,
             `Refused at seq ${prior.seq}; a refused request is not evaluated again`,
@@ -662,18 +696,6 @@ export class Coordinator {
       }
     }
 
-    const handler = this.handlers.get(method);
-    if (!handler) {
-      return reply(envelope, { error: rpcError(E.METHOD, `Unknown method: ${method}`) });
-    }
-
-    try {
-      canonicalize(envelope);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return reply(envelope, { error: rpcError(E.PARAMS, msg) });
-    }
-
     let out: { result?: unknown; error?: { code: number; message: string; data?: unknown } };
     try {
       out = handler(params);
@@ -705,9 +727,10 @@ export class Coordinator {
   /**
    * SPECIFICATION 10.1: record a refused call when it is a governed attempt.
    * The caller must be a member of an existing workspace, the call must be a
-   * well-formed request for a method that is not a read, and the refusal must
-   * be one `refusalIsRecorded` names. The request is kept as it arrived, so a
-   * signature on it still verifies.
+   * JSON-RPC call for a method that is not a read, and the refusal must be one
+   * `refusalIsRecorded` names. The request is kept as it arrived, so a
+   * signature on it still verifies. Every call that reaches a recorded refusal
+   * has passed the canonical check, so it can be hashed into the chain.
    */
   private recordRefusal(envelope: Envelope, error: { code: number; data?: unknown }): void {
     if (!isValidEnvelope(envelope) || typeof envelope.method !== "string") return;
@@ -719,30 +742,28 @@ export class Coordinator {
     const params = raw as Record<string, unknown>;
     const ws = typeof params.workspace === "string" ? this.workspaces.get(params.workspace) : undefined;
     if (!ws || typeof params.from !== "string" || !ws.members.has(params.from)) return;
-    // A request that cannot be canonicalised cannot be hashed into the chain.
-    let digest: string;
-    try { digest = requestDigest(envelope); } catch { return; }
-    // The same request refused again is already on the log.
-    if (this.refusedRequests(ws).has(digest)) return;
-    const seq = ws.audit.length;
+    // A signed copy of a call already on the log is not a new attempt by its
+    // signer. A copy of a refusal was answered with it, and a copy of a call
+    // that took effect repeats a call its signer made once. Anyone who can
+    // read the log can send either.
+    if (isSigned(envelope)) {
+      const index = this.signedIndex(ws);
+      const digest = signedDigest(envelope);
+      if (index.refused.has(digest) || index.accepted.has(digest)) return;
+    }
     this.appendEntry(ws, {
       request: JSON.parse(JSON.stringify(envelope)) as Envelope,
       outcome: { status: "refused", code: error.code },
     });
-    this.refusedRequests(ws).set(digest, { seq, code: error.code });
   }
 
-  /** Recorded refusals in this workspace, by the digest of their request. */
-  private refusedRequests(ws: Workspace): Map<string, { seq: number; code: number }> {
-    let index = this.refusedIndex.get(ws);
+  /** The signed calls on this workspace's log, built from the log when missing. */
+  private signedIndex(ws: Workspace): SignedIndex {
+    let index = this.signedIndexes.get(ws);
     if (!index) {
-      index = new Map();
-      for (const entry of ws.audit) {
-        if (entry.outcome == null || entry.request == null) continue;
-        try { index.set(requestDigest(entry.request), { seq: entry.seq, code: entry.outcome.code }); }
-        catch { /* an entry that cannot be canonicalised was altered; verify_chain reports it */ }
-      }
-      this.refusedIndex.set(ws, index);
+      index = { refused: new Map(), accepted: new Set() };
+      for (const entry of ws.audit) indexSigned(index, entry);
+      this.signedIndexes.set(ws, index);
     }
     return index;
   }
@@ -755,6 +776,8 @@ export class Coordinator {
       ws.chain_head = linkHash(entryRecord(entry), prev);
     }
     ws.audit.push(entry);
+    const index = this.signedIndexes.get(ws);
+    if (index) indexSigned(index, entry);
     for (const l of this.auditListeners) {
       try { l(ws, entry); } catch { /* listeners never break dispatch */ }
     }

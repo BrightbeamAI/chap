@@ -15,9 +15,8 @@ short-running demos can advance the timer deterministically.
 """
 from __future__ import annotations
 
-import json
-
 import datetime as _dt
+import json
 from typing import TYPE_CHECKING
 
 from ..jsonrpc import E, rpc_error
@@ -25,6 +24,22 @@ from ..types import WhisperPrompt
 
 if TYPE_CHECKING:
     from ..coordinator import Coordinator
+
+
+def _same_value(a, b) -> bool:
+    """Whether two option ids are the same, compared as TypeScript's Set compares them.
+
+    That is JavaScript's SameValueZero on JSON values: an object or array is
+    never the same as another, a boolean is never the same as a number, and
+    1 and 1.0 are the same number.
+    """
+    if isinstance(a, (dict, list)) or isinstance(b, (dict, list)):
+        return False
+    if isinstance(a, bool) or isinstance(b, bool):
+        return type(a) is type(b) and a == b
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return a == b
+    return type(a) is type(b) and a == b
 
 
 def _parse_iso(ts: str) -> _dt.datetime:
@@ -102,10 +117,8 @@ def register_whisper(coord: "Coordinator") -> None:
             if answer_option is None:
                 return {"error": rpc_error(E.PARAMS,
                                            "answer_option is required when options are defined")}
-            # A list rather than a set: an option of any JSON type, an object
-            # included, is compared rather than hashed, as in TypeScript.
             valid_ids = [o.get("id") for o in prompt.options if isinstance(o, dict)]
-            if answer_option not in valid_ids:
+            if not any(_same_value(answer_option, i) for i in valid_ids):
                 shown = json.dumps(answer_option, ensure_ascii=False, separators=(",", ":"))
                 return {"error": rpc_error(
                     E.WHISPER_OPTION_NOT_IN_SET,

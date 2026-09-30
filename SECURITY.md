@@ -209,19 +209,30 @@ chain. Moving the record under `envelope`, to pass the refusal off as a call
 that took effect, leaves an entry that is not a JSON-RPC call, and
 `audit.verify_chain` reports it as malformed.
 
-A recorded refusal can be read by anyone who can read the log, signature
-included. A refused signed request could otherwise be copied from the log and
-sent again once the reason for the refusal had passed, for instance after the
-review was re-addressed or the workspace resumed, and take effect in its
-signer's name. A Coordinator therefore answers a request identical to a
-recorded refusal with that refusal, and does not evaluate it again. A
-legitimate retry is a new request with a new `id`.
+Anyone who can read the log holds a copy of every signed request on it. Two
+rules keep those copies from acting in their signers' names (SPECIFICATION
+§10.1), and both compare what the signer signed, the request without its
+`sig`, so re-encoding a signature does not make a new request:
 
-What stays off the chain is chosen so that recording refusals opens no new
-way to write to the log. A call from a sender who is not a member is not
-recorded, and neither is a call whose signature or key failed, nor a refused
-`workspace.create` or `participant.join`, which run before the sender has a
-key to check. This does not close the log to outsiders: in the reference
+- A copy of a recorded refusal is answered with that refusal and not
+  evaluated. Without this, a refused request could be sent once the reason for
+  the refusal had passed, for instance after the review was re-addressed or
+  the workspace resumed, and take effect.
+- A copy of a call that took effect is evaluated as any request is, and a
+  refusal of it is not recorded, so a copy cannot put refused attempts on the
+  log in its signer's name.
+
+A legitimate retry is a new request with a new `id`. An accepted call sent
+again can still take effect again where the method allows it, as described
+under envelope id replay above.
+
+What stays off the chain is chosen so that, where signatures are required,
+recording refusals opens no new way to write to the log in someone else's
+name. A call from a sender who is not a member is not recorded, and neither
+is a call whose signature or key failed, nor a refused `workspace.create` or
+`participant.join`, which run before the sender has a key to check. Without
+required signatures there is no sender to protect, since anyone can send any
+call in any name. Nor is the log closed to outsiders: in the reference
 coordinators `participant.join` admits any sender who asks, and a member can
 add entries by sending calls in a loop, refused or accepted. Rate-limit per
 participant at the transport where that matters.

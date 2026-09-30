@@ -50,8 +50,9 @@ The script prints three things, each a distinct reason CHAP is worth more
 than a log file:
 
 1. **Is this record trustworthy?** It re-walks the hash chain the way an
-   auditor would (recomputing `sha256(JCS(envelope) || prev_hash)` for
-   every entry) and confirms it is intact, then shows that quietly editing
+   auditor would (recomputing `sha256(JCS(record) || prev_hash)` for
+   every entry, where the record is the envelope, or the outcome and request
+   of a refused call the coordinator recorded) and confirms it is intact, then shows that quietly editing
    one past decision on a copy breaks verification at that entry. A
    spreadsheet gives you no such guarantee.
 2. **Reconstruct one override.** It pulls PR-472 back out of the chain and

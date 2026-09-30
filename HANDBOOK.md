@@ -418,9 +418,10 @@ and profiles/review.md §3.2.
 ### 8.1 What the audit log contains
 
 Every accepted envelope, verbatim, in arrival order, with the
-Coordinator's arrival timestamp. With `security-signed`, the
-signatures are preserved; with `audit-scitt`, each entry produces a
-SCITT receipt.
+Coordinator's arrival timestamp, and every refused call that
+[SPECIFICATION §10.1](./SPECIFICATION.md) records, under `request` with
+its outcome. With `security-signed`, the signatures are preserved;
+with `audit-scitt`, each entry produces a SCITT receipt.
 
 ### 8.2 Retention
 

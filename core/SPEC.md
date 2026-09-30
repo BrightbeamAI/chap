@@ -167,7 +167,7 @@ Workspace
 ├─ tasks[]
 │  └─ Task { id, state, kind, assignee, input, output?, history }
 ├─ messages[]           (free-form chat / notifications)
-└─ audit_log[]          (every accepted envelope in arrival order)
+└─ audit_log[]          (accepted envelopes and recorded refusals, in arrival order)
 ```
 
 The state may live in memory for testing or in any durable store
@@ -231,9 +231,11 @@ recorded is set out in [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1:
 }
 ```
 
-A request identical to a recorded refusal MUST be answered with that
-refusal, and is not evaluated or recorded again, so a retry is sent as a new
-request with a new `id`.
+A signed request that is a copy of a recorded refusal, in what its sender
+signed, MUST be answered with that refusal, and is not evaluated or recorded
+again, so a retry is sent as a new request with a new `id`. The rule, and the
+order in which a Coordinator checks a call, are in
+[`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1.
 
 The Coordinator MUST be able to return ranges of the log via
 `audit.read` (§4.7). There is **no cryptographic chaining
@@ -485,7 +487,7 @@ Filters supported in Core:
 | `method`    | Only entries whose call has this method.     |
 | `from`      | Only entries whose call has this `from`.     |
 | `task_id`   | Only entries referencing this task id.       |
-| `outcome`   | `accepted` or `refused`: only accepted calls, or only recorded refusals. Omitted, both. |
+| `outcome`   | `accepted` or `refused`: only accepted calls, or only recorded refusals. Omitted or null, both. Any other value is refused with `-32602`. |
 | `ts_range`  | Only entries within the time window.         |
 
 The call an entry records is its `envelope` when the call was accepted and

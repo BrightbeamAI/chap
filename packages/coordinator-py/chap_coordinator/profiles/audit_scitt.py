@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from ..coordinator import Coordinator
 
 
-# Carried forward past a malformed entry, so no later link can match.
+# The head after a malformed entry, which no stored head can match.
 _MALFORMED = "sha256:malformed"
 
 
@@ -169,18 +169,25 @@ def register_audit_scitt(coord: "Coordinator") -> None:
                      len(ws.audit))
         errors: list[str] = []
         prev = ZERO_HASH
+        resync = False
         for e in ws.audit[start:]:
-            expected_prev = prev
+            # After a malformed entry the next link is taken as stored, so
+            # the entries after it are judged on their own links and the
+            # report names the altered entry alone. The chain is reported
+            # broken either way.
+            expected_prev = e.prev_hash if resync and isinstance(e.prev_hash, str) else prev
+            resync = False
             # A chain-enabled workspace must have prev_hash on every entry;
             # a missing value is a defect, not a reason to skip the check.
             if e.prev_hash != expected_prev:
                 errors.append(f"seq {e.seq}: prev_hash mismatch")
             # An entry that records neither one accepted envelope nor one
-            # refused request with its outcome has been altered, and nothing
-            # after it can be linked to it.
+            # refused request with its outcome has been altered, and cannot
+            # be linked.
             if not entry_is_well_formed(e):
                 errors.append(f"seq {e.seq}: malformed entry")
                 prev = _MALFORMED
+                resync = True
                 continue
             prev = link_hash(entry_record(e), expected_prev)
         # The recomputed head must match the stored head; this is what

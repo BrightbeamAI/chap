@@ -17,7 +17,9 @@ either coordinator.
 
 A case may carry `refused_setup`: calls sent after the first
 `refused_setup_at` setup envelopes, each of which is refused, before the rest
-of the setup runs.
+of the setup runs. The signed cases carry a `sig` that neither coordinator
+verifies, since the vectors do not require signatures. The rules for a signed
+copy key on the presence of a signature.
 
 The cases come in two halves.
 
@@ -31,19 +33,25 @@ The cases come in two halves.
 - `task.create` on a workspace whose emergency brake is on, `-32063`.
 - `whisper.answer` with an option that is an object, which is outside the
   option set, `-32022`. The message shows the option as JSON.
+- An unsigned `decide.approve` identical to one refused and recorded
+  earlier. An unsigned call is not compared with the log, so it is evaluated
+  again and refused again, and the second refusal is recorded too.
 
-**Refusals that are not recorded**, which is the half that makes the fixture
-worth having:
+**Refusals that are not recorded**, the half that shows the rule leaving
+them off:
 
 - `whisper.ask` with `whisper/1.0` not advertised: the gate refusing an
   ordinary method.
 - A method that does not exist.
 - `task.create` with invalid parameters, `-32602`.
 - `control.pause` from a caller who is not a member.
-- A `decide.approve` identical to one refused and recorded earlier, sent
+- A signed `decide.approve`, a copy of one refused and recorded earlier, sent
   after the review has been re-addressed to its sender. It is answered with
   the recorded refusal and `data.refused_at_seq`, and is neither evaluated nor
   recorded again.
+- A signed copy of a `decide.approve` that took effect. The review has
+  closed, so the copy is refused `-32010`, and the refusal is not recorded:
+  its signer made the call once.
 
 Run them:
 

@@ -2,8 +2,10 @@
 
 The attempt sits on the log under ``request``, with an ``outcome`` beside
 it, so a reader keyed on ``envelope`` passes it by instead of replaying it.
-The chain link hashes the outcome together with the request, so neither
-half can be altered or stripped undetected.
+The chain link hashes the outcome together with the request, so altering
+either half breaks the chain, and moving the record under ``envelope``
+fails the shape check. What happens to a signed request sent again is in
+test_refusal_signed.py.
 
 The mirror of this file is
 packages/coordinator/tests/refusal_record.test.ts.
@@ -19,7 +21,8 @@ import pytest
 from chap_coordinator import Coordinator, CoordinatorOptions
 from chap_coordinator.catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
 from chap_coordinator.coordinator import PRIVILEGED_METHODS
-from chap_coordinator.canonical import canonicalize
+from chap_coordinator.audit import entry_record, link_hash
+from chap_coordinator.canonical import ZERO_HASH, canonicalize
 from chap_coordinator.crypto import derive_private_key, public_jwk, sign, verify
 from chap_coordinator.storage.store import MemoryStore
 
@@ -135,13 +138,54 @@ def test_the_refused_request_is_kept_as_it_arrived_signature_and_all():
     assert verify(canonicalize(unsigned), entry.request["sig"], key.public_key())
 
 
-def test_a_request_that_cannot_be_canonicalised_is_not_recorded():
-    # The gate refuses before the ingress check, so this refusal reaches the
-    # recording rule with a non-integer number in it. It cannot be hashed.
+def test_a_request_that_cannot_be_canonicalised_is_refused_before_the_gate_and_not_recorded():
+    # The request itself is checked first (SPECIFICATION 10.1), so a
+    # non-integer number is refused -32602 before the gate could refuse the
+    # privileged method, which would be recorded.
     _, send, ws = _ready(["core/1.0", "review/1.0", "audit-scitt/1.0"])
     before = len(ws.audit)
     r = send("control.pause", {"task_id": "t", "reason": "hold", "weight": 1.5})
-    assert r["error"]["code"] == -32601
+    assert r["error"]["code"] == -32602
+    assert len(ws.audit) == before
+
+
+def test_a_method_that_does_not_exist_is_refused_before_the_pause_and_not_recorded():
+    _, send, ws = _ready()
+    send("control.pause", {"scope": "workspace", "reason": "incident"})
+    before = len(ws.audit)
+    assert send("nothing.here")["error"]["code"] == -32601
+    assert len(ws.audit) == before
+
+
+def test_an_empty_or_non_string_method_is_an_invalid_request():
+    coord, _, ws = _ready()
+    before = len(ws.audit)
+    for method in ("", 5):
+        r = coord.dispatch({"jsonrpc": "2.0", "id": "m", "method": method,
+                            "params": {"workspace": "w", "from": "human:a"}})
+        assert r["error"]["code"] == -32600, method
+    assert len(ws.audit) == before
+
+
+def test_an_oversized_request_from_a_member_is_not_recorded():
+    _, send, ws = _ready(max_envelope_bytes=400)
+    tid = _under_review(send)
+    before = len(ws.audit)
+    r = send("decide.approve", {"task_id": tid, "comment": "x" * 500}, "human:a")
+    assert r["error"]["code"] == -32600
+    assert len(ws.audit) == before
+
+
+def test_a_fault_in_the_coordinator_is_not_recorded():
+    coord, send, ws = _ready()
+
+    def boom(params):
+        raise RuntimeError("boom")
+
+    coord._handlers["task.create"] = boom
+    before = len(ws.audit)
+    r = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"}, "agent:b")
+    assert r["error"]["code"] == -32603
     assert len(ws.audit) == before
 
 
@@ -267,43 +311,59 @@ def test_refusals_survive_a_restart_and_the_chain_still_verifies():
     assert "error" not in v, v.get("error")
 
 
-# ------------------------------------------------------------ resubmission
+# ------------------------------------------------------------ unsigned calls sent again
 
 def _late_approve(tid):
     return {"jsonrpc": "2.0", "id": "late", "method": "decide.approve",
             "params": {"workspace": "w", "from": "human:a", "task_id": tid, "comment": "ok"}}
 
 
-def test_a_request_identical_to_a_recorded_refusal_is_answered_with_it_even_once_it_would_pass():
-    # The log publishes a refused request, signature and all. Resubmitting the
-    # same bytes after the review is re-addressed must not make it take effect.
+def test_an_unsigned_request_identical_to_a_recorded_refusal_is_evaluated_again():
+    # Without a signature anyone can send any call in any name, so there is
+    # nothing for the resubmission rule to protect (test_refusal_signed.py).
     coord, send, ws = _ready()
     tid = _under_review(send)
     assert coord.dispatch(_late_approve(tid))["error"]["code"] == -32011
-    at = len(ws.audit) - 1
     send("review.request", {"task_id": tid, "artefact": {"body": "draft"}, "to": "human:a"},
          "agent:b")
-    before = len(ws.audit)
-
-    replay = coord.dispatch(_late_approve(tid))
-    assert replay["error"]["code"] == -32011
-    assert replay["error"]["message"] == f"Refused at seq {at}; a refused request is not evaluated again"
-    assert replay["error"]["data"] == {"refused_at_seq": at}
-    assert len(ws.audit) == before, "the resubmission was recorded"
-    assert ws.tasks[tid].state == "review_requested", "the resubmission took effect"
-
-    fresh = coord.dispatch({**_late_approve(tid), "id": "fresh"})
-    assert "error" not in fresh, fresh
+    again = coord.dispatch(_late_approve(tid))
+    assert "error" not in again, again
+    assert ws.tasks[tid].state == "completed"
 
 
-def test_the_resubmission_rule_survives_a_restart():
-    store = MemoryStore()
-    coord, send, _ = _ready(store=store)
+def test_an_unsigned_refusal_is_recorded_each_time_it_is_refused():
+    coord, send, ws = _ready()
     tid = _under_review(send)
-    coord.dispatch(_late_approve(tid))
-    restarted = Coordinator(CoordinatorOptions(
-        deterministic_ids=True, deterministic_clock=True, default_profiles=CHAINED, store=store))
-    assert "refused_at_seq" in restarted.dispatch(_late_approve(tid))["error"]["data"]
+    before = len(ws.audit)
+    for _ in range(2):
+        assert coord.dispatch(_late_approve(tid))["error"]["code"] == -32011
+    assert len(ws.audit) == before + 2
+
+
+def test_the_recorded_request_is_a_copy_of_the_one_sent():
+    coord, send, ws = _ready()
+    tid = _under_review(send)
+    env = _late_approve(tid)
+    coord.dispatch(env)
+    env["params"]["comment"] = "changed by the caller afterwards"
+    assert ws.audit[-1].request["params"]["comment"] == "ok"
+
+
+def test_a_scitt_submitter_receives_what_the_link_hashes_for_a_refusal():
+    statements = []
+
+    def submit(statement):
+        statements.append(statement)
+        return {"ok": True}
+
+    _, send, ws = _ready(scitt_submitter=submit)
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    at = next(i for i, e in enumerate(ws.audit) if e.outcome is not None)
+    assert "error" not in send("audit.submit_to_scitt")
+    e = ws.audit[at]
+    assert statements[at]["payload"] == canonicalize(
+        {"outcome": e.outcome, "request": e.request}).decode("utf-8")
 
 
 # ------------------------------------------------------------ what stays off
@@ -413,6 +473,63 @@ def test_adding_an_outcome_to_an_accepted_entry_breaks_the_chain():
     assert "error" in send("audit.verify_chain")
 
 
+def _relink(ws):
+    """Recompute every link after a tamper, so only the shape check can catch it."""
+    prev = ZERO_HASH
+    for e in ws.audit:
+        e.prev_hash = prev
+        prev = link_hash(entry_record(e), prev)
+    ws.chain_head = prev
+
+
+def _status_accepted(e):
+    e.outcome = {**e.outcome, "status": "accepted"}
+
+
+def _code_a_string(e):
+    e.outcome = {**e.outcome, "code": "-32011"}
+
+
+def _request_not_a_call(e):
+    e.request = {k: v for k, v in e.request.items() if k != "jsonrpc"}
+
+
+def _method_not_a_string(e):
+    e.request = {**e.request, "method": 5}
+
+
+def _request_beside_an_envelope(e):
+    e.envelope, e.outcome = e.request, None
+
+
+@pytest.mark.parametrize("tamper", [_status_accepted, _code_a_string, _request_not_a_call,
+                                    _method_not_a_string, _request_beside_an_envelope],
+                         ids=["an-outcome-of-another-status", "a-code-that-is-not-an-integer",
+                              "a-request-that-is-not-a-json-rpc-call",
+                              "a-request-whose-method-is-not-a-string",
+                              "a-request-left-beside-an-accepted-envelope"])
+def test_a_malformed_entry_is_reported_even_with_every_link_recomputed(tamper):
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    refusal = next(e for e in ws.audit if e.outcome is not None)
+    tamper(refusal)
+    _relink(ws)
+    r = send("audit.verify_chain")
+    assert f"seq {refusal.seq}: malformed entry" in r["error"]["message"]
+
+
+def test_the_report_names_a_malformed_entry_alone_and_not_the_entries_after_it():
+    _, send, ws = _ready()
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:c")
+    refusal = next(e for e in ws.audit if e.outcome is not None)
+    _move_record_under_envelope(refusal)
+    r = send("audit.verify_chain")
+    assert r["error"]["message"] == f"seq {refusal.seq}: malformed entry"
+
+
 # ------------------------------------------------------------ filters
 
 def test_a_null_outcome_filter_reads_as_no_filter():
@@ -462,6 +579,35 @@ def test_an_answer_option_that_is_an_object_is_refused_as_outside_the_set_and_re
     assert len(ws.audit) == before + 1
 
 
+def test_an_option_id_that_is_an_object_never_matches_as_both_coordinators_compare_ids():
+    _, send, ws = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    wid = send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                               "deadline_ms": 60000, "default_if_lapsed": "a",
+                               "options": [{"id": {"k": 1}}, {"id": 1}]},
+               "agent:b")["result"]["whisper_id"]
+    before = len(ws.audit)
+    assert send("whisper.answer", {"whisper_id": wid, "answer_option": {"k": 1}},
+                "human:c")["error"]["code"] == -32022
+    assert send("whisper.answer", {"whisper_id": wid, "answer_option": True},
+                "human:c")["error"]["code"] == -32022
+    assert len(ws.audit) == before + 2
+
+
+def test_a_null_answer_option_is_no_option_and_its_refusal_is_not_recorded():
+    _, send, ws = _ready(CHAINED + ["whisper/1.0"])
+    tid = send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b"},
+               "agent:b")["result"]["task_id"]
+    wid = send("whisper.ask", {"to": "human:c", "task_id": tid, "question": "?",
+                               "deadline_ms": 60000, "default_if_lapsed": "a",
+                               "options": [{"id": "a"}]}, "agent:b")["result"]["whisper_id"]
+    before = len(ws.audit)
+    assert send("whisper.answer", {"whisper_id": wid, "answer_option": None},
+                "human:c")["error"]["code"] == -32602
+    assert len(ws.audit) == before
+
+
 # ------------------------------------------------------------ persistence
 
 def test_refusals_survive_a_sqlite_restart(tmp_path):
@@ -479,3 +625,15 @@ def test_refusals_survive_a_sqlite_restart(tmp_path):
     v = restarted.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
                             "params": {"workspace": "w", "from": "human:a"}})
     assert "error" not in v, v.get("error")
+
+
+def test_the_store_holds_each_entry_in_its_wire_shape():
+    store = MemoryStore()
+    coord, send, ws = _ready(store=store)
+    tid = _under_review(send)
+    send("decide.approve", {"task_id": tid, "comment": "ok"}, "human:a")
+    stored = coord._snapshot_workspace(ws).data["audit"]
+    refusal = next(a for a in stored if "outcome" in a)
+    accepted = [a for a in stored if "outcome" not in a]
+    assert "envelope" not in refusal
+    assert all("request" not in a and "envelope" in a for a in accepted)

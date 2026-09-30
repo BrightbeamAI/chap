@@ -36,8 +36,9 @@ The script prints three things, each a distinct reason CHAP is worth more
 than a log file:
 
 1. **Is this record trustworthy?** It re-walks the hash chain the way an
-   auditor would (recomputing `sha256(JCS(envelope) || prev_hash)` for
-   every entry), confirms it is intact, then shows that quietly editing one
+   auditor would (recomputing `sha256(JCS(record) || prev_hash)` for
+   every entry, where the record is the envelope, or the outcome and request
+   of a refused call the coordinator recorded), confirms it is intact, then shows that quietly editing one
    past decision on a copy breaks verification at that entry. The copy that
    ships was approved by a named editor, provably.
 2. **Reconstruct one edit.** It pulls the ACME brief back out of the chain

@@ -66,6 +66,7 @@ CHAP conformance.
 
 - [ ] Every accepted envelope is appended in arrival order.
 - [ ] Every refused call that [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1 names is appended as a refusal entry, with the call under `request` and an `outcome` giving the code, and no other refusal is appended. Verified by `refusal-record-vectors.json`, and over HTTP by harness vector `rv-13`.
+- [ ] A call is checked in the order [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1 gives. A signed copy of a recorded refusal, compared without its `sig`, is answered with that refusal and `data.refused_at_seq` and is not evaluated; a signed copy of an accepted call that is refused is not recorded. Verified by `refusal-record-vectors.json`.
 - [ ] Each entry records the Coordinator's arrival timestamp.
 - [ ] `audit.read` results are stable: the same range returns the same entries indefinitely.
 
@@ -165,7 +166,7 @@ a profile it does not pass.**
 
 ### Profile: `audit-scitt/1.0`
 
-- [ ] Each accepted envelope is wrapped as a COSE_Sign1 SCITT statement and submitted to a SCITT Transparency Service.
+- [ ] Each entry, an accepted envelope or a recorded refusal, is wrapped as a COSE_Sign1 SCITT statement whose payload is the record its chain link hashes, and submitted to a SCITT Transparency Service.
 - [ ] SCITT receipts are returned to participants and verifiable offline against the service's published public key.
 - [ ] The audit log uses SCITT signed statements and receipts (not a bespoke chain format).
 - [ ] Returns `-32080` … `-32082` for SCITT-specific failures.

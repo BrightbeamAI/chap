@@ -5,6 +5,7 @@ red. Nothing asserts on an event count: a count changes whenever the flow
 changes for a good reason, which turns the suite into an argument against
 fixing things. Assert on the state the guard exists to protect instead.
 """
+import importlib.util
 import json
 import os
 import stat
@@ -27,6 +28,10 @@ from server import (  # noqa: E402
 )
 
 DRAFT = {"text": "Your order is guaranteed to arrive tomorrow.", "confident": True}
+
+# A coordinator that records refused attempts ships chap_coordinator.audit. The
+# published-package job runs these tests against the last release too.
+RECORDS_REFUSALS = importlib.util.find_spec("chap_coordinator.audit") is not None
 
 
 class GateTests(unittest.TestCase):
@@ -339,6 +344,7 @@ class HTTPTests(unittest.TestCase):
         self.assertIn("verification", body)
         self.assertNotEqual(body["verification"].get("status"), "verified")
 
+    @unittest.skipUnless(RECORDS_REFUSALS, "the installed coordinator does not record refusals")
     def test_the_desk_shows_a_refused_attempt(self):
         # A refused attempt the coordinator recorded is held under `request`
         # with an `outcome`. The desk shows it on the task's timeline and does

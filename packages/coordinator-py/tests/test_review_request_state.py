@@ -145,12 +145,6 @@ def test_a_paused_task_resumes_before_it_can_be_reviewed():
     assert "error" in s("review.request", task_id=tid, artefact=ARTEFACT, to="human:a")
     s("control.resume", actor="human:a", task_id=tid, reason="carry on")
     assert _state(c, tid) == "created"
-    # The identical request is answered with the refusal already recorded
-    # (SPECIFICATION 10.1). Asking again is a new request, with a new id.
-    again = s("review.request", task_id=tid, artefact=ARTEFACT, to="human:a")
-    assert "refused_at_seq" in again["error"]["data"]
-    r = c.dispatch({"jsonrpc": "2.0", "id": "review.request-2", "method": "review.request",
-                    "params": {"workspace": "w", "from": "agent:b", "task_id": tid,
-                               "artefact": ARTEFACT, "to": "human:a"}})
+    r = s("review.request", task_id=tid, artefact=ARTEFACT, to="human:a")
     assert "error" not in r, r
     assert _state(c, tid) == "review_requested"

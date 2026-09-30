@@ -80,7 +80,8 @@ export function registerWhisper(coord: Coordinator): void {
     const answerOption = p.answer_option as string | undefined;
     const answerText = (p.answer as string | undefined) ?? (p.answer_text as string | undefined);
     if (prompt.options && prompt.options.length) {
-      if (answerOption === undefined) {
+      // A null option is no option, as in Python.
+      if (answerOption === undefined || answerOption === null) {
         return { error: rpcError(E.PARAMS, "answer_option is required when options are defined") };
       }
       const valid = new Set(prompt.options.map(o => o.id));

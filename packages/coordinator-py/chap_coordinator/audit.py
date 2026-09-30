@@ -9,9 +9,9 @@ rule names is recorded under ``request``, with an ``outcome`` beside it, so
 a reader keyed on ``envelope`` passes it by instead of replaying it as
 effective. The chain link hashes what the entry records: the envelope of an
 accepted call, and the outcome together with the request of a refusal.
-Neither half of a refusal can be altered or stripped without breaking the
-chain, and an entry with no outcome hashes exactly as it always has, so
-every existing chain still verifies.
+Altering either half of a refusal breaks the chain, moving its record under
+``envelope`` fails the shape check, and an entry with no outcome hashes
+exactly as it always has, so every existing chain still verifies.
 """
 from __future__ import annotations
 
@@ -74,9 +74,19 @@ def entry_is_well_formed(entry: "AuditEntry") -> bool:
             and o.get("status") == "refused" and _is_integer(o.get("code")))
 
 
-def request_digest(request: Any) -> str:
-    """The digest that identifies a request byte for byte: SHA-256 of its JCS."""
-    return sha256_hex(canonicalize(request))
+def is_signed(call: Any) -> bool:
+    """Whether a call carries a top-level signature (security-signed/1.0)."""
+    return isinstance(call, dict) and isinstance(call.get("sig"), str)
+
+
+def signed_digest(call: dict) -> str:
+    """The digest that identifies a signed call by what its sender signed.
+
+    SHA-256 of the JCS of the call without its ``sig``. Two encodings of one
+    signature give the same digest, so re-encoding a signature does not make
+    a new call.
+    """
+    return sha256_hex(canonicalize({k: v for k, v in call.items() if k != "sig"}))
 
 
 def link_hash(record: Any, prev: str) -> str:

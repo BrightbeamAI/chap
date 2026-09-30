@@ -64,17 +64,21 @@ test("a read is not recorded, accepted or refused", () => {
   assert.equal(log("r3").length, before);
 });
 
-test("a request identical to a recorded refusal is answered with it, and not recorded again", () => {
+// A signature this server does not verify. The rules key on its presence.
+const SIG = "ed25519:k1:AAAA";
+const signed = (method: string, params: Record<string, unknown>, id: string): any =>
+  dispatch({ jsonrpc: "2.0", id, method, params, sig: SIG } as never);
+
+test("a signed copy of a recorded refusal is answered with it, and not recorded again", () => {
   const task = openReview("r4");
   const params = { workspace: "r4", from: "human:c", task_id: task };
-  const first = send("decide.approve", params, "same");
+  const first = signed("decide.approve", params, "same");
   assert.equal(first.error.code, -32011);
   const seq = log("r4").at(-1).seq;
 
-  // The review is re-addressed to human:c, but the identical request is not
-  // evaluated again.
+  // The review is re-addressed to human:c, but the copy is not evaluated again.
   send("review.request", { workspace: "r4", from: "agent:b", task_id: task, to: ["human:c"], artefact: { body: "x" } });
-  const again = send("decide.approve", params, "same");
+  const again = signed("decide.approve", params, "same");
   assert.deepEqual(again.error, {
     code: -32011,
     message: `Refused at seq ${seq}; a refused request is not evaluated again`,
@@ -83,7 +87,24 @@ test("a request identical to a recorded refusal is answered with it, and not rec
   assert.equal(log("r4", { outcome: "refused" }).length, 1);
 
   // A retry under a new id is a new request, and is evaluated.
-  assert.equal(send("decide.approve", params, "retry").result.state, "completed");
+  assert.equal(signed("decide.approve", params, "retry").result.state, "completed");
+});
+
+test("an unsigned request identical to a recorded refusal is evaluated again", () => {
+  const task = openReview("r6");
+  const params = { workspace: "r6", from: "human:c", task_id: task };
+  assert.equal(send("decide.approve", params, "same").error.code, -32011);
+  send("review.request", { workspace: "r6", from: "agent:b", task_id: task, to: ["human:c"], artefact: { body: "x" } });
+  assert.equal(send("decide.approve", params, "same").result.state, "completed");
+});
+
+test("a signed copy of an accepted call that is refused is not recorded", () => {
+  const task = openReview("r7");
+  const params = { workspace: "r7", from: "human:a", task_id: task };
+  assert.equal(signed("decide.approve", params, "once").result.state, "completed");
+  const before = log("r7").length;
+  assert.equal(signed("decide.approve", params, "once").error.code, -32010);
+  assert.equal(log("r7").length, before);
 });
 
 test("filter.outcome selects accepted calls or recorded refusals", () => {

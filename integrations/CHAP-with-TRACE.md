@@ -83,10 +83,13 @@ A relying party holding the Trust Record and read access to the workspace:
    and an unresolvable reference does not invalidate the record.
 2. Reads entry `seq` through `audit.read`. With no entry, it reports the approval as
    unconfirmed.
-3. Recomputes the SHA-256 of the JCS canonicalisation of the entry's `envelope` and
+3. Checks that the entry records an accepted call, under `envelope` with no `outcome`,
+   then recomputes the SHA-256 of the JCS canonicalisation of that `envelope` and
    compares it with `digest`.
-4. Runs `audit.verify_chain`, or replays `sha256(JCS(envelope) || prev_hash)` itself, and
-   compares the result with the chain head.
+4. Runs `audit.verify_chain`, or replays `sha256(JCS(record) || prev_hash)` itself, and
+   compares the result with the chain head. The record is the entry's `envelope`, or
+   for a refused call the coordinator recorded, the object `{"outcome": …, "request": …}`
+   ([SPECIFICATION §10.1](../SPECIFICATION.md)).
 5. Checks that `method` is `decide.approve`, or `decide.override` where the relying
    party accepts overrides.
 

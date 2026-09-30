@@ -141,8 +141,8 @@ interface Workspace {
   overrides: Map<ArtefactId, OverrideArtefact>;
   audit:     AuditEntry[];
   profiles:  string[];
-  /** Recorded refusals by the digest of the request, for the resubmission rule. */
-  refused:   Map<string, { seq: number; code: number }>;
+  /** Signed calls on the log by what their senders signed, for SPECIFICATION 10.1. */
+  signed:    { refused: Map<string, { seq: number; code: number }>; accepted: Set<string> };
 }
 
 // ============================================================
@@ -282,7 +282,7 @@ function ensureWorkspace(id: string): Workspace {
       overrides: new Map(),
       audit:     [],
       profiles:  ["core/1.0", "review/1.0"],
-      refused:   new Map(),
+      signed:    { refused: new Map(), accepted: new Set() },
     };
     workspaces.set(id, ws);
   }
@@ -308,26 +308,40 @@ const UNRECORDED_CODES = new Set<number>([
   -32070, -32071, -32072, -32073,
 ]);
 
+/** A call carrying a top-level signature. This server does not verify it. */
+function isSigned(env: Envelope): boolean {
+  return typeof (env as { sig?: unknown }).sig === "string";
+}
+
+/** What a signed call's sender signed: the call without its `sig`. */
+function signedDigest(env: Envelope): string {
+  const signed: Record<string, unknown> = { ...env };
+  delete signed.sig;
+  return contentDigest(signed);
+}
+
 function recordAudit(ws: Workspace, env: Envelope): void {
   ws.audit.push({
     seq:      ws.audit.length,
     arrived:  new Date().toISOString(),
     envelope: env,
   });
+  if (isSigned(env)) ws.signed.accepted.add(signedDigest(env));
 }
 
 /**
  * Record a refused call when it is a governed attempt: its sender is a member
  * of the workspace, and its refusal is not one §10.1 leaves off the log.
- * participant.join is the bootstrap method, so its refusals are not recorded.
+ * participant.join is the bootstrap method, so its refusals are not recorded,
+ * and neither is a signed copy of a call already on the log.
  */
 function recordRefusal(ws: Workspace, env: Envelope, error: { code: number }): void {
   if (!Number.isInteger(error.code) || UNRECORDED_CODES.has(error.code)) return;
   if (env.method === "participant.join") return;
   const from = (env.params as Params).from;
   if (typeof from !== "string" || !ws.members.has(from)) return;
-  const digest = contentDigest(env);
-  if (ws.refused.has(digest)) return;
+  const digest = isSigned(env) ? signedDigest(env) : undefined;
+  if (digest && (ws.signed.refused.has(digest) || ws.signed.accepted.has(digest))) return;
   const seq = ws.audit.length;
   ws.audit.push({
     seq,
@@ -335,7 +349,7 @@ function recordRefusal(ws: Workspace, env: Envelope, error: { code: number }): v
     request: env,
     outcome: { status: "refused", code: error.code },
   });
-  ws.refused.set(digest, { seq, code: error.code });
+  if (digest) ws.signed.refused.set(digest, { seq, code: error.code });
 }
 
 // ============================================================
@@ -811,9 +825,9 @@ export function dispatch(env: Envelope): Envelope {
   try {
     const params = env.params ?? {};
     const wsId = params.workspace as string;
-    // SPECIFICATION §10.1: a request identical to a recorded refusal is
-    // answered with that refusal, and is neither evaluated nor recorded again.
-    const prior = wsId ? getWorkspace(wsId)?.refused.get(contentDigest(env)) : undefined;
+    // SPECIFICATION §10.1: a signed copy of a recorded refusal is answered
+    // with that refusal, and is neither evaluated nor recorded again.
+    const prior = wsId && isSigned(env) ? getWorkspace(wsId)?.signed.refused.get(signedDigest(env)) : undefined;
     if (prior) {
       return { jsonrpc: "2.0", id: env.id ?? null as any, error: err(prior.code,
         `Refused at seq ${prior.seq}; a refused request is not evaluated again`,

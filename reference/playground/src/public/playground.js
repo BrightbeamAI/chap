@@ -662,11 +662,12 @@ function updateWireStrip(msg) {
 }
 
 function renderWireEntry(msg) {
-  const variant = classifyMethod(callOf(msg).method);
+  // A refused attempt took no effect, so it carries no routing or override mark.
+  const variant = msg.outcome ? "refused" : classifyMethod(callOf(msg).method);
   const classes = ["wire-entry"];
   if (variant === "routing")  classes.push("is-routing");
   if (variant === "override") classes.push("is-override");
-  if (msg.outcome) classes.push("is-refused");
+  if (variant === "refused")  classes.push("is-refused");
 
   const summary = summariseEnvelope(callOf(msg));
 

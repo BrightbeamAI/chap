@@ -3,8 +3,10 @@
  *
  * The attempt sits on the log under `request`, with an `outcome` beside it,
  * so a reader keyed on `envelope` passes it by instead of replaying it. The
- * chain link hashes the outcome together with the request, so neither half
- * can be altered or stripped undetected.
+ * chain link hashes the outcome together with the request, so altering either
+ * half breaks the chain, and moving the record under `envelope` fails the
+ * shape check. What happens to a signed request sent again is in
+ * refusal_signed.test.ts.
  *
  * The mirror of this file is
  * packages/coordinator-py/tests/test_refusal_record.py.
@@ -14,7 +16,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Coordinator, PRIVILEGED_METHODS } from "../src/coordinator.ts";
 import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "../src/catalogue.ts";
-import { canonicalize } from "../src/canonical.ts";
+import { canonicalize, ZERO_HASH } from "../src/canonical.ts";
+import { entryRecord, linkHash } from "../src/audit.ts";
 import { deriveKeypair, publicKeyFromJwk, signEnvelope, verifyEnvelope } from "../src/crypto.ts";
 
 const CHAINED = ["core/1.0", "review/1.0", "control/1.0", "audit-scitt/1.0"];
@@ -122,13 +125,49 @@ test("the refused request is kept as it arrived, signature and all", () => {
   assert.ok(verifyEnvelope(canonicalize(unsigned as never), sig, publicKeyFromJwk(jwk as never)));
 });
 
-test("a request that cannot be canonicalised is not recorded", () => {
-  // The gate refuses before the ingress check, so this refusal reaches the
-  // recording rule with a non-integer number in it. It cannot be hashed.
+test("a request that cannot be canonicalised is refused before the gate, and not recorded", () => {
+  // The request itself is checked first (SPECIFICATION 10.1), so a
+  // non-integer number is refused -32602 before the gate could refuse the
+  // privileged method, which would be recorded.
   const { send, ws } = ready(["core/1.0", "review/1.0", "audit-scitt/1.0"]);
   const before = ws.audit.length;
   const r = send("control.pause", { task_id: "t", reason: "hold", weight: 1.5 });
-  assert.equal(r.error.code, -32601);
+  assert.equal(r.error.code, -32602);
+  assert.equal(ws.audit.length, before);
+});
+
+test("a method that does not exist is refused before the pause, and not recorded", () => {
+  const { send, ws } = ready();
+  send("control.pause", { scope: "workspace", reason: "incident" });
+  const before = ws.audit.length;
+  assert.equal(send("nothing.here").error.code, -32601);
+  assert.equal(ws.audit.length, before);
+});
+
+test("an empty or non-string method is an invalid request", () => {
+  const { c, ws } = ready();
+  const before = ws.audit.length;
+  for (const method of ["", 5]) {
+    const r = c.dispatch({ jsonrpc: "2.0", id: "m", method, params: { workspace: "w", from: "human:a" } } as never) as any;
+    assert.equal(r.error.code, -32600, JSON.stringify(method));
+  }
+  assert.equal(ws.audit.length, before);
+});
+
+test("an oversized request from a member is not recorded", () => {
+  const { send, ws } = ready(CHAINED, { maxEnvelopeBytes: 400 });
+  const id = underReview(send);
+  const before = ws.audit.length;
+  const r = send("decide.approve", { task_id: id, comment: "x".repeat(500) }, "human:a");
+  assert.equal(r.error.code, -32600);
+  assert.equal(ws.audit.length, before);
+});
+
+test("a fault in the Coordinator is not recorded", () => {
+  const { c, send, ws } = ready();
+  c.handlers.set("task.create", () => { throw new Error("boom"); });
+  const before = ws.audit.length;
+  assert.equal(send("task.create", { kind: "k", input: {}, assignee: "agent:b" }, "agent:b").error.code, -32603);
   assert.equal(ws.audit.length, before);
 });
 
@@ -243,42 +282,54 @@ test("refusals survive a snapshot and a restore, and the chain still verifies", 
   assert.equal(v.error, undefined, JSON.stringify(v.error));
 });
 
-// ------------------------------------------------------------ resubmission
+// ------------------------------------------------------------ unsigned calls sent again
 
-test("a request identical to a recorded refusal is answered with it, even once it would pass", () => {
-  // The log publishes a refused request, signature and all. Resubmitting the
-  // same bytes after the review is re-addressed must not make it take effect.
+test("an unsigned request identical to a recorded refusal is evaluated again", () => {
+  // Without a signature anyone can send any call in any name, so there is
+  // nothing for the resubmission rule to protect (refusal_signed.test.ts).
   const { c, send, ws } = ready();
   const id = underReview(send);
   const env = { jsonrpc: "2.0", id: "late", method: "decide.approve",
                 params: { workspace: "w", from: "human:a", task_id: id, comment: "ok" } };
   assert.equal((c.dispatch(JSON.parse(JSON.stringify(env)) as never) as any).error.code, -32011);
-  const at = ws.audit.length - 1;
   send("review.request", { task_id: id, artefact: { body: "draft" }, to: "human:a" }, "agent:b");
-  const before = ws.audit.length;
-
-  const replay = c.dispatch(JSON.parse(JSON.stringify(env)) as never) as any;
-  assert.equal(replay.error.code, -32011);
-  assert.equal(replay.error.message, `Refused at seq ${at}; a refused request is not evaluated again`);
-  assert.deepEqual(replay.error.data, { refused_at_seq: at });
-  assert.equal(ws.audit.length, before, "the resubmission was recorded");
-  assert.equal(ws.tasks.get(id).state, "review_requested", "the resubmission took effect");
-
-  const fresh = c.dispatch({ ...JSON.parse(JSON.stringify(env)), id: "fresh" } as never) as any;
-  assert.equal(fresh.error, undefined, JSON.stringify(fresh.error));
+  const again = c.dispatch(JSON.parse(JSON.stringify(env)) as never) as any;
+  assert.equal(again.error, undefined, JSON.stringify(again.error));
+  assert.equal(ws.tasks.get(id).state, "completed");
 });
 
-test("the resubmission rule survives a snapshot and a restore", () => {
-  const { c, send } = ready();
+test("an unsigned refusal is recorded each time it is refused", () => {
+  const { c, send, ws } = ready();
   const id = underReview(send);
   const env = { jsonrpc: "2.0", id: "late", method: "decide.approve",
                 params: { workspace: "w", from: "human:a", task_id: id, comment: "ok" } };
-  c.dispatch(JSON.parse(JSON.stringify(env)) as never);
-  const d = new Coordinator({ deterministicIds: true, deterministicClock: true,
-                              defaultProfiles: CHAINED } as never);
-  d.restore(JSON.parse(JSON.stringify(c.snapshot())));
-  const replay = d.dispatch(JSON.parse(JSON.stringify(env)) as never) as any;
-  assert.deepEqual(replay.error.data?.refused_at_seq !== undefined, true);
+  const before = ws.audit.length;
+  for (let i = 0; i < 2; i++) {
+    assert.equal((c.dispatch(JSON.parse(JSON.stringify(env)) as never) as any).error.code, -32011);
+  }
+  assert.equal(ws.audit.length, before + 2);
+});
+
+test("the recorded request is a copy of the one sent", () => {
+  const { c, send, ws } = ready();
+  const id = underReview(send);
+  const env = { jsonrpc: "2.0", id: "late", method: "decide.approve",
+                params: { workspace: "w", from: "human:a", task_id: id, comment: "ok" } };
+  c.dispatch(env as never);
+  env.params.comment = "changed by the caller afterwards";
+  assert.equal(ws.audit[ws.audit.length - 1].request.params.comment, "ok");
+});
+
+test("a SCITT submitter receives what the link hashes for a refusal", () => {
+  const statements: any[] = [];
+  const { send, ws } = ready(CHAINED, { scittSubmitter: (s: unknown) => { statements.push(s); return { ok: true }; } });
+  const id = underReview(send);
+  send("decide.approve", { task_id: id, comment: "ok" }, "human:a");
+  const at = ws.audit.findIndex((e: any) => e.outcome !== undefined);
+  assert.equal(send("audit.submit_to_scitt").error, undefined);
+  const e = ws.audit[at];
+  assert.equal(statements[at].payload,
+    canonicalize({ outcome: e.outcome, request: e.request } as never).toString("utf-8"));
 });
 
 // ------------------------------------------------------------ what stays off
@@ -368,6 +419,47 @@ test("adding an outcome to an accepted entry breaks the chain", () => {
   assert.notEqual(send("audit.verify_chain").error, undefined);
 });
 
+/** Recompute every link after a tamper, so only the shape check can catch it. */
+function relink(ws: any): void {
+  let prev = ZERO_HASH;
+  for (const e of ws.audit) {
+    e.prev_hash = prev;
+    prev = linkHash(entryRecord(e), prev);
+  }
+  ws.chain_head = prev;
+}
+
+for (const [name, tamper] of [
+  ["an outcome of another status", (e: any) => { e.outcome = { ...e.outcome, status: "accepted" }; }],
+  ["a code that is not an integer", (e: any) => { e.outcome = { ...e.outcome, code: "-32011" }; }],
+  ["a request that is not a JSON-RPC call", (e: any) => { const { jsonrpc: _j, ...rest } = e.request; e.request = rest; }],
+  ["a request whose method is not a string", (e: any) => { e.request = { ...e.request, method: 5 }; }],
+  ["a request left beside an accepted envelope", (e: any) => { e.envelope = e.request; delete e.outcome; }],
+] as const) {
+  test(`${name} is reported malformed even with every link recomputed`, () => {
+    const { send, ws } = ready();
+    const id = underReview(send);
+    send("decide.approve", { task_id: id, comment: "ok" }, "human:a");
+    const refusal = ws.audit.find((e: any) => e.outcome !== undefined);
+    (tamper as (e: unknown) => void)(refusal);
+    relink(ws);
+    const r = send("audit.verify_chain");
+    assert.match(r.error?.message ?? "", new RegExp(`seq ${refusal.seq}: malformed entry`));
+  });
+}
+
+test("the report names a malformed entry alone, and not the entries after it", () => {
+  const { send, ws } = ready();
+  const id = underReview(send);
+  send("decide.approve", { task_id: id, comment: "ok" }, "human:a");
+  send("decide.approve", { task_id: id, comment: "ok" }, "human:c");
+  const refusal = ws.audit.find((e: any) => e.outcome !== undefined);
+  refusal.envelope = { outcome: refusal.outcome, request: refusal.request };
+  delete refusal.request; delete refusal.outcome;
+  const r = send("audit.verify_chain");
+  assert.equal(r.error.message, `seq ${refusal.seq}: malformed entry`);
+});
+
 // ------------------------------------------------------------ filters
 
 test("a null outcome filter reads as no filter", () => {
@@ -415,4 +507,28 @@ test("an answer option that is an object is refused as outside the set, and reco
   assert.equal(r.error.code, -32022);
   assert.equal(r.error.message, 'Answer option {"x":1} not in option set');
   assert.equal(ws.audit.length, before + 1);
+});
+
+test("an option id that is an object never matches, as both coordinators compare ids", () => {
+  const profiles = [...CHAINED, "whisper/1.0"];
+  const { send, ws } = ready(profiles);
+  const tid = send("task.create", { kind: "k", input: {}, assignee: "agent:b" }, "agent:b").result.task_id;
+  const wid = send("whisper.ask", { to: "human:c", task_id: tid, question: "?", deadline_ms: 60000,
+                                   default_if_lapsed: "a", options: [{ id: { k: 1 } }, { id: 1 }] },
+                   "agent:b").result.whisper_id;
+  const before = ws.audit.length;
+  assert.equal(send("whisper.answer", { whisper_id: wid, answer_option: { k: 1 } }, "human:c").error.code, -32022);
+  assert.equal(send("whisper.answer", { whisper_id: wid, answer_option: true }, "human:c").error.code, -32022);
+  assert.equal(ws.audit.length, before + 2);
+});
+
+test("a null answer option is no option, and its refusal is not recorded", () => {
+  const profiles = [...CHAINED, "whisper/1.0"];
+  const { send, ws } = ready(profiles);
+  const tid = send("task.create", { kind: "k", input: {}, assignee: "agent:b" }, "agent:b").result.task_id;
+  const wid = send("whisper.ask", { to: "human:c", task_id: tid, question: "?", deadline_ms: 60000,
+                                   default_if_lapsed: "a", options: [{ id: "a" }] }, "agent:b").result.whisper_id;
+  const before = ws.audit.length;
+  assert.equal(send("whisper.answer", { whisper_id: wid, answer_option: null }, "human:c").error.code, -32602);
+  assert.equal(ws.audit.length, before);
 });

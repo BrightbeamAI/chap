@@ -637,8 +637,158 @@
       }
     },
     {
-      "name": "unrecorded-resubmitted-refusal",
-      "note": "A request identical to a recorded refusal, resubmitted after the review is re-addressed to its sender, is answered with the recorded refusal and neither evaluated nor recorded again.",
+      "name": "recorded-unsigned-refusal-again",
+      "note": "An unsigned request identical to a recorded refusal is evaluated again, and its refusal is recorded again.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s5",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "kind": "draft",
+            "input": {},
+            "assignee": "agent:b"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s6",
+          "method": "task.update",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "state": "in_progress"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s7",
+          "method": "review.request",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "artefact": {
+              "body": "draft"
+            },
+            "to": "human:c"
+          }
+        }
+      ],
+      "refused_setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "late",
+          "method": "decide.approve",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "comment": "ok"
+          }
+        }
+      ],
+      "refused_setup_at": 7,
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "late",
+        "method": "decide.approve",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "comment": "ok"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "late",
+        "error": {
+          "code": -32011,
+          "message": "Not an addressed reviewer for this task: human:a"
+        }
+      },
+      "recorded": true,
+      "audit_count": 9,
+      "refusal_count": 2,
+      "evidence_head": "sha256:2d4b18f8e67e683d65b48676761432689b00d26a467fde2ee7d494968126dccb",
+      "entry": {
+        "seq": 8,
+        "arrived": "2023-11-14T22:13:29.000Z",
+        "request": {
+          "jsonrpc": "2.0",
+          "id": "late",
+          "method": "decide.approve",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "comment": "ok"
+          }
+        },
+        "outcome": {
+          "status": "refused",
+          "code": -32011
+        },
+        "prev_hash": "sha256:efcb2c28e79fd74d94f13073b39913e6b5b428d2f8f8aeb090b831e51b2c3ff1"
+      }
+    },
+    {
+      "name": "unrecorded-signed-copy-of-a-refusal",
+      "note": "A signed copy of a recorded refusal, sent after the review is re-addressed to its sender, is answered with the recorded refusal and neither evaluated nor recorded again.",
       "profiles": [
         "core/1.0",
         "review/1.0",
@@ -752,7 +902,8 @@
             "from": "human:a",
             "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
             "comment": "ok"
-          }
+          },
+          "sig": "ed25519:k1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
         }
       ],
       "refused_setup_at": 7,
@@ -765,7 +916,8 @@
           "from": "human:a",
           "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
           "comment": "ok"
-        }
+        },
+        "sig": "ed25519:k1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
       },
       "response": {
         "jsonrpc": "2.0",
@@ -781,7 +933,136 @@
       "recorded": false,
       "audit_count": 9,
       "refusal_count": 1,
-      "evidence_head": "sha256:113e31ec49ee05d56b2cb403b41f2a3742234cc0fb94bb68cd31d9be208abbab"
+      "evidence_head": "sha256:505a124bfce8bde683d7e20c38e75a65c1fed8bb48453015eea322584fc5982f"
+    },
+    {
+      "name": "unrecorded-signed-copy-of-an-accepted-call",
+      "note": "A signed copy of a call that took effect is refused, since the review has closed, and the refusal is not recorded: its signer made the call once.",
+      "profiles": [
+        "core/1.0",
+        "review/1.0",
+        "audit-scitt/1.0"
+      ],
+      "workspace": "wsp_refusal",
+      "setup": [
+        {
+          "jsonrpc": "2.0",
+          "id": "s1",
+          "method": "workspace.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "profiles": [
+              "core/1.0",
+              "review/1.0",
+              "audit-scitt/1.0"
+            ]
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s2",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:a",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s3",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "type": "human"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s4",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "type": "agent"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s5",
+          "method": "task.create",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "kind": "draft",
+            "input": {},
+            "assignee": "agent:b"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s6",
+          "method": "task.update",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "state": "in_progress"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "s7",
+          "method": "review.request",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "agent:b",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "artefact": {
+              "body": "draft"
+            },
+            "to": "human:c"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "once",
+          "method": "decide.approve",
+          "params": {
+            "workspace": "wsp_refusal",
+            "from": "human:c",
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+            "comment": "ok"
+          },
+          "sig": "ed25519:k1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "once",
+        "method": "decide.approve",
+        "params": {
+          "workspace": "wsp_refusal",
+          "from": "human:c",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "comment": "ok"
+        },
+        "sig": "ed25519:k1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "once",
+        "error": {
+          "code": -32010,
+          "message": "Task not awaiting review: completed"
+        }
+      },
+      "recorded": false,
+      "audit_count": 8,
+      "refusal_count": 0,
+      "evidence_head": "sha256:2dea192dca221f6d649067bfd365a8c41e705becaef46ee4284e0ea62b7cf48f"
     },
     {
       "name": "unrecorded-gate-ordinary-method",

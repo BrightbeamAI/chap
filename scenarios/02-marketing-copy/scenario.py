@@ -176,8 +176,9 @@ def build_history(send) -> None:
 def _verify(entries):
     """Re-walk the hash chain the way an auditor would. Each entry carries the
     prev_hash it was linked against; the next link is
-    sha256(JCS(envelope) || prev_hash). If any envelope was altered after the
-    fact, the recomputed links stop matching."""
+    sha256(JCS(envelope) || prev_hash), or for a recorded refusal the outcome
+    together with the request. If any entry was altered after the fact, the
+    recomputed links stop matching."""
     running = GENESIS
     for e in entries:
         if e.get("prev_hash") != running:

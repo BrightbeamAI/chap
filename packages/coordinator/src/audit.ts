@@ -8,10 +8,10 @@
  * names is recorded under `request`, with an `outcome` beside it, so a reader
  * keyed on `envelope` passes it by instead of replaying it as effective. The
  * chain link hashes what the entry records: the envelope of an accepted call,
- * and the outcome together with the request of a refusal. Neither half of a
- * refusal can be altered or stripped without breaking the chain, and an entry
- * with no outcome hashes exactly as it always has, so every existing chain
- * still verifies.
+ * and the outcome together with the request of a refusal. Altering either
+ * half of a refusal breaks the chain, moving its record under `envelope` fails
+ * the shape check, and an entry with no outcome hashes exactly as it always
+ * has, so every existing chain still verifies.
  */
 import { canonicalize, sha256Hex } from "./canonical.js";
 import { E } from "./jsonrpc.js";
@@ -57,9 +57,20 @@ export function entryIsWellFormed(entry: AuditEntry): boolean {
     && o.status === "refused" && Number.isInteger(o.code);
 }
 
-/** The digest that identifies a request byte for byte: SHA-256 of its JCS. */
-export function requestDigest(request: unknown): string {
-  return sha256Hex(canonicalize(request));
+/** Whether a call carries a top-level signature (security-signed/1.0). */
+export function isSigned(call: unknown): boolean {
+  return call !== null && typeof call === "object" && typeof (call as { sig?: unknown }).sig === "string";
+}
+
+/**
+ * The digest that identifies a signed call by what its sender signed: SHA-256
+ * of the JCS of the call without its `sig`. Two encodings of one signature
+ * give the same digest, so re-encoding a signature does not make a new call.
+ */
+export function signedDigest(call: Envelope): string {
+  const signed: Record<string, unknown> = { ...call };
+  delete signed.sig;
+  return sha256Hex(canonicalize(signed));
 }
 
 /** chain_head = SHA-256( JCS(record) || prev_hash ). */
