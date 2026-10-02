@@ -300,7 +300,7 @@ Five-minute hands-on walkthrough with the envelopes in view: [`examples/00-five-
 
 CHAP 0.2 is a public draft. The specification is seven Core methods plus eleven optional profiles ([`SPECIFICATION.md`](./SPECIFICATION.md)), with two reference implementations, TypeScript and Python, that cover every profile and pass the conformance harness on the same JSON-RPC 2.0 wire. A coordinator can present itself as an [MCP](https://modelcontextprotocol.io) server or an [A2A](https://a2a-protocol.org) agent, and five framework bridges put LangGraph, Pydantic AI, AG2, LlamaIndex Workflows, and Google ADK human-in-the-loop decisions on the audit chain. The full inventory, the repository layout, and how CHAP relates to MCP and A2A are in [`ABOUT.md`](./ABOUT.md).
 
-Breaking changes follow Semantic Versioning. Profile surfaces move faster than Core, so if you need strict stability, wait for 1.0.
+Breaking changes follow Semantic Versioning. Profile surfaces move faster than Core, so if you need strict stability, wait for 1.0. [`ROADMAP.md`](./ROADMAP.md) sets out what 1.0 will promise and the milestones that lead to it.
 
 ## Read this next
 

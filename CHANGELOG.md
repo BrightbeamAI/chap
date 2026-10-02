@@ -127,6 +127,10 @@ caller who asked, and no reference has a delivery layer to filter.
   recorded, the recorded entry, and the chain head after it. Both suites read
   it, and the Python suite recomputes every head with a canonicaliser of its
   own. Harness vector `rv-13` checks the same rule over HTTP.
+- **A roadmap to 1.0.** [`ROADMAP.md`](./ROADMAP.md) sets out what 1.0 will
+  promise, the known gaps and the milestone that closes each one, the
+  milestones in order with the checks that finish them, and the open
+  questions.
 
 ### Fixed
 
