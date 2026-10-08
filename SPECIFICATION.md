@@ -414,8 +414,15 @@ OIDC ID token. The binding follows DPoP ([RFC 9449]) in spirit:
 3. On a `participant.join` carrying the ID token as `oidc_token`, the
    Coordinator verifies it and pins the `cnf.jwk` as a signing key for
    this human Participant. The key has no expiry: it stays valid until
-   rotated or revoked (§5.7), and a later join with a fresh token adds a
-   key without retiring the old one.
+   rotated or revoked (§5.7). A token binds only to the participant it
+   belongs to: one whose `chap_participant_uri` names another
+   participant is refused with `-32404`, and a later join under an
+   existing member's name is accepted with a token only for the member's
+   recorded `sub`, or, for a member with no recorded subject, a token
+   whose `chap_participant_uri` names the member (`-32404` otherwise).
+   An accepted later join adds the token's key without retiring the old
+   one. A presentation is accepted on a later join only from the
+   member's recorded holder (`-32411`, profiles/identity-vc.md §4).
 4. The Coordinator MAY require periodic re-binding (token refresh +
    key rotation) for long-lived sessions.
 
@@ -423,7 +430,9 @@ OIDC ID token. The binding follows DPoP ([RFC 9449]) in spirit:
 
 This pattern guarantees that:
 
-- A leaked long-term password cannot be replayed against CHAP.
+- A password is presented only to the IdP. Anyone who can authenticate
+  there as the member can bind a new key, so the IdP's controls and
+  `min_acr` guard the binding.
 - The audit chain ties every signed action to a specific
   authentication event, addressable by `auth_time` and `acr`.
 
@@ -1793,8 +1802,9 @@ advertises, or the deployment.
    `workspace.create` and `participant.join` are exempt, since they run
    before the sender has a registered key.
 8. `identity-oidc/1.0`: verify the OIDC token a `participant.join`
-   presents, refuse one that does not verify (`-32403`), and pin its
-   `cnf.jwk` as the member's key.
+   presents, refuse one that does not verify (`-32403`), refuse one that
+   does not bind to the joining participant (`-32404`, §5.4), and pin
+   its `cnf.jwk` as the member's key.
 
 Step-up is a Coordinator option, independent of the advertised set
 (§6.5); where it is on, a human member, or one with an OIDC binding,

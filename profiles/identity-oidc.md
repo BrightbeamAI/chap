@@ -60,6 +60,21 @@ rejected token refuses the join with `-32403`. The Coordinator keeps
 `sub`, `auth_time` and `acr`, and pins `cnf.jwk` as the participant's
 key when it carries a `kid`, ignoring self-asserted `jwks`.
 
+A token binds only to the participant it belongs to:
+
+- Where the token carries `chap_participant_uri`, it MUST equal the
+  join's `from`.
+- A join under the name of an existing member is accepted with a token
+  only when the token's `sub` is the member's recorded subject. For a
+  member with no recorded subject, the token's `chap_participant_uri`
+  MUST name the member.
+
+Any other such join is refused with `-32404`, and nothing about the
+member changes. A join under an existing member's name with neither a
+token nor a presentation keeps the member as it is. The Coordinator
+compares `sub` alone, so a verifier that accepts more than one issuer
+returns a `sub` unique across them, for instance prefixed with `iss`.
+
 The Coordinator records the `participant.join` call as sent,
 `oidc_token` included, and `audit.read` returns it to any caller unless
 the Coordinator requires read membership. Deployments SHOULD require
@@ -92,7 +107,11 @@ A CHAP-aware OIDC ID token:
 
 Required for CHAP binding: `iss`, `aud`, `exp`, `sub`, `auth_time`,
 `cnf.jwk` with a `kid`, and either `chap_participant_uri` or a
-Coordinator-side mapping from `sub` to a CHAP URI.
+Coordinator-side mapping from `sub` to a CHAP URI. Neither reference
+Coordinator keeps such a mapping; a verifier can add
+`chap_participant_uri` to the claims it returns. A first join whose
+token carries neither binds its `sub` to whatever `from` the join
+names.
 
 ---
 
@@ -114,7 +133,9 @@ if (privileged_method && auth_time_age > workspace.step_up_window_sec):
 
 The client recovers by presenting a fresh token with `participant.join`
 and retrying; `prompt=login` at the IdP is the usual way to get one. A
-member's refusal with `-32402` is recorded (SPECIFICATION §10.1).
+member with no recorded subject can present a token only if its
+`chap_participant_uri` names the member (§2). A member's refusal with
+`-32402` is recorded (SPECIFICATION §10.1).
 
 ---
 
@@ -184,7 +205,7 @@ with the now-discarded key.
 |-----------|----------------------------------------------------------|
 | `-32402`  | Step-up authentication required.                         |
 | `-32403`  | ID token invalid (signature, expiry, audience).          |
-| `-32404`  | `cnf.jwk` does not match the signing key in use. Allocated; neither reference Coordinator returns it. |
+| `-32404`  | The token does not bind to this participant: its `chap_participant_uri` names another participant, or a join under an existing member's name carries a token that is not for that member (§2). |
 | `-32405`  | Required OIDC scope not present. Allocated; neither reference Coordinator returns it. |
 
 ---

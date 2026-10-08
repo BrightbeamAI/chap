@@ -1091,6 +1091,8 @@ class Coordinator:
             ws = self.workspaces[ws_id]
         uri = p["from"]
         now = self.now_iso()
+        existing = ws.members.get(uri)
+        token_verified = False
 
         member = Member(
             uri=uri,
@@ -1108,11 +1110,33 @@ class Coordinator:
             if claims is None:
                 return {"error": rpc_error(E.OIDC_TOKEN_INVALID,
                                            "OIDC token invalid")}
-            member.oidc_sub = claims.get("sub")
+            # A token binds only to the participant it belongs to. One naming
+            # another participant is refused, and a join under an existing
+            # member's name must carry a token for that member: the same
+            # subject, or, for a member with no verified subject yet, a token
+            # naming the member.
+            bound_uri = claims.get("chap_participant_uri")
+            sub = claims.get("sub")
+            sub = sub if isinstance(sub, str) and sub else None
+            if bound_uri is not None and bound_uri != uri:
+                return {"error": rpc_error(E.OIDC_CNF_MISMATCH,
+                                           "OIDC token is bound to another participant")}
+            if existing is not None:
+                if existing.oidc_sub is not None:
+                    if sub != existing.oidc_sub:
+                        return {"error": rpc_error(
+                            E.OIDC_CNF_MISMATCH,
+                            "OIDC token subject does not match the member")}
+                elif bound_uri != uri:
+                    return {"error": rpc_error(E.OIDC_CNF_MISMATCH,
+                                               "OIDC token does not name this member")}
+            member.oidc_sub = sub
+            token_verified = True
             at = claims.get("auth_time")
             if isinstance(at, (int, float)):
                 member.oidc_auth_time = int(at)
-            member.oidc_acr = claims.get("acr")
+            acr = claims.get("acr")
+            member.oidc_acr = acr if isinstance(acr, str) else None
             # Pin the cnf.jwk if present (RFC 7800)
             cnf = claims.get("cnf") or {}
             cnf_jwk = cnf.get("jwk") if isinstance(cnf, dict) else None
@@ -1127,7 +1151,15 @@ class Coordinator:
             if subject is None:
                 return {"error": rpc_error(E.VC_VP_INVALID,
                                            "VC presentation invalid")}
-            member.vc_holder = subject.get("holder") or subject.get("id")
+            holder = next((h for h in (subject.get("holder"), subject.get("id"))
+                           if isinstance(h, str) and h), None)
+            # A join under an existing member's name binds a presentation only
+            # from the member's own holder.
+            if existing is not None and (existing.vc_holder is None
+                                         or holder != existing.vc_holder):
+                return {"error": rpc_error(E.VC_HOLDER_BINDING_INVALID,
+                                           "Presentation holder does not match the member")}
+            member.vc_holder = holder
             # If the VP carried a proof-of-possession jwk, pin it
             vp_jwk = subject.get("cnf_jwk")
             if isinstance(vp_jwk, dict) and vp_jwk.get("kid"):
@@ -1148,12 +1180,13 @@ class Coordinator:
                             jwk=j, kid=j["kid"], valid_from=now,
                         ))
 
-        existing = ws.members.get(uri)
         if existing is not None:
             for f in ("oidc_sub", "oidc_auth_time", "oidc_acr", "vc_holder"):
                 v = getattr(member, f)
                 if v is not None:
                     setattr(existing, f, v)
+            if token_verified:
+                existing.oidc_acr = member.oidc_acr
             for k in attested:
                 if not any(x.kid == k.kid for x in existing.keys):
                     existing.keys.append(k)

@@ -1107,6 +1107,8 @@ export class Coordinator {
     }
     const uri = p.from as ParticipantUri;
     const now = this.now();
+    const existing = ws.members.get(uri);
+    let tokenVerified = false;
 
     const member: Member = {
       uri,
@@ -1124,10 +1126,29 @@ export class Coordinator {
     if (this.options.verifyOidcToken && typeof p.oidc_token === "string") {
       const claims = this.options.verifyOidcToken(p.oidc_token);
       if (claims === null) return { error: rpcError(E.OIDC_TOKEN_INVALID, "OIDC token invalid") };
-      member.oidc_sub = claims.sub as string | undefined;
+      // A token binds only to the participant it belongs to. One naming
+      // another participant is refused, and a join under an existing member's
+      // name must carry a token for that member: the same subject, or, for a
+      // member with no verified subject yet, a token naming the member.
+      const boundUri = claims.chap_participant_uri;
+      const sub = typeof claims.sub === "string" && claims.sub !== "" ? claims.sub : undefined;
+      if (boundUri != null && boundUri !== uri) {
+        return { error: rpcError(E.OIDC_CNF_MISMATCH, "OIDC token is bound to another participant") };
+      }
+      if (existing) {
+        if (existing.oidc_sub != null) {
+          if (sub !== existing.oidc_sub) {
+            return { error: rpcError(E.OIDC_CNF_MISMATCH, "OIDC token subject does not match the member") };
+          }
+        } else if (boundUri !== uri) {
+          return { error: rpcError(E.OIDC_CNF_MISMATCH, "OIDC token does not name this member") };
+        }
+      }
+      member.oidc_sub = sub;
+      tokenVerified = true;
       const at = claims.auth_time;
       if (typeof at === "number") member.oidc_auth_time = at;
-      member.oidc_acr = claims.acr as string | undefined;
+      member.oidc_acr = typeof claims.acr === "string" ? claims.acr : undefined;
       const cnf = claims.cnf as Record<string, unknown> | undefined;
       const cnfJwk = cnf?.jwk as Record<string, unknown> | undefined;
       if (cnfJwk && typeof cnfJwk.kid === "string") {
@@ -1135,10 +1156,18 @@ export class Coordinator {
       }
     }
     // identity-vc/1.0
-    if (this.options.verifyVc && typeof p.vc_presentation === "object" && p.vc_presentation !== null) {
+    if (this.options.verifyVc && typeof p.vc_presentation === "object" && p.vc_presentation !== null
+        && !Array.isArray(p.vc_presentation)) {
       const subject = this.options.verifyVc(p.vc_presentation as Record<string, unknown>);
       if (subject === null) return { error: rpcError(E.VC_VP_INVALID, "VC presentation invalid") };
-      member.vc_holder = (subject.holder as string | undefined) ?? (subject.id as string | undefined);
+      const holder = [subject.holder, subject.id].find(
+        (h): h is string => typeof h === "string" && h !== "");
+      // A join under an existing member's name binds a presentation only from
+      // the member's own holder.
+      if (existing && (existing.vc_holder == null || holder !== existing.vc_holder)) {
+        return { error: rpcError(E.VC_HOLDER_BINDING_INVALID, "Presentation holder does not match the member") };
+      }
+      member.vc_holder = holder;
       const vpJwk = subject.cnf_jwk as Record<string, unknown> | undefined;
       if (vpJwk && typeof vpJwk.kid === "string") {
         member.keys.push({ jwk: vpJwk as unknown as KeyRecord["jwk"], kid: vpJwk.kid as string, valid_from: now });
@@ -1158,11 +1187,11 @@ export class Coordinator {
       }
     }
 
-    const existing = ws.members.get(uri);
     if (existing) {
       if (member.oidc_sub !== undefined) existing.oidc_sub = member.oidc_sub;
       if (member.oidc_auth_time !== undefined) existing.oidc_auth_time = member.oidc_auth_time;
       if (member.oidc_acr !== undefined) existing.oidc_acr = member.oidc_acr;
+      if (tokenVerified) existing.oidc_acr = member.oidc_acr;
       if (member.vc_holder !== undefined) existing.vc_holder = member.vc_holder;
       for (const k of attested) {
         if (!existing.keys.some(x => x.kid === k.kid)) existing.keys.push(k);

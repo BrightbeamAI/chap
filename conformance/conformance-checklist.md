@@ -177,13 +177,14 @@ a profile it does not pass.**
 
 - [ ] Participant signing keys are bound via OIDC `cnf.jwk` (RFC 7800).
 - [ ] When step-up is enforced, privileged operations apply a window (default 5 minutes) and return `-32402` when it is exceeded.
-- [ ] ID-token verification covers `iss`, `aud`, `exp`, signature, and `cnf.jwk` match.
+- [ ] ID-token verification covers `iss`, `aud`, `exp` and the signature; a token binds only to its participant (`-32404`).
 - [ ] Returns `-32402` … `-32405` for identity-specific failures.
 
 ### Profile: `identity-vc/1.0`
 
 - [ ] Participant identity is established via a W3C Verifiable Presentation with a Data Integrity Proof.
 - [ ] Holder binding (proof of possession) is verified at presentation time.
+- [ ] A join under an existing member's name accepts a presentation only from its recorded holder (`-32411`).
 - [ ] Issuer trust is configurable per workspace.
 - [ ] Revocation is checked at presentation time and periodically thereafter.
 - [ ] Returns `-32410` … `-32413` for VC-specific failures.

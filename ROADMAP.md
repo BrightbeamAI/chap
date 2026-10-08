@@ -92,9 +92,8 @@ goes through a CHAP Enhancement Proposal (CEP).
   agents can work with it. Python bridges carry human decisions from
   LangGraph, Pydantic AI, LlamaIndex, AG2 and Google ADK onto the log, and
   `chap-analytics` reads logs back as tables and charts.
-- **A written threat model** in the specification and in
-  [SECURITY.md](./SECURITY.md), with private vulnerability reporting. Parts
-  of SECURITY.md describe an earlier design, and 0.3 rewrites it.
+- **A written threat model** in [SECURITY.md](./SECURITY.md), which the
+  specification points to, with private vulnerability reporting.
 
 ### What still needs work
 

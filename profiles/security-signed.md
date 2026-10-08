@@ -107,7 +107,8 @@ A participant's public keys are advertised at `participant.join`:
 because the Coordinator holds no key for the caller yet; a `sig` on
 them is recorded as sent and never verified. Keys advertised at join
 are trusted on first use, and ignored where an identity profile pins a
-key. Later keys arrive through `participant.rotate_key`.
+key. Later keys arrive through `participant.rotate_key`, or through a
+later join carrying the member's own token or presentation.
 
 ---
 

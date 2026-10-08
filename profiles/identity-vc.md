@@ -105,6 +105,12 @@ The presentation's `proof` binds the holder to the CHAP signing key
 resolves the DID and returns the key as `cnf_jwk`, which the
 Coordinator pins. The challenge and domain prevent replay.
 
+A join under the name of an existing member is accepted with a
+presentation only when the presentation's holder is the member's
+recorded holder. Any other such join, including one for a member with
+no recorded holder, is refused with `-32411`, and nothing about the
+member changes.
+
 ---
 
 ## 5. Participant URI
@@ -158,7 +164,7 @@ either yet (milestone 0.6).
 | Code      | Meaning                                                |
 |-----------|--------------------------------------------------------|
 | `-32410`  | VP signature verification failed.                      |
-| `-32411`  | Holder binding (proof of possession) failed.           |
+| `-32411`  | Holder binding failed: a join under an existing member's name presents another holder, or the member has no recorded holder (§4). |
 | `-32412`  | VC has been revoked.                                   |
 | `-32413`  | Credential schema not recognised by this workspace.    |
 
@@ -170,9 +176,9 @@ presentation as invalid (`-32410`). Assigning codes is left to a revision of
 this profile.
 
 Both reference coordinators return `-32410` whenever the deployment's
-verifier rejects a presentation. `-32411`, `-32412` and `-32413` are
-allocated for the verifier's specific failures and returned by neither
-today.
+verifier rejects a presentation, and `-32411` for the holder rule in §4.
+`-32412` and `-32413` are allocated for the verifier's specific failures
+and returned by neither today.
 
 ---
 

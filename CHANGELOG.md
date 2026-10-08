@@ -164,6 +164,26 @@ caller who asked, and no reference has a delivery layer to filter.
   `evidence_head: null` where TypeScript omitted the key, so the same call
   returned different JSON. A workspace with no chain has no head, and both now
   omit it. Found by the new dispatch-gate vectors.
+- **SECURITY.md is one threat model that matches the specification and both
+  coordinators.** It replaces text that described an older message format, a
+  different chain formula, a key grace window and coordinator-signed
+  checkpoints, none of which exist. It sets out what each option switches on,
+  what the deployment supplies, which releases receive fixes and the known
+  limitations.
+
+**Behaviour change.** A token or presentation binds only to the participant it
+belongs to. A `participant.join` whose token carries a `chap_participant_uri`
+naming another participant is refused with `-32404`. A join under an existing
+member's name is accepted with a token only for the member's recorded subject,
+or, for a member with no recorded subject, with a token whose
+`chap_participant_uri` names the member (`-32404` otherwise), and with a
+presentation only from the member's recorded holder (`-32411` otherwise). A
+re-join token with no `acr` clears the member's old `acr`. Before, anyone
+holding a token or presentation the deployment's verifier accepted could join
+under an existing member's name, add a key and sign as that member. Migration:
+a deployment that binds an identity to a member after it first joined issues
+tokens carrying `chap_participant_uri`, or has its verifier add the claim. A
+member with no recorded holder cannot bind a presentation by joining again.
 
 **Behaviour change.** Pausing a task is `control.pause` alone. `task.update`
 reached `paused` from `created` and from `in_progress`, while `control.resume`
