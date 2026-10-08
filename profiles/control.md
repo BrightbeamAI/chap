@@ -18,7 +18,7 @@ log as a first-class entry.
 | `control.supersede`          | request | yes        | Replace one task with another.                |
 | `control.snapshot`           | request | yes        | Produce a point-in-time workspace artefact.   |
 | `control.rollback`           | request | yes        | Restore workspace state from a snapshot. Appends, does not truncate. |
-| `control.set_mode_ceiling`   | request | yes        | Change the workspace's mode ceiling (requires `modes`). |
+| `control.set_mode_ceiling`   | request | yes        | Change the workspace's mode ceiling to `new_ceiling`. Works without `modes`; `task.create` enforces the ceiling either way. |
 
 ---
 
@@ -29,8 +29,8 @@ log as a first-class entry.
 | Scope         | Effect                                                          |
 |---------------|-----------------------------------------------------------------|
 | `task`        | A specific task stops accepting updates.                        |
-| `participant` | A specific participant stops being assigned new tasks; in-flight tasks complete by default. |
-| `workspace`   | The whole workspace stops accepting new tasks.                  |
+| `participant` | A specific participant stops being assigned new tasks; in-flight tasks complete by default. Neither reference yet consults the pause in `task.route`, `escalate.raise` or `handoff.accept`. |
+| `workspace`   | The workspace refuses every call with `-32063` except `workspace.create`, `workspace.describe`, `audit.read`, `participant.join`, `participant.leave` and `control.resume`. |
 
 At task scope, `control.resume` returns the task to the state it held at the
 `control.pause`, so a review paused mid-flight is actionable again rather than
@@ -55,7 +55,9 @@ the task resumes to `in_progress`. SPECIFICATION 8.1 carries the table.
 }
 ```
 
-`in_flight_policy` ∈ `{ allow_to_complete, cancel }`.
+`in_flight_policy` is `allow_to_complete` or `cancel`. The result echoes
+`in_flight_policy`, defaulting to `allow_to_complete`, and the Coordinator
+does not act on it yet.
 
 ---
 
@@ -149,9 +151,10 @@ Shared [conformance vectors](../conformance/control-snapshot-vectors.md) fix
 exact responses and hashes for each slice and the default projection.
 
 
-`control.rollback` **does not truncate the audit log.** It appends
-a rollback entry and writes new entries that restore the snapshot's
-recorded state going forward. The interim history remains visible.
+`control.rollback` **does not truncate the audit log.** The call is
+appended as one entry, and the slices it names are restored in place
+from the snapshot. The result carries `rolled_back_to`, `audit_seq`,
+`restored` and any `reason`. The interim history remains visible.
 
 ```json
 {
@@ -172,7 +175,8 @@ recorded state going forward. The interim history remains visible.
 
 ## 4. Supersede
 
-Replace an in-flight or completed task with a successor:
+Replace a task with a successor. `control.supersede` accepts a task in
+any state, terminal states included (SPECIFICATION §8.1):
 
 ```json
 {
@@ -212,10 +216,10 @@ enforcement is left to the deployment.
 
 | Code      | Meaning                                                  |
 |-----------|----------------------------------------------------------|
-| `-32060`  | Step-up authentication required (see `identity-oidc`).   |
-| `-32061`  | The control operation is refused: the caller is not authorised, or the task is already settled (`completed`, `declined`, `cancelled`, `superseded`). |
+| `-32060`  | Allocated for a stale step-up. The Coordinator answers that condition with `-32402` from `identity-oidc`, so this code is not returned. |
+| `-32061`  | `control.pause` or `control.cancel` on a `completed`, `declined`, `cancelled` or `superseded` task, or `control.resume` on a task that is not paused. A caller who is not a workspace member is refused with `-32011`. |
 | `-32062`  | Snapshot artefact not found.                             |
-| `-32063`  | Workspace is paused; this operation is blocked.          |
+| `-32063`  | The workspace is paused, or the named assignee is a paused participant. |
 
 ---
 
@@ -223,9 +227,11 @@ enforcement is left to the deployment.
 
 - **With `modes`:** `control.set_mode_ceiling` is the protocol-level
   way to promote/demote modes.
-- **With `audit-scitt`:** every control operation is appended as a
-  signed SCITT statement, providing cryptographic non-repudiation
-  for operational changes.
+- **With `audit-scitt`:** control operations sit on the hash-linked
+  chain like any other accepted call. `audit.submit_to_scitt` assembles
+  a SCITT statement for each entry in a range; once the deployment signs
+  and registers them, operational changes gain cryptographic
+  non-repudiation.
 - **With `identity-oidc`:** step-up auth is the recommended gate
   for privileged ops.
 

@@ -7,8 +7,8 @@ review is, when to auto-escalate, based on the runtime signals
 already carried in `routing_hints` on tasks and artefacts.
 
 This profile adds three decision methods. It does not invent new
-signals; it consumes the ones Core already defines and writes
-back the decisions it makes as auditable events.
+signals; it consumes the ones Core already defines and stores the
+decisions it makes as artefacts.
 
 ---
 
@@ -25,13 +25,14 @@ Core carries the signals. This profile interprets them.
 
 CHAP's discipline: **the protocol carries the evidence; the
 operator runs the policy.** This profile gives the policy a wire
-format so its decisions become evidence too.
+format: each request is recorded, and the response carries the
+decision.
 
 The fractional hints, `confidence`, `max_cost_usd` and
 `cost_consumed_usd`, are carried as decimal strings (`"0.62"`, not
 `0.62`). Envelope numbers are integers, so that canonicalisation and
 therefore the audit hash agree across implementations; see
-[SPECIFICATION.md §7](../SPECIFICATION.md). A JSON number with a
+[SPECIFICATION.md §5.2](../SPECIFICATION.md#52-signing-algorithm). A JSON number with a
 fractional part is rejected at ingress with `-32602`. Policy code reads
 the string and parses it.
 
@@ -43,11 +44,12 @@ the string and parses it.
 |-------------------|---------|--------------------------------------------------|
 | `task.route`      | request | Pick an assignee for a task from candidates, given hints. |
 | `review.depth`    | request | Decide review depth for an artefact: skip, spot-check, full. |
-| `escalate.auto`   | request | Evaluate auto-escalation rules against an artefact. |
+| `escalate.auto`   | request | Evaluate auto-escalation rules against a task's routing hints. |
 
-Each method records its decision (and the hints consulted) as an
-artefact in the evidence chain. A consumer reading the audit log
-later can reconstruct *why* a routing choice happened.
+Each method stores its decision, with the hints consulted, as a
+`route_decision` artefact in the workspace's state and returns its id
+as `decision_artefact`. The audit log records the request only, and no
+method returns a stored decision, so consumers keep the response.
 
 ---
 
@@ -93,21 +95,22 @@ Response:
 }
 ```
 
-The `decision_artefact` is a new artefact of kind `route_decision`
+The `decision_artefact` is the id of a new `route_decision` artefact
 that captures the inputs (the task's hints), the policy id, and the
-selected assignee. It's signed into the evidence chain like any
-other artefact.
+selected assignee. It is kept in the workspace's state; the audit log
+holds the `task.route` request only (§2).
 
-After `task.route` succeeds, the Coordinator MUST update the task's
-`assignee` to match `selected` and dispatch the task normally.
+After `task.route` succeeds, the Coordinator MUST set the task's
+`assignee` to `selected`, and it changes nothing else, in every mode.
 
 ### `task.route` error codes
 
 | Code      | Meaning                                          |
 |-----------|--------------------------------------------------|
-| `-32510`  | `no_eligible_assignee`: no candidate satisfies the routing policy for this task's hints. |
-| `-32511`  | `routing_policy_violation`: the requested route violates workspace `routing_policy_uri`. |
+| `-32510`  | `no_eligible_assignee`: no candidate is a workspace member, or the policy chose one who is not. |
+| `-32511`  | `routing_policy_violation`. Reserved; no Coordinator returns it. |
 | `-32513`  | `candidates_empty`: `candidates` array was empty. |
+| `-32515`  | `policy_unreachable`: the deployment's policy raised an error. |
 
 ---
 
@@ -121,12 +124,20 @@ spot-check, or do a full review. Returns a depth tier with rationale.
   "method": "review.depth",
   "params": {
     "workspace":      "wsp_support_triage",
-    "artefact_id":    "art_01HZ9YX7K3X8M2V4N6P8R0T3D",
     "task_id":        "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
+    "artefact_routing_hints": {
+      "confidence": "0.91",
+      "model_id":   "draft-bot:2026-05"
+    },
     "ts":             "2026-05-17T09:14:48Z"
   }
 }
 ```
+
+The Coordinator merges the task's `routing_hints` with the optional
+`artefact_routing_hints`, which carries the artefact's own hints; a key
+in `artefact_routing_hints` takes precedence. Neither reference
+Coordinator reads an `artefact_id`.
 
 Response:
 
@@ -150,40 +161,46 @@ Defined depth tiers (clients MUST accept these; profiles MAY add more):
 | Tier         | Meaning                                                  |
 |--------------|----------------------------------------------------------|
 | `skip`       | No review required. Artefact is released immediately.    |
-| `spot_check` | Random sampling. `sampling_probability` is in [0, 1]. The Coordinator MUST honour it. |
+| `spot_check` | Random sampling. `sampling_probability` is in [0, 1]; the caller applies it. |
 | `full`       | Every artefact reviewed.                                 |
 | `escalated`  | Reserved; the depth-decider has invoked `escalate.auto`. |
 
-If the workspace also runs `review/1.0`, the depth decision feeds
-the `review.required` boolean and the reviewer set. If only Core
-review is in use, the depth is informative only.
+`review.depth` records a recommendation. The Coordinator neither
+samples nor changes `review_required` or reviewers; the caller acts on
+it.
 
 ### `review.depth` error codes
 
 | Code      | Meaning                                          |
 |-----------|--------------------------------------------------|
-| `-32514`  | `depth_not_applicable`: the artefact's kind is not subject to review (e.g. `route_decision`). |
-| `-32515`  | `policy_unreachable`: the routing-policy resource referenced is not loadable. |
+| `-32514`  | `depth_not_applicable`: no routing hint on the task or in `artefact_routing_hints`. |
+| `-32515`  | `policy_unreachable`: the deployment's policy raised an error. |
 
 ---
 
 ## 5. `escalate.auto`
 
-Evaluate the workspace's auto-escalation rules against an artefact.
-Returns whether to escalate and to whom. The triggering rule is
-recorded in the evidence chain.
+Evaluate the workspace's auto-escalation rules against a task's
+routing hints. Returns whether to escalate and to whom. When a rule
+fires, the response names it in `triggered_rule`, and the stored
+decision keeps its id and summary.
 
 ```json
 {
   "method": "escalate.auto",
   "params": {
     "workspace":   "wsp_support_triage",
-    "artefact_id": "art_01HZ9YX7K3X8M2V4N6P8R0T3F",
     "task_id":     "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
+    "default_escalation_target": "group:senior-reviewers@example.org",
     "ts":          "2026-05-17T09:15:30Z"
   }
 }
 ```
+
+`escalate.auto` reads the task's `routing_hints`. The optional
+`default_escalation_target` names the target for the built-in rule; a
+deployment's `escalationPolicy` or `escalation_policy` hook chooses its
+own target.
 
 Response when an escalation fires:
 
@@ -213,16 +230,18 @@ Response when no escalation fires:
 }
 ```
 
-An auto-escalation results in a new task (via the existing escalate
-flow from `review/1.0`) addressed to `to`. The original task moves
-to `escalated`.
+`escalate.auto` creates no task and leaves the task's state alone. It
+stores the decision, calls the deployment's `onAutoEscalate` or
+`on_auto_escalate` hook where set, and returns the target. A caller
+that wants the escalation sends `escalate.raise`.
 
 ### `escalate.auto` error codes
 
 | Code      | Meaning                                          |
 |-----------|--------------------------------------------------|
-| `-32512`  | `auto_escalation_triggered`: informational; emitted on a `decide.override` or `decide.reject` notification when an auto-rule also fired. |
-| `-32516`  | `escalation_target_unavailable`: the rule-selected target is not a workspace member or group. |
+| `-32512`  | `auto_escalation_triggered`. Reserved; no Coordinator returns it. |
+| `-32515`  | `policy_unreachable`: the deployment's policy raised an error. |
+| `-32516`  | `escalation_target_unavailable`: an escalation fired with no target, or the target is neither a workspace member nor a `group:` address. |
 
 ---
 
@@ -248,14 +267,16 @@ structure:
       "model_id":    "draft-bot:2026-05"
     },
     "rationale": "criticality=low + confidence>0.85: sampled at 10%."
-  },
-  "content_hash": "sha256:…"
+  }
 }
 ```
 
 `decision_type` is one of `task.route`, `review.depth`, `escalate.auto`.
+`outcome` is the selected URI for `task.route`, the depth tier for
+`review.depth`, and an object `{escalate, to}` for `escalate.auto`.
 `hints_observed` records the exact hint values used so the policy
-can be audited deterministically.
+can be audited deterministically. Neither reference Coordinator
+computes a `content_hash` for a route decision.
 
 ---
 
@@ -285,35 +306,29 @@ and the policy_id is opaque).
 ### With `review/1.0`
 
 `review.depth` decides *whether* and *how thoroughly* to review.
-`review.request` then carries out the review at that depth. The
-two are explicitly chained: a typical flow is
+`review.request` then carries out the review at that depth. A typical
+flow is
 
 ```
 task.complete → review.depth → (if not skip) review.request → decide.*
 ```
 
-The `decision_artefact` from `review.depth` is `cited` by the
-subsequent `review.request` envelope, so the chain is queryable
-end-to-end.
+The Coordinator does not link the two. A caller that wants the link on
+the audit log can cite the `decision_artefact` from `review.depth` in
+the `review.request` params, which the log records as sent.
 
 ### With `modes/1.0`
 
-| Mode       | Routing profile honours…                                  |
-|------------|-----------------------------------------------------------|
-| `shadow`   | Routing decisions are *recorded* but not *enforced*. Every shadow output goes to a human regardless. |
-| `trial`    | Same: full review per `modes` semantics, routing decisions logged for later analysis. |
-| `production` | Routing decisions are enforced. `review.depth=skip` actually skips review. |
-
-This is the discipline: modes own enforcement; routing owns the
-recommendation. The two never conflict because modes is a strict
-upper bound.
+Routing behaves alike in every mode: `task.route` reassigns; the other
+two only recommend. This is the discipline: modes own enforcement;
+routing owns the recommendation.
 
 ### With `deliberation/1.0`
 
-When `review.depth` returns `full` and the workspace has
-`deliberation/1.0`, the resulting `review.request` MAY open a
-deliberation rather than a single-reviewer review. The routing
-profile does not dictate this; the operator's policy does.
+`review.request` always opens a review. When `review.depth` returns
+`full` and the operator wants a group decision, the caller opens one
+with `deliberate.open` (`deliberation/1.0`). The routing profile
+leaves that choice to the operator's policy.
 
 ---
 
@@ -344,9 +359,10 @@ prevent this; the practice should.
   or per-second costing.
 - **Standardise the routing policy itself.** Policies are documents
   resolved via `routing_policy_uri`; their format is operator-defined.
-- **Make routing decisions reversible.** A routing decision is an
-  artefact; like all artefacts, it lives forever in the chain. Bad
-  decisions are corrected by *subsequent* events, not by deletion.
+- **Make routing decisions reversible.** A routing decision is stored
+  as an artefact that no method deletes, and the request that produced
+  it stays on the audit log. Bad decisions are corrected by
+  *subsequent* events.
 
 ---
 
@@ -369,11 +385,11 @@ a task with hints:
 }
 ```
 
-The Coordinator calls `task.route` with three candidates: a fast
-agent, a careful agent, and a human pool. The routing policy
-returns `agent:careful-draft-v2` (criticality=high routes to careful
-tier; max_cost_usd=$50 rules out human pool). Decision artefact
-recorded.
+The caller sends `task.route` with three candidates: a fast agent, a
+careful agent, and a human pool. The routing policy returns
+`agent:careful-draft-v2` (criticality=high routes to careful tier;
+max_cost_usd=$50 rules out human pool). The Coordinator reassigns the
+task and stores the decision artefact.
 
 The careful agent produces a draft with measured hints:
 
@@ -388,18 +404,22 @@ The careful agent produces a draft with measured hints:
 }
 ```
 
-The Coordinator calls `review.depth`. The policy sees
-criticality=high + confidence=0.62 and returns `full`. A reviewer
-is summoned through `review/1.0`.
+The caller sends `review.depth` with the draft's hints in
+`artefact_routing_hints`. The policy sees criticality=high +
+confidence=0.62 and returns `full`. The caller summons a reviewer with
+`review.request`.
 
-Before the reviewer arrives, the Coordinator calls `escalate.auto`.
-A rule fires: criticality=high AND confidence<0.7 → group:senior-reviewers.
-The task is escalated to a senior pool. Maya joins from that pool.
+Before the reviewer arrives, the caller sends `escalate.auto`. The
+operator's rule reads the task's hints and fires: criticality=high AND
+risk_tier=financial-tier-2 → group:senior-reviewers.
+The caller then sends `escalate.raise`, which hands the task to the
+senior pool. Maya joins from that pool.
 
-Every step is an artefact in the chain. The full audit shows: what
-hints were on the task, which model produced what with what
-confidence, which routing decisions fired, which rules triggered,
-who eventually reviewed, what they overrode, why.
+Every call is on the audit log, and the caller keeps each routing
+response. Together they show what hints were on the task, which model
+produced what with what confidence, which routing decisions fired,
+which rules triggered, who eventually reviewed, what they overrode,
+and why.
 
 ---
 

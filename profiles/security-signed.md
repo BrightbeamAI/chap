@@ -16,7 +16,8 @@ real-world principals.
 
 ## 1. What this profile adds
 
-A single new field on every envelope:
+A single new field on every envelope except `participant.join` and
+`workspace.create`:
 
 ```json
 {
@@ -40,7 +41,7 @@ This profile is a thin wrapper over existing standards:
 | Concern          | Standard                                                  |
 |------------------|-----------------------------------------------------------|
 | Signature algorithm | [Ed25519. RFC 8032](https://datatracker.ietf.org/doc/html/rfc8032) |
-| Canonical bytes  | [JCS. RFC 8785](https://datatracker.ietf.org/doc/html/rfc8785)  |
+| Canonical bytes  | [JCS. RFC 8785](https://datatracker.ietf.org/doc/html/rfc8785), with the number restriction of SPECIFICATION §5.2 |
 | Signature tag    | `ed25519:<kid>:<base64-signature>` |
 | Key advertisement | [JSON Web Key. RFC 7517](https://datatracker.ietf.org/doc/html/rfc7517) |
 
@@ -51,6 +52,7 @@ This profile is a thin wrapper over existing standards:
 ### Signing
 
 ```
+// JCS with the number restriction of SPECIFICATION §5.2
 canonical = JCS( envelope with `sig` field removed )
 sig_bytes = Ed25519_sign( canonical, private_key )
 envelope.sig = "ed25519:" + kid + ":" + base64(sig_bytes)
@@ -101,13 +103,19 @@ A participant's public keys are advertised at `participant.join`:
 }
 ```
 
-The participant's first announce is self-signed (trust-on-first-use,
-mediated by transport-level authentication). Subsequent keys are
-introduced by signed `participant.rotate_key` messages.
+`participant.join` and `workspace.create` are not signature-checked,
+because the Coordinator holds no key for the caller yet; a `sig` on
+them is recorded as sent and never verified. Keys advertised at join
+are trusted on first use, and ignored where an identity profile pins a
+key. Later keys arrive through `participant.rotate_key`.
 
 ---
 
 ## 5. Key rotation
+
+`participant.rotate_key` and `participant.revoke_key` are Core methods,
+answered whatever the workspace advertises; this profile adds the
+signature requirement.
 
 ```json
 {
@@ -130,8 +138,8 @@ introduced by signed `participant.rotate_key` messages.
 ```
 
 The rotation message MUST be signed with the **old** key. The
-Coordinator marks the old key as `valid_until: ts of rotation` and
-the new key as `valid_from: ts of rotation`.
+Coordinator sets the old key's `valid_until` and the new key's
+`valid_from` to its own clock.
 
 ---
 
@@ -153,8 +161,10 @@ the new key as `valid_from: ts of rotation`.
 }
 ```
 
-A revoked key remains valid for verifying messages dated **before**
-the revocation. Messages dated after are rejected with `-32070`.
+A call signed with a revoked key is refused with `-32072`, whatever
+its `ts`. Calls the Coordinator accepted before the revocation stay on
+the log.
+Revoking another member's key needs the `admin` role, else `-32011`.
 
 ---
 
@@ -166,7 +176,10 @@ the revocation. Messages dated after are rejected with `-32070`.
 | `-32071`  | No known key matching `from` + `kid` + `ts`.     |
 | `-32072`  | Key has been revoked.                            |
 | `-32073`  | Rotation message not signed with old key.        |
-| `-32074`  | `approved_artefact_digest` does not match the artefact under review. |
+| `-32074`  | `approved_artefact_digest` does not match the artefact under review. Returned by `decide.*` whether or not this profile is advertised. |
+
+Refusals with `-32070` to `-32073` are never recorded; one with
+`-32074` is recorded when the caller is a member.
 
 ---
 
@@ -182,8 +195,9 @@ inputs/outputs against RFC 8032 test vector 1.
 - **With `identity-oidc`:** the OIDC `cnf.jwk` claim binds the
   signing key to the human's session; `participant.join` references
   the bound JWK.
-- **With `audit-scitt`:** signed envelopes become SCITT statements
-  with the participant's key as the SCITT identity.
+- **With `audit-scitt`:** a SCITT statement carries the signed envelope
+  in its payload, and its issuer is the `issuer` parameter of
+  `audit.submit_to_scitt`.
 - **With `core`:** Core's audit log records the full signed
   envelope verbatim, so the chain of signatures is recoverable from
   the log without any additional storage.

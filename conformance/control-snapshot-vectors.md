@@ -4,7 +4,7 @@
 Both coordinator test suites replay the same envelopes with deterministic IDs,
 a deterministic clock, and audit-chain recording enabled. They compare the
 entire final response and chain head, including the exact content hash, against
-committed values. No normalization hides missing fields or alternate nesting.
+committed values. No normalisation hides missing fields or alternate nesting.
 
 The nine cases cover default and individual slice selection, all five slices,
 Unicode labels, empty-field omission, cancelled-task exclusion, and the small
@@ -22,6 +22,7 @@ python -m pytest -q packages/coordinator-py/tests/test_snapshot_conformance.py
 The normal TypeScript/Python workspace test commands also run these files.
 Additional lifecycle tests cover all terminal task states, response/live-state
 isolation, rollback followed by another mutation, canonical store restart, and
-legacy store-record normalization. The differential fuzzer now includes
-snapshot and rollback actions; empty-selection behavior remains separate in
-#151 and #152.
+legacy store-record normalisation. The differential fuzzer includes
+snapshot and rollback actions. An explicitly empty `include` is refused with
+`-32602`, as is an empty `what_to_restore` on `control.rollback`; the
+`control_empty_list` tests cover both.

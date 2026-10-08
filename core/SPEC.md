@@ -83,8 +83,7 @@ For errors, the standard JSON-RPC error shape applies:
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2A",
   "error": {
     "code":    -32602,
-    "message": "Invalid params: missing 'kind'",
-    "data":    { "field": "kind" }
+    "message": "Missing field: kind"
   }
 }
 ```
@@ -194,9 +193,15 @@ A Task is a finite-state machine over these states:
 ```
 
 Core's states are `created`, `in_progress`, `completed` and `declined`.
-Of those only `completed` is terminal. Richer states, `review_requested`,
-`abstained`, `escalated`, `paused`, `cancelled` and `superseded`, exist only
-when the relevant profile is in use. The full transition table is
+No Core method moves a task out of `completed`; `review.request`
+(`review/1.0`) and `control.supersede` (`control/1.0`) can.
+`review_requested` is reachable on every workspace: `task.update` accepts
+`in_progress` to `review_requested`, and `task.complete` opens a review on a
+task that requires one (§4.6). Where `review/1.0` is not advertised the
+decision methods are refused with `-32601`, and `task.update` back to
+`in_progress` is the way out. `abstained`, `escalated`, `paused`, `cancelled`
+and `superseded` exist only when the relevant profile is in use. The full
+transition table is
 [`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1.
 
 ### 3.2 Audit log
@@ -317,9 +322,12 @@ Response:
 
 ```json
 {
-  "result": { "joined": true, "as": "agent:triage-bot", "role": "drafter" }
+  "result": { "joined": true, "as": "agent:triage-bot" }
 }
 ```
+
+`workspace`, `from` and `type` are required; a missing one is refused with
+`-32602`.
 
 ### 4.3 `participant.leave`
 
@@ -327,8 +335,9 @@ Response:
 
 A participant signals it is leaving the workspace. The Coordinator
 removes the participant from the members list. In-flight tasks
-remain assigned to the leaving participant unless explicitly
-reassigned by an administrator (see Control profile).
+remain assigned to the leaving participant. `task.route`
+(`routing/1.0`) and `handoff.accept` (`handoff/1.0`) reassign a task;
+`control.supersede` (`control/1.0`) replaces it with a new task.
 
 ```json
 {
@@ -383,9 +392,15 @@ workspace member.
 
 **Type:** notification or request.
 
-Report progress on a task or change its state from `created` to
-`in_progress`. Multiple `task.update` messages per task are
-permitted.
+Change a task's state, optionally with a `progress_note`. Every
+`task.update` MUST carry `state`; without it the call is refused with
+`-32602`. From `created` a task may move to `in_progress` or `declined`;
+from `in_progress` to `in_progress`, `completed`, `declined` or
+`review_requested`, with `completed` refused on a task that requires review.
+The full set is the `task.update` rows of
+[`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1. A progress
+report repeats `state: "in_progress"`. Each accepted `task.update` is
+appended to the audit log.
 
 ```json
 {
@@ -440,9 +455,15 @@ This terminal transition closes the task. Any further `task.update`
 or `task.complete` for the same task_id MUST be rejected with
 `-32602` (`Invalid params`).
 
-A Core-only deployment treats `task.complete` as the end of the
-flow. With the `review` profile (see [`../profiles/review.md`](../profiles/review.md)),
-completion may instead trigger a review request.
+A task requires review when it was created with `review_required: true`,
+or runs in `trial` mode on a workspace that advertises `modes/1.0`. On such
+a task `task.complete` holds `output` as the artefact under review, moves
+the task to `review_requested` and answers
+`{ "state": "review_requested", "review_id": "<task_id>" }`, whatever the
+workspace advertises. The review is addressed to the human members other
+than the assignee and the completer; with none, the call is refused with
+`-32011`. Only a reviewer decision under `review/1.0` then takes the task
+to `completed`. See [`../profiles/review.md`](../profiles/review.md) §3.1.
 
 ### 4.7 `audit.read`
 
@@ -458,7 +479,7 @@ Read a range of the workspace's audit log.
     "from":      "human:alice@example.org",
     "to":        "service:coordinator@example.org",
     "ts":        "2026-05-17T17:30:00Z",
-    "range":     { "from_seq": 0, "to_seq": 200 },
+    "range":     { "from_seq": 0, "to_seq": 100 },
     "filter":    { "method": "task.complete" }
   }
 }
@@ -475,10 +496,14 @@ Response:
       { "seq": 16, "request": { "...": "..." },
         "outcome": { "status": "refused", "code": -32011 }, "arrived": "2026-05-17T10:02:12.040Z" }
     ],
-    "next_seq": 201
+    "next_seq": 100
   }
 }
 ```
+
+`range.from_seq` is inclusive and `range.to_seq` is exclusive. `next_seq` is
+the `to_seq` the call used, or the length of the log when `to_seq` is
+omitted.
 
 Filters supported in Core:
 
@@ -486,9 +511,8 @@ Filters supported in Core:
 |-------------|----------------------------------------------|
 | `method`    | Only entries whose call has this method.     |
 | `from`      | Only entries whose call has this `from`.     |
-| `task_id`   | Only entries referencing this task id.       |
+| `task_id`   | Only entries whose call carries this `task_id` in `params`, and `whisper.answer` entries for a whisper raised on the task. The `task.create` that made the task, and calls that name it under another field, such as `escalate.raise`, are not returned. |
 | `outcome`   | `accepted` or `refused`: only accepted calls, or only recorded refusals. Omitted or null, both. Any other value is refused with `-32602`. |
-| `ts_range`  | Only entries within the time window.         |
 
 The call an entry records is its `envelope` when the call was accepted and
 its `request` when it was refused, and the other filters read it either way.
@@ -505,29 +529,29 @@ Core uses the standard JSON-RPC 2.0 error code ranges:
 | Code     | Meaning                                                |
 |----------|--------------------------------------------------------|
 | `-32700` | Parse error (malformed JSON).                          |
-| `-32600` | Invalid request (not a valid JSON-RPC message).        |
-| `-32601` | Method not found (unknown CHAP method).                 |
-| `-32602` | Invalid params (missing or wrongly-typed fields).      |
+| `-32600` | Invalid request: not a JSON-RPC 2.0 call, nested deeper than 64 levels, or larger than `max_envelope_bytes`. |
+| `-32601` | Method not found: an unknown method, or one whose owning profile the workspace does not advertise. |
+| `-32602` | Invalid params: missing or wrongly typed fields, an unknown workspace or task, a number that is not a safe integer, or a refused transition. |
 | `-32603` | Internal error (Coordinator failure).                  |
 
-CHAP-specific codes (used by profiles) start at `-32000` and below;
-Core does not define any. See individual profile docs.
+CHAP-specific codes start at `-32000` and below and are defined by the
+profile documents. Some reach Core methods: `-32011` when `from` is not a
+member, or when a review-required `task.complete` finds no eligible human
+reviewer; `-32063` when the workspace or the assignee is paused; and
+`-32040` when `task.create` asks for a mode above `mode_ceiling`. Where a
+deployment enforces signatures or an identity binding, Core methods can
+return that profile's codes too.
 
 ---
 
 ## 6. Liveness and timeouts (SHOULD)
 
-A Core implementation SHOULD:
-
-- Time out idle HTTP connections at 30 seconds.
-- Send a `task.update` heartbeat at least every 60 seconds during
-  long-running tasks.
-- Drop participants that have not sent any message for 10 minutes
-  (configurable). A dropped participant must call `participant.join`
-  again to re-enter the workspace.
-
-These thresholds are configurable; the values above are
-recommendations for typical deployments.
+A deployment SHOULD time out idle HTTP connections at 30 seconds. During a
+long-running task a participant SHOULD send `task.update` with
+`state: "in_progress"` at least every 60 seconds; each is recorded. A
+Coordinator MAY remove a participant silent for a configured period,
+typically 10 minutes; it rejoins with `participant.join`. The reference
+coordinators do not track activity.
 
 ---
 
@@ -601,13 +625,13 @@ A practical sequence:
 7. **Hour 7.** Write a tiny client that walks through the
    end-to-end demo: workspace.describe → participant.join (agent) →
    task.create → task.update → task.complete → audit.read.
-8. **Hour 8.** Run the conformance vectors in
-   [`../conformance/test-vectors.md`](../conformance/test-vectors.md)
-   for the Core subset.
+8. **Hour 8.** Run the Core vectors of the harness in
+   [`../conformance/harness/`](../conformance/harness/) against your
+   server with `--core-only`.
 
 That's a weekend. The reference implementation in
 [`../reference/core/`](../reference/core/) covers steps 1-7 in
-about 300 lines of TypeScript.
+a single short TypeScript file.
 
 ---
 

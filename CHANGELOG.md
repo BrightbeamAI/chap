@@ -248,6 +248,25 @@ response and hash for each slice in both references.
   to members or tasks, and callers modifying a returned response, reached the
   saved snapshot. The capture is copied, and restored scopes are copied back,
   so the content and its hash stay as they were at the capture.
+- **The specification, the profiles and the conformance documents describe
+  what both coordinators do.** Among the corrections:
+  - Rotating a key ends the old key at once; there is no grace window
+    (SPECIFICATION §5.7).
+  - Signatures are checked only where the Coordinator requires them, and never
+    on `workspace.create` or `participant.join` (§5.2, §15.1).
+  - Step-up covers every privileged method when the Coordinator enforces it,
+    and the catalogue's `privileged` flags now match them (§5.6, §12).
+  - `review/1.0` supports `any_one_approves`, `all_approve` and `quorum:<n>`;
+    weighted rules belong to `deliberation/1.0` (§8.3, profiles/review.md).
+  - A copy of an accepted call is evaluated again; only a signed copy of a
+    recorded refusal is answered with that refusal (§15.4).
+  - Routing decisions are held in workspace state and returned to the caller,
+    and the log records the request (profiles/routing.md).
+  - `conformance/test-vectors.md` §1 carries the RFC 8032 signature, and §3
+    shows a chain both coordinators record.
+  - `profiles/audit-scitt.md` cites the SCITT architecture as RFC 9943.
+  - SPECIFICATION §4.1 and §5.2 point to core/SPEC.md §2 for the messages the
+    coordinators send today; milestone 0.4 settles the format.
 
 ---
 

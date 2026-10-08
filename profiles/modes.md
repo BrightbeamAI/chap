@@ -8,8 +8,8 @@ safely roll out a new agent: run it alongside the existing flow
 (shadow), then deliver its output under review (trial), then trust
 it in production.
 
-This profile adds no new methods. It adds typed fields and policy
-enforcement.
+This profile's one method, `workspace.set_mode`, is specified and not
+yet built. The profile adds typed fields and policy enforcement.
 
 ---
 
@@ -17,9 +17,9 @@ enforcement.
 
 | Mode         | Output delivered? | Reviewed? | Used for                            |
 |--------------|-------------------|-----------|-------------------------------------|
-| `shadow`     | No                | n/a       | Side-by-side comparison against existing flow. |
+| `shadow`     | No                | When the task sets `review_required` | Side-by-side comparison against existing flow. |
 | `trial`      | Yes               | Every output | Gated rollout of a new agent or version. |
-| `production` | Yes               | Per policy (may be sampled) | Steady-state operation. |
+| `production` | Yes               | When the task sets `review_required` | Steady-state operation. |
 
 A new agent version SHOULD spend time in `shadow` mode (typically
 1-4 weeks) before promotion to `trial`, and in `trial` (typically
@@ -42,14 +42,18 @@ On `workspace.describe`:
 `mode` is the workspace's current default mode for new tasks.
 
 **These semantics apply only where this profile is loaded.** `modes/1.0`
-depends on Core but Core does not depend on it, so a workspace that has not
-declared the profile carries `mode` as an inert descriptor field: it is
-recorded and returned, and it changes no behaviour. In particular, trial
-does not force review on a workspace outside this profile. A Coordinator
-that applied mode semantics regardless would be imposing a profile nobody
-opted into.
+depends on Core but Core does not depend on it. Outside this profile,
+`trial` does not force review. Two parts of mode handling run in every
+workspace: `workspace.create` takes `mode` (default `trial`) and
+`mode_ceiling` (default `production`) without checking either, and
+`task.create` refuses a mode above the ceiling, or outside the ladder,
+with `-32040`. No method changes `mode` after creation. A Coordinator
+that forced review regardless would be imposing a profile nobody opted
+into.
+
 `mode_ceiling` is the highest mode any task in this workspace may
-use; it's a safety bound that requires elevated privilege to raise.
+use. It is a safety bound, and raising it requires elevated privilege;
+neither reference Coordinator checks a role for it yet.
 
 On `task.create`:
 
@@ -72,11 +76,12 @@ the workspace's `mode_ceiling` with error `-32040`.
 
 ### 3.1 `shadow`
 
-- The task runs to completion.
-- The output is recorded in the audit log.
-- The output is **not delivered** to the nominal recipient. (It may
-  be delivered to a `shadow_observers` list for analysis.)
-- Reviews are not requested.
+- The Coordinator handles a shadow task like any other and records
+  every call.
+- Holding output back, or sending it only to `shadow_observers`, is
+  the deployment's job (SPECIFICATION §11.3).
+- Review is not forced; a shadow task that sets `review_required` is
+  reviewed.
 
 This lets a new agent process real traffic without affecting users.
 Comparing the shadow output to the live flow's output is the
@@ -86,8 +91,9 @@ primary input to promotion decisions.
 
 - The task runs to completion.
 - The output is delivered.
-- Review is mandatory regardless of any per-task `review.required`
-  field, `trial` mode forces review on.
+- Review is mandatory regardless of the task's own `review_required`
+  field: `trial` mode sets it on every task that `task.create` or
+  `control.supersede` creates.
 - Because review is mandatory, `task.complete` opens a review rather
   than completing the task. A reviewer decision completes it.
 - The Coordinator addresses that review to the human members other than
@@ -102,8 +108,9 @@ trial mode is the most important signal for whether to promote.
 
 - The task runs to completion.
 - The output is delivered.
-- Review is per workspace policy. Common policies: random sampling
-  (e.g. 5%), risk-triggered (e.g. for high-value cases), or none.
+- The task is reviewed when it sets `review_required`. The deployment
+  decides when to set it, for example by random sampling (e.g. 5%) or
+  for high-value cases.
 
 ---
 
@@ -151,21 +158,22 @@ your governance picks the thresholds.
 | Code      | Meaning                                                     |
 |-----------|-------------------------------------------------------------|
 | `-32040`  | Task mode exceeds the workspace's `mode_ceiling`.           |
-| `-32041`  | Promotion requires elevated privilege (step-up auth, etc.). |
+| `-32041`  | Allocated; no Coordinator returns it. A stale step-up is refused with `-32402`. |
 
 ---
 
 ## 7. Composition notes
 
-- **With `review`:** trial-mode tasks have implicit
-  `review.required = true` regardless of the task's own setting.
+- **With `review`:** a trial-mode task created by `task.create` or
+  `control.supersede` has `review_required` set to true, whatever the
+  task's own setting.
 - **With `control`:** `control.set_mode_ceiling`, snapshots, and
   rollbacks cover the operational side of mode changes.
-- **With `security-signed`:** mode-ceiling changes are privileged
-  and SHOULD require step-up authentication.
+- **With `identity-oidc`:** where step-up is enforced,
+  `control.set_mode_ceiling` needs a fresh `auth_time`.
 
 ---
 
 ## 8. Worked example
 
-Mode promotion is implicit in [`../examples/09-pause-resume-rollback.md`](../examples/09-pause-resume-rollback.md).
+No worked example covers promotion yet.

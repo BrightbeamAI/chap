@@ -43,7 +43,7 @@ CHAP conformance.
 - [ ] Envelopes are valid [JSON-RPC 2.0](https://www.jsonrpc.org/specification) requests, responses, or notifications.
 - [ ] Required CHAP fields (`workspace`, `from`, `to`, `ts`) are present inside `params`.
 - [ ] `ts` is RFC 3339 with millisecond precision.
-- [ ] Participant URIs match the grammar in [`../SPECIFICATION.md`](../SPECIFICATION.md) §18.
+- [ ] Participant URIs match the grammar in [`../SPECIFICATION.md`](../SPECIFICATION.md#51-participant-uri-scheme) §5.1.
 
 ### C2 · Transport
 
@@ -57,18 +57,18 @@ CHAP conformance.
 - [ ] `participant.join` adds the participant to `members`; rejects with `-32602` for missing fields.
 - [ ] `participant.leave` removes the participant; idempotent.
 - [ ] `task.create` validates that the assignee is a current member; returns `task_id` and `state: "created"`.
-- [ ] Every actor-action method validates that `from` (the actor) is a current member, rejecting a non-member with `-32011` (the spec's `unknown_participant` condition; see SPECIFICATION.md §6.3.1). Verified by harness vectors `rv-07` and `rv-08`.
+- [ ] Every actor-action method validates that `from` (the actor) is a current member, rejecting a non-member with `-32011` (SPECIFICATION.md §6.3.1). Harness vector `rv-07` verifies this for `decide.approve`; `rv-08` tests the reviewer set.
 - [ ] `task.update` enforces the transition table in [`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1; rejects a transition the table does not list with `-32602`.
 - [ ] `task.complete` is refused on a task in `cancelled`, `superseded`, `paused` or any state the §8.1 table does not list for it, with `-32602`.
 - [ ] `audit.read` supports `range` and at minimum the `method`, `from`, `task_id` and `outcome` filters; returns `entries` and `next_seq`.
 
 ### C4 · Audit log
 
-- [ ] Every accepted envelope is appended in arrival order.
+- [ ] Every accepted state-changing envelope is appended in arrival order. `workspace.describe`, `audit.read`, `audit.verify_chain`, `audit.verify_receipt` and `audit.submit_to_scitt` are never appended, and a `task.create` answered from a seen `idempotency_key` is not appended again.
 - [ ] Every refused call that [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1 names is appended as a refusal entry, with the call under `request` and an `outcome` giving the code, and no other refusal is appended. Verified by `refusal-record-vectors.json`, and over HTTP by harness vector `rv-13`.
 - [ ] A call is checked in the order [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1 gives. A signed copy of a recorded refusal, compared without its `sig`, is answered with that refusal and `data.refused_at_seq` and is not evaluated; a signed copy of an accepted call that is refused is not recorded. `refusal-record-vectors.json` checks the signed-copy rules and that the request's own checks come before the pause.
 - [ ] Each entry records the Coordinator's arrival timestamp.
-- [ ] `audit.read` results are stable: the same range returns the same entries indefinitely.
+- [ ] `audit.read` results are stable: a range within the log returns the same entries every time.
 
 ### C5 · Error handling
 
@@ -81,7 +81,7 @@ CHAP conformance.
 ### C6 · Profile discovery
 
 - [ ] `workspace.describe`'s `profiles` array lists every active profile as `<name>/<version>`.
-- [ ] `core/1.0` is always present.
+- [ ] `core/1.0` is in the default profile set, and `workspace.set_profiles` adds it when missing. `workspace.create` advertises an explicit `profiles` list as given, adding `security-signed/1.0` or `identity-oidc/1.0` when the Coordinator enforces it.
 
 ---
 
@@ -102,12 +102,12 @@ a profile it does not pass.**
 - [ ] `review.request` is refused on a task that has been stopped (`cancelled`, `superseded`, `paused`) with `-32010`, so a review cannot revive terminated work or step around a pause (see [`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1).
 - [ ] Override entries preserve `rationale`, `tags`, `policy_refs` as queryable audit data.
 - [ ] `audit.read` filters support `method = decide.override`.
-- [ ] Returns `-32010` … `-32013` for review-specific failures (see [`../profiles/review.md`](../profiles/review.md) §5).
+- [ ] Returns `-32010` … `-32014` for review-specific failures (see [`../profiles/review.md`](../profiles/review.md) §5).
 
 ### Profile: `whisper/1.0`
 
 - [ ] Implements `whisper.ask` and `whisper.answer`.
-- [ ] Enforces `deadline_ms`; emits a `whisper_lapsed` notification with the default applied.
+- [ ] Applies `deadline_ms` through a lapse check that the host runs. The check marks each pending whisper past its deadline as lapsed, applies `default_if_lapsed`, records a `notify.message` of kind `whisper_lapsed` on the audit log and returns it to the host. Until the check has run, a `whisper.answer` that arrives after the deadline is accepted; once it has run, the answer is refused with `-32021`.
 - [ ] Validates `answer_option` is in the original option set.
 - [ ] Returns `-32020` … `-32022` for whisper-specific failures.
 
@@ -122,10 +122,10 @@ a profile it does not pass.**
 
 - [ ] `workspace.describe` exposes `mode` and `mode_ceiling`.
 - [ ] `task.create` rejects tasks whose `mode` exceeds `mode_ceiling` with `-32040`.
-- [ ] `shadow` tasks complete without delivering output.
+- [ ] A `shadow` task completes and stores its output like any other task.
 - [ ] `trial` tasks force review-required regardless of per-task settings, so `task.complete` on one opens a review rather than completing it.
-- [ ] Mode semantics apply only when this profile is loaded: on a workspace that has not declared `modes/1.0`, `mode` is an inert descriptor field and trial does not force review.
-- [ ] Mode-ceiling changes require step-up auth when `identity-oidc` is in use.
+- [ ] Trial forces review only when this profile is loaded: on a workspace that has not declared `modes/1.0`, a `trial` task does not force review. The `mode_ceiling` check on `task.create` applies on every workspace, with `-32040`.
+- [ ] Privileged operations, `control.set_mode_ceiling` included, require step-up auth when the Coordinator enforces step-up, an option separate from `identity-oidc/1.0`. A human or OIDC-bound caller whose `auth_time` is missing or outside the window is refused with `-32402`.
 
 ### Profile: `handoff/1.0`
 
@@ -137,12 +137,12 @@ a profile it does not pass.**
 ### Profile: `routing/1.0`
 
 - [ ] Implements `task.route`, `review.depth`, `escalate.auto`.
-- [ ] Each method produces a `route_decision` artefact captured in the evidence chain.
+- [ ] Each method produces a `route_decision` artefact, kept in the Coordinator's store. The request that produced it is what reaches the audit chain.
 - [ ] `route_decision` artefacts record `decision_type`, `outcome`, `policy_id`, `hints_observed`, and `rationale`.
-- [ ] `task.route` selects only from the supplied `candidates` array.
+- [ ] Without an operator policy, `task.route` selects the first member in `candidates`. An operator policy may select any member, in `candidates` or outside it, and a selection that is not a member is refused with `-32510`.
 - [ ] `review.depth=spot_check` is accompanied by a `sampling_probability` in [0, 1].
 - [ ] `escalate.auto=true` is accompanied by a `to` URI and a `triggered_rule` object.
-- [ ] When `modes/1.0` is also active, routing decisions in `shadow` and `trial` modes are logged but not enforced; only `production` enforces them.
+- [ ] `task.route` reassigns the task in every mode, `shadow` and `trial` included.
 - [ ] Returns `-32510` … `-32516` for routing-specific failures.
 - [ ] Core-only nodes forward `routing_hints` on tasks and artefacts unchanged.
 
@@ -150,8 +150,8 @@ a profile it does not pass.**
 
 - [ ] Implements `control.pause`, `control.resume`, `control.cancel`, `control.supersede`, `control.snapshot`, `control.rollback`.
 - [ ] `control.rollback` appends; it never truncates the audit log.
-- [ ] Privileged operations require step-up auth when `identity-oidc` is in use.
-- [ ] Returns `-32060` … `-32063` for control-specific failures.
+- [ ] Privileged operations, `control.set_mode_ceiling` included, require step-up auth when the Coordinator enforces step-up, an option separate from `identity-oidc/1.0`. A human or OIDC-bound caller whose `auth_time` is missing or outside the window is refused with `-32402`.
+- [ ] Returns `-32061` … `-32063` for control-specific failures, and `-32402` when a step-up check fails.
 
 ### Profile: `security-signed/1.0`
 
@@ -161,22 +161,22 @@ a profile it does not pass.**
 - [ ] Public keys are advertised at `participant.join` and validated on subsequent envelopes.
 - [ ] `participant.rotate_key` requires the old key's signature.
 - [ ] Revoked keys remain valid for verifying messages dated before revocation.
-- [ ] Returns `-32070` … `-32073` for signature-specific failures.
+- [ ] Returns `-32070` … `-32074` for signature-specific failures.
 - [ ] Passes the RFC 8032 test-vector validation in [`./test-vectors.md`](./test-vectors.md) §1.
 
 ### Profile: `audit-scitt/1.0`
 
-- [ ] Each entry, an accepted envelope or a recorded refusal, is wrapped as a COSE_Sign1 SCITT statement whose payload is the record its chain link hashes, and submitted to a SCITT Transparency Service.
-- [ ] SCITT receipts are returned to participants and verifiable offline against the service's published public key.
-- [ ] The audit log uses SCITT signed statements and receipts (not a bespoke chain format).
+- [ ] `audit.submit_to_scitt` builds one statement for each entry in the requested range, an accepted envelope or a recorded refusal alike, and statements are built only when it is called. A statement is a JSON object shaped like COSE_Sign1: its payload is the canonical form of the record the entry's chain link hashes, and its `signature` is the placeholder `"<deployment-supplied>"`. With a submitter configured, each statement goes to it and the receipts are returned; without one, the statements are returned for submission out of band.
+- [ ] SCITT receipts are returned to the caller of `audit.submit_to_scitt`, and `audit.verify_receipt` checks one through the deployment's verifier.
+- [ ] The audit log itself is the Coordinator's own hash chain ([`./test-vectors.md`](./test-vectors.md) §3); SCITT statements are built from it on request.
 - [ ] Returns `-32080` … `-32082` for SCITT-specific failures.
 - [ ] `audit.verify_chain` returns `ok: true` only with `status: "verified"`, and `status: "not_evaluated"` whenever any entry lies outside the chain (SPECIFICATION.md §10.2, vectors `av-01` … `av-05`).
 - [ ] `entries_checked` + `entries_unchecked` = `entries_total` in every verdict, and `checked_from_seq` is the first covered `seq` or `null`.
 
 ### Profile: `identity-oidc/1.0`
 
-- [ ] Participant signing keys are bound via OIDC `cnf.jwk` (RFC 7800) or DPoP (RFC 9449).
-- [ ] Privileged operations enforce a step-up auth window (default 5 minutes); returns `-32402` when exceeded.
+- [ ] Participant signing keys are bound via OIDC `cnf.jwk` (RFC 7800).
+- [ ] When step-up is enforced, privileged operations apply a window (default 5 minutes) and return `-32402` when it is exceeded.
 - [ ] ID-token verification covers `iss`, `aud`, `exp`, signature, and `cnf.jwk` match.
 - [ ] Returns `-32402` … `-32405` for identity-specific failures.
 
@@ -186,7 +186,7 @@ a profile it does not pass.**
 - [ ] Holder binding (proof of possession) is verified at presentation time.
 - [ ] Issuer trust is configurable per workspace.
 - [ ] Revocation is checked at presentation time and periodically thereafter.
-- [ ] Returns `-32410` … `-32414` for VC-specific failures.
+- [ ] Returns `-32410` … `-32413` for VC-specific failures.
 
 ---
 

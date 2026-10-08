@@ -5,15 +5,17 @@ implementation can use to self-check its signing, canonicalisation,
 and evidence-chain code. The values are reproducible: anyone with a
 working Ed25519 and SHA-256 library can regenerate them.
 
-The vectors cover three operations:
+The vectors cover:
 
 1. **Ed25519 signing** (against RFC 8032 test vector 1).
 2. **JCS canonicalisation** of a sample CHAP envelope.
-3. **Evidence-chain linkage** of a genesis entry plus three entries.
+3. **Review and audit behaviour**: the harness vectors `rv-09` to `rv-13`
+   (§2a, §2c) and the `audit-scitt/1.0` vectors `av-01` to `av-05` (§2b).
+4. **Evidence-chain linkage** of a chain both coordinators record (§3).
 
-If an implementation matches all three, its cryptographic core is
-conformant. (The conformance ladder. Minimal, Recommended, and the
-planned Full level, is described in
+If an implementation matches the signing, canonicalisation and chain
+vectors, its cryptographic core is conformant. (The conformance ladder,
+Minimal, Recommended and the planned Full level, is described in
 [SPECIFICATION.md §17](../SPECIFICATION.md#17-conformance) and the
 profile-selection checklist is in
 [`conformance-checklist.md`](./conformance-checklist.md).)
@@ -35,14 +37,14 @@ EXPECTED PUBLIC KEY (32 bytes, hex):
 MESSAGE TO SIGN: empty (0 bytes)
 
 EXPECTED SIGNATURE (64 bytes, hex):
-  e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bdfa987599ce19a1c6d27
+  e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b
 ```
 
 In CHAP, the signature is base64-encoded and prefixed with the
 algorithm and key id, e.g.
 
 ```
-ed25519:test-vector-rfc8032:5VZDAMNgrHKQhuLMgG6Cipw…
+ed25519:test-vector-rfc8032:5VZDAMNgrHKQhuLMgG6CioSHfx645dl02HPgZSJJAVVfuIIVkKM7rMYeOXAc+bRr0lv18FlbviRlUUFDjnoQCw==
 ```
 
 If your `ed25519:` tag's base64 decodes to the 64-byte signature
@@ -62,7 +64,7 @@ representation. The CHAP rules:
 - Strings use minimal JSON escaping.
 - Numbers are integers within the safe-integer range. A non-integer
   number is rejected rather than canonicalised, so a fractional value
-  travels as a decimal string. See SPECIFICATION.md §7 and the
+  travels as a decimal string. See SPECIFICATION.md §5.2 and the
   machine-readable cases in `canonical-number-vectors.json`.
 - The `evidence.sig` field is **removed** before canonicalisation
   for signing (and reinserted after).
@@ -102,7 +104,9 @@ differs but the bytes look almost right, check (in order):
 
 - Key ordering at every nesting level (especially `evidence` and `params`).
 - Whitespace: there must be none.
-- Number representation: `0.42` (not `0.420`, not `42e-2`).
+- Number representation: `load` is the string `"0.42"`, copied byte for byte.
+  A JSON number `0.42` has no CHAP canonical form, and a Coordinator refuses a
+  call that carries one with `-32602`.
 - The presence of `evidence.sig`: it must be **absent** during canonicalisation.
 
 ---
@@ -110,8 +114,9 @@ differs but the bytes look almost right, check (in order):
 ## 2a. Refusals that must leave state untouched
 
 Four vectors cover the artefact digest, the open-review guard and the reviewer
-set a required review is addressed to. Each asserts on a refusal, which is easy
-to implement as a refusal that quietly does not.
+set a required review is addressed to. `rv-09` checks that a matching digest
+approves as normal. The others assert on a refusal, which is easy to implement
+as a refusal that quietly does not.
 
 | Vector  | Sends                                                        | Expects                                   |
 |---------|--------------------------------------------------------------|-------------------------------------------|
@@ -175,89 +180,73 @@ refusals of `rv-07` and `rv-08`:
 
 The chain is a sequence of entries. Each entry carries the chain head
 as it stood before that entry, and the new head is the SHA-256 of the
-entry's canonical envelope concatenated with that previous head.
+entry's canonical record concatenated with that previous head.
 
 ```
-entry[N].prev_hash = head before entry N   (sha256:0*64 at genesis)
-head after entry N = sha256( JCS(envelope[N]) || entry[N].prev_hash )
+entry[N].prev_hash = head before entry N   (sha256:0*64 for the first entry)
+head after entry N = sha256( JCS(record[N]) || entry[N].prev_hash )
 ```
 
-For a recorded refusal (SPECIFICATION §10.1), `envelope[N]` is replaced by
-the object `{"outcome": …, "request": …}`. `refusal-record-vectors.json`
-pins worked examples.
+For an accepted call, `record[N]` is the envelope exactly as received, `id`
+and any top-level `sig` included. For a recorded refusal (SPECIFICATION
+§10.1), it is the object `{"outcome": …, "request": …}`.
+`refusal-record-vectors.json` pins worked examples of those. The entry's own
+`seq` and `arrived` are not part of the record.
 
 Every digest is `sha256:` followed by 64 lowercase hex characters.
-`JCS(envelope[N])` is the canonical serialisation of the recorded
-envelope; `prev_hash` is concatenated as its full UTF-8 string form,
-prefix included. Genesis carries `sha256:` followed by 64 zeros.
+`JCS(record[N])` is the canonical serialisation of the record; `prev_hash`
+is concatenated as its full UTF-8 string form, prefix included. The first
+chained entry, which SPECIFICATION §10.1 calls the genesis entry, carries
+`sha256:` followed by 64 zeros as its `prev_hash`.
 
-Below is a four-entry chain (genesis plus three) with placeholder
-canonical envelopes for entries 1-3. The hashes are derived
-deterministically; any implementation that chains correctly will
-produce the same `prev_hash` for each entry.
+Below is the chain both coordinators record for three accepted calls on a
+workspace created with `audit-scitt/1.0`: the `workspace.create` that
+created it and two `participant.join` calls. Each record is shown in its
+canonical form.
 
-### Genesis (seq = 0)
+### Entry 0 (seq = 0)
 
 ```
-envelope_hash = sha256:0000000000000000000000000000000000000000000000000000000000000000
-sig           = ed25519:genesis:
-                  (empty signature payload; the Coordinator MAY use
-                   a zero-byte sig for genesis or a self-signature
-                   over the genesis canonical form. The chain
-                   linkage uses the literal string above.)
+record    = {"id":"req-1","jsonrpc":"2.0","method":"workspace.create","params":{"from":"human:alice@example.org","profiles":["core/1.0","audit-scitt/1.0"],"to":"service:coordinator@example.org","ts":"2026-05-17T09:00:00.000Z","workspace":"wsp_test"}}
+prev_hash = sha256:0000000000000000000000000000000000000000000000000000000000000000
 
-→ link hash (next entry's prev_hash):
-  sha256:b648e6099b51884761cd73569c83a75bbf355d74e1b5d4ecab1ca264f99c1c9f
+→ head after entry 0:
+  sha256:110153f2ff7df935174bab8ddfe48a303920bec27deca0e55647cdacf3c0ea97
 ```
 
 ### Entry 1 (seq = 1)
 
 ```
-canonical envelope (placeholder): {"e":"entry-1-canonical-form-placeholder"}
-envelope_hash = sha256:c3c4a9b2fd30c2909f92e791dd087bef13a4a8741609f9050b8fff51bd2f3250
-prev_hash     = sha256:b648e6099b51884761cd73569c83a75bbf355d74e1b5d4ecab1ca264f99c1c9f
-sig           = ed25519:k-2026-05-17a:dGVzdHNpZzE=
+record    = {"id":"req-2","jsonrpc":"2.0","method":"participant.join","params":{"from":"human:alice@example.org","to":"service:coordinator@example.org","ts":"2026-05-17T09:00:01.000Z","type":"human","workspace":"wsp_test"}}
+prev_hash = sha256:110153f2ff7df935174bab8ddfe48a303920bec27deca0e55647cdacf3c0ea97
 
-→ link hash:
-  sha256:f7bd68c5df49fadc8a33e2c9880df49f1199834a319fad39f824dc49c7ec31f7
+→ head after entry 1:
+  sha256:77e0e38d2006c83645a1c8cb12abb401c4e109320fcf7b94a94753113e0cb19d
 ```
 
 ### Entry 2 (seq = 2)
 
 ```
-canonical envelope (placeholder): {"e":"entry-2-canonical-form-placeholder"}
-envelope_hash = sha256:6041ae03445c4b444ea39f4582280bab47c4bc0b96441a1eaa275acacc6e7bb3
-prev_hash     = sha256:f7bd68c5df49fadc8a33e2c9880df49f1199834a319fad39f824dc49c7ec31f7
-sig           = ed25519:k-2026-05-17a:dGVzdHNpZzI=
+record    = {"id":"req-3","jsonrpc":"2.0","method":"participant.join","params":{"from":"agent:triage-bot","to":"service:coordinator@example.org","ts":"2026-05-17T09:00:02.000Z","type":"agent","workspace":"wsp_test"}}
+prev_hash = sha256:77e0e38d2006c83645a1c8cb12abb401c4e109320fcf7b94a94753113e0cb19d
 
-→ link hash:
-  sha256:47a6163f2d410223ea3463556bb9b97d09f0835b1f33556bc278f792d4306da4
-```
-
-### Entry 3 (seq = 3)
-
-```
-canonical envelope (placeholder): {"e":"entry-3-canonical-form-placeholder"}
-envelope_hash = sha256:48af9d881f3fb72e18971ad5bef75ed427022615e57b7c65ec1d365e506a0d3b
-prev_hash     = sha256:47a6163f2d410223ea3463556bb9b97d09f0835b1f33556bc278f792d4306da4
-sig           = ed25519:k-2026-05-17a:dGVzdHNpZzM=
-
-→ link hash (current chain head):
-  sha256:2f232ae157206b416423e6dacb99925a1739a494072f05fe040788c874a82d05
+→ head after entry 2 (the chain head, published as evidence_head):
+  sha256:5d9e95b79b484be957f462d23ea61febcfa124146f3acae2e194878c0a750699
 ```
 
 ### Verification recipe
 
-For each i ≥ 1:
+Check that the first chained entry's `prev_hash` is the zero head. Then,
+for each i ≥ 1:
 
 ```
-expected_prev_hash_at_i = sha256( JCS(envelope[i-1]) + entry[i-1].prev_hash )
+expected_prev_hash_at_i = sha256( JCS(record[i-1]) + entry[i-1].prev_hash )
 assert entry[i].prev_hash == expected_prev_hash_at_i
 ```
 
-If your chain walker reports those exact expected `prev_hash` values,
-you've verified linkage. A real chain replaces the placeholder
-envelopes with full CHAP envelopes; the linkage logic is the same.
+Finally, the head after the last entry must equal the workspace's
+`evidence_head`. If your chain walker reports the values above, you've
+verified linkage.
 
 ---
 
@@ -271,23 +260,23 @@ import hashlib
 def h(s: str) -> str:
     return "sha256:" + hashlib.sha256(s.encode()).hexdigest()
 
-# Genesis
-g_envelope_hash = "sha256:" + "0" * 64
-g_sig           = "ed25519:genesis:"
-g_link          = h(g_envelope_hash + g_sig)
-print("genesis link:", g_link)
+# The canonical (JCS) form of each recorded envelope, as in section 3.
+records = [
+    '{"id":"req-1","jsonrpc":"2.0","method":"workspace.create","params":{"from":"human:alice@example.org","profiles":["core/1.0","audit-scitt/1.0"],"to":"service:coordinator@example.org","ts":"2026-05-17T09:00:00.000Z","workspace":"wsp_test"}}',
+    '{"id":"req-2","jsonrpc":"2.0","method":"participant.join","params":{"from":"human:alice@example.org","to":"service:coordinator@example.org","ts":"2026-05-17T09:00:01.000Z","type":"human","workspace":"wsp_test"}}',
+    '{"id":"req-3","jsonrpc":"2.0","method":"participant.join","params":{"from":"agent:triage-bot","to":"service:coordinator@example.org","ts":"2026-05-17T09:00:02.000Z","type":"agent","workspace":"wsp_test"}}',
+]
 
-# Entry 1
-e1_canonical    = '{"e":"entry-1-canonical-form-placeholder"}'
-e1_envelope_hash = "sha256:" + hashlib.sha256(e1_canonical.encode()).hexdigest()
-e1_sig           = "ed25519:k-2026-05-17a:dGVzdHNpZzE="
-e1_link          = h(e1_envelope_hash + e1_sig)
-print("entry 1 link:", e1_link)
-# … repeat for entries 2 and 3.
+prev = "sha256:" + "0" * 64  # the zero head
+for seq, record in enumerate(records):
+    head = h(record + prev)  # JCS(record) || prev_hash, as UTF-8
+    print(f"seq {seq}: prev_hash {prev}")
+    print(f"       head      {head}")
+    prev = head
 ```
 
-Run this; the printed values must match the link hashes above. If
-they do, your hashing and linkage rules are correct.
+Run it; the printed heads must match §3. If they do, your hashing and
+linkage rules are correct.
 
 ---
 

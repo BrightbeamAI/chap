@@ -59,10 +59,8 @@ test("Ed25519 RFC 8032 test vector 1", () => {
   const sk = createPrivateKey({ key: pkcs8, format: "der", type: "pkcs8" });
   const sig = nodeSign(null, Buffer.alloc(0), sk);
   const sigHex = sig.toString("hex");
-  // RFC 8032 Test 1 expected signature (corrected. the published test
-  // vector in the parent repo's conformance/test-vectors.md has the
-  // last 22 hex chars wrong; this is what cryptography libraries
-  // actually produce).
+  // RFC 8032 Test 1 expected signature, as conformance/test-vectors.md
+  // section 1 publishes it.
   const expected = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b";
   assert.equal(sigHex, expected);
 });

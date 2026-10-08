@@ -61,22 +61,42 @@ def test_jcs_rejects_nonfinite():
         canonicalize({"x": float("inf")})
 
 
-def test_chain_link_hash_for_genesis():
-    """Genesis link hash from test-vectors.md S3."""
-    zero = "sha256:" + "0" * 64
-    sig = "ed25519:genesis:"
-    expected = "sha256:b648e6099b51884761cd73569c83a75bbf355d74e1b5d4ecab1ca264f99c1c9f"
-    actual = sha256_hex((zero + sig).encode("utf-8"))
-    assert actual == expected
+CHAIN_RECORDS = [
+    '{"id":"req-1","jsonrpc":"2.0","method":"workspace.create","params":{"from":"human:alice@example.org","profiles":["core/1.0","audit-scitt/1.0"],"to":"service:coordinator@example.org","ts":"2026-05-17T09:00:00.000Z","workspace":"wsp_test"}}',
+    '{"id":"req-2","jsonrpc":"2.0","method":"participant.join","params":{"from":"human:alice@example.org","to":"service:coordinator@example.org","ts":"2026-05-17T09:00:01.000Z","type":"human","workspace":"wsp_test"}}',
+    '{"id":"req-3","jsonrpc":"2.0","method":"participant.join","params":{"from":"agent:triage-bot","to":"service:coordinator@example.org","ts":"2026-05-17T09:00:02.000Z","type":"agent","workspace":"wsp_test"}}',
+]
+CHAIN_HEADS = [
+    "sha256:110153f2ff7df935174bab8ddfe48a303920bec27deca0e55647cdacf3c0ea97",
+    "sha256:77e0e38d2006c83645a1c8cb12abb401c4e109320fcf7b94a94753113e0cb19d",
+    "sha256:5d9e95b79b484be957f462d23ea61febcfa124146f3acae2e194878c0a750699",
+]
+
+
+def test_chain_heads_from_test_vectors():
+    """The three-entry chain in test-vectors.md S3, computed and recorded."""
+    import json
+
+    from chap_coordinator import Coordinator, CoordinatorOptions
+
+    prev = "sha256:" + "0" * 64
+    for record, expected in zip(CHAIN_RECORDS, CHAIN_HEADS):
+        assert canonicalize(json.loads(record)).decode("utf-8") == record
+        prev = sha256_hex((record + prev).encode("utf-8"))
+        assert prev == expected
+
+    coord = Coordinator(CoordinatorOptions())
+    for record in CHAIN_RECORDS:
+        assert "error" not in coord.dispatch(json.loads(record))
+    described = coord.dispatch({"jsonrpc": "2.0", "id": "d", "method": "workspace.describe",
+                                "params": {"workspace": "wsp_test"}})
+    assert described["result"]["evidence_head"] == CHAIN_HEADS[-1]
 
 
 def test_ed25519_rfc8032_vector1():
     """RFC 8032 test vector 1: Ed25519 signing with the canonical seed.
 
-    Note: the published expected signature in test-vectors.md is incorrect
-    (the last 22 hex chars differ from what major Ed25519 implementations
-    produce). We verify here against the empirically-correct signature
-    produced by both python-cryptography and pynacl.
+    The expected signature is the one test-vectors.md S1 publishes.
     """
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -90,8 +110,9 @@ def test_ed25519_rfc8032_vector1():
 
     sk = Ed25519PrivateKey.from_private_bytes(seed)
     assert sk.public_key().public_bytes_raw().hex() == expected_pub
-    # Signature is deterministic for Ed25519; we don't assert the exact value
-    # because of the test-vectors.md discrepancy noted above. Verify instead
-    # that the signature round-trips through verify().
     sig = sk.sign(b"")
+    assert sig.hex() == (
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555"
+        "fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+    )
     sk.public_key().verify(sig, b"")  # raises if invalid

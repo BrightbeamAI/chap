@@ -50,7 +50,7 @@
     },
     "ReviewDepthParams": {
       "type": "object",
-      "required": ["workspace", "artefact_id", "task_id", "ts"],
+      "required": ["workspace", "task_id", "ts"],
       "properties": {
         "workspace": {
           "type": "string",
@@ -58,11 +58,17 @@
         },
         "artefact_id": {
           "type": "string",
-          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Recorded with the request. Neither reference Coordinator reads it."
         },
         "task_id": {
           "type": "string",
           "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "artefact_routing_hints": {
+          "type": "object",
+          "description": "The artefact's own routing hints, such as confidence and model_id. Merged over the task's routing_hints; a key here takes precedence.",
+          "additionalProperties": true
         },
         "ts": { "type": "string", "format": "date-time" },
         "policy_id": { "type": "string" }
@@ -97,7 +103,7 @@
     },
     "EscalateAutoParams": {
       "type": "object",
-      "required": ["workspace", "artefact_id", "task_id", "ts"],
+      "required": ["workspace", "task_id", "ts"],
       "properties": {
         "workspace": {
           "type": "string",
@@ -105,11 +111,17 @@
         },
         "artefact_id": {
           "type": "string",
-          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^art_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Recorded with the request. Neither reference Coordinator reads it."
         },
         "task_id": {
           "type": "string",
           "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "default_escalation_target": {
+          "type": "string",
+          "pattern": "^(human|agent|service|group):[^\\s]+$",
+          "description": "The target the built-in rule escalates to. A deployment's escalation policy chooses its own target."
         },
         "ts": { "type": "string", "format": "date-time" }
       }
@@ -190,7 +202,7 @@
           "enum": ["task.route", "review.depth", "escalate.auto"]
         },
         "outcome": {
-          "description": "The decision made. Type depends on decision_type: a URI for task.route, a depth tier for review.depth, a boolean for escalate.auto."
+          "description": "The decision made. Type depends on decision_type: a URI for task.route, a depth tier for review.depth, an object {escalate, to} for escalate.auto."
         },
         "policy_id": { "type": "string" },
         "hints_observed": {

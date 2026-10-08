@@ -4,7 +4,7 @@
 
 Bind human Participant identities to OIDC ID tokens. The CHAP
 signing key (advertised in `security-signed`) is bound to the
-session via the OIDC `cnf.jwk` claim (RFC 7800) or DPoP (RFC 9449).
+session via the OIDC `cnf.jwk` claim (RFC 7800).
 
 CHAP introduces no identity protocol. This profile is the recommended
 way to use OIDC with CHAP, but a deployment is free to use any OIDC
@@ -17,7 +17,7 @@ flow that produces a token suitable for the bindings below.
 | Need                       | Standard                                                                                          |
 |----------------------------|---------------------------------------------------------------------------------------------------|
 | Authentication             | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)                  |
-| Token-to-key binding       | [RFC 7800 `cnf.jwk`](https://datatracker.ietf.org/doc/html/rfc7800) or [RFC 9449 DPoP](https://datatracker.ietf.org/doc/html/rfc9449) |
+| Token-to-key binding       | [RFC 7800 `cnf.jwk`](https://datatracker.ietf.org/doc/html/rfc7800)                               |
 | Step-up authentication     | OIDC `prompt=login`, `acr_values`, `auth_time`                                                    |
 | Scope                      | OIDC / OAuth 2.0 scopes                                                                           |
 | Discovery                  | OIDC Discovery / JWKS                                                                             |
@@ -39,10 +39,10 @@ IdP authenticates user (password, MFA, …)
 IdP → Client: ID token containing cnf.jwk = pub(K), auth_time = T0
    │
    ▼
-Client → Coordinator: handshake   presents ID token
+Client → Coordinator: participant.join with oidc_token = ID token
    │
    ▼
-Coordinator: verifies ID token; extracts cnf.jwk; pins as participant key
+Coordinator: deployment's verifier checks the token; Coordinator pins cnf.jwk
    │
    ▼
 Client → Coordinator: CHAP messages signed with K (security-signed profile)
@@ -52,6 +52,18 @@ The keypair is generated locally and never leaves the client. The
 public half is delivered to the IdP via the `cnf.jwk` request
 parameter (or its equivalent in the IdP's supported flow). The IdP
 echoes it back inside the ID token; the Coordinator pins it.
+
+The client presents the ID token as `oidc_token` on `participant.join`.
+The deployment's verifier (`verifyOidcToken` or `verify_oidc_token`)
+checks signature, expiry and audience and returns the claims; a
+rejected token refuses the join with `-32403`. The Coordinator keeps
+`sub`, `auth_time` and `acr`, and pins `cnf.jwk` as the participant's
+key when it carries a `kid`, ignoring self-asserted `jwks`.
+
+The Coordinator records the `participant.join` call as sent,
+`oidc_token` included, and `audit.read` returns it to any caller unless
+the Coordinator requires read membership. Deployments SHOULD require
+read membership and use short-lived tokens.
 
 ---
 
@@ -79,17 +91,20 @@ A CHAP-aware OIDC ID token:
 ```
 
 Required for CHAP binding: `iss`, `aud`, `exp`, `sub`, `auth_time`,
-`cnf.jwk`, and either `chap_participant_uri` or a Coordinator-side
-mapping from `sub` to a CHAP URI.
+`cnf.jwk` with a `kid`, and either `chap_participant_uri` or a
+Coordinator-side mapping from `sub` to a CHAP URI.
 
 ---
 
 ## 4. Step-up authentication
 
-Methods marked privileged (e.g. all `control.*` methods, certain
-`workspace.*` methods) require a fresh `auth_time`. The default
-window is 5 minutes; the workspace's descriptor publishes its
-configured value.
+Step-up applies where the Coordinator enforces it (`enforceStepUp` or
+`enforce_step_up`), to humans and OIDC-bound members calling
+`control.*`, `workspace.set_profiles`, `participant.rotate_key` or
+`participant.revoke_key`. Those calls need a fresh `auth_time`. A
+workspace created with `min_acr` also requires the token's `acr` to
+equal it. The default window is 5 minutes; the workspace's descriptor
+publishes its configured value.
 
 ```
 auth_time_age = now() - id_token.auth_time
@@ -97,9 +112,9 @@ if (privileged_method && auth_time_age > workspace.step_up_window_sec):
     return error(-32402, "step_up_required", { window_sec: ... })
 ```
 
-The client recovers by triggering `prompt=login` with the IdP and
-retrying. This is standard OIDC behaviour; CHAP only defines the
-error code and the policy hook.
+The client recovers by presenting a fresh token with `participant.join`
+and retrying; `prompt=login` at the IdP is the usual way to get one. A
+member's refusal with `-32402` is recorded (SPECIFICATION §10.1).
 
 ---
 
@@ -169,8 +184,8 @@ with the now-discarded key.
 |-----------|----------------------------------------------------------|
 | `-32402`  | Step-up authentication required.                         |
 | `-32403`  | ID token invalid (signature, expiry, audience).          |
-| `-32404`  | `cnf.jwk` does not match the signing key in use.         |
-| `-32405`  | Required OIDC scope not present.                         |
+| `-32404`  | `cnf.jwk` does not match the signing key in use. Allocated; neither reference Coordinator returns it. |
+| `-32405`  | Required OIDC scope not present. Allocated; neither reference Coordinator returns it. |
 
 ---
 
@@ -178,7 +193,6 @@ with the now-discarded key.
 
 - [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
 - [RFC 7800. Proof-of-Possession Key Semantics for JWTs](https://datatracker.ietf.org/doc/html/rfc7800)
-- [RFC 9449. OAuth 2.0 Demonstrating Proof-of-Possession (DPoP)](https://datatracker.ietf.org/doc/html/rfc9449)
 - [SPIFFE](https://spiffe.io), for service-to-service identity
 
 ---
@@ -187,6 +201,6 @@ with the now-discarded key.
 
 - **With `security-signed`:** the OIDC binding pins which Ed25519
   key the participant signs with.
-- **With `audit-scitt`:** signed envelopes become SCITT statements
-  whose issuer-identity is the OIDC `sub` or `chap_participant_uri`.
+- **With `audit-scitt`:** a SCITT statement's issuer is the `issuer`
+  parameter of `audit.submit_to_scitt`.
 - **With `control`:** step-up is the gate for privileged ops.

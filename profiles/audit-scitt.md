@@ -1,16 +1,17 @@
 # Profile: `audit-scitt`
 
-**Profile id:** `audit-scitt/1.0` · **Depends on:** `security-signed`
+**Profile id:** `audit-scitt/1.0` · **Depends on:** Core; pairs with `security-signed`.
 
-The `audit-scitt` profile says: **the workspace's audit log is a
+The `audit-scitt` profile connects the workspace's audit log to a
 [SCITT](https://datatracker.ietf.org/wg/scitt/about/) transparency
-service.** Every entry on the log, an accepted CHAP envelope or a
-recorded refusal (SPECIFICATION §10.1), becomes a SCITT signed
-statement, and every statement produces a SCITT receipt that any party
-can verify offline against the transparency service's signed log root.
+service. On request, the Coordinator turns each entry, an accepted CHAP
+envelope or a recorded refusal (SPECIFICATION §10.1), into a SCITT
+signed statement and passes it to a submitter the deployment supplies;
+the receipts come back to the caller. Advertising the profile also
+turns on the local hash chain (§6.1).
 
-CHAP does not define its own transparency primitive; this profile
-defers entirely to SCITT.
+CHAP does not define its own transparency service; for that, this
+profile defers to SCITT.
 
 ---
 
@@ -55,7 +56,7 @@ working group's review and from existing SCITT implementations.
 │                            ┌──────────────────────┐       │
 │                            │   SCITT receipt      │       │
 │                            │   (returned to       │       │
-│                            │    participants)     │       │
+│                            │    the caller)       │       │
 │                            └──────────────────────┘       │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -68,32 +69,57 @@ operated by the same party as the Coordinator, by a third party
 
 ## 3. Statement format
 
-Each entry is wrapped as a SCITT signed statement:
+Each entry is modelled as a SCITT signed statement. The Coordinator
+returns this JSON model, or passes it to the deployment's submitter;
+encoding it as COSE_Sign1 and signing it are the deployment's job.
 
 ```
 COSE_Sign1 {
   protected: {
     alg: -8   // Ed25519
-    iss: <participant's URI>
-    kid: <key id>
+    iss: <issuer parameter; default "service:coordinator">
+    kid: "scitt-issuer"
     cwt_claims: {
       sub: <workspace id>
-      iat: <unix ts>
+      iat: null
     }
     content-type: "application/chap+json;version=0.2"
   }
   payload: <JCS canonicalisation of the entry's record>
-  signature: <Ed25519 signature over the protected headers + payload>
+  signature: "<deployment-supplied>"
 }
 ```
 
-The protected headers identify the workspace and the issuing
-participant. The payload is the record the entry's chain link hashes
+The protected headers identify the workspace and the issuer. The
+payload is the record the entry's chain link hashes
 (SPECIFICATION §10.1). For an accepted call it is the canonical CHAP
 envelope, which a receiver can extract and process normally. For a
 recorded refusal it is the object `{"outcome": …, "request": …}`: the
 call took no effect, and a receiver MUST NOT process its `request` as a
 call.
+
+---
+
+## 3a. Methods
+
+`audit.submit_to_scitt` takes an optional `range` {`from_seq`,
+`to_seq`}, with `to_seq` exclusive and the whole log as the default,
+and an optional `issuer`. With a submitter configured it returns
+`{receipts: [{seq, receipt}]}`; without one it returns
+`{statements, note}`. A failure stops it and discards earlier receipts:
+`-32080` when the submitter raises an error, `-32081` when it returns
+no receipt.
+
+`audit.verify_receipt` returns `{verified: true}`, or `-32082` when the
+deployment's verifier rejects the receipt or none is configured.
+
+`audit.verify_chain` replays the local chain (§6.1). It refuses
+`from_seq` or `to_seq`, a broken chain and a workspace without a chain
+with `-32602`.
+
+None of the three is recorded. Only `audit.submit_to_scitt` needs this
+profile advertised; the other two answer whatever the workspace
+advertises.
 
 ---
 
@@ -113,20 +139,12 @@ in the loop.
 
 ---
 
-## 5. What CHAP no longer defines
+## 5. What CHAP keeps
 
-This profile **deletes** the following from CHAP itself:
-
-- The bespoke `EvidenceEntry` schema.
-- The `prev_hash` chain linkage rules.
-- The custom `coord_sig` co-signature field.
-- The custom `audit.checkpoint` and `audit.verify` semantics for chain integrity.
-
-In their place: standard SCITT receipts and the standard SCITT
-verification procedure.
-
-CHAP retains `audit.read` (for browsing the log), but the underlying
-storage and verification primitives are now SCITT's.
+SCITT receipts add evidence from outside the workspace and leave CHAP's
+own records in place. Advertising this profile turns on the `prev_hash`
+chain (§6.1), which `audit.verify_chain` replays. `audit.checkpoint` and
+`audit.verify` remain specified and unbuilt.
 
 ---
 
@@ -148,7 +166,7 @@ append-only store), the recommended procedure:
    resulting log is forward-verifiable from any historical point.
 
 The historical entries remain auditable both via their original
-provenance and via SCITT receipts. New entries are SCITT-only.
+provenance and via SCITT receipts. New entries reach SCITT when submitted.
 
 ### 6.1 Adopting the profile mid-life
 
@@ -167,8 +185,7 @@ the `workspace.set_profiles` entry that switched the chain on.
 when an entry is appended and there is no operation that back-fills it, so
 the historical entries never enter the chain and `verify_chain` never
 returns `verified` for a log that predates its chain. That is the correct
-answer rather than a limitation to work around: the local chain genuinely
-holds no evidence about those entries.
+answer: the local chain holds no evidence about those entries.
 
 Evidence for them has to come from outside the chain, which is what the
 import procedure above provides. Receipts obtained that way are checked
@@ -204,7 +221,7 @@ SCITT decides is what CHAP gets.
 ## 9. References
 
 - [IETF SCITT working group](https://datatracker.ietf.org/wg/scitt/about/)
-- [draft-ietf-scitt-architecture](https://datatracker.ietf.org/doc/draft-ietf-scitt-architecture/)
+- [RFC 9943. An Architecture for Trustworthy and Transparent Digital Supply Chains](https://www.rfc-editor.org/rfc/rfc9943)
 - [RFC 9052. CBOR Object Signing and Encryption (COSE)](https://datatracker.ietf.org/doc/html/rfc9052)
 - [RFC 8785. JSON Canonicalization Scheme (JCS)](https://datatracker.ietf.org/doc/html/rfc8785)
 
@@ -212,13 +229,12 @@ SCITT decides is what CHAP gets.
 
 ## 10. Composition notes
 
-- **Requires `security-signed`**: SCITT statements carry signatures
-  whose semantics need a defined key model, that's what
-  `security-signed` provides.
-- **With `identity-oidc` / `identity-vc`:** SCITT statement
-  signatures use whichever identity binding the workspace has
-  configured. The transparency service may verify the issuer's
-  identity chain.
+- **With `security-signed`:** recommended. The deployment signs
+  statements under its own key model.
+- **With `identity-oidc` / `identity-vc`:** the Coordinator leaves
+  the statement signature to the deployment, which can sign under the
+  identity binding it uses. The transparency service may verify the
+  issuer's identity chain.
 - **Independence from MCP/A2A:** MCP and A2A have their own audit
   surfaces; the SCITT audit covers the CHAP layer specifically.
   Cross-protocol audit is by *citation*, not by encapsulation.

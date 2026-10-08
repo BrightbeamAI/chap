@@ -48,8 +48,9 @@ human goes offline.
 Ownership transfer is **not** atomic on propose. The proposer
 remains the assignee until the recipient accepts.
 
-The target MAY be a group; in that case the proposal is fanned out
-and the first to accept wins.
+The target MAY be a `group:` URI, and the first member to accept wins
+(§5). No notification is delivered yet, so the proposal is not fanned
+out to the group.
 
 ---
 
@@ -75,8 +76,10 @@ and the first to accept wins.
 On accept, the Coordinator atomically:
 
 1. Updates each accepted task's `assignee` to the accepter.
-2. Emits a notification to interested participants.
-3. Records the assignee change in the audit log.
+2. Records the assignee change in the audit log.
+
+The profile also specifies a notification to interested participants.
+It is not built yet, so no notification is delivered.
 
 ---
 
@@ -97,8 +100,10 @@ On accept, the Coordinator atomically:
 }
 ```
 
-The original assignee stays the assignee. They can propose a fresh
-handoff to the suggested target.
+Only the named recipient's decline resolves a handoff. A decline from
+anyone else is recorded and returns `state: "proposed"`, and the
+handoff stays open. The original assignee stays the assignee and can
+propose a fresh handoff to the suggested target.
 
 ---
 
@@ -110,10 +115,14 @@ handoff to the suggested target.
 }
 ```
 
-The Coordinator routes the proposal to every group member; first
-accepter wins, others receive a `handoff_already_accepted`
-notification. This is how follow-the-sun coverage works without a
-human dispatcher.
+Any workspace member may accept a handoff addressed to a `group:` URI,
+because the Coordinator does not model group membership. The first
+accept reassigns the tasks, and a later accept is refused with
+`-32051`. A decline by one member leaves the handoff open for the
+others. This is how follow-the-sun coverage works without a human
+dispatcher. No notification is delivered yet: the Coordinator neither
+routes the proposal to the group nor tells the others when one member
+accepts.
 
 ---
 
@@ -123,7 +132,7 @@ human dispatcher.
 |-----------|--------------------------------------------------|
 | `-32050`  | One or more task ids are not currently assigned to the proposer. |
 | `-32051`  | Handoff has already been accepted/declined.      |
-| `-32052`  | Recipient is not a workspace member.             |
+| `-32052`  | The recipient is not a workspace member, or the accepter is not the named recipient. |
 
 ---
 

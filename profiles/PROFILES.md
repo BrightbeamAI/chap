@@ -17,7 +17,7 @@ Each row is a self-contained document.
 
 | Profile                                                       | What it adds                                                       | When you need it                                              |
 |---------------------------------------------------------------|--------------------------------------------------------------------|---------------------------------------------------------------|
-| [`security-signed`](./security-signed.md)                     | Ed25519 message signing, JCS canonicalisation, key rotation.       | Cross-trust-boundary deployments; non-repudiation requirement.|
+| [`security-signed`](./security-signed.md)                     | Ed25519 message signing, JCS canonicalisation, and the rule that a key rotation is signed with the old key. | Cross-trust-boundary deployments; non-repudiation requirement.|
 | [`audit-scitt`](./audit-scitt.md)                             | Cryptographic transparency log via IETF SCITT.                     | Regulatory audit; offline-verifiable proofs.                  |
 | [`identity-oidc`](./identity-oidc.md)                         | OIDC-bound human identity with `cnf.jwk` and step-up auth.         | Most enterprise SaaS deployments.                             |
 | [`identity-vc`](./identity-vc.md)                             | W3C Verifiable Credentials for richer identity claims.             | Regulated professions; cross-org credentials.                 |
@@ -55,13 +55,13 @@ The list is normative, and SPECIFICATION §6.5 says what each entry means.
 
 Clients check it before attempting profile-specific methods. A method whose
 owning profile is not on the list is refused with `-32601 Method not found`,
-the same answer a Coordinator that never implemented it would give, so a
-client cannot tell from the response which of the two it is talking to. The
-error carries `data: {"profile": …, "advertised": [...]}` for an operator
-reading the log. When the gate refuses a privileged method, such as
-`control.pause` on a workspace that has switched `control/1.0` off, a
-member's attempt is recorded as a refusal entry (SPECIFICATION §10.1), so a
-member reading the log can tell the two cases apart.
+with the message a Coordinator that never implemented it would give. The
+error also carries `data: {"profile": …, "advertised": [...]}`, which a
+refusal for an unimplemented method lacks, so the caller can see that the
+profile gate refused the call. When the gate refuses a privileged method,
+such as `control.pause` on a workspace that has switched `control/1.0` off,
+a member's attempt is also recorded as a refusal entry (SPECIFICATION
+§10.1).
 
 Two sets of methods answer whatever the list says. The reads,
 `workspace.describe`, `audit.read`, `audit.verify_chain` and
@@ -124,10 +124,10 @@ Most profiles are independent. Some build on others:
 | `deliberation`  | (Core)                                |
 | `modes`         | (Core)                                |
 | `handoff`       | (Core)                                |
-| `routing`       | (Core); composes with `review/1.0` (depth feeds review trigger) and `modes/1.0` (modes set upper bound on enforcement). |
+| `routing`       | (Core); `review.depth` recommends a review depth for `review/1.0`, and the caller applies it. |
 | `control`       | (Core); strongly recommended with `modes` for full effect. |
 | `security-signed` | (Core)                              |
-| `audit-scitt`   | `security-signed`                     |
+| `audit-scitt`   | (Core); composes with `security-signed`. |
 | `identity-oidc` | (Core); composes with `security-signed` for key binding. |
 | `identity-vc`   | (Core); composes with `security-signed` for key binding. |
 
@@ -139,8 +139,8 @@ without affecting the others.
 ## 5. Versioning profiles
 
 Each profile versions independently. A workspace can announce
-`review/1.0` and `modes/1.0` (or `modes/2.0` once published). Profile versions follow the same
-semver rules as Core (see [`../GOVERNANCE.md`](../GOVERNANCE.md) §4).
+`review/1.0` and `modes/1.0` (or `modes/2.0` once published). Profile versions follow the
+versioning rules in [`../GOVERNANCE.md`](../GOVERNANCE.md) §4.
 
 Within v0.x, profiles may include small breaking changes between
 minor versions if announced in `CHANGELOG.md`. Stability is promised
@@ -168,7 +168,7 @@ Profiles MAY:
 
 - Add new methods.
 - Add new envelope fields under `params`.
-- Add new error codes in the `-32000` to `-32099` CHAP-private range.
+- Add new error codes in a decade of their own, allocated in [SPECIFICATION §13.2](../SPECIFICATION.md#132-error-code-ranges).
 - Tighten Core's optional behaviours (e.g. require signatures).
 - Add new state-machine transitions on existing entities.
 

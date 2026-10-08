@@ -44,14 +44,17 @@ typed answer is expected).
 
 | Field               | Purpose                                                |
 |---------------------|--------------------------------------------------------|
-| `question`          | The plain-English question.                            |
+| `to`                | Required. The participant or participants asked. A `workspace:` or `group:` URI lets any workspace member answer. |
+| `task_id`           | Required. The task the question is raised against, which must exist. |
+| `question`          | Required. The plain-English question.                  |
 | `options`           | A closed set of typed answers. The answer must match.  |
-| `deadline_ms`       | Time budget in milliseconds. After this, the default applies. |
-| `default_if_lapsed` | The option id used if no answer arrives in time.       |
+| `deadline_ms`       | Required. Time budget in milliseconds from the ask. Once it passes, the next lapse check applies the default. |
+| `default_if_lapsed` | Required. The option id used if no answer arrives in time. |
 | `urgency`           | `low` / `medium` / `high`. Hints UI prioritisation.    |
 
-If no options are provided, the answer is free text; this is
-discouraged because it defeats analytical aggregation.
+If no options are provided, the answer is free text, sent in `answer`
+(or its alias `answer_text`) on `whisper.answer`. This is discouraged
+because it defeats analytical aggregation.
 
 ---
 
@@ -73,6 +76,11 @@ discouraged because it defeats analytical aggregation.
 }
 ```
 
+Only a participant the whisper was addressed to in `to` may answer it.
+A `workspace:` or `group:` entry in `to` admits any workspace member.
+Any other answerer, and a caller of either method who is not a
+workspace member, is refused with `-32011`.
+
 `task_id` identifies the task the whisper was raised against and is
 optional here. The Coordinator MUST record the envelope as it received
 it, and MUST resolve the answer's task from the `task_id` held on the
@@ -92,11 +100,13 @@ its own signature.
 
 ## 4. Lapse handling
 
-If `deadline_ms` elapses without an answer, the Coordinator MUST
-emit a notification recording the lapse and the applied default. The
-notification MUST carry the whisper's `task_id`, so a lapse (where the
-default is applied with no human input) is visible on an `audit.read`
-filtered by task:
+A Coordinator applies lapses when its lapse check runs, on a schedule
+the deployment sets. The check marks each pending whisper whose
+`deadline_ms` has passed as lapsed and MUST record a notification of
+the lapse and the applied default. An answer that arrives after the
+deadline and before the check is accepted. The notification MUST carry
+the whisper's `task_id`, so a lapse (where the default is applied with
+no human input) is visible on an `audit.read` filtered by task:
 
 ```json
 {
@@ -139,6 +149,7 @@ early, complete the task, then have it go through a normal review.
 
 | Code      | Meaning                                          |
 |-----------|--------------------------------------------------|
+| `-32011`  | The caller is not a workspace member, or the whisper was not addressed to it. |
 | `-32020`  | Whisper has already been answered.               |
 | `-32021`  | Whisper has already lapsed.                      |
 | `-32022`  | Answer option not in the whisper's option set.   |

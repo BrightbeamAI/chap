@@ -40,16 +40,16 @@ schemas, and reference implementations are stable enough for
 experimentation and early production pilots; they are not yet
 sufficient for a normative conformance claim. Specifically: the
 specification's two reference implementations, the TypeScript and
-Python coordinators in this repository, are authored by the same team
-rather than being the independently authored implementations typical
-of a standards-track promotion; an empirical interoperability
-test suite covering all defined methods is published as a draft (see
-[`conformance/`](./conformance/)) but is not exhaustive. Breaking
-changes to the wire format will follow Semantic Versioning, but the
-profile surface should be expected to evolve faster than Core.
-Production deployments are welcome and encouraged to feed back
-findings; deployments requiring stability guarantees beyond
-"reasonable best effort under SemVer" should wait for 1.0.
+Python coordinators in this repository, are authored by the same team,
+where a standards-track promotion would expect independently authored
+implementations; a conformance harness covering Core and `review/1.0`
+is published as a draft (see [`conformance/`](./conformance/)). Before
+1.0 a minor release may break the wire format, and the changelog lists
+each break with a migration; from 1.0 the specification follows
+Semantic Versioning ([ROADMAP.md](./ROADMAP.md), "Version numbers").
+The profile surface should be expected to evolve faster than Core.
+Production pilots are welcome to feed back findings; deployments that
+need stability guarantees should wait for 1.0.
 
 ---
 
@@ -137,9 +137,9 @@ CHAP also deliberately leaves the following to deployments and profiles:
   layer those into the artefact `content` shape or define them in a
   profile.
 - **A confidence calibration.** `routing_hints.confidence` is a
-  model-reported number. CHAP makes no claim about cross-model
-  comparability or about what any particular value implies for
-  routing.
+  model-reported value, carried as a decimal string (§9.5). CHAP makes
+  no claim about cross-model comparability or about what any
+  particular value implies for routing.
 - **What evidence is sufficient for any regulatory regime.** CHAP
   produces a verifiable record of who decided what, when, and on the
   basis of which inputs. Whether that record meets a particular
@@ -163,7 +163,8 @@ This section defines terms used normatively throughout the document. See
   `service`, `group`, or `workspace`.
 - **Coordinator.** The component that mediates a workspace: routes
   messages, enforces policy and mode, and appends entries to the
-  evidence chain. The Coordinator is a Participant of type `service`.
+  evidence chain. The Coordinator is not a member of the workspaces it
+  mediates.
 - **Task.** A unit of work proposed, accepted, performed, and resolved
   inside a workspace. Tasks have a lifecycle and produce artefacts.
 - **Artefact.** A typed payload produced by a Participant in the
@@ -213,6 +214,14 @@ work in the local workspace.
 ## 4. Wire format
 
 ### 4.1 Envelope
+
+> **Note.** [`core/SPEC.md`](./core/SPEC.md) §2 describes the messages
+> both reference coordinators send today: JSON-RPC 2.0, with the CHAP
+> fields inside `params` and, under `security-signed/1.0`, a top-level
+> `sig`. Milestone 0.4 settles the message format for the whole
+> specification. The envelope in this section is not what either
+> coordinator sends. The requirement in its `ts` row that `ts` be
+> monotonic per `from` is withdrawn; §4.3 says how `ts` is treated.
 
 Every CHAP message is a JSON object conforming to
 [`schemas/chap-envelope.schema.json`](./schemas/core/chap-envelope.schema.json).
@@ -280,12 +289,9 @@ own clock and assigns `seq` in acceptance order, and it is that pair, with
 
 A sender whose `ts` goes backwards is worth an operator's attention, and
 [SECURITY.md](./SECURITY.md#sender-declared-timestamps) describes the check
-and what it costs. It was written here as a MUST refused with `-32401`
-(`temporal_order_violation`). Neither reference implements it, no reference
-allocates the code, and §15.4 stated the same rule as non-decreasing while
-this paragraph stated it as strictly monotonic, so the two could not both be
-met. Millisecond precision alone makes strict monotonicity refuse a
-participant that sends twice inside one millisecond.
+and what it costs. Neither coordinator refuses a call for the order of its
+`ts`, and no error code is allocated for that. Where signatures are
+required, `ts` selects the sender's key (§5.2).
 
 ### 4.4 Size limits
 
@@ -328,10 +334,21 @@ in human-readable UI.
 
 ### 5.2 Signing algorithm
 
-Every CHAP message MUST be signed. The signature algorithm is
-**Ed25519** ([RFC 8032]). The signed input is the
-**JCS canonicalisation** ([RFC 8785]) of the envelope **with the
-`evidence.sig` field removed** but `evidence.prev_hash` retained.
+> **Note.** [`core/SPEC.md`](./core/SPEC.md) §2 describes the messages
+> both reference coordinators send today: JSON-RPC 2.0, with the CHAP
+> fields inside `params` and, under `security-signed/1.0`, a top-level
+> `sig` (see [`profiles/security-signed.md`](./profiles/security-signed.md)).
+> Milestone 0.4 settles the message format, and with it what a signature
+> covers, for the whole specification. The procedure below signs the
+> envelope of §4.1.
+
+Signing is the `security-signed/1.0` profile (§6.5). A Coordinator that
+requires signatures MUST verify one on every call except
+`workspace.create` and `participant.join`, which run before the sender
+has a registered key. The signature algorithm is **Ed25519**
+([RFC 8032]). The signed input is the **JCS canonicalisation**
+([RFC 8785]) of the envelope **with the `evidence.sig` field removed**
+but `evidence.prev_hash` retained.
 
 [RFC 8032]: https://www.rfc-editor.org/rfc/rfc8032
 [RFC 8785]: https://www.rfc-editor.org/rfc/rfc8785
@@ -377,6 +394,10 @@ Public keys are represented as JWKs ([RFC 7517]) with `kty: "OKP"`,
 - Via a JWKS endpoint referenced by the participant descriptor's
   `jwks_uri` field.
 
+`participant.describe` and `jwks_uri` are specified and not yet built.
+In both references a member's keys appear as `jwks` and `key_history`
+in its entry in the `workspace.describe` descriptor (§6.2).
+
 [RFC 7517]: https://www.rfc-editor.org/rfc/rfc7517
 
 Keys carry a `kid` (key ID). The `evidence.sig` field MAY be prefixed
@@ -390,9 +411,11 @@ OIDC ID token. The binding follows DPoP ([RFC 9449]) in spirit:
 1. The client generates an Ed25519 keypair at session start.
 2. The client requests an OIDC ID token carrying a `cnf.jwk` claim
    whose value is the public key.
-3. The Coordinator, on receiving the first message of the session,
-   verifies the ID token, extracts the `cnf.jwk`, and pins it as the
-   signing key for this human Participant for the session's lifetime.
+3. On a `participant.join` carrying the ID token as `oidc_token`, the
+   Coordinator verifies it and pins the `cnf.jwk` as a signing key for
+   this human Participant. The key has no expiry: it stays valid until
+   rotated or revoked (§5.7), and a later join with a fresh token adds a
+   key without retiring the old one.
 4. The Coordinator MAY require periodic re-binding (token refresh +
    key rotation) for long-lived sessions.
 
@@ -401,10 +424,11 @@ OIDC ID token. The binding follows DPoP ([RFC 9449]) in spirit:
 This pattern guarantees that:
 
 - A leaked long-term password cannot be replayed against CHAP.
-- A leaked ephemeral key is useful only for the OIDC session's
-  remaining lifetime.
 - The audit chain ties every signed action to a specific
   authentication event, addressable by `auth_time` and `acr`.
+
+A leaked ephemeral key stays usable until rotated or revoked; a
+deployment SHOULD revoke it when the session ends.
 
 ### 5.5 Agent and service identity
 
@@ -423,11 +447,16 @@ mapping is published in the participant descriptor.
 ### 5.6 Step-up authentication
 
 Methods marked `privileged: true` in the method catalogue
-(see §12 and [`schemas/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json))
-require step-up authentication. The Coordinator MUST verify that the
-caller's most recent OIDC `auth_time` is within the configured
-step-up window (default: 5 minutes). The step-up window is published
-in the workspace descriptor.
+(see §12 and [`schemas/profiles/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json))
+require step-up authentication. Of the methods the references
+implement, these are every `control.*` method, `workspace.set_profiles`,
+`participant.rotate_key` and `participant.revoke_key`. A Coordinator
+enforcing step-up, an option separate from advertising
+`identity-oidc/1.0`, MUST refuse them with `-32402` from a human or
+OIDC-bound member whose latest `auth_time` is missing or older than the
+window (default: 5 minutes, published in the workspace descriptor as
+`step_up_window_sec`), or whose `acr` differs from the workspace's
+`min_acr` where one is set.
 
 ### 5.7 Key rotation
 
@@ -437,11 +466,14 @@ key. After acceptance:
 
 - Messages from the old key are accepted for verification of historical
   evidence indefinitely.
-- New messages from the old key are accepted for a grace window
-  (default: 5 minutes) and rejected thereafter.
+- Where signatures are required, a new message signed with the old key
+  is refused with `-32071` from the moment of rotation; there is no
+  grace window.
 
-Compromised keys are revoked with `participant.revoke_key`, signed by
-an admin participant. Revocation is recorded in the evidence chain.
+Keys are revoked with `participant.revoke_key`. A Participant MAY revoke
+its own key; revoking another member's key requires the `admin` role
+and is otherwise refused with `-32011`. Revocation is recorded in the
+evidence chain.
 
 ---
 
@@ -450,15 +482,22 @@ an admin participant. Revocation is recorded in the evidence chain.
 ### 6.1 Lifecycle
 
 A workspace is created with `workspace.create`. The creator becomes
-the initial admin. Workspaces have an explicit lifecycle:
+the initial admin. This is specified and not yet built: neither
+reference makes the creator a member, so the creator joins with
+`participant.join` like anyone else.
 
-```
-created → active → (paused ↔ active)* → closed → archived
-```
+A workspace starts `active`. `control.pause` with `scope: "workspace"`
+moves it to `paused`, and `control.resume` with the same scope moves it
+back to `active`. A paused workspace refuses every method with `-32063`
+except `workspace.create`, `workspace.describe`, `audit.read`,
+`participant.join`, `participant.leave` and `control.resume`, so task
+methods, `workspace.set_profiles`, `participant.revoke_key` and
+`audit.verify_chain` wait until it resumes.
 
-`paused` workspaces accept no new tasks but may accept administrative
-operations. `closed` workspaces accept no new operations of any kind;
-their evidence chain is sealed. `archived` workspaces are read-only.
+`closed` is reserved for `workspace.close` (§12.1), which no reference
+implements yet. A closed workspace accepts no new operations of any
+kind, and its evidence chain is sealed. `archived`, a read-only state
+after `closed`, is likewise specified and not yet built.
 
 ### 6.2 Descriptor
 
@@ -468,26 +507,30 @@ their evidence chain is sealed. `archived` workspaces are read-only.
 ```json
 {
   "id": "wsp_support_triage",
-  "name": "Customer support triage",
-  "created": "2026-05-01T09:00:00Z",
+  "created": "2026-05-01T09:00:00.000Z",
   "state": "active",
   "mode": "production",
   "mode_ceiling": "production",
-  "step_up_window_sec": 300,
   "max_envelope_bytes": 1048576,
-  "coordinator": "service:coordinator@example.org",
-  "policy_uri": "https://example.org/policies/support-triage.json",
+  "step_up_window_sec": 300,
+  "profiles": ["core/1.0", "review/1.0", "audit-scitt/1.0"],
   "members": [
-    { "uri": "human:alice@example.org", "role": "reviewer" },
-    { "uri": "human:bob@example.org",   "role": "approver" },
-    { "uri": "agent:triage-bot#v3.2",   "role": "drafter" },
-    { "uri": "service:coordinator@example.org", "role": "coordinator" }
+    { "uri": "human:alice@example.org", "type": "human",
+      "role": "reviewer", "joined": "2026-05-01T09:01:00.000Z" },
+    { "uri": "agent:triage-bot#v3.2", "type": "agent",
+      "role": "drafter", "joined": "2026-05-01T09:02:00.000Z" }
   ],
-  "shadow_observers": ["human:eve@example.org"],
-  "evidence_head": "sha256:8b1c…d9e0",
-  "audit_count": 14823
+  "audit_count": 14823,
+  "task_count": 3120,
+  "override_count": 211,
+  "evidence_head": "sha256:8b1c…d9e0"
 }
 ```
+
+`evidence_head` appears only where the workspace keeps a chain, and
+`routing_policy_uri` only where set. Member entries add `display_name`,
+`capabilities`, `scopes`, `jwks`, `key_history`, `paused`, `oidc_sub`
+and `vc_holder` when set.
 
 ### 6.3 Membership and roles
 
@@ -503,21 +546,33 @@ Roles are workspace-local strings. The protocol defines two
 All other role names are deployment-defined. The workspace's
 `policy_uri` describes which roles may invoke which methods.
 
+The `coordinator` role is specified and not yet built: neither
+reference assigns it, and the Coordinator is not a member (§2).
+
 #### 6.3.1 Actor membership (precondition)
 
 The `from` field of every method names the **actor**: the Participant
-on whose behalf the envelope is sent. For every method other than
-`participant.join` itself, the actor MUST be a current member of the
-named workspace at the time the envelope is processed. A Coordinator
-MUST reject an envelope whose `from` is not a joined member. The error
-table (§13.3) names this condition `unknown_participant`; the reference
-implementations currently surface it with the `not_authorised` code
-(-32011) rather than the table's -32403, because -32403 already denotes
-an invalid OIDC token in their private error range. This code-level
-divergence is being reconciled separately and does not affect the
-precondition itself. Enforcing it makes the audit log's attribution
-sound: a recorded decision, completion, or review request can never
-name a Participant who never joined.
+on whose behalf the envelope is sent. The actor MUST be a current
+member of the named workspace at the time the envelope is processed,
+and a Coordinator MUST reject an envelope whose `from` is not a joined
+member. The exemptions are:
+
+- `workspace.create` and `participant.join`, which run before the
+  sender is a member;
+- the reads `workspace.describe` and `audit.read`, unless the
+  Coordinator is configured to require membership for reads;
+- `audit.verify_chain`, `audit.verify_receipt` and
+  `audit.submit_to_scitt`.
+
+Every other method is bound by it, the `routing/1.0` methods and
+`participant.leave` included; neither reference yet enforces it for
+`participant.leave`, `task.route`, `review.depth` or `escalate.auto`.
+The refusal is `-32011` (`not_authorised`,
+[`profiles/review.md`](./profiles/review.md) §5), and
+`participant.rotate_key` refuses a non-member with `-32071`. Enforcing
+the precondition makes the audit log's attribution sound: a recorded
+decision, completion, or review request can never name a Participant
+who never joined.
 
 Membership is the floor, not the ceiling. Individual profiles MAY
 impose a stricter eligibility rule on top of it. In particular, the
@@ -528,7 +583,7 @@ be one of the reviewers the review was addressed to in `review.request`'s
 that is a broadcast scope (`workspace:<id>` or `group:<name>`) is satisfied
 by any workspace member: the Coordinator does not model group membership,
 so a `group:` target means "any member", not "any member of that named
-group". Deployments that need a decision genuinely restricted to a named
+group". Deployments that need a decision restricted to a named
 group MUST enforce that restriction externally (for example via an
 `identity-*` profile or an application-layer check). A future profile MAY
 introduce a first-class group-membership model. Membership
@@ -539,10 +594,11 @@ here applies whether or not those profiles are in force.
 
 Legitimately admitting a new actor (an escalation target, or an
 emergency "break-glass" approver) is done by joining them first, which
-records the entry into the workspace as its own audit event. There is
-no path by which a non-member acts; the exceptional nature of an
-admission is captured in how, and under what role, the Participant
-joined.
+records the entry into the workspace as its own audit event. Outside
+the exemptions above and those four methods, there is no path by which
+a non-member acts; the
+exceptional nature of an admission is captured in how, and under what
+role, the Participant joined.
 
 ### 6.4 Policy
 
@@ -562,26 +618,22 @@ at creation time.
 ### 6.5 What advertising a profile does
 
 A workspace's `profiles` list is normative, and this table says what each
-entry means. Advertising had grown three different meanings: for some
-profiles it changed behaviour, for others a separate option did the work and
-the entry did nothing, and for the rest the methods worked whether the entry
-was there or not. The table below is the single answer, and §15.4's dispatch
-rule follows from it.
+entry means. §15.4's dispatch rule follows from it.
 
 | Profile | What advertising it does |
 |---|---|
 | `core/1.0` | Nothing. Core is always present, and a Core method is never refused for want of an entry. |
 | `review/1.0` | Admits `review.request`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare` and `escalate.raise`. |
-| `modes/1.0` | Admits the mode ladder of §11, and makes a `trial` task require review whatever its own `review_required` says. |
+| `modes/1.0` | Makes a `trial` task require review whatever its own `review_required` says. Task modes and the mode ceiling of §11 apply whether or not it is advertised. |
 | `control/1.0` | Admits `control.*`: pause, resume, cancel, supersede, snapshot, rollback and the mode ceiling. |
 | `whisper/1.0` | Admits `whisper.ask` and `whisper.answer`. |
 | `deliberation/1.0` | Admits `deliberate.open`, `deliberate.vote`, `deliberate.comment` and `deliberate.close`. |
 | `handoff/1.0` | Admits `handoff.propose`, `handoff.accept` and `handoff.decline`. |
 | `routing/1.0` | Admits `task.route`, `review.depth` and `escalate.auto`. |
-| `audit-scitt/1.0` | Turns the hash-linked chain on, and admits `audit.submit_to_scitt`. The reads are Core and are listed below. |
-| `security-signed/1.0` | States that every envelope carries a verified signature. A Coordinator configured to require signatures MUST add this entry, so the descriptor never understates what is enforced, and MUST refuse `workspace.create` where the entry is present and signatures are not required. |
-| `identity-oidc/1.0` | States that a token verifier is configured, under the same two rules as `security-signed/1.0`. Step-up freshness on privileged methods is a separate option. |
-| `identity-vc/1.0` | States that a credential verifier is configured. No method is gated on it. |
+| `audit-scitt/1.0` | Turns the hash-linked chain on, and admits `audit.submit_to_scitt`. The reads are never gated and are listed below. |
+| `security-signed/1.0` | States that every accepted call except `workspace.create` and `participant.join` carries a verified signature. A Coordinator configured to require signatures MUST add this entry at `workspace.create`, and MUST refuse a `workspace.create` carrying it where signatures are not required; `workspace.set_profiles` repeats neither check. |
+| `identity-oidc/1.0` | States that a token verifier is configured, under the same rules as `security-signed/1.0`. Step-up freshness is a separate option. |
+| `identity-vc/1.0` | Informational: no reference checks it against its configuration. |
 
 Two sets of methods are never refused for want of an entry, whichever profile
 owns them:
@@ -592,13 +644,12 @@ owns them:
   chaining also turns on through an implementation option, so gating it would
   let a workspace write a hash-linked chain it is refused permission to verify.
 - **The key lifecycle.** `participant.rotate_key` and `participant.revoke_key`
-  belong to Core. They were attributed to `security-signed/1.0`, which would
-  have removed an operator's response to a compromised key from every
-  deployment that does not advertise it. A conformant Coordinator answers them
-  whatever the workspace advertises.
+  belong to Core, so an operator can respond to a compromised key in every
+  deployment. A conformant Coordinator answers them whatever the workspace
+  advertises.
 
-Advertising a profile does not turn its enforcement on. The rule runs one way
-only: what is enforced MUST be advertised. A deployment advertising
+Advertising a security profile does not turn its enforcement on. The rule
+runs one way only: what is enforced MUST be advertised. A deployment advertising
 `security-signed/1.0` today without signing would otherwise break at its second
 call rather than at configuration time, and the descriptor understating
 enforcement is the failure that matters, because a relying party reads the
@@ -642,13 +693,19 @@ conforming to [`schemas/chap-participant.schema.json`](./schemas/core/chap-parti
 }
 ```
 
+`participant.describe` is specified and not yet built. Today a member's
+entry in the `workspace.describe` descriptor (§6.2) carries part of
+this shape: `participant.join` keeps `display_name`, `capabilities`,
+`scopes` and keys, and drops `version`, `supported_methods` and
+`mcp_servers`.
+
 ### 7.2 Capability profile
 
 The `capabilities` block describes what the Participant is good at
-and at what rate. This is **descriptive, not prescriptive**: the
-Coordinator uses it for routing hints and load shaping; the
-Participant's own authority is unchanged by claiming any particular
-capability.
+and at what rate. This is **descriptive**: the Coordinator stores the
+block at `participant.join`, returns it in `workspace.describe` and
+reads none of it. The Participant's own authority is unchanged by
+claiming any particular capability.
 
 Capability fields:
 
@@ -656,7 +713,7 @@ Capability fields:
 |-------------------|-----------------|----------------------------------------------------------|
 | `kinds`           | string[]        | Task kinds the Participant can perform.                  |
 | `modes`           | enum[]          | Modes the Participant may operate in.                    |
-| `max_concurrent`  | integer         | Maximum simultaneous tasks. Coordinator throttles above. |
+| `max_concurrent`  | integer         | Maximum simultaneous tasks the Participant claims. No reference throttles on it. |
 | `avg_latency_ms`  | integer         | Expected time-to-first-response.                         |
 | `confidence_calibration` | object   | (Agents only) self-reported calibration metrics.         |
 | `tool_inventory`  | string[]        | (Agents only) MCP tools the Participant has access to.   |
@@ -691,7 +748,9 @@ created ──▶ in_progress ──▶ review_requested ──▶ completed
 A Task has ten states: `created`, `in_progress`, `review_requested`,
 `completed`, `declined`, `abstained`, `escalated`, `paused`, `cancelled`
 and `superseded`. Terminal states are `completed`, `cancelled` and
-`superseded`; nothing but `control.supersede` moves a task out of one.
+`superseded`. `control.supersede` moves a task out of any of them, and
+`review.request` reopens a `completed` task for review (see below); no
+other method moves a task out of one.
 
 The lifecycle is driven by `task.create`, `task.update`, `task.complete`,
 `review.request`, `decide.*`, `abstain.declare`, `escalate.raise` and
@@ -763,11 +822,11 @@ under review, and only a reviewer decision then reaches `completed`. Review
 is required when the task carries `review_required`, or when it runs in
 `trial` mode on a workspace that has loaded `modes/1.0`.
 
-On that path no `to` was supplied, so the Coordinator selects the reviewer
-set: the members of `type: "human"` other than the completer and the
-assignee. Where none qualifies the completion MUST be refused with `-32011`.
-An explicit `review.request` keeps whatever `to` it was given. See
-[`profiles/review.md`](./profiles/review.md) §3.1.
+`task.complete` reads no reviewer list from `to`, so the Coordinator
+selects the reviewer set: the members of `type: "human"` other than the
+completer and the assignee. Where none qualifies the completion MUST be
+refused with `-32011`. An explicit `review.request` keeps whatever `to`
+it was given. See [`profiles/review.md`](./profiles/review.md) §3.1.
 
 The finer-grained `task.assign` / `task.accept` / `task.start` /
 `task.progress` lifecycle reserved in [§12.3](#123-task) is not part of this
@@ -776,50 +835,56 @@ task states.
 
 ### 8.2 Task descriptor
 
-A Task conforms to [`schemas/chap-task.schema.json`](./schemas/core/chap-task.schema.json):
+No method returns a task yet (`task.describe` is reserved, §12.3). Both
+references hold this shape plus a `history` list, adding
+`routing_hints`, `output`, `confidence`, `supersedes`, `superseded_by`
+and `paused_from` when set:
 
 ```json
 {
   "id": "tsk_01HZ9YWQ7K3X8M2V4N6P8R0T3B",
-  "workspace": "wsp_support_triage",
   "kind": "draft_response",
-  "state": "in_progress",
+  "state": "review_requested",
   "mode": "production",
   "assignee": "agent:triage-bot#v3.2",
   "delegator": "human:alice@example.org",
-  "input": {
-    "ticket_id": "INC-48219",
-    "customer_message": "My order hasn't arrived after 10 days."
-  },
-  "constraints": {
-    "deadline": "2026-05-17T09:30:00Z",
-    "max_tool_calls": 10,
-    "permitted_tools": ["order-lookup", "shipping-status"]
-  },
+  "input": { "ticket_id": "INC-48219" },
+  "deadline": "2026-05-17T09:30:00Z",
+  "review_required": true,
   "review": {
-    "required": true,
-    "reviewers": ["human:alice@example.org", "human:bob@example.org"],
-    "rule": "any_one_approves"
+    "requested_at": "2026-05-17T09:14:56.012Z",
+    "requested_to": ["human:bob@example.org"],
+    "rule": "any_one_approves",
+    "decisions": []
   },
-  "artefacts": ["art_01HZ9YX…"],
-  "created": "2026-05-17T09:14:22.184Z",
-  "updated": "2026-05-17T09:14:56.012Z"
+  "created_at": "2026-05-17T09:14:22.184Z",
+  "updated_at": "2026-05-17T09:14:56.012Z"
 }
 ```
 
+`task.create` takes the top-level `review_required` and reads no nested
+`review` or `constraints`. The schema in
+[`schemas/chap-task.schema.json`](./schemas/core/chap-task.schema.json)
+does not match this shape: it requires `workspace` and `created`, which
+neither reference holds on a task.
+
 ### 8.3 Review rules
 
-The `review.rule` field defines the predicate for moving from
-`review_requested` to `completed`:
+The `review.rule` field, set by the `rule` parameter of
+`review.request`, defines the predicate for moving from
+`review_requested` to `completed`. `review/1.0` supports the rules
+below and refuses others with `-32602`:
 
-- `any_one_approves`: first `decide.approve` wins.
-- `all_approve`: every named reviewer must approve.
-- `quorum:<n>`: `n` approvals required.
-- `weighted_vote:<threshold>`: weighted approvals summing to
-  threshold (weights in workspace policy).
-- `weighted_vote_with_veto:<threshold>`: as above, but any
-  `decide.reject` from a reviewer with `veto: true` ends the review
-  immediately as rejected.
+- `any_one_approves` (the default): the first `decide.approve`
+  completes the task.
+- `all_approve`: every named reviewer must approve. A broadcast-only
+  review completes on the first approval.
+- `quorum:<n>`: approvals from `n` distinct reviewers, `n` at least 1.
+
+Under every rule one `decide.reject` ends the review: `declined`, or
+`in_progress` with `request_revision`. One `decide.override` completes
+it. Weighted rules belong to `deliberate.open` (`deliberation/1.0`),
+which takes weights and vetoes as parameters.
 
 ### 8.4 Routing hints (optional)
 
@@ -834,7 +899,7 @@ semantics.
   "routing_hints": {
     "criticality": "high",
     "deadline": "2026-05-17T17:00:00Z",
-    "max_cost_usd": 50.00,
+    "max_cost_usd": "49.99",
     "risk_tier": "financial-tier-2"
   }
 }
@@ -846,7 +911,7 @@ Fields:
 |----------------|---------|---------------------------------------------------|
 | `criticality`  | string  | one of `low`, `medium`, `high`, `critical`        |
 | `deadline`     | string  | RFC 3339 timestamp; when the work is needed       |
-| `max_cost_usd` | number  | non-negative                                      |
+| `max_cost_usd` | integer or decimal string | non-negative; a fractional amount MUST be a decimal string (§5.2), such as `"49.99"` |
 | `risk_tier`    | string  | opaque to CHAP; org-specific                      |
 
 Additional operator-defined fields are permitted. CHAP signs whatever
@@ -866,8 +931,12 @@ understand.
 
 An Artefact is a typed payload produced inside a workspace, a draft
 to be reviewed, a final decision, an override record, a structured
-extraction, a citation set. Artefacts are first-class evidence: their
-existence and content are recorded in the chain.
+extraction, a citation set. An artefact sent in a request, such as a
+`review.request` `artefact` or a `task.complete` `output`, is recorded
+in the chain with that request. The override records, snapshots and
+`route_decision` records the Coordinator builds are held in workspace
+state under the `art_` identifier it returns; the chain holds only the
+request that produced each.
 
 ### 9.2 Descriptor
 
@@ -888,10 +957,9 @@ existence and content are recorded in the chain.
   },
   "citations": [
     {
-      "kind": "mcp_tool_invocation",
+      "kind": "mcp_tool_call",
       "server": "mcp+https://tools.example.org/orders",
       "tool": "lookup_order",
-      "call_id": "call_01HZ9YX0…",
       "input_hash": "sha256:b2c3…",
       "output_hash": "sha256:d4e5…"
     }
@@ -922,14 +990,19 @@ CHAP distinguishes three identity concepts on an artefact:
 
 These fields exist so that revision, supersession, and override can
 be distinguished in the chain. Without them, a deployment can track
-*which artefact replaced which* (via `based_on` and `control.supersede`)
+*which artefact replaced which* (via `based_on`, and for tasks via
+`supersedes` and `superseded_by`)
 but cannot answer *"is this the same item I approved last week, or a
 different item with the same shape?"*, a question that arises in any
 domain that does versioned work.
 
-CHAP itself reads only `id`. Higher layers, analytics, dashboards,
-external indexes, can use `logical_id` and `instance_id` to project
-the chain into a version graph.
+The Coordinator reads no field of a submitted artefact, `id` included.
+To tell artefacts apart, for a second `review.request` on an open review
+or for `approved_artefact_digest`, it compares the JCS content hash of
+the whole artefact, so changing any field makes a different artefact.
+Higher layers, analytics, dashboards, external indexes, can use
+`logical_id` and `instance_id` to project the chain into a version
+graph.
 
 ### 9.3 Standard artefact kinds
 
@@ -946,36 +1019,46 @@ The specification defines a small set of standard kinds:
 | `snapshot`          | service     | A serialised workspace state for replay or rollback. |
 | `capture_fragment`  | any         | An ad-hoc record produced via `capture.append`.      |
 
+The records the reference Coordinators build themselves are the
+override record (§9.4), the `snapshot`, whose `produced_by` is the
+caller of `control.snapshot`, and the `route_decision` (§9.6).
+`capture_fragment` depends on `capture.append`, which is specified and
+not yet built.
+
 Implementations MAY define additional kinds; the `schema` field MUST
 reference a published JSON Schema for any non-standard kind.
 
 ### 9.4 Override artefacts
 
-An `override` artefact MUST carry:
+`decide.override` MUST carry `diff` and `rationale`, and MAY carry
+`tags`, `policy_refs`, `logical_id`, `instance_id` and
+`intent_preserved`:
 
 ```json
 {
-  "kind": "override",
-  "based_on": "art_01HZ9YX1…",
-  "logical_id": "lgl_01HZ9YX1A2B3C4D5E6F7G8H9J0",
-  "intent_preserved": true,
   "diff": [
     { "op": "replace", "path": "/content/text",
-      "from": "We're sorry for the delay…",
-      "to":   "I'm sorry for the delay   I've also waived shipping on your next order." }
+      "value": "I'm sorry for the delay. I've also waived shipping on your next order." }
   ],
   "rationale": "Compensation offered to retain customer per policy CSAT-3.",
   "tags": ["tone-adjustment", "compensation-offered"],
-  "policy_refs": ["CSAT-3"]
+  "policy_refs": ["CSAT-3"],
+  "logical_id": "lgl_01HZ9YX1A2B3C4D5E6F7G8H9J0",
+  "intent_preserved": true
 }
 ```
 
-The diff format is JSON Patch ([RFC 6902]) with an additional `from`
-field on `replace` operations for context. The rationale is free
-text; the tags are workspace-defined categorisations useful for
-analysing override patterns across time.
+The Coordinator applies the diff to the artefact under review and
+stores an override record of `id`, `task_id`, `reviewer`,
+`based_on_artefact`, `diff`, `result` (the patched artefact),
+`rationale`, `tags`, `policy_refs`, `ts` and the optional fields. The
+diff is JSON Patch ([RFC 6902]): a `replace` MUST carry `value`, other
+members on it are ignored, and a diff that cannot be applied is refused
+with `-32012`. The rationale is free text; the tags are
+workspace-defined categorisations useful for analysing override
+patterns across time.
 
-When the override's `based_on` target carries a `logical_id`, the
+When the artefact under review carries a `logical_id`, the
 override SHOULD carry the same `logical_id` and SHOULD set
 `intent_preserved` to indicate whether the override changes the
 underlying intent (`false`: this is a different decision) or
@@ -986,9 +1069,9 @@ replaced the agent's draft with a different decision"* are
 operationally different events that produce identical envelope
 structures without it.
 
-The same convention applies to `control.supersede`: when superseding
-an artefact that carries a `logical_id`, the replacement SHOULD carry
-the same `logical_id` and set `intent_preserved` accordingly.
+`control.supersede` replaces a task. Where the work is versioned, the
+successor's artefacts SHOULD carry the same `logical_id` and set
+`intent_preserved` accordingly.
 
 An artefact MAY carry an optional `fulfils` field naming the `id` of the
 decision it acts on, for example a tool call executed to carry out a
@@ -1008,9 +1091,11 @@ which the Coordinator checks and refuses on mismatch.
 
 An Artefact MAY carry an optional `routing_hints` object that
 records production measurements: model confidence, model identifier,
-cost incurred, latency. These signals are consumed by the
-`routing/1.0` profile to drive review-depth and auto-escalation
-decisions; they are recorded in the evidence envelope hash even
+cost incurred, latency. `review.depth` reads these signals when passed
+as its `artefact_routing_hints` parameter, merged over the task's
+`routing_hints`; `escalate.auto` reads the task's `routing_hints`
+alone, and no method reads a `routing_hints` object inside an
+artefact. The signals are recorded in the evidence envelope hash even
 when the profile is not in use.
 
 ```json
@@ -1033,7 +1118,7 @@ Fields:
 | `cost_consumed_usd` | decimal string  | non-negative                              |
 | `latency_ms`        | integer         | non-negative                              |
 
-`confidence` and `cost_consumed_usd` are fractional, so per §7 they are
+`confidence` and `cost_consumed_usd` are fractional, so per §5.2 they are
 carried as decimal strings (`"0.62"`, not `0.62`). A JSON number with a
 fractional part is rejected at ingress.
 
@@ -1058,7 +1143,9 @@ The `routing/1.0` profile defines an additional artefact kind,
 
 Each workspace maintains a single append-only chain of evidence
 entries. Every accepted state-changing CHAP message produces exactly
-one entry.
+one entry. The Coordinator also writes entries of its own, such as the
+lapse of a whisper, recorded as a `notify.message` from
+`service:coordinator`.
 
 The read-only methods `workspace.describe`, `audit.read`,
 `audit.verify_chain` and `audit.verify_receipt` are **not** recorded,
@@ -1180,8 +1267,9 @@ characters. `JCS(record_n)` is the canonical serialisation of the record, and
 `prev_hash` is concatenated as its full UTF-8 string form, prefix included.
 The genesis entry's `prev_hash` is `sha256:` followed by 64 zeros.
 
-The chain head is published in the workspace descriptor as
-`evidence_head` and the chain length as `audit_count`.
+The chain head, where there is one, is published in the workspace
+descriptor as `evidence_head`, and the number of log entries as
+`audit_count`.
 
 ### 10.2 Verification
 
@@ -1268,7 +1356,7 @@ Coordinator, by partitioning workspaces across instances so that no
 workspace is ever written by two, or by an external lock. Enforcing this in
 the protocol, by making `Store.save` a compare-and-swap and dispatch
 re-runnable against reloaded state, is a larger change than it appears and
-is out of scope for 0.2.
+is left to a later milestone.
 
 ### 10.4 Checkpoints
 
@@ -1289,7 +1377,10 @@ periodically publish their chain head to:
 - A third-party notarisation service.
 
 Anchoring is referenced from the workspace descriptor's `anchors[]`
-array; the format of each anchor reference is anchor-specific.
+array; the format of each anchor reference is anchor-specific. Neither
+reference records anchors or returns `anchors[]` from
+`workspace.describe`; `audit.submit_to_scitt` hands its statements or
+receipts to the caller.
 
 ### 10.6 Retention and redaction
 
@@ -1313,7 +1404,8 @@ Every workspace and every task carries a mode:
   effects. Used for offline evaluation, regression testing, and
   pre-deployment review of agent changes.
 - **`trial`**: Output reaches a limited audience (specified
-  observers or a percentage of traffic) and is still gated for review.
+  observers or a percentage of traffic). Where the workspace advertises
+  `modes/1.0`, every `trial` task requires review.
 - **`production`**: Output reaches its intended audience with full
   effect.
 
@@ -1324,9 +1416,10 @@ moves a workspace or task forward in this order; demotion moves it
 back. Both transitions are recorded as evidence entries.
 
 A workspace declares a `mode_ceiling` that bounds the maximum mode
-its tasks may carry. Setting `mode_ceiling` upward toward
-`production` is a privileged operation requiring step-up auth and a
-matching policy entry.
+its tasks may carry. `control.set_mode_ceiling` changes the ceiling in
+either direction. Neither reference checks a role or a policy entry
+for it, so any member may call it, subject to step-up where that is
+enforced (§11.3).
 
 ### 11.3 Enforcement
 
@@ -1336,56 +1429,70 @@ The Coordinator MUST:
   workspace's ceiling
   with error `-32040` (`mode_ceiling_exceeded`).
 - Record every mode change as a first-class evidence entry.
-- Reject privileged mode transitions without valid step-up auth with
-  error `-32402` (`step_up_required`), where `identity-oidc/1.0` is in force.
+- Reject a privileged method, `control.set_mode_ceiling` among them,
+  with `-32402` (`step_up_required`) where the Coordinator enforces
+  step-up and the caller is a human member, or a member with an OIDC
+  binding, whose `auth_time` is older than `step_up_window_sec`.
+  Step-up is a Coordinator option, separate from the advertised
+  profiles (§6.5).
 
-Delivery of shadow-mode output to the workspace's `shadow_observers` alone is
-a requirement on the deployment's delivery layer rather than on the
-Coordinator, which answers the caller who asked it. See §15.1.
+The deployment's delivery layer filters delivery of shadow-mode output
+to a `shadow_observers` list the deployment keeps, since neither
+reference stores one. The Coordinator answers the caller who asked it.
+See §15.1.
 
 ### 11.4 Per-task overrides
 
-A task MAY carry a mode strictly lower than the workspace's current
-mode (e.g. running a single task in `shadow` inside an otherwise
-`production` workspace, for debugging). It MUST NOT carry a mode
-higher than the workspace's mode.
+A task carries its own mode, set at `task.create`, where it defaults to
+the workspace's mode, or on a `control.supersede` successor, where it
+defaults to the mode of the task replaced. It MAY be lower or higher
+than the workspace's mode (e.g. running a single task in `shadow`
+inside an otherwise `production` workspace, for debugging) and MUST NOT
+exceed the `mode_ceiling` in force when it is created. `escalate.raise`
+gives the new task the mode of the task it escalates.
 
 ---
 
 ## 12. Methods
 
 This section enumerates the method catalogue. The authoritative
-machine-readable form is [`schemas/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json).
+machine-readable form is [`schemas/profiles/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json).
 
 Every method has:
 
 - A **namespace** (`workspace`, `participant`, `task`, etc.).
-- A **type** (`request` or `notification`).
+- A **type** (`request`, `response` or `notification`).
 - A list of **required scopes** for the caller.
 - A **privileged** flag indicating whether step-up auth is required.
+- A **status**: `implemented` where a reference provides it, `spec-only`
+  where it is specified and not yet built, and `reserved` for the
+  assignment lifecycle of §12.3.
 
 ### 12.1 `workspace.*`
 
-| Method                  | Type         | Privileged | Description                                |
-|-------------------------|--------------|------------|--------------------------------------------|
-| `workspace.create`      | request      | yes        | Create a new workspace.                    |
-| `workspace.describe`    | request      | no         | Return the workspace descriptor.           |
-| `workspace.invite`      | request      | yes        | Invite a Participant.                      |
-| `workspace.evict`       | request      | yes        | Remove a Participant.                      |
-| `workspace.set_mode`    | request      | yes (for promotions toward production) | Change the workspace mode. |
-| `workspace.pause`       | request      | yes        | Suspend new task acceptance.               |
-| `workspace.resume`      | request      | yes        | Resume operation.                          |
-| `workspace.close`       | request      | yes        | Seal the workspace.                        |
+| Method                  | Type         | Privileged | Status      | Description                                |
+|-------------------------|--------------|------------|-------------|--------------------------------------------|
+| `workspace.create`      | request      | no         | implemented | Create a new workspace.                    |
+| `workspace.describe`    | request      | no         | implemented | Return the workspace descriptor.           |
+| `workspace.set_profiles`| request      | yes        | implemented | Replace the advertised profile list. Admin only. |
+| `workspace.invite`      | request      | yes        | spec-only   | Invite a Participant.                      |
+| `workspace.evict`       | request      | yes        | spec-only   | Remove a Participant.                      |
+| `workspace.set_mode`    | request      | yes (for promotions towards production) | spec-only | Change the workspace mode. |
+| `workspace.pause`       | request      | yes        | spec-only   | Suspend new task acceptance.               |
+| `workspace.resume`      | request      | yes        | spec-only   | Resume operation.                          |
+| `workspace.close`       | request      | yes        | spec-only   | Seal the workspace.                        |
 
 ### 12.2 `participant.*`
 
-| Method                  | Type         | Privileged | Description                                |
-|-------------------------|--------------|------------|--------------------------------------------|
-| `participant.describe`  | request      | no         | Return a Participant's descriptor.         |
-| `participant.announce`  | notification | no         | A Participant announces presence/availability. |
-| `participant.heartbeat` | notification | no         | Periodic liveness signal.                  |
-| `participant.rotate_key`| request      | no         | Replace signing key (signed with old key). |
-| `participant.revoke_key`| request      | yes        | Mark a key compromised. Admin only.        |
+| Method                  | Type         | Privileged | Status      | Description                                |
+|-------------------------|--------------|------------|-------------|--------------------------------------------|
+| `participant.join`      | request      | no         | implemented | Join a workspace, creating it if absent.   |
+| `participant.leave`     | request      | no         | implemented | Leave the workspace.                       |
+| `participant.describe`  | request      | no         | spec-only   | Return a Participant's descriptor.         |
+| `participant.announce`  | notification | no         | spec-only   | A Participant announces presence/availability. |
+| `participant.heartbeat` | notification | no         | spec-only   | Periodic liveness signal.                  |
+| `participant.rotate_key`| request      | yes        | implemented | Replace signing key (signed with old key). |
+| `participant.revoke_key`| request      | yes        | implemented | Mark a key compromised. Revoking another member's key requires the admin role. |
 
 ### 12.3 `task.*`
 
@@ -1412,88 +1519,95 @@ descriptor; the Coordinator keeps a bounded per-workspace map of recent keys.
 
 ### 12.4 `review.*`
 
-| Method               | Type         | Privileged | Description                                   |
-|----------------------|--------------|------------|-----------------------------------------------|
-| `review.request`     | request      | no         | Ask one or more reviewers to evaluate an artefact. |
-| `review.acknowledge` | notification | no         | Reviewer signals they have begun review.      |
+| Method               | Type         | Privileged | Status      | Description                                   |
+|----------------------|--------------|------------|-------------|-----------------------------------------------|
+| `review.request`     | request      | no         | implemented | Ask one or more reviewers to evaluate an artefact. |
+| `review.acknowledge` | notification | no         | spec-only   | Reviewer signals they have begun review.      |
 
 ### 12.5 `decide.*` / `abstain.*` / `escalate.*`
 
-| Method               | Type         | Privileged | Description                                   |
-|----------------------|--------------|------------|-----------------------------------------------|
-| `decide.approve`     | request      | no         | Approve a draft as-is.                        |
-| `decide.reject`      | request      | no         | Reject a draft with a reason.                 |
-| `decide.override`    | request      | no         | Approve a modified version; produces an override artefact. |
-| `abstain.declare`    | request      | no         | Decline to decide; flags for escalation.      |
-| `escalate.raise`     | request      | no         | Hand a task up the chain with context.        |
+| Method               | Type         | Privileged | Status      | Description                                   |
+|----------------------|--------------|------------|-------------|-----------------------------------------------|
+| `decide.approve`     | request      | no         | implemented | Approve a draft as-is.                        |
+| `decide.reject`      | request      | no         | implemented | Reject a draft with a reason.                 |
+| `decide.override`    | request      | no         | implemented | Approve a modified version; produces an override artefact. |
+| `abstain.declare`    | request      | no         | implemented | Decline to decide; flags for escalation.      |
+| `escalate.raise`     | request      | no         | implemented | Hand a task up the chain with context.        |
 
 ### 12.6 `whisper.*` / `capture.*`
 
-| Method               | Type         | Privileged | Description                                   |
-|----------------------|--------------|------------|-----------------------------------------------|
-| `whisper.ask`        | request      | no         | Quick, deadline-bound interrupt question.     |
-| `whisper.answer`     | response     | no         | Answer a whisper.                             |
-| `capture.append`     | request      | no         | Append an ad-hoc fragment (note, tag, link) to a task. |
+| Method               | Type         | Privileged | Status      | Description                                   |
+|----------------------|--------------|------------|-------------|-----------------------------------------------|
+| `whisper.ask`        | request      | no         | implemented | Quick, deadline-bound interrupt question.     |
+| `whisper.answer`     | request      | no         | implemented | Answer a whisper.                             |
+| `capture.append`     | request      | no         | spec-only   | Append an ad-hoc fragment (note, tag, link) to a task. |
 
 ### 12.7 `handoff.*`
 
-| Method               | Type         | Privileged | Description                                   |
-|----------------------|--------------|------------|-----------------------------------------------|
-| `handoff.propose`    | request      | no         | Propose transferring work to another participant. |
-| `handoff.accept`     | response     | no         | Accept a handoff.                             |
-| `handoff.decline`    | response     | no         | Decline a handoff.                            |
+| Method               | Type         | Privileged | Status      | Description                                   |
+|----------------------|--------------|------------|-------------|-----------------------------------------------|
+| `handoff.propose`    | request      | no         | implemented | Propose transferring work to another participant. |
+| `handoff.accept`     | request      | no         | implemented | Accept a handoff.                             |
+| `handoff.decline`    | request      | no         | implemented | Decline a handoff.                            |
 
 ### 12.7a `routing.*` (profile `routing/1.0`)
 
-| Method            | Type    | Privileged | Description                                       |
-|-------------------|---------|------------|---------------------------------------------------|
-| `task.route`      | request | no         | Pick an assignee from candidates given `routing_hints`. Produces a `route_decision` artefact. |
-| `review.depth`    | request | no         | Decide review depth (`skip` / `spot_check` / `full`). Produces a `route_decision` artefact. |
-| `escalate.auto`   | request | no         | Evaluate auto-escalation rules; if a rule fires, escalates to the rule's target. |
+| Method            | Type    | Privileged | Status      | Description                                       |
+|-------------------|---------|------------|-------------|---------------------------------------------------|
+| `task.route`      | request | no         | implemented | Pick an assignee from candidates given `routing_hints`. Produces a `route_decision` artefact. |
+| `review.depth`    | request | no         | implemented | Decide review depth (`skip` / `spot_check` / `full`). Produces a `route_decision` artefact. |
+| `escalate.auto`   | request | no         | implemented | Evaluate auto-escalation rules and report the target when one fires. The task is unchanged. |
 
 These methods are only present when the workspace advertises
-`routing/1.0` in `workspace.describe.profiles`. They consume the
-optional `routing_hints` fields on Tasks (§8.4) and Artefacts (§9.5)
-and write decisions to the evidence chain via `route_decision`
-artefacts. The full profile is specified in
+`routing/1.0` in `workspace.describe.profiles`. They read the optional
+`routing_hints` on Tasks (§8.4), and `review.depth` also takes the
+artefact signals of §9.5 as a parameter. Each records its decision as
+a `route_decision` artefact, held in the workspace under the identifier
+returned to the caller. The evidence chain holds the request; the
+selected assignee, review depth and escalation target are not written
+to it. The full profile is specified in
 [`profiles/routing.md`](./profiles/routing.md).
 
 ### 12.8 `notify.*`
 
-| Method               | Type         | Privileged | Description                                   |
-|----------------------|--------------|------------|-----------------------------------------------|
-| `notify.message`     | notification | no         | Generic free-text message between participants. |
-| `notify.alert`       | notification | no         | High-priority alert with a severity field.    |
+| Method               | Type         | Privileged | Status      | Description                                   |
+|----------------------|--------------|------------|-------------|-----------------------------------------------|
+| `notify.message`     | notification | no         | spec-only   | Generic free-text message between participants. |
+| `notify.alert`       | notification | no         | spec-only   | High-priority alert with a severity field.    |
 
 ### 12.9 `deliberate.*`
 
-| Method               | Type         | Privileged | Description                                   |
-|----------------------|--------------|------------|-----------------------------------------------|
-| `deliberate.open`    | request      | no         | Open a multi-party thread with a decision rule. |
-| `deliberate.comment` | notification | no         | Add a comment to an open deliberation.        |
-| `deliberate.vote`    | request      | no         | Cast a vote (yea/nay/abstain, optional weight). |
-| `deliberate.close`   | request      | no         | Close the deliberation; computes the outcome per rule. |
+| Method               | Type         | Privileged | Status      | Description                                   |
+|----------------------|--------------|------------|-------------|-----------------------------------------------|
+| `deliberate.open`    | request      | no         | implemented | Open a multi-party thread with a decision rule. |
+| `deliberate.comment` | notification | no         | implemented | Add a comment to an open deliberation.        |
+| `deliberate.vote`    | request      | no         | implemented | Cast a vote (yea/nay/abstain, optional weight). |
+| `deliberate.close`   | request      | no         | implemented | Close the deliberation; computes the outcome per rule. |
 
 ### 12.10 `control.*`
 
-| Method               | Type         | Privileged | Description                                   |
-|----------------------|--------------|------------|-----------------------------------------------|
-| `control.pause`      | request      | yes        | Pause a task.                                 |
-| `control.resume`     | request      | yes        | Resume a paused task.                         |
-| `control.cancel`     | request      | yes        | Cancel a task (terminal).                     |
-| `control.supersede`  | request      | yes        | Replace a task with another (terminal).       |
-| `control.snapshot`   | request      | yes        | Produce a workspace snapshot artefact.        |
-| `control.rollback`   | request      | yes        | Roll back to a prior snapshot.                |
+| Method               | Type         | Privileged | Status      | Description                                   |
+|----------------------|--------------|------------|-------------|-----------------------------------------------|
+| `control.pause`      | request      | yes        | implemented | Pause a task, a participant or the whole workspace (`scope`). |
+| `control.resume`     | request      | yes        | implemented | Resume a paused task, participant or workspace (`scope`). |
+| `control.cancel`     | request      | yes        | implemented | Cancel a task (terminal).                     |
+| `control.supersede`  | request      | yes        | implemented | Replace a task with another (terminal).       |
+| `control.snapshot`   | request      | yes        | implemented | Produce a workspace snapshot artefact.        |
+| `control.rollback`   | request      | yes        | implemented | Roll back to a prior snapshot.                |
+| `control.set_mode_ceiling` | request | yes       | implemented | Change the workspace's mode ceiling.          |
 
 ### 12.11 `audit.*`
 
-| Method               | Type         | Privileged | Description                                   |
-|----------------------|--------------|------------|-----------------------------------------------|
-| `audit.read`         | request      | no         | Read a range of evidence entries, accepted and refused (§10.1). |
-| `audit.verify`       | request      | no         | Verify the chain over a range.                |
-| `audit.checkpoint`   | notification | no         | Coordinator-emitted checkpoint.               |
-| `audit.redact`       | request      | yes        | Redact a prior entry (preserves hash).        |
-| `audit.export`       | request      | yes        | Export the chain in a portable format.        |
+| Method               | Type         | Privileged | Status      | Description                                   |
+|----------------------|--------------|------------|-------------|-----------------------------------------------|
+| `audit.read`         | request      | no         | implemented | Read a range of evidence entries, accepted and refused (§10.1). |
+| `audit.verify_chain` | request      | no         | implemented | Replay the hash chain and report coverage (§10.2). |
+| `audit.submit_to_scitt` | request   | no         | implemented | Build SCITT statements, and submit them where a submitter is configured. |
+| `audit.verify_receipt` | request    | no         | implemented | Verify a SCITT receipt through the configured hook. |
+| `audit.verify`       | request      | no         | spec-only   | Verify the chain over a range.                |
+| `audit.checkpoint`   | notification | no         | spec-only   | Coordinator-emitted checkpoint.               |
+| `audit.redact`       | request      | yes        | spec-only   | Redact a prior entry (preserves hash).        |
+| `audit.export`       | request      | yes        | spec-only   | Export the chain in a portable format.        |
 
 ---
 
@@ -1506,12 +1620,8 @@ Error responses carry an `error` object:
 ```json
 {
   "code": -32402,
-  "message": "Step-up authentication required.",
-  "data": {
-    "method": "control.rollback",
-    "step_up_window_sec": 300,
-    "auth_time_age_sec": 1200
-  }
+  "message": "Step-up authentication required",
+  "data": { "window_sec": 300, "age_sec": 1200 }
 }
 ```
 
@@ -1528,7 +1638,11 @@ Error codes follow JSON-RPC conventions with CHAP-specific extensions:
 | -32900 to -32999           | Implementation-defined                      |
 
 The JSON-RPC band is fixed by that specification and CHAP does not reuse it.
-Each profile owns one decade, so a code identifies its profile on sight:
+Each profile owns one decade, and a code identifies the profile that
+allocated it. Core methods also return codes from profile decades:
+`-32011`, `-32040` and `-32063` from `review/1.0`, `modes/1.0` and
+`control/1.0`, the `security-signed/1.0` codes from the key methods,
+and the identity codes from `participant.join`. The decades are:
 
 | Decade   | Profile              | Decade   | Profile              |
 |----------|----------------------|----------|----------------------|
@@ -1546,9 +1660,9 @@ The five JSON-RPC 2.0 codes carry their standard meanings:
 | Code   | Symbol             | Meaning                                     |
 |--------|--------------------|---------------------------------------------|
 | -32700 | `parse_error`      | Invalid JSON.                               |
-| -32600 | `invalid_request`  | Envelope does not conform to schema.        |
-| -32601 | `method_not_found` | Unknown method name.                        |
-| -32602 | `invalid_params`   | Params do not conform to the method schema. |
+| -32600 | `invalid_request`  | Not a JSON-RPC 2.0 call with a non-empty string `method`, or nested deeper than 64 levels, or larger than `max_envelope_bytes`. |
+| -32601 | `method_not_found` | Unknown method, or one whose owning profile the workspace does not advertise (§15.4). |
+| -32602 | `invalid_params`   | Params missing or ill-typed, or a call the current state rules out: unknown workspace or task, illegal transition, terminal task, broken chain. Never recorded (§10.1). |
 | -32603 | `internal_error`   | Implementation defect.                      |
 
 Every other code belongs to the profile that defines it, and **each
@@ -1560,11 +1674,8 @@ profile's own error table is authoritative**: `profiles/review.md` §5,
 `profiles/routing.md` §3 to §5. The decade map in §13.2 says which profile a
 code belongs to.
 
-Codes are not restated here. A duplicated registry drifts from the profiles
-it mirrors, which is what happened to the table this section replaces: it
-assigned `-32600`, `-32601` and `-32602` two meanings each, gave
-`mode_ceiling_exceeded` a code no implementation used, and named errors that
-neither reference implementation has ever returned.
+Codes are not restated here, so each profile's table stays the one
+registry for its codes.
 
 Implementations MUST use the codes their profiles define, MUST NOT reuse the
 JSON-RPC band, and MAY define implementation-specific codes in the -32900
@@ -1612,8 +1723,8 @@ Two endpoints:
   envelope's `id`.
 
 The playground at [`reference/playground/`](./reference/playground/)
-implements this binding (POST and SSE, with `/rpc` instead of
-`/chap` to avoid clashing with the project name).
+serves JSON-RPC on `POST /rpc` and a demonstration stream on
+`GET /events`; it does not implement this binding.
 
 ### 14.4 HTTP polling binding
 
@@ -1647,10 +1758,8 @@ section summarises requirements normative to the specification.
 
 ### 15.1 Mandatory protections
 
-This section is grouped by who has to do the work, because the list read as
-eight flat obligations on the Coordinator and three of them were not that.
-A requirement the reference implementations do not meet is worse than no
-requirement, since the references are what conformance is measured against.
+This section is grouped by who does the work: the Coordinator, a profile it
+advertises, or the deployment.
 
 **A conformant Coordinator MUST:**
 
@@ -1664,8 +1773,10 @@ requirement, since the references are what conformance is measured against.
    because appending on read would grow and re-link the chain each time it
    was inspected.
 3. Refuse a method whose owning profile the workspace does not advertise
-   (§15.4), and refuse a `workspace.create` whose descriptor understates what
-   the Coordinator enforces (§6.5).
+   (§15.4). At `workspace.create`, add `security-signed/1.0` or
+   `identity-oidc/1.0` where the Coordinator enforces it and the request
+   omits it, and refuse a request advertising either while the
+   Coordinator does not enforce it (§6.5).
 4. Enforce the authorisation the workspace holds: membership where a profile
    requires it, and the role checks the method defines. A `required_scope` is
    declared per method in the catalogue and is not yet enforced by either
@@ -1674,22 +1785,31 @@ requirement, since the references are what conformance is measured against.
    above it with `-32040`, and record every mode change on the chain.
 6. Generate `id` values as cryptographically random ULIDs outside test mode.
 
-**A profile turns these on, and §6.5 binds advertising to enforcing, so a
-descriptor cannot understate them:**
+**A profile turns these on, and §6.5 binds advertising to enforcing at
+`workspace.create`:**
 
 7. `security-signed/1.0`: verify every signature before accepting a message
    into the chain, and refuse a message that does not verify.
-8. `identity-oidc/1.0`: require step-up authentication, within the workspace's
-   window, for the privileged methods.
+   `workspace.create` and `participant.join` are exempt, since they run
+   before the sender has a registered key.
+8. `identity-oidc/1.0`: verify the OIDC token a `participant.join`
+   presents, refuse one that does not verify (`-32403`), and pin its
+   `cnf.jwk` as the member's key.
+
+Step-up is a Coordinator option, independent of the advertised set
+(§6.5); where it is on, a human member, or one with an OIDC binding,
+whose `auth_time` is older than `step_up_window_sec` is refused a
+privileged method with `-32402`.
 
 **The deployment MUST**, because a Coordinator library has no transport or
 delivery layer of its own to do it in:
 
 9. Use TLS 1.3 or later for every production transport.
-10. Filter delivery of shadow-mode output to the workspace's
-    `shadow_observers`. A Coordinator answers the caller who asked; which
-    participants are notified of what is the delivery layer's decision, and
-    no reference implements a delivery layer.
+10. Filter delivery of shadow-mode output to a `shadow_observers` list the
+    deployment keeps, since neither reference stores one. A Coordinator
+    answers the caller who asked; which participants are notified of what
+    is the delivery layer's decision, and no reference implements a
+    delivery layer.
 
 ### 15.2 Recommended protections
 
@@ -1712,8 +1832,8 @@ Sensitive content SHOULD be:
   store), and the URI's hash committed in the artefact, or
 - Replaced inline with the content hash and a short summary.
 
-A confidentiality extension defining per-field encryption is under
-discussion for the next draft.
+Encrypted log content is planned as a Draft profile after 1.0
+([ROADMAP.md](./ROADMAP.md)).
 
 ### 15.4 Threat model
 
@@ -1723,29 +1843,30 @@ defended class. The full operational threat model is in
 [SECURITY.md](./SECURITY.md).
 
 **Replay.** An adversary captures a previously-valid envelope and
-re-injects it into the chain.  *Countermeasures:* `prev_hash` MUST
-match the current chain head, so any replay against a chain that has
-since advanced is detected at acceptance, and the entry is recorded
-with the Coordinator's own arrival time and sequence rather than the
-sender's `ts`. Rejecting an envelope `id` on
-second observation is a deployment-level defence rather than a
-protocol requirement, and is described in
+re-injects it into the chain. *Countermeasures:* each entry carries
+the Coordinator's own arrival time and sequence, whatever the sender's
+`ts` says. A signed copy of a recorded refusal is answered with that
+refusal (§10.1), and a `task.create` repeating a seen `idempotency_key`
+returns the original task. Any other copy of an accepted call is
+evaluated as a new call and, if still valid, takes effect and is
+recorded again. Rejecting an envelope `id` on second observation is a
+deployment-level defence, described in
 [SECURITY.md](./SECURITY.md#envelope-id-replay): neither reference
-keeps a seen-id set, the size of one is a deployment decision, and a
-requirement no reference meets is worse than no requirement, because
-the references are what conformance is measured against.
+keeps a seen-id set.
 
 **Downgrade.** An adversary forces capability negotiation in
 `workspace.describe` to advertise fewer profiles than both peers
 support, hoping to suppress a defensive profile (e.g.
-`security-signed/1.0` or `audit-scitt/1.0`).  *Countermeasures:* the
-workspace descriptor is itself an artefact in the evidence chain;
-its advertised profile list is signed and cannot be retrospectively
-narrowed. Deployments concerned about downgrade SHOULD treat the
-profile set as policy: any participant whose `participant.join`
-declares a lower profile set than the workspace's mandatory minimum
-MUST be refused. The `modes/1.0` profile, combined with workspace
-policy, lets an operator pin a floor.
+`security-signed/1.0` or `audit-scitt/1.0`). *Countermeasures:* the
+advertised set is on the log: the `workspace.create` call sets the
+first list, and each change is a recorded `workspace.set_profiles`
+call, which needs the admin role. `workspace.create` is never
+signature-checked, and `workspace.set_profiles` can narrow or widen the
+set without the checks §6.5 applies at creation, so a relying party
+SHOULD read the set's history from the log. Deployments concerned about
+downgrade SHOULD treat the profile set as policy: any participant whose
+`participant.join` declares a lower profile set than the workspace's
+mandatory minimum MUST be refused.
 
 **Capability confusion across profiles.** Two profiles define methods
 with similar names but different security properties (for example,
@@ -1753,31 +1874,27 @@ with similar names but different security properties (for example,
 `decide.override` in a forked profile). *Countermeasures:* methods are
 namespaced (`namespace.verb`), and **a Coordinator MUST refuse a method
 whose owning profile is not in the workspace's advertised set**, except
-for the reads and the key lifecycle named in §6.5.
+for Core methods and the reads named in §6.5.
 
-The rule is per method. It cannot be written per namespace, because six
-of the twelve namespaces span profiles: `workspace` covers Core, `modes`
-and `control`; `participant` covers Core and `security-signed`; `task`,
-`review` and `escalate` each straddle their home profile and `routing`;
-`audit` covers Core and `audit-scitt`. Which profile owns which method is
-declared in
+The rule is per method. It cannot be written per namespace, because
+several namespaces span profiles: `workspace` covers Core, `modes` and
+`control`; `task`, `review` and `escalate` each straddle their home
+profile and `routing`; `audit` covers Core and `audit-scitt`. Which
+profile owns which method is declared in
 [`chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json),
 by the `since` field on each entry.
 
-The refusal is `-32601`, the code a Coordinator that never implemented
-the method would return, so a deployment that omits a profile and one
-that has it compiled in but unadvertised are indistinguishable from
-outside. The error object SHOULD carry
-`data: {"profile": …, "advertised": [...]}` for an operator reading the
-log. Refusing with a distinct code would tell an adversary which
-capabilities a Coordinator holds back. A member can tell the two apart,
-since when the gate refuses a privileged method the member's attempt is
-recorded as a refusal entry (§10.1) and the log shows it.
+The refusal is `-32601` with the message an unknown method receives.
+Both references add `data: {"profile": …, "advertised": [...]}` to it,
+and nothing to an unknown method, so any caller can tell the two apart.
+When the gate refuses a privileged method, a member's attempt is also
+recorded (§10.1).
 
 **Key rotation.** A participant rotates a signing key mid-chain.
-*Countermeasures:* `identity-oidc/1.0` and `identity-vc/1.0` define
-key rotation as an explicit `participant.update` event signed by the
-old key, naming the new key. Verifiers walking the chain MUST treat
+*Countermeasures:* key rotation is the Core method
+`participant.rotate_key`, naming `old_kid` and `new_jwk`. Where
+signatures are required it MUST be signed with the old key, and is
+refused with `-32073` otherwise. Verifiers walking the chain MUST treat
 the post-rotation entries as signed by the new key only after the
 rotation event itself has been verified by the old key. A rotation
 event MUST NOT retroactively re-sign earlier entries.
@@ -1788,26 +1905,30 @@ into their local chain head; on partition heal the chains have
 diverged. *Countermeasures:* CHAP's evidence chain is per-workspace
 and per-Coordinator; the protocol does not provide a Byzantine fault
 tolerant consensus layer. Deployments that require continuity through
-partition MUST either (a) run a single logical Coordinator with HA
-replication that preserves chain linearity, or (b) operate the
-peer-to-peer topology in §3 with each peer maintaining its own chain
-and using `audit.read` to cross-verify on heal. Detection of fork is
-automatic (the divergent `prev_hash` values do not link) but
-resolution is operational. Deployments SHOULD anchor chain heads to
-an external transparency log via `audit-scitt/1.0` to make fork
-detection independent of the Coordinators themselves.
+partition MUST run a single logical Coordinator with HA replication
+that preserves chain linearity. Neither the chain nor
+`audit.verify_chain` detects a fork: each branch verifies on its own.
+Deployments SHOULD anchor chain heads to an external transparency log
+via `audit-scitt/1.0` to make fork detection independent of the
+Coordinators themselves.
 
 **Compromised Coordinator.** An adversary controls a Coordinator and
 attempts to forge entries, suppress entries, or rewrite history.
-*Countermeasures:* signatures are made by the originating
-participant, not by the Coordinator, so the Coordinator cannot
-forge new participant content; suppression of a delivered envelope
-is detectable because the affected participant retains a record of
-emission; rewriting history breaks `prev_hash` linkage and, where
-deployed, breaks the SCITT receipt's witnessed root. A Coordinator
-that is the sole signer of receipts can equivocate; deployments
-defending against this MUST use `audit-scitt/1.0` with an externally
-operated transparency service whose witnesses are not under the same
+*Countermeasures:* participant signatures exist only under
+`security-signed/1.0`. Where it is in force, each call is signed by the
+participant that sends it, so the Coordinator cannot forge a call from
+a participant whose key it does not hold, for a verifier that knows the
+members' keys from outside the Coordinator, which keeps the key list
+itself. Even then `workspace.create` and `participant.join` are never
+verified, so a compromised Coordinator can forge joins. A participant
+that keeps its own record of what it sent can show that a call was
+suppressed. A Coordinator that rewrites history can recompute every
+`prev_hash` and the head (§10.2), so only a head published or anchored
+outside its control, such as a SCITT receipt's witnessed root, shows the
+rewrite. A Coordinator that is the
+sole signer of receipts can equivocate; deployments defending against
+this MUST use `audit-scitt/1.0` with an externally operated
+transparency service whose witnesses are not under the same
 administrative control as the Coordinator.
 
 **Identity confusion.** A participant adopts a Participant URI that
@@ -1815,7 +1936,9 @@ resembles another's. *Countermeasures:* Participant URIs in
 `human:`, `agent:`, `service:` namespaces MUST be bound to a verified
 identity (OIDC subject claim or VC subject DID) before being
 admitted to a workspace via `participant.join`. The binding is
-recorded in the participant descriptor and signed.
+recorded in the participant descriptor and signed. Neither reference
+requires a verified identity at a first join or signs a descriptor;
+until milestone 0.6, deployments authenticate joins at the transport.
 
 **Out of scope.** CHAP does not defend against: a Participant who
 chooses to lie within the schema (a human who clicks Approve having
@@ -1834,19 +1957,19 @@ CHAP is designed to compose, not replace.
 ### 16.1 MCP composition
 
 When an agent calls an MCP tool, the call is cited inside the CHAP
-artefact it produces. The citation includes:
+artefact it produces. The reference helpers (`wrapMcpToolCall`,
+`wrap_mcp_tool_call`) cite the call with kind `mcp_tool_call`, `server`
+(an identifier the caller supplies), `tool`, `input_hash` and
+`output_hash`, each SHA-256 over the JCS form. They also place the
+arguments and result in the task, so both bodies enter the evidence
+chain beside the hashes. A deployment that must keep bodies off the
+chain writes its own citation and omits them.
 
-- The MCP server URI.
-- The tool name.
-- The call ID.
-- The SHA-256 hash of the canonical input and output.
-
-The hashes (not the bodies) are committed to the CHAP evidence chain.
-This means: a verifier with access to the MCP server's audit log can
-reconstruct the full input and output and confirm they match the
-hashes; a verifier without that access still has cryptographic proof
-of *which* tool was called and that the recorded inputs and outputs
-have not been altered.
+Where the bodies are kept off the chain, a verifier with access to the
+MCP server's audit log can reconstruct the full input and output and
+confirm they match the hashes; a verifier without that access still
+has cryptographic proof of *which* tool was called and that the
+recorded inputs and outputs have not been altered.
 
 See [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md)
 for the full pattern.
@@ -1857,8 +1980,10 @@ When work crosses an organisational boundary, an **A2A bridge
 service** participates in both protocols. Inside the local CHAP
 workspace, the bridge appears as `service:bridge@example.org`. It
 accepts CHAP tasks, forwards them over A2A, returns the result as a
-CHAP artefact, and cites the A2A correlation IDs in the artefact's
-citations array.
+CHAP artefact, and cites `remote_agent`, `sent_hash` and
+`received_hash`. The reference helpers (`wrapA2aMessageExchange`,
+`wrap_a2a_message_exchange`) record both messages and no correlation
+IDs.
 
 This pattern preserves CHAP's evidence semantics inside the
 workspace while delegating cross-system communication to A2A.
@@ -1930,10 +2055,10 @@ in the catalogue including the profile-defined methods marked
 *specified* in the v0.2 method index; A2A composition (§16.2);
 external evidence anchoring via `audit-scitt/1.0`; and successful
 execution of the published interop test suite against a second,
-independently authored implementation. The two coordinators in this
-repository interoperate on the same wire and both pass the harness,
-but they share authorship, so no implementation can correctly claim
-the Full level under this revision. Implementations
+independently authored implementation. The Python coordinator and a
+standalone TypeScript server pass the harness. The two coordinators in
+this repository share authorship, so no implementation can correctly
+claim the Full level under this revision. Implementations
 already meeting the technical requirements above are welcome to
 publish a Recommended attestation and a list of additional methods
 implemented; promotion to Full will be opened once the interop
@@ -1944,8 +2069,8 @@ substrate is in place.
 Implementations MAY self-attest a conformance level by publishing a
 conformance statement listing the implemented methods, transports,
 and protections. See [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md)
-for the template. The attestation MUST be honest about which methods
-are implemented versus declared; consumers SHOULD treat a method
+for the template. The attestation MUST state which methods are
+implemented and which are only declared; consumers SHOULD treat a method
 named in the catalogue but not in the attestation as unavailable in
 that implementation.
 

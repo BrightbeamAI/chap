@@ -32,7 +32,7 @@ The `review` profile adds these states to Core's `task` state machine:
 ```
 created      ─┐
 in_progress  ─┤
-completed    ─┼──▶ review_requested ──▶ completed   (decide.approve)
+completed    ─┼──▶ review_requested ──▶ completed   (decide.approve, once the rule is met)
 declined     ─┤                      ──▶ completed   (decide.override, with an override artefact)
 abstained    ─┤                      ──▶ declined    (decide.reject)
 escalated    ─┘                      ──▶ in_progress (decide.reject with request_revision)
@@ -43,9 +43,11 @@ escalated    ─┘                      ──▶ in_progress (decide.reject wi
 `cancelled`, `superseded` or `paused`. The exhaustive transition table is
 [SPECIFICATION.md §8.1](../SPECIFICATION.md#81-lifecycle).
 
-`abstained` ends *this* reviewer's involvement but not the task, and
-typically triggers `escalate.raise`, which creates a new task with the
-original as `supersedes`.
+`abstain.declare` moves the task to `abstained`, which closes the open
+review for every addressed reviewer: a later `decide.*` is refused with
+`-32010`. The task is not terminal. A fresh `review.request` reopens
+review, and `escalate.raise` creates a new task whose `supersedes` names
+the original.
 
 ---
 
@@ -76,8 +78,13 @@ or step around a pause.
 }
 ```
 
-Supported `rule` values: `any_one_approves`, `all_approve`.
-The `deliberation` profile adds richer rules (`quorum:N`, weighted).
+Supported `rule` values: `any_one_approves` (the default), `all_approve`
+and `quorum:<n>`, where `n` is a positive integer. Under `all_approve`
+every named reviewer must approve; a review addressed only to
+`workspace:` or `group:` scopes completes on the first approval. Under
+`quorum:<n>`, `n` distinct reviewers must approve. An approval that
+leaves the rule unmet is recorded and the task stays `review_requested`.
+Any other rule is refused with `-32602`.
 
 #### The implicit review
 
@@ -121,8 +128,9 @@ constrains what a second `review.request` may do.
   discard decisions already cast while their envelopes remain in the
   audit log, so a quorum could appear to have been assembled across two
   different artefacts. To review new content, first close the open
-  review with a decision, an abstention, an escalation, or
-  `control.cancel`.
+  review with a decision, an abstention or an escalation.
+  `control.cancel` also closes it, but leaves the task `cancelled`, and
+  `review.request` then refuses it with `-32010`.
 - A request that would change the `rule` of an open review MUST also be
   refused with `-32014`. The rule under which reviewers agreed to
   decide is fixed for the life of that review.
@@ -143,8 +151,9 @@ prevent. See [SPECIFICATION.md §8.1](../SPECIFICATION.md#81-lifecycle).
 
 ### 3.2 `decide.approve` · `decide.reject`
 
-Straightforward. The reviewer's identity, comment, and tags are
-preserved as a `decision` artefact.
+The reviewer's identity, comment and tags are kept in the recorded
+`decide.*` call. No separate `decision` artefact is created; the
+decision exists only as that call.
 
 
 **Binding the decision to the content (`approved_artefact_digest`).**
@@ -168,8 +177,9 @@ that produced the decision.
 
 When present, the Coordinator MUST compute the digest of the artefact
 under review and compare. On mismatch it MUST refuse with `-32074`,
-record no decision, and change no state. When absent, behaviour is
-exactly as it was: the field is optional and additive.
+record no decision, and change no state. A member's refused call is
+recorded as a refusal entry (SPECIFICATION §10.1). When absent,
+behaviour is exactly as it was: the field is optional and additive.
 
 ```json
 {
@@ -194,11 +204,13 @@ for `decide.approve`, `decide.reject`, `decide.override`, and
 reviewers must decide for the review to terminate; the `to` set governs
 *who is eligible* to decide at all.
 
-A broadcast-scoped reviewer relaxes the second condition: if the `to`
-set contains a `workspace:<id>` or `group:<id>` URI, any member (resp.
-any member of that group) is an eligible reviewer, and only the
-membership floor applies. If a review carries no recorded reviewer set,
-the membership floor alone applies.
+A broadcast-scoped reviewer relaxes the second condition. If the `to`
+set contains a `workspace:<id>` or `group:<id>` URI, any workspace
+member is an eligible reviewer and only the membership floor applies.
+The Coordinator does not model group membership; a deployment that
+needs a decision restricted to a named group MUST enforce that outside
+the Coordinator. If a review carries no recorded reviewer set, the
+membership floor alone applies.
 
 ```json
 {
@@ -250,22 +262,11 @@ tags. This is what turns human edits into learning data.
     "to":                  "service:coordinator@example.org",
     "ts":                  "2026-05-17T13:51:32Z",
     "task_id":             "tsk_…",
-    "based_on_artefact":   { "...": "the original draft" },
     "logical_id":          "lgl_01HZ9YX1A2B3C4D5E6F7G8H9J0",
     "intent_preserved":    true,
     "diff": [
-      {
-        "op": "replace",
-        "path": "/comments/1/text",
-        "from": "This function is doing too many things…",
-        "to":   "Consider splitting this function   not blocking for this PR."
-      },
-      {
-        "op": "replace",
-        "path": "/comments/1/severity",
-        "from": "warning",
-        "to":   "info"
-      }
+      { "op": "replace", "path": "/comments/1/text", "value": "Consider splitting this function; not blocking for this PR." },
+      { "op": "replace", "path": "/comments/1/severity", "value": "info" }
     ],
     "rationale": "Tone on the splitting comment was over-strong for a non-blocking suggestion.",
     "tags": ["tone-softened", "severity-downgraded"],
@@ -275,13 +276,14 @@ tags. This is what turns human edits into learning data.
 ```
 
 The `diff` MUST be a valid [RFC 6902 JSON Patch](https://datatracker.ietf.org/doc/html/rfc6902)
-document. The Coordinator MUST be able to apply the patch to the
-based-on artefact deterministically; if patch application fails, it
-returns `-32602` with the error path.
+document. The Coordinator applies it to the artefact under review and
+ignores any `based_on_artefact` in `params`. If the patch does not
+apply, the Coordinator refuses with `-32012`, and the error message
+names the failure and, where one applies, the failing path.
 
-When the based-on artefact carries a `logical_id`, the override
-SHOULD carry the same `logical_id` and SHOULD set `intent_preserved`
-, `true` if the override refines the *expression* of the same
+When the artefact under review carries a `logical_id`, the override
+SHOULD carry the same `logical_id` and SHOULD set `intent_preserved`:
+`true` if the override refines the *expression* of the same
 underlying decision (as in the example above, where tone was
 softened but the underlying review remains "approve with comments"),
 `false` if the override substitutes a different decision (e.g. an
@@ -331,15 +333,15 @@ boundaries. They're queryable as audit data.
 
 ### 3.5 `escalate.raise`
 
-Hand a task up the chain. Typically issued by the Coordinator in
-response to an abstention, but a human can issue it directly too.
+Hand a task up the chain. Any workspace member may issue it, typically
+after an abstention.
 
 ```json
 {
   "method": "escalate.raise",
   "params": {
     "workspace":            "wsp_demo",
-    "from":                 "service:coordinator@example.org",
+    "from":                 "human:alice@example.org",
     "to":                   "human:bob@example.org",
     "ts":                   "2026-05-17T11:02:14Z",
     "original_task_id":     "tsk_…",
@@ -347,14 +349,17 @@ response to an abstention, but a human can issue it directly too.
     "new_task": {
       "kind": "refund_decision",
       "assignee": "human:bob@example.org",
-      "input": { "...": "...", "supersedes": "tsk_…" }
+      "input": { "...": "..." }
     }
   }
 }
 ```
 
-The Coordinator creates a new task whose `input.supersedes`
-references the original, preserving the audit linkage.
+The Coordinator creates a new task assigned to `new_task.assignee`, who
+MUST be a workspace member, with `supersedes` naming the original. The
+original moves to `escalated`, with `superseded_by` naming the new task.
+An original in `completed`, `cancelled` or `superseded` is refused with
+`-32602`.
 
 ---
 
@@ -362,15 +367,16 @@ references the original, preserving the audit linkage.
 
 Because every override carries a typed diff + rationale + tags, the
 audit log becomes a structured tuning dataset for free. A weekly
-aggregation:
+aggregation reads the accepted overrides with `audit.read` and groups them on the
+client by `params.tags` and `params.from`, over the entries whose
+`arrived` time falls in the week:
 
 ```json
 {
   "method": "audit.read",
   "params": {
     "workspace": "wsp_code_review",
-    "filter": { "method": "decide.override", "ts_range": { "from": "2026-05-10", "to": "2026-05-17" } },
-    "aggregate": { "group_by": ["params.tags", "params.from"] }
+    "filter": { "method": "decide.override", "outcome": "accepted" }
   }
 }
 ```
@@ -391,8 +397,8 @@ piece of the protocol is plumbing.
 |-----------|--------------------------------------------------------|
 | `-32010`  | Task is not in a reviewable state: no open review for a decision, or a `review.request` on a cancelled, superseded or paused task. |
 | `-32011`  | Actor is not authorised: not a workspace member, or a member who was not an addressed reviewer for this task. |
-| `-32012`  | JSON Patch application failed (with path in `data`).   |
-| `-32013`  | Review deadline has lapsed.                            |
+| `-32012`  | JSON Patch application failed; the message names the failure and any failing path. |
+| `-32013`  | Reserved for a lapsed review. No Coordinator returns it, and the review `deadline` is not enforced. |
 | `-32014`  | A review is already open on this task with different content, or the request would change the decision rule of an open review. |
 
 ---

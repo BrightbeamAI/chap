@@ -48,20 +48,21 @@ Client constructs a Verifiable Presentation containing one or more VCs,
        signed with K (proof of possession) plus the issuer's signatures
    │
    ▼
-Client → Coordinator: handshake   presents VP
+Client → Coordinator: participant.join with vc_presentation = VP
    │
    ▼
-Coordinator: verifies VP   issuer signatures, VC schema, holder binding
+Deployment's verifier: checks issuer signatures, VC schema, holder
+       binding; resolves the DID; returns pub(K) as cnf_jwk
    │
    ▼
-Coordinator pins pub(K) as the participant's CHAP signing key
+Coordinator pins cnf_jwk as the participant's CHAP signing key
    │
    ▼
 Client → Coordinator: CHAP messages signed with K (security-signed profile)
 ```
 
-The VP is the analogue of the OIDC ID token. The Coordinator does
-exactly the same job: verify identity, extract the bound key, pin.
+The VP is the analogue of the OIDC ID token. The deployment's verifier
+checks the VP, and the Coordinator pins the key it returns.
 
 ---
 
@@ -100,8 +101,9 @@ exactly the same job: verify identity, extract the bound key, pin.
 ```
 
 The presentation's `proof` binds the holder to the CHAP signing key
-(`verificationMethod` identifies it). The challenge and domain
-prevent replay.
+(`verificationMethod` identifies it). The deployment's verifier
+resolves the DID and returns the key as `cnf_jwk`, which the
+Coordinator pins. The challenge and domain prevent replay.
 
 ---
 
@@ -115,7 +117,9 @@ human:alice@example.org      # OIDC-bound (typical)
 human:did:example:alice      # DID-bound (VC)
 ```
 
-The Coordinator resolves the DID to look up verification methods.
+The deployment's verifier resolves the DID and returns the key as
+`cnf_jwk`, which the Coordinator pins. The Coordinator does not compare
+`vc_holder` with the participant URI.
 
 ---
 
@@ -141,10 +145,11 @@ VCs use the standard W3C status mechanisms:
 - StatusList2021 (most common)
 - Issuer-side revocation registry
 
-The Coordinator checks the credential's status at presentation
-time, and SHOULD re-check periodically for long-lived sessions.
-A revoked credential MUST result in the participant being removed
-from the workspace.
+The deployment's verifier checks the credential's status at
+presentation time. The Coordinator SHOULD re-check periodically for
+long-lived sessions, and a revoked credential MUST result in the
+participant being removed from the workspace; neither reference does
+either yet (milestone 0.6).
 
 ---
 
@@ -164,10 +169,10 @@ that was not disclosed. Implementations encountering them today reject the
 presentation as invalid (`-32410`). Assigning codes is left to a revision of
 this profile.
 
-Earlier drafts of this table assigned -32411 to issuer trust, -32413 to
-claim disclosure, and -32414 to holder binding. No implementation ever
-used that mapping; the table above is what both reference coordinators
-return.
+Both reference coordinators return `-32410` whenever the deployment's
+verifier rejects a presentation. `-32411`, `-32412` and `-32413` are
+allocated for the verifier's specific failures and returned by neither
+today.
 
 ---
 
@@ -184,8 +189,7 @@ return.
 
 - **With `security-signed`:** the VP's `verificationMethod` binds
   the CHAP signing key.
-- **With `audit-scitt`:** SCITT statements can carry the holder's
-  DID as the issuer identifier, the audit chain remains valid
-  across organisational boundaries.
+- **With `audit-scitt`:** a SCITT statement's issuer is the `issuer`
+  parameter of `audit.submit_to_scitt`, which can be the holder's DID.
 - **With `identity-oidc`:** they coexist; pick the right one per
   participant based on the trust model.

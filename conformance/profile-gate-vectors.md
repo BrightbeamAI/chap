@@ -13,8 +13,8 @@ the message a Coordinator that never implemented the method would give, and
 carries `data: {"profile": …, "advertised": [...]}`.
 
 **Four that pass the gate**, which is the half that makes the fixture worth
-having. Two carry a refusal from the handler rather than the gate, and the
-distinction between the two is the property under test:
+having. Three carry a refusal from the handler, and telling a handler refusal
+from a gate refusal is the property under test:
 
 - `control.pause` with `control/1.0` advertised reaches the handler and is
   refused `-32602 Unknown task`.
