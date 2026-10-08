@@ -7,8 +7,8 @@
 CHAP, the Collaborative Human-Agent Protocol, records how people and AI agents
 share work. Each task, draft, review, correction and decision becomes an entry
 in a workspace's audit log. Anyone with access to the log can read it later.
-With the hash chain switched on, they can also check that no entry has
-changed.
+With the hash chain switched on, anyone who keeps a copy of a recent chain
+head can later check that no entry before it has changed.
 
 CHAP has a small Core that every implementation supports, and optional
 profiles that add to it, such as review, control and whisper.
@@ -67,7 +67,7 @@ goes through a CHAP Enhancement Proposal (CEP).
 - **An audit log you can check.** Each accepted call that changes something
   becomes an entry. With the hash chain switched on, each entry carries a hash
   of the one before it, so a change to an earlier entry shows up when the log
-  is checked. From 0.3.0, a member's refused attempt at a governed action,
+  is checked against a chain head kept outside the coordinator. From 0.3.0, a member's refused attempt at a governed action,
   such as approving a review addressed to someone else, is recorded too and
   marked as refused.
 - **One list of methods.** A single catalogue says which profile owns each
@@ -587,7 +587,7 @@ These are proposals. Milestone 0.5 decides each one through a CEP.
 - A patch release brings an implementation into line with the specification
   or corrects documentation. A change to what the specification requires is a
   minor release.
-- The packages take the specification's minor version: packages 0.3.x
+- The protocol packages take the specification's minor version: packages 0.3.x
   implement specification 0.3.
 
 ### From 1.0
@@ -679,11 +679,11 @@ GOVERNANCE.md asks of the committee. A succession plan says what happens when
 a maintainer steps down.
 
 **A long-term home.** CHAP can stay in the Brightbeam organisation under this
-governance, or join a foundation. The Agentic AI Foundation, part of the Linux
-Foundation, hosts both MCP and A2A, and CHAP is designed to work with both. A
-move needs maintainers from a second organisation, a review of the name and
-trademarks, and contribution terms the foundation accepts. The options are
-assessed during 0.7, and the decision is made at the release candidate.
+governance, or join a vendor-neutral foundation, with Brightbeam staying on as
+a lead maintainer. A move needs maintainers from a second organisation, a
+review of the name and trademarks, and contribution terms the foundation
+accepts. The options are assessed during 0.7, and the decision is made at the
+release candidate.
 
 ## Where CHAP fits
 
@@ -735,12 +735,12 @@ CEP, open for comment like any other.
 
 | Question | Current leaning | Settled in |
 |---|---|---|
-| Should every workspace keep a hash-linked chain as part of Core? | Yes, from the first entry, with the hash covering the whole entry under a versioned formula. A chain lets anyone holding the log check that no entry has changed, at the cost of one hash per entry. | 0.4 |
+| Should every workspace keep a hash-linked chain as part of Core? | Yes, from the first entry, with the hash covering the whole entry under a versioned formula. A chain lets anyone who kept an earlier chain head check that no entry before it has changed, at the cost of one hash per entry. | 0.4 |
 | Where does a request declare its version? | Inside `params`, so the log records it. An HTTP header may repeat it, and the `params` value decides. | 0.4 |
 | How should a coordinator treat a parameter it does not know? | The sender lists the parameters a coordinator must understand, as the `crit` header does in JSON Web Signatures ([RFC 7515](https://www.rfc-editor.org/rfc/rfc7515#section-4.1.11)). | 0.4 |
 | Who may join a workspace, and in which role? | An admin grants any role above the default, joining stops creating workspaces, and a participant's name binds to the authenticated caller or to a signature. | 0.6 |
 | How many independent implementations does 1.0 need? | Two coordinators written separately, with the two reference coordinators counting as one, and verification of exported logs by a verifier written outside Brightbeam. CONTRIBUTING.md asks for three today, so this change would go through a CEP. | 0.5 |
-| Where should CHAP live long term? | Assess the Agentic AI Foundation first. | 1.0-rc |
+| Where should CHAP live long term? | A vendor-neutral foundation, with Brightbeam staying on as a lead maintainer. | 1.0-rc |
 | Should CHAP keep its name? | Review the name before any IETF submission or move to a foundation. "CHAP" is also the name of an older network authentication protocol, [RFC 1994](https://www.rfc-editor.org/rfc/rfc1994). | 1.0-rc |
 
 ## How to take part
@@ -793,7 +793,7 @@ CEP, open for comment like any other.
 - **Admission.** The rules for who may join a workspace, and in which role.
 - **Audit log and chain.** The ordered record of a workspace. With the hash
   chain switched on, each entry carries a hash of the one before it, so a
-  change to an earlier entry shows up.
+  change to an earlier entry shows up against a chain head kept elsewhere.
 - **Binding.** A way of carrying CHAP messages, such as HTTP, MCP or A2A.
 - **Canonical JSON.** One agreed way to write a JSON document as bytes
   ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)), so that every
