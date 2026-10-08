@@ -4,7 +4,7 @@ Twelve situations where teams reach for the protocol. They run from one person o
 
 A note on scope before the cases. CHAP defines what gets recorded and how it links together. It does not pick your model, write your prompts, design your routing rules, interpret your regulator, or decide whether a particular human review was substantively good enough. Each case below describes what CHAP contributes; the substantive work above it remains yours.
 
-The code samples assume the `@brightbeamai/chap-coordinator` Node package or the reference TypeScript client. Equivalents in Python, Rust, or Go follow the same envelope shapes; the wire format is `application/chap+json` and any HTTP client works.
+The code samples call a coordinator in process, through the `@brightbeamai/chap-coordinator` Node package or the Python `chap-coordinator` package. Over HTTP the envelopes are the same, and the reference servers send `application/json`, so any HTTP client works. `audit.read` filters on `method`, `from`, `task_id` and `outcome`; filter anything else client-side. Entries hold `seq`, `arrived`, and either `envelope` for an accepted call or, from 0.3.0, `request` and `outcome` for a refusal, plus `prev_hash` when the chain is on.
 
 ## Contents
 
@@ -32,7 +32,7 @@ Regulated and enterprise:
 
 You ship to GitHub. Cursor reviews every PR. You accept most of its suggestions, reject some, rewrite a few. Three months in you have a vague sense that the bot is "pretty good" but couldn't tell a friend which specific things it gets wrong.
 
-Run a single-binary coordinator on your laptop with SQLite under the hood. The cheapest possible setup is twenty lines of Node:
+Run a coordinator on your laptop with SQLite under the hood. The cheapest possible setup is a few lines of Node:
 
 ```ts
 import { Coordinator } from "@brightbeamai/chap-coordinator";
@@ -51,27 +51,53 @@ coord.dispatch({
 });
 ```
 
-Wire it into your PR script. When Cursor produces a review, you push the review as an artefact:
+Wire it into your PR script. When Cursor produces a review, record it as a task's output and open a review on it, as the README tour does:
 
 ```ts
-coord.dispatch({
+const created = coord.dispatch({
   jsonrpc: "2.0", id: nextId(),
   method: "task.create",
   params: {
     workspace: "wsp_my_reviews",
+    from: "human:me@local",
     kind: "code_review",
     assignee: "human:me@local",
-    artefact: cursorReview  // whatever Cursor returned
+    input: { pr_id: "PR-482" }
+  }
+});
+const taskId = created.result.task_id;
+
+coord.dispatch({
+  jsonrpc: "2.0", id: nextId(),
+  method: "task.complete",
+  params: {
+    workspace: "wsp_my_reviews",
+    from: "human:me@local",
+    task_id: taskId,
+    output: cursorReview  // whatever Cursor returned
+  }
+});
+
+coord.dispatch({
+  jsonrpc: "2.0", id: nextId(),
+  method: "review.request",
+  params: {
+    workspace: "wsp_my_reviews",
+    from: "human:me@local",
+    task_id: taskId,
+    artefact: cursorReview,
+    to: "human:me@local"
   }
 });
 ```
 
-When you reject a comment, that becomes a `decide.reject` with a category. When you edit before merging, that becomes a `decide.override` with the diff and a one-line rationale:
+When you reject the review, that becomes a `decide.reject` with a comment and tags. When you edit before merging, that becomes a `decide.override` with the diff and a one-line rationale:
 
 ```json
 {
   "method": "decide.override",
   "params": {
+    "workspace": "wsp_my_reviews",
     "task_id": "tsk_pr_482",
     "from": "human:me@local",
     "logical_id": "lgl_pr_482_review",
@@ -89,7 +115,7 @@ When you reject a comment, that becomes a `decide.reject` with a category. When 
 Two months in you run the override analyser:
 
 ```bash
-$ npx tsx reference/core-plus-review/analyze-overrides.ts wsp_my_reviews
+$ npx tsx reference/core-plus-review/analyze-overrides.ts --db ./chap.db wsp_my_reviews
 
 Override Learning Report (wsp_my_reviews)
 =========================================
@@ -116,6 +142,7 @@ With Core and `review/1.0`, every brief is a task. The agent's first draft is an
 {
   "method": "decide.override",
   "params": {
+    "workspace": "wsp_marketing",
     "task_id": "tsk_brief_acme_q3_2026",
     "from": "human:editor@studio.com",
     "logical_id": "lgl_brief_acme_q3_2026",
@@ -142,7 +169,7 @@ You run a small SaaS. Support volume crossed the threshold where you couldn't re
 
 Six weeks in, a customer files a chargeback citing a refund policy they say your bot got wrong. You can find the customer's original email and your final reply. The bot's draft is in OpenAI logs somewhere, but only for thirty days, and you've also rotated keys since. Your reasoning for accepting the draft is in nobody's head except your own, and you are not entirely sure about it.
 
-This is where the chain pays for itself before you grow. Every ticket runs through a CHAP coordinator. The bot's draft, your approval-or-edit, the final response, all become evidence-chain entries linked by `prev_hash`. When the chargeback hits you call:
+This is where the log pays for itself before you grow. Every ticket runs through a CHAP coordinator. The bot's draft, your approval or edit, and the final response all become entries on the log, and with the hash chain switched on each entry carries a `prev_hash` linking it to the one before. When the chargeback hits you call:
 
 ```ts
 const audit = await coord.dispatch({
@@ -158,7 +185,7 @@ for (const entry of audit.result.entries) {
   // A refused attempt is held under `request`, with an `outcome` beside it.
   const call = entry.envelope ?? entry.request;
   const refused = entry.outcome ? ` (refused ${entry.outcome.code})` : "";
-  console.log(`[${call.params.ts}] ${call.method}${refused}`);
+  console.log(`[${entry.arrived}] ${call.method}${refused}`);
   console.log(`  from: ${call.params.from}`);
   console.log(`  ${JSON.stringify(call.params).slice(0, 120)}`);
 }
@@ -166,7 +193,7 @@ for (const entry of audit.result.entries) {
 
 The output is the whole story in chronological order: the agent's draft, your approval, the final outbound. Looking back, you can also see that you have approved seven other tickets where the bot quoted the same wrong policy. You fix the agent's retrieval to actually consult the policy doc. The eighth ticket is correct.
 
-Six months later, you hire a contractor. The workspace policy is in `workspace.describe`. The override patterns are visible in the audit log. Onboarding is reading the chain, not reading your mind.
+Six months later, you hire a contractor. `workspace.describe` lists the members and profiles, and holds the routing policy's URI (`routing_policy_uri`); the rest of your policy lives with your deployment. The override patterns are visible in the audit log. Onboarding means reading the log; nobody has to read your mind.
 
 ## 4. Support ops at 03:00
 
@@ -180,10 +207,16 @@ With CHAP, the APAC shift lead's last act is one envelope:
 {
   "method": "handoff.propose",
   "params": {
+    "workspace": "wsp_support",
     "from": "human:apac.lead@acme.com",
-    "to": ["group:emea-shift"],
-    "tasks": ["tsk_ticket_8821", "tsk_ticket_8847", "tsk_ticket_8903"],
-    "note": "8821: awaiting customer reply, no action needed. 8847: escalated to legal review around 23:00, they're on it. 8903: agent v2.4 drafted but quoted yesterday's shipping policy, do not approve as-is. We logged the wrong-policy-quoted tag three times in the last shift, looks like the agent hasn't picked up the policy refresh. Pinged eng."
+    "to": "group:emea-shift",
+    "handoff_id": "hnd_apac_emea_0517",
+    "tasks": [
+      { "task_id": "tsk_ticket_8821" },
+      { "task_id": "tsk_ticket_8847" },
+      { "task_id": "tsk_ticket_8903" }
+    ],
+    "summary": "8821: awaiting customer reply, no action needed. 8847: escalated to legal review around 23:00, they're on it. 8903: agent v2.4 drafted but quoted yesterday's shipping policy, do not approve as-is. We logged the wrong-policy-quoted tag three times in the last shift, looks like the agent hasn't picked up the policy refresh. Pinged eng."
   }
 }
 ```
@@ -191,36 +224,44 @@ With CHAP, the APAC shift lead's last act is one envelope:
 The EMEA lead picks up the queue. They read the handoff and start work:
 
 ```ts
-// Pull all tasks now assigned to the EMEA shift group
-const assignments = await coord.dispatch({
+const shiftStart = "2026-05-17T02:00:00.000Z";  // ISO 8601, compared as text
+
+// Find the handoffs proposed to the EMEA shift group
+const proposals = coord.dispatch({
   jsonrpc: "2.0", id: "q1",
   method: "audit.read",
   params: {
     workspace: "wsp_support",
-    filter: {
-      method: "handoff.accept",
-      from: "group:emea-shift",
-      outcome: "accepted",
-      since: shiftStart
-    }
+    filter: { method: "handoff.propose", outcome: "accepted" }
   }
 });
 
-for (const a of assignments.result.entries) {
-  const taskId = a.envelope.params.task_id;
-  const history = await coord.dispatch({
+for (const p of proposals.result.entries) {
+  const { to, tasks, handoff_id } = p.envelope.params;
+  if (to !== "group:emea-shift" || p.arrived < shiftStart) continue;
+
+  for (const { task_id } of tasks) {
+    // Every call that named the task by id: drafts, reviews, decisions.
+    const history = coord.dispatch({
+      jsonrpc: "2.0", id: nextId(),
+      method: "audit.read",
+      params: { workspace: "wsp_support", filter: { task_id, outcome: "accepted" } }
+    });
+    const latest = history.result.entries.at(-1);
+    if (!latest) continue;
+    console.log(`${task_id}: ${latest.envelope.method} at ${latest.arrived}`);
+  }
+
+  // Take the queue: the coordinator reassigns every task in the handoff.
+  coord.dispatch({
     jsonrpc: "2.0", id: nextId(),
-    method: "audit.read",
-    params: { workspace: "wsp_support", filter: { task_id: taskId, outcome: "accepted" } }
+    method: "handoff.accept",
+    params: { workspace: "wsp_support", from: "human:emea.lead@acme.com", handoff_id }
   });
-  // the segment carries the original handoff note, the routing hints,
-  // every state change, the policy reference in effect.
-  const latest = history.result.entries.at(-1);
-  console.log(`${taskId}: ${latest.envelope.method} at ${latest.envelope.params.ts}`);
 }
 ```
 
-The three tasks change ownership. The note is permanent. It doesn't scroll, it doesn't expire, it's in the audit log against those task ids. The lead picks up the queue and knows exactly which ticket to leave alone, which to chase eng on, and which is fine.
+The three tasks change ownership when the EMEA lead accepts. The note is permanent. It doesn't scroll and it doesn't expire: it sits in the audit log, in the `handoff.propose` entry that lists those task ids. The lead picks up the queue and knows exactly which ticket to leave alone, which to chase eng on, and which is fine.
 
 The wider picture: `routing/1.0` decides which tickets need senior eyes based on refund size and risk tier. `deliberation/1.0` puts refunds over $2000 to a two-reviewer vote. `whisper/1.0` lets the agent ask a tier-1 "refund or replacement?" mid-draft rather than guessing. None of this is exotic. Most teams already have the routing, the deliberation, and the clarifying questions, just spread across four UIs and one Slack channel. Having them in one chain is the difference between investigating a complaint in thirty seconds and investigating one in ten minutes.
 
@@ -230,17 +271,17 @@ Series B startup. Sixty engineers, four squads, an AI code-review bot reviewing 
 
 There is no answer. Dismissals don't leave a trace.
 
-CHAP turns dismissals into first-class events. A reject carries a category and a rationale:
+CHAP turns dismissals into first-class events. A reject carries a comment and tags:
 
 ```json
 {
   "method": "decide.reject",
   "params": {
+    "workspace": "wsp_eng_reviews",
     "task_id": "tsk_pr_review_12482",
     "from": "human:alice@acme.com",
-    "reason_category": "false-positive",
-    "rationale": "Flagged SQL injection on line 47. Query is parameter-bound through sqlx; bot misread the template string interpolation.",
-    "based_on_artefact_id": "art_bot_review_..."
+    "comment": "Flagged SQL injection on line 47. Query is parameter-bound through sqlx; bot misread the template string interpolation.",
+    "tags": ["security-flag", "false-positive"]
   }
 }
 ```
@@ -248,31 +289,30 @@ CHAP turns dismissals into first-class events. A reject carries a category and a
 The security squad runs a quarterly audit query. In TypeScript:
 
 ```ts
-const dismissals = await coord.dispatch({
+const dismissals = coord.dispatch({
   jsonrpc: "2.0", id: "sec-q1",
   method: "audit.read",
   params: {
     workspace: "wsp_eng_reviews",
-    filter: {
-      method: "decide.reject",
-      outcome: "accepted",
-      since: "2026-01-01T00:00:00Z",
-      until: "2026-04-01T00:00:00Z",
-      artefact_tags: ["security-flag"]
-    }
+    filter: { method: "decide.reject", outcome: "accepted" }
   }
 });
 
-const byCategory = {};
+// Dates and tags are filtered client-side.
+const byTag = {};
 for (const e of dismissals.result.entries) {
-  const cat = e.envelope.params.reason_category;
-  byCategory[cat] = (byCategory[cat] || 0) + 1;
+  if (e.arrived < "2026-01-01T00:00:00Z" || e.arrived >= "2026-04-01T00:00:00Z") continue;
+  const tags = e.envelope.params.tags ?? [];
+  if (!tags.includes("security-flag")) continue;
+  for (const tag of tags.filter(t => t !== "security-flag")) {
+    byTag[tag] = (byTag[tag] || 0) + 1;
+  }
 }
-console.log(byCategory);
+console.log(byTag);
 // { 'false-positive': 28, 'accepted-risk-tracked-in-jira': 3, ... }
 ```
 
-Two profiles do most of the work here. `audit-scitt/1.0` anchors the workspace evidence to a transparency log: the security team can verify dismissal history without write access to engineering's tooling, which sidesteps the political problem entirely. `modes/1.0` lets the security squad pin `production` mode on security-sensitive paths (every bot comment must be acted on or dismissed with a reason) while everything else stays in `trial`.
+Two profiles do most of the work here. Under `audit-scitt/1.0`, calling `audit.submit_to_scitt` hands a statement for each entry to a transparency service the deployment connects: the security team can check dismissal history without write access to engineering's tooling, which sidesteps the political problem entirely. `modes/1.0` keeps security-sensitive work in `trial`, where every task is reviewed, while everything else runs in `production`.
 
 Quarterly review: 4,212 security-flagged comments, 31 dismissals, 28 tagged `false-positive`, 3 tagged `accepted-risk-tracked-in-jira`. The security team has evidence for their own audit. The bot's prompts get tuned for the false-positive patterns. Squad B starts using the bot again because it is getting noticeably better.
 
@@ -286,6 +326,7 @@ It is 18:00 on a Tuesday. The MSA needs to ship by 21:00. The junior approves wh
 {
   "method": "decide.override",
   "params": {
+    "workspace": "wsp_legal_review",
     "task_id": "tsk_msa_acme_corp",
     "from": "human:smith.j@firm.com",
     "logical_id": "lgl_msa_acme_corp",
@@ -306,31 +347,38 @@ It is 18:00 on a Tuesday. The MSA needs to ship by 21:00. The junior approves wh
 `intent_preserved: false` matters. The partner didn't refine the junior's expression of the same decision: the partner substituted a different decision. Over a quarter, the `junior-escalation-miss` tag count is the firm's actual training signal:
 
 ```ts
-const misses = await coord.dispatch({
+const overrides = coord.dispatch({
   jsonrpc: "2.0", id: "tr-q1",
   method: "audit.read",
   params: {
     workspace: "wsp_legal_review",
-    filter: {
-      method: "decide.override",
-      outcome: "accepted",
-      tags: ["junior-escalation-miss"],
-      since: lastQuarterStart
-    }
+    filter: { method: "decide.override", outcome: "accepted" }
   }
 });
 
-// Group by junior to see who needs training
+// Tags and dates are filtered client-side.
+const misses = overrides.result.entries.filter(e =>
+  e.arrived >= lastQuarterStart &&
+  (e.envelope.params.tags ?? []).includes("junior-escalation-miss"));
+
+// Group by junior to see who needs training. The junior's sign-off is
+// the review.request that sent the redline to the partner.
 const byJunior = new Map();
-for (const e of misses.result.entries) {
-  const original = e.envelope.params.based_on_artefact_id;
-  const originalReview = await getArtefact(original);
-  const junior = originalReview.reviewer;
+for (const e of misses) {
+  const requests = coord.dispatch({
+    jsonrpc: "2.0", id: nextId(),
+    method: "audit.read",
+    params: {
+      workspace: "wsp_legal_review",
+      filter: { method: "review.request", task_id: e.envelope.params.task_id, outcome: "accepted" }
+    }
+  });
+  const junior = requests.result.entries[0].envelope.params.from;
   byJunior.set(junior, (byJunior.get(junior) || 0) + 1);
 }
 ```
 
-The verifiable-credentials profile (`identity-vc/1.0`) is the other piece. The partner's authority to approve a Tier-A modification is a credential, bar admission, firm partnership status, issued by bodies outside the workspace. Signing with a credential rather than just an OIDC identity is the right shape; the credential travels with the override, and a future reader of the chain can verify the signer had the right to make the call.
+The verifiable-credentials profile (`identity-vc/1.0`) is the other piece. The partner's authority to approve a Tier-A modification is a credential, bar admission, firm partnership status, issued by bodies outside the workspace. A verifier the firm supplies checks the credential when the partner calls `participant.join`, and the join entry records the presentation. Decisions carry no credential, so a future reader of the log ties the override to the partner's join entry.
 
 ## 7. Trust and Safety, three auditors, one queue
 
@@ -346,9 +394,9 @@ A CHAP workspace replaces those three pipelines with one chain. A takedown decis
 {
   "method": "decide.approve",
   "params": {
+    "workspace": "wsp_ts",
     "task_id": "tsk_report_19204821",
     "from": "human:reviewer.j@platform.com",
-    "based_on_artefact_id": "art_ai_classification_...",
     "decision": "take-down",
     "policy_refs": ["community.guidelines.v18#harassment", "DSA.art.16"],
     "rationale": "Targeted harassment of named individual; pattern matches s.3.2; three other accounts reported same user this week.",
@@ -360,23 +408,26 @@ A CHAP workspace replaces those three pipelines with one chain. A takedown decis
 Generating the DSA statement of reasons becomes a templating exercise:
 
 ```ts
-async function generateDSAStatement(taskId: string): Promise<string> {
-  const chain = await coord.dispatch({
+function generateDSAStatement(taskId: string): string {
+  const chain = coord.dispatch({
     jsonrpc: "2.0", id: nextId(),
     method: "audit.read",
     params: { workspace: "wsp_ts", filter: { task_id: taskId, outcome: "accepted" } }
   });
+  const entries = chain.result.entries;
 
-  const decision = chain.result.entries.find(
-    e => e.envelope.method === "decide.approve"
-  ).envelope.params;
-  const classification = await getArtefact(decision.based_on_artefact_id);
+  const approval = entries.find(e => e.envelope.method === "decide.approve");
+  const decision = approval.envelope.params;
+  // The classifier's output is the artefact its review.request carried.
+  const classification = entries.find(
+    e => e.envelope.method === "review.request"
+  ).envelope.params.artefact;
 
   return `
 Statement of Reasons (DSA Article 17)
 =====================================
 Content removed under: ${decision.policy_refs.join(", ")}
-Decision date: ${decision.ts}
+Decision date: ${approval.arrived}
 Classification: ${classification.category}
 Confidence: ${classification.confidence}
 Human review: ${decision.from}
@@ -386,7 +437,7 @@ Appeal: respond within 14 days at ...
 }
 ```
 
-The subpoena response is the relevant slice of the chain. The appeal references the original `decide.approve` as its base. When the regulator audits a quarter later, `audit.read` produces the full chain. `audit-scitt/1.0` is load-bearing because regulators want third-party-verifiable evidence that takedowns followed policy, and law-enforcement subpoenas need verifiable chain integrity. `deliberation/1.0` handles high-stakes calls (deplatforming high-profile users) as a two-reviewer plus supervisor panel. `modes/1.0` rolls out new classifier versions safely (shadow then trial then production).
+The subpoena response is the relevant slice of the log. The appeal references the original `decide.approve` as its base. When the regulator audits a quarter later, `audit.read` produces the full log. `audit-scitt/1.0` is load-bearing because regulators want evidence a third party can check: it switches the hash chain on, and `audit.submit_to_scitt` hands a statement for each entry to a transparency service the platform connects, whose receipts a third party can check without trusting the platform. `deliberation/1.0` handles high-stakes calls (deplatforming high-profile users) as a two-reviewer plus supervisor panel. `modes/1.0` rolls out new classifier versions safely (shadow then trial then production).
 
 ## 8. The creative shop and the client who "never approved that"
 
@@ -396,16 +447,16 @@ Six months later the campaign is running and the client's new CMO is furious. Th
 
 The agency has a Slack thread from May with the original brief. Figma comments from June with the internal revision rounds. An email from July with the version that went to the client. A reply two days later that says "looks great let's go." Nobody can find what exactly the new CMO is referring to, and the email "looks great let's go" was from the CMO's predecessor, who left the company in September.
 
-The relevant CHAP move is `security-signed/1.0` plus `identity-oidc/1.0`. The client approval is signed with an OIDC-bound key. The approval envelope references the final artefact by content hash. The signature is non-repudiable. The chain shows exactly which version was approved, by which named individual, at which timestamp, against which brief.
+The relevant CHAP move is `security-signed/1.0` plus `identity-oidc/1.0`. The client approval is signed with an OIDC-bound key. The approval carries `approved_artefact_digest`, the digest of the final artefact, and the coordinator refuses it if the digest does not match the artefact under review. Anyone who holds the client's public key from a source outside the agency can check the signature. The log shows exactly which version was approved, by which named individual, at which time, against which brief.
 
 The signing flow on the client side, simplified:
 
 ```ts
-// Client receives a "please approve" notification linked to a CHAP envelope id.
+// Client receives a "please approve" link to the review.
 // They click through, see the final artefact, click Approve.
-// The browser signs the approval envelope with the OIDC-bound key.
+// The browser signs the approval with the OIDC-bound key.
 
-import { signEnvelope } from "@brightbeamai/chap-coordinator";
+import { canonicalize, signEnvelope } from "@brightbeamai/chap-coordinator";
 
 const envelope = {
   jsonrpc: "2.0", id: nextId(),
@@ -413,18 +464,21 @@ const envelope = {
   params: {
     workspace: "wsp_agency_acme_q4",
     task_id: "tsk_campaign_q4_launch",
-    from: clientOidcSubject,
-    based_on_artefact_id: "art_final_v7_...",
-    logical_id: "lgl_campaign_q4_launch_final",
-    content_hash: "sha256:7f8e9d0c..."  // pinned at signing time
+    from: "human:cmo@client.example",
+    approved_artefact_digest: "sha256:7f8e9d0c..."  // JCS SHA-256 of the artefact under review; the coordinator refuses a mismatch
   }
 };
 
-const signed = await signEnvelope(envelope, clientOidcKey);
-await postEnvelope(coordinatorUrl, signed);
+// signEnvelope(canonical bytes, private key, kid) returns "ed25519:<kid>:<base64>".
+const sig = signEnvelope(canonicalize(envelope), clientPrivateKey, clientKid);
+await fetch(coordinatorUrl, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ ...envelope, sig })
+});
 ```
 
-When the new CMO disputes, you replay the chain. The signed approval references the artefact by content hash. If they change the artefact bytes by even one character, the hash doesn't match, and the chain shows it. The internal-review overrides with tags (`tone`, `imagery`, `factual-correction`, `client-preference`) build a portrait over time of which AI tools give which kinds of work.
+When the new CMO disputes, you read the log. The signed approval carries the artefact's digest. Change one character of the artefact and its digest no longer matches the one the client signed. The internal-review overrides with tags (`tone`, `imagery`, `factual-correction`, `client-preference`) build a portrait over time of which AI tools give which kinds of work.
 
 ## 9. The internal Q&A bot that keeps getting the same thing wrong
 
@@ -438,40 +492,54 @@ The pattern that helps is `whisper/1.0`. When the bot is uncertain, it asks the 
 {
   "method": "whisper.ask",
   "params": {
+    "workspace": "wsp_hr_questions",
     "task_id": "tsk_employee_q_8821",
     "from": "agent:hr-bot",
     "to": ["group:hr-team"],
     "question": "Employee is asking about parental-leave eligibility for adoption. Policy doc doesn't explicitly say. Do we treat adoption same as biological?",
-    "options": ["yes-same", "no-different", "needs-case-by-case"],
+    "options": [{"id": "yes-same"}, {"id": "no-different"}, {"id": "needs-case-by-case"}],
     "default_if_lapsed": "needs-case-by-case",
-    "deadline": "2026-05-17T17:00:00Z"
+    "deadline_ms": 600000
   }
 }
 ```
 
-The HR partner taps `yes-same` in thirty seconds. The agent's loop receives the answer:
+The HR partner taps `yes-same` in thirty seconds, which sends a `whisper.answer` with `answer_option: "yes-same"`. The agent's loop reads the answer from that entry:
 
 ```ts
 // Inside the agent's run loop
-const whisperResp = await coord.dispatch({
+const asked = coord.dispatch({
   jsonrpc: "2.0", id: nextId(),
   method: "whisper.ask",
   params: { /* as above */ }
 });
+const whisperId = asked.result.whisper_id;
 
-const answer = whisperResp.result;
-if (answer.status === "answered") {
-  // Use answer.choice (e.g. "yes-same")
-  // Record it back into our policy KB so we don't ask again next time.
+// Later: the answer is the whisper.answer entry for this whisper.
+const answers = coord.dispatch({
+  jsonrpc: "2.0", id: nextId(),
+  method: "audit.read",
+  params: {
+    workspace: "wsp_hr_questions",
+    filter: { method: "whisper.answer", task_id: "tsk_employee_q_8821", outcome: "accepted" }
+  }
+});
+const answer = answers.result.entries
+  .map(e => e.envelope.params)
+  .find(p => p.whisper_id === whisperId);
+
+if (answer) {
+  // answer.answer_option is the chosen option id, e.g. "yes-same".
+  // Record it in our policy KB so we don't ask again next time.
   await pushToKB({
     question_class: "parental-leave-adoption",
     policy_ref: "hr.parental-leave.v3#adoption-eligibility",
-    answer: answer.choice
+    answer: answer.answer_option
   });
 }
 ```
 
-The answer is recorded as a workspace policy reference. Next time the question comes up, the bot quotes the policy directly. `review/1.0` handles the rest. When the bot does answer a tricky question, SMEs spot-check and override with rationale. The overrides accumulate into a corrections corpus the team uses on the next training cycle.
+If nobody answers within `deadline_ms`, the lapse check the deployment runs (`checkWhisperLapses` in TypeScript, `check_whisper_lapses` in Python) records a `notify.message` entry carrying the default. The answer is on the log as a `whisper.answer` entry, and the agent copies it into its knowledge base. Next time the question comes up, the bot quotes the policy directly. `review/1.0` handles the rest. When the bot does answer a tricky question, SMEs spot-check and override with rationale. The overrides accumulate into a corrections corpus the team uses on the next training cycle.
 
 ## 10. A pressure drop on the fill-finish line
 
@@ -481,7 +549,7 @@ What happens next involves Annex 11 (electronic systems), Annex 1 (sterile manuf
 
 Today this story lives in four systems. The historian (AVEVA PI) has the pressure trace. The eQMS (Veeva Vault) has the deviation record. The site's lean daily management board (iObeya) has the shift leader's note. The batch record is somewhere between SAP and a printed paper file. An inspector asking "walk me through batch BX-48219" gets a presentation rather than a record.
 
-A CHAP-instrumented site puts the whole story in one chain. The agent's flag:
+A CHAP-instrumented site puts the whole story in one log. The agent's flag:
 
 ```json
 {
@@ -490,7 +558,8 @@ A CHAP-instrumented site puts the whole story in one chain. The agent's flag:
     "workspace": "wsp_site_fill_finish_b3",
     "from": "agent:pdm-isolator-monitor#v2.4",
     "kind": "deviation_review",
-    "artefact": {
+    "assignee": "human:shift.lead@biopharma.com",
+    "input": {
       "kind": "deviation_flag",
       "logical_id": "lgl_dev_2026_05_17_B3_001",
       "subject": "Isolator iso-3 dP below threshold during batch BX-48219",
@@ -516,6 +585,7 @@ Eight hours later, after investigation, the QP signs the release:
 {
   "method": "decide.approve",
   "params": {
+    "workspace": "wsp_site_fill_finish_b3",
     "task_id": "tsk_qp_release_BX_48219",
     "from": "human:qp.tanaka@biopharma.com",
     "logical_id": "lgl_batch_BX_48219_disposition",
@@ -526,31 +596,34 @@ Eight hours later, after investigation, the QP signs the release:
 }
 ```
 
-When the inspector visits in October, the audit-SCITT receipt for that envelope is verifiable independently of the site. The compliance officer's prep is a single query:
+When the inspector visits in October, the site can show the receipt a transparency service issued for that entry under `audit-scitt/1.0`, and the inspector checks it against that service, independently of the site. The compliance officer's prep is a single query:
 
 ```python
 from chap_coordinator import Coordinator
+from chap_coordinator.storage.sqlite import SqliteStore
 
-coord = Coordinator()   # or a client for your deployment's transport
+coord = Coordinator(store=SqliteStore("./site.db"))  # the site's store
 
-# Pull the whole story for batch BX-48219
-chain = coord.dispatch({
+# Pull the story for batch BX-48219; logical_id is filtered client-side
+entries = coord.dispatch({
     "jsonrpc": "2.0", "id": "q1", "method": "audit.read",
     "params": {
         "workspace": "wsp_site_fill_finish_b3",
         "from": "human:compliance@site.example",
-        "filter": {"logical_id": "lgl_batch_BX_48219_disposition"},
     },
 })["result"]["entries"]
 
-for entry in chain:
-    print(entry.ts, entry.method, entry.from_, "->", entry.summary)
-    if entry.method == "decide.approve" and entry.signature_meaning == "qp_release":
-        print(f"  QP credential: {entry.identity.credential_id}")
-        print(f"  SCITT receipt: {entry.scitt_receipt_url}")
+for entry in entries:
+    call = entry.get("envelope") or entry["request"]
+    params = call["params"]
+    if params.get("logical_id") != "lgl_batch_BX_48219_disposition":
+        continue
+    print(entry["arrived"], call["method"], params["from"], entry.get("outcome", ""))
+    if call["method"] == "decide.approve" and params.get("signature_meaning") == "qp_release":
+        print(f"  QP rationale: {params['rationale']}")
 ```
 
-A lot of profiles compose here: `review/1.0` for the deviation review and CAPA initiation, `modes/1.0` for the PdM agent's own promotion from shadow to production with documented evidence, `identity-vc/1.0` because QP status is a regulatory credential, `security-signed/1.0` for Annex 11 signature parity, `audit-scitt/1.0` for the inspector-verifiable anchor, `deliberation/1.0` for multi-party CAPA decisions, `handoff/1.0` for shift handover with batch context. Each is doing one thing the site already needs to do.
+A lot of profiles compose here: `review/1.0` for the deviation review and CAPA initiation, `modes/1.0` for the PdM agent's rollout from shadow to production, with `control/1.0` recording each raise of the mode ceiling (a workspace's own mode is fixed at creation until `workspace.set_mode` is built), `identity-vc/1.0` because QP status is a regulatory credential, `security-signed/1.0` for Annex 11 signature parity, `audit-scitt/1.0` for statements a transparency service registers and the inspector can check, `deliberation/1.0` for multi-party CAPA decisions, `handoff/1.0` for shift handover with batch context. Each is doing one thing the site already needs to do.
 
 ## 11. Motor claims and the bereavement that changes everything
 
@@ -569,6 +642,7 @@ The task envelope routes accordingly:
     "workspace": "wsp_motor_claims_uk",
     "kind": "fnol_triage",
     "from": "agent:fnol-triage-bot#v3.2",
+    "assignee": "human:harper.s@insurer.com",
     "input": {
       "claim_ref": "MTR-2026-198421",
       "vulnerability_flags": ["recent_bereavement_in_household"]
@@ -589,6 +663,7 @@ The vulnerability flag forces senior-handler routing within four hours regardles
 {
   "method": "decide.override",
   "params": {
+    "workspace": "wsp_motor_claims_uk",
     "task_id": "tsk_settlement_MTR-2026-198421",
     "from": "human:harper.s@insurer.com",
     "logical_id": "lgl_claim_MTR-2026-198421",
@@ -605,20 +680,37 @@ The vulnerability flag forces senior-handler routing within four hours regardles
 }
 ```
 
-A year later, an Ombudsman complaint arrives about a different customer, but the regulator routinely samples nearby files for context. The team prepares evidence by replaying the chain:
+A year later, an Ombudsman complaint arrives about a different customer, but the regulator routinely samples nearby files for context. The team prepares evidence by reading the log:
 
 ```python
-chain = ws.audit_read(logical_id="lgl_claim_MTR-2026-198421")
+from datetime import datetime
+
+# coord is the insurer's coordinator, opened on its store as in §10
+entries = coord.dispatch({
+    "jsonrpc": "2.0", "id": "q2", "method": "audit.read",
+    "params": {"workspace": "wsp_motor_claims_uk",
+               "filter": {"outcome": "accepted"}},
+})["result"]["entries"]
+
+def about_claim(entry):
+    params = entry["envelope"]["params"]
+    return (params.get("logical_id") == "lgl_claim_MTR-2026-198421"
+            or (params.get("input") or {}).get("claim_ref") == "MTR-2026-198421")
+
+def arrived(entry):
+    return datetime.fromisoformat(entry["arrived"].replace("Z", "+00:00"))
 
 # Show that meaningful review happened, with timing
-trigger = next(e for e in chain if e.method == "task.create")
-review = next(e for e in chain if e.method == "decide.override")
-print(f"Vulnerability flag at: {trigger.ts}")
-print(f"Senior handler decision at: {review.ts}")
-print(f"Lapse: {review.ts - trigger.ts}")  # well under 4 hours
-print(f"Handler: {review.from_} (credential: {review.identity.credential_id})")
-print(f"Policy applied: {review.policy_refs}")
-print(f"Rationale: {review.rationale}")
+chain = [e for e in entries if about_claim(e)]
+trigger = next(e for e in chain if e["envelope"]["method"] == "task.create")
+review = next(e for e in chain if e["envelope"]["method"] == "decide.override")
+override = review["envelope"]["params"]
+print(f"Vulnerability flag at: {trigger['arrived']}")
+print(f"Senior handler decision at: {review['arrived']}")
+print(f"Lapse: {arrived(review) - arrived(trigger)}")  # well under 4 hours
+print(f"Handler: {override['from']}")
+print(f"Policy applied: {override['policy_refs']}")
+print(f"Rationale: {override['rationale']}")
 ```
 
 No PowerPoint required.
@@ -635,6 +727,7 @@ Every piece of advice is a task. The AI's proposal is an artefact. The advisor's
 {
   "method": "decide.approve",
   "params": {
+    "workspace": "wsp_advice",
     "task_id": "tsk_rebalance_advice_client_4821",
     "from": "human:advisor.lee@firm.com",
     "logical_id": "lgl_client_4821_advice_q2_2024",
@@ -651,37 +744,41 @@ Every piece of advice is a task. The AI's proposal is an artefact. The advisor's
 Five years later, the advisor's personal-accountability inspection. The compliance team's job becomes a chain replay rather than a forensic reconstruction:
 
 ```python
-from datetime import datetime
+# coord is the firm's coordinator, opened on its store as in §10
+entries = coord.dispatch({
+    "jsonrpc": "2.0", "id": "q3", "method": "audit.read",
+    "params": {
+        "workspace": "wsp_advice",
+        "filter": {"method": "decide.approve",
+                   "from": "human:advisor.lee@firm.com",
+                   "outcome": "accepted"},
+    },
+})["result"]["entries"]
 
-# Pull every advice approval signed by this advisor across the inspection window
-audit = ws.audit_read(
-    filter={
-        "method": "decide.approve",
-        "from": "human:advisor.lee@firm.com",
-        "signature_meaning": "advice_authorised",
-        "since": datetime(2021, 1, 1),
-        "until": datetime(2026, 1, 1)
-    }
-)
+# Keep the advice approvals inside the inspection window, client-side
+audit = [e for e in entries
+         if e["envelope"]["params"].get("signature_meaning") == "advice_authorised"
+         and "2021-01-01" <= e["arrived"] < "2026-01-01"]
 
 # Group by rubric version to show continuity of the control across the period
 rubric_versions = {}
 for e in audit:
-    v = e.executable_expertise_version
+    v = e["envelope"]["params"]["executable_expertise_version"]
     rubric_versions.setdefault(v, []).append(e)
 
-for v, entries in sorted(rubric_versions.items()):
-    first = min(e.ts for e in entries)
-    last = max(e.ts for e in entries)
-    print(f"{v}: {len(entries)} approvals, active {first} -> {last}")
+for v, group in sorted(rubric_versions.items()):
+    first = min(e["arrived"] for e in group)
+    last = max(e["arrived"] for e in group)
+    print(f"{v}: {len(group)} approvals, active {first} -> {last}")
 
 # The SOX-404 Year-5 control-reliance question: did the control operate
-# effectively across the period, or only when last sampled? The chain
+# effectively across the period, or only when last sampled? The log
 # answers that directly: continuity is visible in the rubric-version
-# transitions, with cryptographic continuity from the prev_hash links.
+# transitions, and the transparency service's receipts show that the
+# registered entries have not changed.
 ```
 
-The verifiable-credentials profile carries the advisor's regulatory status as a credential whose issuer is the regulator itself, not the firm. The audit-SCITT profile anchors the chain to an external transparency service, which means the inspector verifies chain integrity without trusting the firm's own systems. The modes profile shows the AI assistant's promotion history, when each version went into production, against what evidence.
+Under the verifiable-credentials profile, a verifier the firm supplies checks the advisor's regulatory status, a credential the regulator issues, when the advisor joins the workspace. Under the audit-SCITT profile, the firm calls `audit.submit_to_scitt` to hand a statement for each entry to an external transparency service, so the inspector can check what was registered without trusting the firm's own systems. The recorded `control.set_mode_ceiling` calls show when the AI assistant's tasks were allowed into production.
 
 ---
 

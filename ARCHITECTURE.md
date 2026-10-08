@@ -2,7 +2,7 @@
 
 This document is **informative**. It explains the design choices behind CHAP,
 how the primitives fit together, and what deployment topologies are practical.
-For the normative wire format, see [SPECIFICATION.md](./SPECIFICATION.md).
+For the wire format the coordinators speak, see [core/SPEC.md](./core/SPEC.md) §2.
 
 ---
 
@@ -75,7 +75,7 @@ classDiagram
       +state
       +mode
       +members
-      +policy_uri
+      +routing_policy_uri
       +evidence_head
     }
     class Participant {
@@ -102,41 +102,47 @@ classDiagram
     }
     class EvidenceEntry {
       +seq
-      +envelope_hash
+      +arrived
+      +envelope
+      +request
+      +outcome
       +prev_hash
-      +sig
     }
     class Message {
+      +jsonrpc
       +id
-      +ts
-      +from
-      +to
       +method
-      +evidence
+      +params
+      +sig
     }
 
     Workspace "1" --> "*" Participant : members
     Workspace "1" --> "*" Task : holds
     Workspace "1" --> "*" EvidenceEntry : append-only log
     Task "1" --> "*" Artefact : produces
-    Message "1" --> "1" EvidenceEntry : becomes
+    Message "1" --> "0..1" EvidenceEntry : becomes
     Participant "1" --> "*" Message : sends
 ```
 
-**The contract.** Every state-changing Message becomes exactly one
-EvidenceEntry. Tasks live inside Workspaces. Artefacts are produced by
-Tasks. Participants send Messages. There is exactly one EvidenceEntry
-per accepted state-changing Message, and the chain is per-Workspace.
-Read-only methods are not recorded, so that inspecting or verifying the
-chain does not alter it.
+**The contract.** Every accepted state-changing Message becomes one
+EvidenceEntry, and from 0.3.0 so does a member's refused governed attempt,
+under `request` with its outcome
+([SPECIFICATION.md §10.1](./SPECIFICATION.md#101-evidence-chain)). Reads
+are never recorded. `audit-scitt/1.0` or a coordinator option switches the
+hash chain on. A Message carries `workspace`, `from`, `to` and `ts` inside
+`params`, and a top-level `sig` under `security-signed/1.0`. Tasks live
+inside Workspaces, Artefacts are produced by Tasks, and Participants send
+Messages.
 
 **Authorisation layering.** Whether a Message is accepted at all is
 decided in layers, innermost first:
 
 1. **Membership (Core).** The actor (`from`) must be a joined member of
-   the Workspace. This is the floor: a Message from a non-member is
-   refused before any profile logic runs, so the chain can never record
-   an action by a Participant who never joined.
+   the Workspace. Both coordinators check this for the Core task methods,
+   the `review/1.0` methods, `workspace.set_profiles` and every control,
+   deliberation, handoff and whisper method. The `routing/1.0` methods and
+   `participant.leave` do not check it yet, so a non-member's routing call
+   is accepted and recorded.
 2. **Eligibility (profile).** A profile may narrow who, among members,
    may invoke a given method. `review/1.0` requires that the actor of a
    review decision be one of the reviewers the review was addressed to;
@@ -189,6 +195,7 @@ stateDiagram-v2
     ReviewRequested --> Declined : decide.reject
     ReviewRequested --> InProgress : decide.reject (request_revision)
     ReviewRequested --> Abstained : abstain.declare
+    Abstained --> Escalated : escalate.raise
     InProgress --> Escalated : escalate.raise
     InProgress --> Paused : control.pause
     Paused --> InProgress : control.resume
@@ -211,8 +218,9 @@ shows the common path.
   `task.create`, where `task.complete` opens the review itself.
 - `Declined` is **non-blocking**: the work can go back to a reviewer with
   another `review.request`, or move on with `escalate.raise`.
-- `Abstained` and `Escalated` are terminal **for this assignee** but
-  trigger a new assignment to the escalation target.
+- `abstain.declare` moves the task to `Abstained` and assigns no one. A
+  follow-up `escalate.raise` marks the task `Escalated` and creates a
+  successor task for the escalation target.
 - `Superseded` is the protocol's "redo", the superseded task remains in
   the evidence chain, linked to its successor.
 
@@ -220,7 +228,8 @@ shows the common path.
 
 ## 4. The evidence chain
 
-CHAP's audit guarantee is a per-workspace hash-linked log.
+CHAP's audit guarantee is a per-workspace append-only log, hash-linked
+when the chain is on.
 
 ```mermaid
 %%{init: {
@@ -246,7 +255,7 @@ flowchart TB
     E3["<b>entry 3</b> · task.complete"]:::entry
     E4["<b>entry 4</b> · review.request"]:::entry
     E5["<b>entry 5</b> · decide.approve"]:::entry
-    CK["<b>checkpoint</b><br/>every 1000"]:::chkpt
+    CK["<b>checkpoint</b><br/>specified and unbuilt"]:::chkpt
     AN["<b>external anchor</b>"]:::anchor
 
     E0 -->|prev_hash| E1
@@ -258,17 +267,16 @@ flowchart TB
     CK -. publishes to .-> AN
 ```
 
-**Verification cost.** Replaying the entire chain is O(n) in entries and
-fully parallelisable past any checkpoint. In practice, verifiers replay
-only the segment of interest (typically a single task's worth of entries,
-~10-50) and trust the latest checkpoint for the rest.
+**Verification cost.** `audit.verify_chain` replays the whole log, O(n) in
+entries, and refuses ranges; checkpoints are specified and unbuilt.
 
 ---
 
-## 5. Mode-aware routing
+## 5. Mode ceilings
 
-Modes are an envelope-level concern. The Coordinator enforces them on
-every dispatch.
+The Coordinator checks a new task's mode against the ceiling at
+`task.create` and `control.supersede`, and under `modes/1.0` a trial task
+requires review. Withholding shadow output is the deployment's job.
 
 ```mermaid
 %%{init: {
@@ -288,25 +296,24 @@ flowchart TB
     classDef ok    fill:#E8F1ED,stroke:#1f5b39,stroke-width:2px,color:#0a3a1c
     classDef block fill:#1a1a1c,stroke:#1a1a1c,stroke-width:2px,color:#ffffff
 
-    IN["task.create<br/>mode = X"]:::mode
+    IN["task.create or control.supersede<br/>mode = X"]:::mode
     CHK{"X ≤ workspace<br/>mode_ceiling?"}
-    YES["dispatch"]:::ok
-    NO["reject<br/>-32040<br/>mode_ceiling_exceeded"]:::block
-    OBS{"X = shadow?"}
-    ROUTE1["dispatch to assignee<br/>+ shadow_observers only"]:::ok
-    ROUTE2["dispatch to assignee<br/>(normal routing)"]:::ok
+    NO["refuse<br/>-32040<br/>mode_ceiling_exceeded"]:::block
+    TRIAL{"X = trial and<br/>modes/1.0 advertised?"}
+    REVIEW["create the task<br/>review required"]:::ok
+    PLAIN["create the task"]:::ok
 
     IN --> CHK
     CHK -- no  --> NO
-    CHK -- yes --> OBS
-    OBS -- yes --> ROUTE1
-    OBS -- no  --> ROUTE2
+    CHK -- yes --> TRIAL
+    TRIAL -- yes --> REVIEW
+    TRIAL -- no  --> PLAIN
 ```
 
-**Promotion.** Moving a workspace from `trial` to `production` is a
-privileged operation. It requires step-up authentication and matches
-against an explicit policy entry. The transition is recorded as a
-first-class evidence entry so promotion history is auditable.
+**Promotion.** A workspace's mode is fixed at creation until
+`workspace.set_mode` is built. `control.set_mode_ceiling`, privileged and
+recorded, sets the highest mode a new task may carry. Step-up guards it
+where the coordinator enforces step-up.
 
 ---
 
@@ -341,20 +348,22 @@ sequenceDiagram
     participant C as Coordinator
     participant H as Human (Reviewer)
 
-    A->>C: task.complete (draft artefact)
-    C->>H: review.request
+    A->>C: task.complete (draft output)
+    A->>C: review.request (draft artefact, to: reviewer)
+    H->>C: audit.read (finds the request)
     H->>H: edits the draft locally
     H->>C: decide.override<br/>(diff + rationale + tags)
-    C->>C: produce override artefact<br/>+ extend evidence chain
-    C->>A: notify.message<br/>(override captured)
-    Note over C: override artefact links<br/>back to original draft via<br/>"based_on" field
+    C->>C: produce override artefact<br/>+ append to the log
+    A->>C: audit.read (finds the override)
+    Note over C: override artefact keeps<br/>the original draft in<br/>"based_on_artefact"
 ```
 
 **Why this matters.** Without CHAP, an override is "the human changed
-something and clicked Save." With CHAP, it is a typed, signed, tagged,
-diff-bearing artefact that downstream systems can learn from without
-reverse-engineering the UI. Override patterns are now an analysable
-asset of the workspace, not a tribal-knowledge loss.
+something and clicked Save." With CHAP, it is a typed, tagged,
+diff-bearing record, signed where `security-signed/1.0` is on, that
+downstream systems can learn from without reverse-engineering the UI.
+Override patterns become an asset of the workspace that anyone can
+analyse, where before they were lost as tribal knowledge.
 
 ---
 
@@ -384,24 +393,24 @@ sequenceDiagram
     participant H2 as Human (Security)
     participant H3 as Human (Product)
 
-    C->>H1: deliberate.open (decision: ship hotfix?)
-    C->>H2: deliberate.open
-    C->>H3: deliberate.open
+    H1->>C: deliberate.open (ship hotfix?<br/>rule, weights, veto, to: H1 H2 H3)
     H1->>C: deliberate.comment ("risk seems low")
     H2->>C: deliberate.comment ("CVE-2026-1234 still open")
     H3->>C: deliberate.comment ("CSAT impact significant")
-    H1->>C: deliberate.vote (yea, weight 1)
-    H3->>C: deliberate.vote (yea, weight 1)
+    H1->>C: deliberate.vote (yea)
+    H3->>C: deliberate.vote (yea)
     H2->>C: deliberate.vote (nay, veto)
+    H1->>C: deliberate.close
     C->>C: rule: weighted_vote_with_veto<br/>→ outcome: rejected
-    C->>H1: deliberate.close (outcome + reasoning)
-    C->>H2: deliberate.close
-    C->>H3: deliberate.close
+    C-->>H1: outcome + tally
+    Note over H2,H3: read the entries<br/>with audit.read
 ```
 
-**Decision rules** are workspace policy. The protocol supports
-`any_one_approves`, `all_approve`, `quorum:n`, `weighted_vote:threshold`,
-and `weighted_vote_with_veto:threshold` out of the box.
+**Decision rules** are set on each `deliberate.open`. `deliberation/1.0`
+accepts `any_one_approves`, `all_approve`, `quorum:n`,
+`weighted_vote:threshold` and `weighted_vote_with_veto:threshold`;
+`review/1.0` accepts the first three. The coordinator pushes nothing to
+participants: each reads the thread with `audit.read`.
 
 ---
 
@@ -452,7 +461,8 @@ flowchart TB
 **The audit story.** A regulator asks "show me everything that produced
 this customer reply." The Coordinator returns:
 
-- The CHAP messages (signed, hash-linked).
+- The CHAP messages (signed under `security-signed/1.0`, hash-linked
+  when the chain is on).
 - The cited MCP tool invocations (with hash-verified inputs and outputs).
 - The cited A2A correlations (with cross-system attestation).
 
@@ -473,6 +483,8 @@ Both directions stack. The CHAP-as-MCP-server adapter is at
 `packages/coordinator-mcp/`, the CHAP-as-A2A-agent adapter at
 `packages/coordinator-a2a/`. Runnable reference servers ship for
 each in `reference/mcp-server-{ts,py}/` and `reference/a2a-server-{ts,py}/`.
+The TypeScript adapter speaks A2A 0.3 and the Python adapter A2A 1.0.
+Milestone 0.5 moves the TypeScript adapter to A2A 1.0.
 
 ---
 
@@ -536,14 +548,14 @@ flowchart TB
 ```
 
 **1. Coordinator-mediated.** The default. One Coordinator per workspace,
-responsible for routing, policy enforcement, and the evidence chain.
-Simple, easy to operate, single point of failure (mitigated by
-Coordinator HA).
+responsible for checking each call and keeping the log. Simple, easy to
+operate, and a single writer: a standby started from the store can take
+over, but two active instances on one workspace lose entries
+([SPECIFICATION.md §10.3](./SPECIFICATION.md#103-single-writer-requirement)).
 
-**2. Peer-to-peer.** No central Coordinator; participants gossip
-messages and each maintains a local copy of the chain. Suited to small,
-high-trust workspaces. Requires CRDT-style convergence for the chain
-head; defined as an extension for v0.2.
+**2. Peer-to-peer.** Unsupported: no implementation exists, convergence
+is open, and a chain needs one writer
+([SPECIFICATION.md §10.3](./SPECIFICATION.md#103-single-writer-requirement)).
 
 **3. Federated.** Each organisation runs its own Coordinator; cross-org
 work moves over A2A via a bridge participant. The local chain remains
@@ -554,21 +566,7 @@ the bridge's citations.
 
 ## 10. Performance characteristics
 
-A reference Coordinator on a single 8-core machine handles, by
-measurement on the reference implementation:
-
-| Operation                          | Throughput          | p99 latency |
-|------------------------------------|---------------------|-------------|
-| Envelope verification (Ed25519+JCS)| ~12,000 msg/sec     | 1.8 ms      |
-| Evidence append (no fsync)         | ~25,000 entries/sec | 0.4 ms      |
-| Evidence append (fsync per entry)  | ~3,000 entries/sec  | 4.5 ms      |
-| Chain replay (verify)              | ~40,000 entries/sec | n/a         |
-| Full `audit.verify` over 100k entries | n/a              | 2.6 s       |
-
-These numbers are indicative, not normative. Real throughput depends on
-payload size, signature cache hit rate, and storage backend. The
-chain-append operation is intentionally cheap; the signature
-verification is the dominant cost.
+No benchmark is published yet; milestone 0.4 adds one to every release.
 
 ---
 
@@ -593,21 +591,23 @@ Core defines two opaque `routing_hints` objects:
   actually produced, by what, at what cost.
 
 CHAP says nothing about what the values mean. `criticality: high`
-means whatever the operator's policy says it means. `confidence: 0.7`
-is calibrated only against the model that produced it. A `risk_tier`
+means whatever the operator's policy says it means. `confidence: "0.7"`
+is calibrated only against the model that produced it. Decimals travel
+as strings, because both coordinators refuse a number that is not an
+integer. A `risk_tier`
 of `pci-cardholder` is opaque to the protocol.
 
-What CHAP guarantees is that the hints are signed into the evidence
-envelope hash. If a routing decision was made because confidence
-was 0.62 and criticality was high, the audit log preserves those
-exact values forever. The decision becomes deterministically
-auditable.
+CHAP records the hints with the call, signed under `security-signed/1.0`
+and hashed when the chain is on. If a routing decision was made because
+confidence was 0.62 and criticality was high, the audit log keeps those
+exact values, so the decision can be audited later.
 
 The `routing/1.0` profile then defines the decisions: `task.route`
 picks an assignee, `review.depth` decides how thoroughly to review,
 `escalate.auto` evaluates rules. Each decision produces a
 `route_decision` artefact citing the hints it consulted. The
-*reasoning* becomes evidence, not just the conclusion.
+Coordinator holds the artefact in the workspace and returns it to the
+caller; the audit log records the request that produced it.
 
 This split lets a Core-only deployment carry routing signals across
 hops without understanding them, the audit chain remains intact
@@ -634,8 +634,10 @@ To avoid scope creep:
 - **Not a chat protocol.** `notify.message` exists but is intended
   for protocol-adjacent communication, not as a Slack replacement.
 - **Not a permission system.** Roles and method-permission matrices
-  live in the workspace policy; CHAP carries the policy reference and
-  enforces it.
+  belong to the deployment. Neither coordinator controls admission yet:
+  `participant.join` admits any caller in the role it asks for. Until
+  milestone 0.6, authenticate joins and enforce role policy in front of
+  the coordinator.
 - **Not an identity provider.** CHAP relies on OIDC, SPIFFE, and
   workload identities; it does not issue tokens.
 
@@ -643,8 +645,8 @@ To avoid scope creep:
 
 ## 12. Open questions for the next draft
 
-These items are tracked in [CHANGELOG.md](./CHANGELOG.md) and
-[CONTRIBUTING.md](./CONTRIBUTING.md):
+[ROADMAP.md](./ROADMAP.md) is the reference for what is planned and when.
+Open items include:
 
 1. **Confidentiality extension.** Per-field encryption for evidence
    entries with sensitive content.
@@ -652,8 +654,9 @@ These items are tracked in [CHANGELOG.md](./CHANGELOG.md) and
    the peer-to-peer topology.
 3. **Cross-workspace evidence joins.** A canonical algorithm for
    joining chains across federated deployments.
-4. **Capability descriptor.** A finer-grained alternative to the three
-   conformance levels.
+4. **Capability descriptor.** A finer-grained statement of what an
+   implementation supports. Milestone 0.4 replaces the conformance levels
+   with conformance by profile.
 5. **Post-quantum signatures.** Hybrid Ed25519 + ML-DSA option.
 6. **Interop test suite.** A formal conformance harness with negative
    tests.

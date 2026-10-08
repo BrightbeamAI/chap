@@ -20,22 +20,23 @@ Many concerns about "you should just use X" are answered here.
 | Identity for humans          | **OIDC + DPoP (RFC 9449)** or **cnf.jwk (RFC 7800)** | Reuses via `identity-oidc` profile. |
 | Richer identity claims       | **W3C Verifiable Credentials 2.0**               | Reuses via `identity-vc` profile. |
 | Identity for services        | **SPIFFE / SPIRE**                               | Recommended deployment pattern. |
-| Audit / transparency log     | **draft-ietf-scitt-architecture**                | Reuses via `audit-scitt` profile. |
-| Audit signature format       | **COSE (RFC 9052) + SCITT receipts**             | Reuses via `audit-scitt` profile. |
+| Audit / transparency log     | **SCITT architecture (RFC 9943)**                | Outside witness via the `audit-scitt` profile; CHAP keeps its own log and chain. |
+| Audit statement format       | **COSE (RFC 9052) + SCITT receipts**             | `audit-scitt` builds COSE_Sign1-shaped statements; the deployment's submitter signs them. |
 | Tool calls inside artefacts  | **MCP**                                          | Composed (cited outward; also exposed inward via `coordinator-mcp` adapter). |
 | Cross-org peer delegation    | **A2A**                                          | Composed (bridge participant outward; also exposed inward via `coordinator-a2a` adapter). |
-| Federation between workspaces | **ActivityPub** (Actors, Inbox/Outbox)          | Optional binding (`federation-activitypub` profile, draft). |
-| Participant lifecycle (provision/deprovision) | **SCIM 2.0**                  | Optional binding for human provisioning. |
-| Transport                    | **WebSocket · HTTP+SSE · MQTT · NATS · Kafka**   | Transport-agnostic; bind to whichever. |
+| Federation between workspaces | **ActivityPub** (Actors, Inbox/Outbox)          | A possible mapping, which no profile defines. |
+| Participant lifecycle (provision/deprovision) | **SCIM 2.0**                  | A possible mapping, which no profile defines. |
+| Transport                    | **HTTP**                                         | HTTP POST, required by Core; MCP and A2A through the adapters; others specified and unbuilt. |
 | URIs                         | **RFC 3986**                                     | Plain URIs; CHAP defines the scheme grammar. |
-| Versioning                   | **Semantic Versioning 2.0**                      | Spec versions follow semver. |
-| Conformance attestations     | **in-toto attestation framework**                | Conformance docs published as in-toto-compatible JSON. |
+| Versioning                   | **Semantic Versioning 2.0**                      | From 1.0; before 1.0 a minor release may break things. |
+| Conformance attestations     | **in-toto attestation framework**                | The harness writes an in-toto Statement (`--attest`). |
 
 The only things CHAP introduces that don't exist elsewhere are
 **the methods themselves** (`task.create`, `review.request`,
-`decide.override`, `abstain.declare`, `whisper.ask`, etc.) and the
+`decide.override`, `abstain.declare`, `whisper.ask`, etc.), the
 **override-with-rationale shape** that turns human edits into
-structured learning signals. Everything else is plumbing.
+structured learning signals, and its own audit log with an optional
+hash chain. Everything else is plumbing.
 
 ---
 
@@ -52,9 +53,10 @@ messages. Specifically:
 | `result`         | `result`                        |
 | `error`          | `error` (with code/message/data) |
 
-CHAP adds a small fixed set of fields (`chap`, `workspace`, `from`, `to`,
-`ts`, `type`) that don't conflict with JSON-RPC and are namespaced
-by their position in the envelope.
+CHAP puts its own fields (`workspace`, `from`, `to`, `ts`) inside
+`params`, and `security-signed/1.0` adds a top-level `sig`
+([`core/SPEC.md`](./core/SPEC.md) §2). SPECIFICATION.md §4 describes
+another shape, reconciled in milestone 0.4.
 
 **Why JSON-RPC** and not, say, gRPC or a custom format? JSON-RPC is
 trivial to implement in any language, terse on the wire, well-known
@@ -72,15 +74,15 @@ under their own names.
 
 When messages must be hashed or signed, CHAP canonicalises them with
 [JSON Canonicalization Scheme (RFC 8785)](https://datatracker.ietf.org/doc/html/rfc8785).
-This is required only when the `security-signed` or `audit-scitt`
-profiles are in use; Core has no canonicalisation requirement.
+Both coordinators canonicalise every request, to measure it against
+the size limit and to refuse one that has no canonical form. Signing,
+the chain and artefact digests hash the same canonical bytes.
 
 JCS was chosen because:
 
 1. It's an IETF standard.
 2. It produces deterministic bytes from any conformant JSON parser.
 3. It has reference implementations in every common language.
-4. SCITT also uses it, so CHAP's `audit-scitt` profile composes naturally.
 
 CHAP does not define its own canonicalisation rules.
 
@@ -133,8 +135,9 @@ presented during the participant handshake.
 
 A VC can carry arbitrary structured claims signed by an issuer the
 workspace trusts (a regulator, an employer, a professional body).
-The Coordinator verifies the VC's issuer signature and stores the
-relevant claims in the participant descriptor.
+A verifier supplied by the deployment checks the VC at
+`participant.join`, and the Coordinator records the holder it returns
+in the participant descriptor.
 
 This is strictly more expressive than OIDC `cnf.jwk` but also more
 complex; pick OIDC for typical SaaS deployments and VC when richer
@@ -150,28 +153,20 @@ workload identity infrastructure.
 
 ## 6. Audit / transparency log: SCITT
 
-CHAP's audit defers to a mature, IETF-tracked standard rather than
-defining its own transparency primitive.
-
-The earlier draft defined its own append-only hash-chained log with
-custom canonicalisation and signature rules. That was reinvention.
-
-The [IETF SCITT (Supply Chain Integrity, Transparency and Trust)](https://datatracker.ietf.org/wg/scitt/about/)
-working group is producing exactly that primitive as a standard.
-SCITT is built on COSE ([RFC 9052](https://datatracker.ietf.org/doc/html/rfc9052))
-and produces signed receipts that any party can verify offline.
-
-CHAP's `audit-scitt` profile says: **the workspace's evidence chain
-is a SCITT transparency log.** Specifically:
-
-- Each CHAP message becomes a SCITT signed statement.
-- The Coordinator (or a third party) operates the SCITT Transparency
-  Service and issues receipts.
-- Auditors verify receipts against the transparency service's signed
-  log root; CHAP doesn't define a parallel verification path.
+CHAP keeps its own log and, with the chain on, its own hash chain
+([SPECIFICATION.md §10.1](./SPECIFICATION.md#101-evidence-chain)),
+checked by `audit.verify_chain`. `audit-scitt/1.0` adds an outside
+witness under the SCITT architecture
+([RFC 9943](https://www.rfc-editor.org/rfc/rfc9943)):
+`audit.submit_to_scitt` builds a statement per entry for a submitter
+the deployment supplies, which signs and registers it, and
+`audit.verify_receipt` calls a deployment verifier. Neither coordinator
+runs a transparency service. SCITT signs COSE
+([RFC 9052](https://datatracker.ietf.org/doc/html/rfc9052)) structures,
+which are CBOR.
 
 For Core-only deployments that don't need cryptographic audit, the
-log can be a plain database table, no SCITT involvement, no
+log can be a plain database table, with no SCITT involvement and no
 crypto. The profile is opt-in.
 
 See [`profiles/audit-scitt.md`](./profiles/audit-scitt.md).
@@ -191,7 +186,7 @@ structured evidence, without bringing the external traffic onto the
 CHAP wire:
 
 - An MCP tool call called by an agent during CHAP work becomes a
-  `citation` of kind `mcp_tool_invocation` inside the agent's CHAP
+  `citation` of kind `mcp_tool_call` inside the agent's CHAP
   artefact, with `input_hash` and `output_hash` providing the
   hash boundary. See [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md).
 - An A2A peer is represented inside a CHAP workspace by a
@@ -212,16 +207,16 @@ workspace without any CHAP-specific code:
 
 - `@brightbeamai/chap-coordinator-mcp` (TypeScript) and
   `chap_coordinator.transports.mcp_server` (Python) target MCP
-  **2026-07-28** and serve MCP **2025-11-25** clients as well. All 39
-  CHAP methods become MCP tools named
+  **2026-07-28** and serve MCP **2025-11-25** clients as well. Every
+  method the coordinators implement becomes an MCP tool named
   `chap.<method>`. Reference stdio servers ship in
   `reference/mcp-server-{ts,py}/`.
 - `@brightbeamai/chap-coordinator-a2a` (TypeScript) and
   `chap_coordinator.transports.a2a_server` (Python) expose the
-  Coordinator as an A2A agent. Same 39 methods become discrete
-  `AgentSkill` entries. The TypeScript SDK targets A2A **0.3.0**
-  and the Python SDK targets A2A **1.0**; the adapter layer is
-  identical across both. Reference HTTP servers ship in
+  Coordinator as an A2A agent. The same methods become discrete
+  `AgentSkill` entries. The TypeScript adapter speaks A2A 0.3 and the
+  Python adapter A2A 1.0. Milestone 0.5 moves the TypeScript adapter
+  to A2A 1.0. Reference HTTP servers ship in
   `reference/a2a-server-{ts,py}/`.
 
 ### 7.3 Composition stacks
@@ -232,20 +227,20 @@ and cite those calls; the same workspace can be exposed as an A2A
 agent to an Azure orchestrator while bridging to A2A peers
 externally. Same wire formats, different roles per protocol.
 
-The MCP and A2A protocols evolve on their own timelines; CHAP's
-adapter layer pins specific spec versions and is forward-compatible
-with their major versions.
+The MCP and A2A protocols evolve on their own timelines, and each
+adapter pins the revision it speaks. The TypeScript adapter speaks
+A2A 0.3 and the Python adapter A2A 1.0. Milestone 0.5 moves the
+TypeScript adapter to A2A 1.0.
 
 ---
 
-## 8. Federation: ActivityPub (draft)
+## 8. Federation: ActivityPub
 
-Cross-organisation workspace-to-workspace federation is currently
-specified via the A2A-bridge pattern (§7). For deployments where
-the workspaces themselves are first-class federation peers (think
-"my org's CHAP workspace can subscribe to your org's CHAP workspace's
-events"), the planned `federation-activitypub` profile (post-v0.2)
-maps:
+Cross-organisation work runs through the A2A-bridge pattern (§7).
+For workspaces that would federate as peers (think "my org's CHAP
+workspace can subscribe to your org's CHAP workspace's events"),
+ActivityPub offers a possible mapping, which no profile defines and
+no milestone schedules:
 
 | CHAP concept       | ActivityPub concept |
 |-------------------|---------------------|
@@ -256,47 +251,46 @@ maps:
 | `decide.reject`   | `Reject` Activity    |
 | Workspace member list | `following` collection |
 
-This is an optional profile. Federation is not required and is not
-on the current critical path.
+Federation is not required for anything CHAP does today.
 
 ---
 
 ## 9. Provisioning: SCIM 2.0
 
-When human Participants are provisioned/deprovisioned from a
-workspace via an external identity-management system, the
-`provisioning-scim` profile (optional) defines the mapping from
-[SCIM 2.0](https://datatracker.ietf.org/doc/html/rfc7644) user
-events to CHAP `participant.join` and `participant.leave`.
-
-Again, optional. A simple deployment can manage membership
-manually via direct workspace admin operations.
+When human Participants are provisioned or deprovisioned through an
+external identity-management system,
+[SCIM 2.0](https://datatracker.ietf.org/doc/html/rfc7644) user events
+could map to `participant.join` and `participant.leave`: a possible
+mapping, which no profile defines. `participant.leave` removes only
+its caller; removing another member needs `workspace.evict`, which is
+not built.
 
 ---
 
 ## 10. Transport
 
-CHAP is transport-agnostic. The recommended bindings are:
+The wire format, a JSON-RPC 2.0 call with the CHAP fields in
+`params`, is the same on every transport. Today:
 
-- **WebSocket**: for interactive clients (humans, GUIs).
-- **HTTP + SSE**: for firewall-friendly fallback.
-- **MQTT / NATS / Kafka**: for high-throughput server-to-server flows.
+- **HTTP POST**: required by Core, and what both reference servers
+  speak.
+- **MCP and A2A**: through the adapter packages (§7.2).
+- **WebSocket, HTTP + SSE and message brokers**: specified in
+  SPECIFICATION.md §14, built in neither coordinator.
 
-Each binding is a thin adapter; the wire format (JSON-RPC 2.0 +
-CHAP fields) is identical across them. Existing standards-based
-deployments (mTLS-secured WebSockets behind a service mesh; SSE
-behind a typical load balancer; Kafka with SASL+SCRAM) require no
-CHAP-specific transport plumbing.
+Neither reference coordinator pushes; a client polls `audit.read`.
+Milestone 0.5 decides on notifications.
 
 ---
 
 ## 11. URIs
 
 CHAP Participant URIs use [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)
-generic syntax. The CHAP-specific schemes (`human:`, `agent:`,
-`service:`, `group:`, `workspace:`) are registered under a single
-parent scheme `chap:` for IANA registration purposes; see
-[`SPECIFICATION.md`](./SPECIFICATION.md) §18.
+generic syntax, with the prefixes `human:`, `agent:`, `service:`,
+`group:` and `workspace:`. The prefixes are not registered.
+[`SPECIFICATION.md`](./SPECIFICATION.md) §18 proposes registering each
+at Last Call, and milestone 0.4 settles the format of participant
+names.
 
 For workspace identifiers that need to be cryptographically
 verifiable across the network, [W3C DIDs](https://www.w3.org/TR/did-core/)
@@ -307,26 +301,24 @@ typical deployments use plain DNS authorities.
 
 ## 12. Versioning
 
-Spec versions follow [Semantic Versioning 2.0](https://semver.org).
-Wire-format breaking changes are major-version events. Adding a
-method is a minor-version event. Adding an optional field to an
-existing method is a patch.
+Before 1.0 a minor release may break things, and its changelog lists
+each break with a migration. From 1.0 the specification follows
+[Semantic Versioning 2.0](https://semver.org)
+([`ROADMAP.md`, Version numbers](./ROADMAP.md#version-numbers)).
 
-Profiles version independently from Core. A workspace declares the
-specific Core version and the specific profile versions it
-implements.
+Profiles version independently from Core. A workspace advertises the
+profiles it serves with their versions, such as `review/1.0`.
 
 ---
 
 ## 13. Conformance attestation: in-toto
 
-When an implementation attests to conformance with a CHAP level
-(see [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md)),
-the attestation is published as an
-[in-toto attestation](https://github.com/in-toto/attestation)
-with subject `chap-implementation:<name>:<version>` and predicate
-`chap.dev/conformance/v1`. This lets standard supply-chain tooling
-discover and verify CHAP conformance claims.
+The conformance harness's `--attest` option writes an
+[in-toto Statement](https://github.com/in-toto/attestation) with
+predicate type `https://chap.dev/conformance/v1`, naming the endpoint
+it tested and each test's result. Standard supply-chain tooling can
+sign the Statement and check it later. The self-assessment checklist
+is in [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md).
 
 ---
 
@@ -345,8 +337,11 @@ Stripped of the reused standards, CHAP introduces:
    policy_refs, attached to a base artefact, queryable as data.
    This is the single most novel piece.
 3. **The mode promotion ladder**: shadow → trial → production as
-   a typed property of tasks and workspaces, enforced at the
-   protocol layer.
+   a typed property of tasks and workspaces. The coordinator enforces
+   the mode ceiling and trial review. A workspace's mode is fixed at
+   creation until `workspace.set_mode` is built;
+   `control.set_mode_ceiling`, privileged and recorded, sets the
+   highest mode a new task may carry.
 4. **Typed abstention**: `abstain.declare` as a positive signal
    distinct from rejection or silence.
 5. **The whisper primitive**: a deadline-bound interrupt question
@@ -357,18 +352,16 @@ The rest is composition.
 
 ---
 
-## 15. The honest summary
+## 15. Summary
 
 | Layer            | CHAP's contribution                            | Source of standards |
 |------------------|-----------------------------------------------|---------------------|
-| Transport        | None                                          | TCP / WebSocket / HTTP / Kafka |
+| Transport        | None                                          | HTTP; WebSocket, SSE and brokers specified and unbuilt |
 | Encoding         | None                                          | JSON, JSON-RPC 2.0, JCS, JSON Patch |
 | Identity         | None                                          | OIDC, DPoP, VC, SPIFFE |
-| Audit            | None (in `audit-scitt`)                       | SCITT, COSE |
+| Audit            | The log and its optional hash chain; `audit-scitt` hands statements to SCITT | SCITT (RFC 9943), COSE |
 | Cryptography     | None                                          | Ed25519 (RFC 8032), SHA-256 |
-| Federation       | None (when using ActivityPub binding)         | ActivityPub |
-| Provisioning     | None (when using SCIM binding)                | SCIM 2.0 |
-| Methods          | **The 7 Core + 20+ profile methods**          | CHAP itself |
+| Methods          | **The Core and profile methods**              | CHAP itself |
 | Override shape   | **The override-with-rationale primitive**     | CHAP itself |
 
 CHAP is, deliberately, a thin layer of well-chosen verbs on top of

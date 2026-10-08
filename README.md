@@ -42,16 +42,16 @@
 ---
 
 <p align="center">
-  <img src="docs/img/hero-before-after.svg" alt="Same scenario, two stacks. Without CHAP: six tools holding fragments of one decision (OpenAI logs expired, Zendesk thread, Slack scrolled past, Linear comments, webhook tail, Notion runbook), 45 minutes across four UIs to answer 'what did the agent draft and why did we approve it?'. With CHAP: three hash-linked envelopes (task.create → artefact → decide.override) joined by prev_hash, one audit.read call, 30 seconds." width="100%">
+  <img src="docs/img/hero-before-after.svg" alt="Same scenario, two stacks. Without CHAP: six tools holding fragments of one decision (OpenAI logs expired, Zendesk thread, Slack scrolled past, Linear comments, webhook tail, Notion runbook), 45 minutes across four UIs to answer 'what did the agent draft and why did we approve it?'. With CHAP and its hash chain switched on: three hash-linked envelopes (task.create → artefact → decide.override) joined by prev_hash, one audit.read call, 30 seconds." width="100%">
 </p>
 
 ---
 
 You have agents doing real work. Drafting code reviews, triaging tickets, suggesting settlements, reviewing contracts. A human approves, edits, or rejects each one. Right now, that decision lives in your application code, your chat threads, your ticket comments, and your head. When something goes wrong six weeks later, reconstructing what happened costs you forty-five minutes and is half guesswork.
 
-CHAP gives you one place to put those decisions and one shape to put them in. The agent's draft is an artefact. The human's edit is a structured override with a diff, a rationale, and tags you control. The whole thing chains together by content hash. You query the chain instead of grepping logs across four UIs.
+CHAP gives you one place to put those decisions and one shape to put them in. The agent's draft is an artefact. The human's edit is a structured override with a diff, a rationale, and tags you control. Switch the hash chain on, as the tour below does, and each entry carries a hash of the one before it, so `audit.verify_chain` detects an altered entry as long as you keep a recent chain head where the coordinator's operator cannot change it ([`SECURITY.md`](./SECURITY.md) §5). One query over the log replaces grepping across four UIs.
 
-The chain survives key rotation, log expiry, and people leaving; one `audit.read` call returns the whole thing. The overrides your reviewers were already making accumulate into supervision data you'd otherwise have to commission. When approvals must be non-repudiable, `security-signed/1.0` adds an Ed25519 signature to every envelope, bindable to a real identity with `identity-oidc/1.0`, and `audit-scitt/1.0` anchors the chain in an external transparency log, verifiable without trusting your servers. And CHAP sits beside MCP and A2A rather than replacing them: MCP for tools, A2A for other agents, CHAP for the shared work with humans.
+The record survives key rotation, expiring vendor logs, and people leaving; one `audit.read` call returns the whole thing. The overrides your reviewers were already making accumulate into supervision data you'd otherwise have to commission. When approvals must be non-repudiable, `security-signed/1.0`, switched on by the `requireSignatures` option (`require_signatures` in Python), refuses calls without a valid Ed25519 signature apart from `workspace.create` and `participant.join`, and `identity-oidc/1.0` can bind the key to a verified identity. Under `audit-scitt/1.0`, calling `audit.submit_to_scitt` hands a SCITT statement for each entry to a transparency service through a submitter you supply. And CHAP sits beside MCP and A2A and replaces neither: MCP for tools, A2A for other agents, CHAP for the shared work with humans.
 
 That's the whole pitch.
 
@@ -65,7 +65,7 @@ A solo developer using Cursor to review pull requests. The bot flags a "warning"
 
 And here's the code, every line of it. One continuous story in two languages; pick whichever stack you actually use.
 
-**1. Spin up a workspace.** An embedded coordinator with SQLite persistence, two participants, a workspace:
+**1. Spin up a workspace.** An embedded coordinator with SQLite persistence and the hash chain switched on, two participants, a workspace:
 
 <table>
 <tr><th>TypeScript</th><th>Python</th></tr>
@@ -78,6 +78,7 @@ import { SqliteStore } from
 
 const coord = new Coordinator({
   store: new SqliteStore("./chap.db"),
+  enableChain: true,
 });
 
 coord.api.workspace.create({
@@ -105,7 +106,10 @@ from chap_coordinator import Coordinator
 from chap_coordinator.storage.sqlite \
     import SqliteStore
 
-coord = Coordinator(store=SqliteStore("./chap.db"))
+coord = Coordinator(
+    store=SqliteStore("./chap.db"),
+    enable_chain=True,
+)
 
 def send(method, params):
     return coord.dispatch({
@@ -140,6 +144,12 @@ send("participant.join", {
 <tr><td valign="top">
 
 ```ts
+// The review Cursor returned.
+const cursorReview = {
+  comments: [{ severity: "warning",
+               body: "Unused parameter." }],
+};
+
 // The bot's review is the output of a task.
 const { task_id } = coord.api.task.create({
   workspace: "wsp_pr_reviews",
@@ -183,6 +193,12 @@ coord.api.decide.override({
 </td><td valign="top">
 
 ```python
+# The review Cursor returned.
+cursor_review = {
+    "comments": [{"severity": "warning",
+                  "body": "Unused parameter."}],
+}
+
 # The bot's review is the output of a task.
 r = send("task.create", {
     "workspace": "wsp_pr_reviews",
@@ -232,23 +248,29 @@ send("decide.override", {
 
 ```bash
 # TypeScript reference, against the SqliteStore from step 1:
-$ npm --prefix reference/core-plus-review run analyze -- --db ./chap.db wsp_pr_reviews
+$ npx tsx reference/core-plus-review/analyze-overrides.ts --db ./chap.db wsp_pr_reviews
 
 # Python reference, same idea:
 $ python3 reference/python/analyze_overrides.py --db ./chap.db wsp_pr_reviews
 
 Override Learning Report
-========================
+========================================
+Workspace:       wsp_pr_reviews
 Total overrides: 47
 
 By tag:
-  false-positive             ████████████████  31  (66%)
-  framework-pattern-misread  ███████████       22  (47%)
-  cosmetic-pref              ████              8   (17%)
+  false-positive                       ████████████████████   31  (66%)
+  framework-pattern-misread            ██████████████          22  (47%)
+  cosmetic-pref                        █████                    8  (17%)
 
-Top file paths:
-  src/handlers/                                    18 overrides
-  src/components/                                  9  overrides
+Intent breakdown:
+  refining (same decision, better wording)   41
+  substituting (different decision)          6
+
+Top reviewers:
+  human:me@local                            47
+
+Hint: the most common tags are your next prompt revision targets.
 ```
 
 Your next prompt revision for Cursor cites the pattern by name instead of guessing at it.
@@ -285,7 +307,7 @@ npm install @brightbeamai/chap-coordinator
 pip install chap-coordinator
 ```
 
-Either path gets you Core plus the `review/1.0` profile and a runnable reference. The TypeScript reference is in [`reference/`](./reference/); the Python reference is in [`reference/python/`](./reference/python/). The TypeScript library lives at [`packages/coordinator/`](./packages/coordinator/); the Python library at [`packages/coordinator-py/`](./packages/coordinator-py/).
+Either package gives you Core and every profile; a new workspace advertises `core/1.0` and `review/1.0` unless you name others. The TypeScript reference is in [`reference/`](./reference/); the Python reference is in [`reference/python/`](./reference/python/). The TypeScript library lives at [`packages/coordinator/`](./packages/coordinator/); the Python library at [`packages/coordinator-py/`](./packages/coordinator-py/).
 
 New here? [`START_HERE.md`](./START_HERE.md) gets you to one real decision in about two minutes, with Python and nothing else:
 
@@ -298,13 +320,13 @@ Five-minute hands-on walkthrough with the envelopes in view: [`examples/00-five-
 
 ## Status
 
-CHAP 0.2 is a public draft. The specification is seven Core methods plus eleven optional profiles ([`SPECIFICATION.md`](./SPECIFICATION.md)), with two reference implementations, TypeScript and Python, that cover every profile and pass the conformance harness on the same JSON-RPC 2.0 wire. A coordinator can present itself as an [MCP](https://modelcontextprotocol.io) server or an [A2A](https://a2a-protocol.org) agent, and five framework bridges put LangGraph, Pydantic AI, AG2, LlamaIndex Workflows, and Google ADK human-in-the-loop decisions on the audit chain. The full inventory, the repository layout, and how CHAP relates to MCP and A2A are in [`ABOUT.md`](./ABOUT.md).
+CHAP 0.2 is a public draft: a small Core and optional profiles ([`SPECIFICATION.md`](./SPECIFICATION.md)). Two reference coordinators, in TypeScript and Python, implement the same methods, and a differential fuzzer checks that they answer and log alike. The conformance harness covers Core and `review/1.0` and runs against the Python coordinator and a standalone TypeScript server. A coordinator can present itself as an [MCP](https://modelcontextprotocol.io) server or an [A2A](https://a2a-protocol.org) agent, and five framework bridges put LangGraph, Pydantic AI, AG2, LlamaIndex Workflows, and Google ADK human-in-the-loop decisions on the audit log. The full inventory, the repository layout, and how CHAP relates to MCP and A2A are in [`ABOUT.md`](./ABOUT.md).
 
-Breaking changes follow Semantic Versioning. Profile surfaces move faster than Core, so if you need strict stability, wait for 1.0. [`ROADMAP.md`](./ROADMAP.md) sets out what 1.0 will promise and the milestones that lead to it.
+Before 1.0 a minor release may break things, and its changelog lists each break with a migration. From 1.0 the specification follows Semantic Versioning ([`ROADMAP.md`, Version numbers](./ROADMAP.md#version-numbers)). If you need strict stability, wait for 1.0. [`ROADMAP.md`](./ROADMAP.md) sets out what 1.0 will promise and the milestones that lead to it.
 
 ## Read this next
 
-If you have not run anything yet, [`START_HERE.md`](./START_HERE.md) takes about two minutes. After that, [`IN_PRACTICE.md`](./IN_PRACTICE.md), twelve scenarios from a solo developer with Cursor up to GMP-regulated manufacturing; it's the most useful next read. [`ABOUT.md`](./ABOUT.md) covers what's in the repo, how CHAP relates to MCP and A2A, the standards it reuses, and how to contribute. [`core/SPEC.md`](./core/SPEC.md) fits the entire protocol surface on one screen. And the [technical report on arXiv](https://arxiv.org/abs/2606.09751) grounds the design choices: architecture, profile semantics, threat model, and the twelve scenarios as JSON traces in a worked appendix.
+If you have not run anything yet, [`START_HERE.md`](./START_HERE.md) takes about two minutes. After that, [`IN_PRACTICE.md`](./IN_PRACTICE.md), twelve scenarios from a solo developer with Cursor up to GMP-regulated manufacturing; it's the most useful next read. [`ABOUT.md`](./ABOUT.md) covers what's in the repo, how CHAP relates to MCP and A2A, the standards it reuses, and how to contribute. [`core/SPEC.md`](./core/SPEC.md) fits Core on one screen. And the [technical report on arXiv](https://arxiv.org/abs/2606.09751) grounds the design choices: architecture, profile semantics, threat model, and the twelve scenarios as JSON traces in a worked appendix.
 
 ## Cite
 
@@ -324,4 +346,4 @@ If you reference CHAP in academic or technical work, please cite the technical r
 
 ---
 
-CC-BY 4.0 (specification) · Apache 2.0 (code) · Royalty-free, any language, any deployment.
+CC BY 4.0 (specification text, see LICENSE-SPEC.md) · Apache 2.0 (everything else) · Any language, any deployment.

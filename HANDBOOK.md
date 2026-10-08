@@ -50,13 +50,14 @@ group:on-call@example.org   a named group of participants
 workspace:wsp_release-decisions   a workspace acting as a peer
 ```
 
-**Methods.** The verbs participants exchange. Core is seven methods
-that all implementations support. Profiles add more, `review.request`,
+**Methods.** The verbs participants exchange. Core is a small set of
+methods that every implementation supports. Profiles add more, `review.request`,
 `decide.override`, `abstain.declare`, and so on.
 
-Underneath everything is an **audit log**: every accepted envelope
-is appended in arrival order, and so is a member's governed attempt
-that the Coordinator refuses, marked as refused. This log is the
+Underneath everything is an **audit log**: every accepted
+state-changing envelope is appended in arrival order, and from 0.3.0
+so is a member's governed attempt that the Coordinator refuses, marked
+as refused. Reads are not recorded. This log is the
 source of truth for what happened, who decided what, and on what
 basis.
 
@@ -64,21 +65,21 @@ If you remember three things:
 
 - **Workspace** = a context with members.
 - **Task** = a delegated piece of work with a state machine.
-- **Audit log** = the immutable record of everything.
+- **Audit log** = the append-only record of every state-changing call.
 
 ---
 
 ## 2. Roles and responsibilities
 
 CHAP recognises five role categories. The protocol itself doesn't
-enforce them (your workspace policy does) but the categories are
+enforce them (your deployment's policy does) but the categories are
 consistent across implementations.
 
 | Role        | Typical work                                              |
 |-------------|-----------------------------------------------------------|
 | **Drafter** | Produces draft output. Usually an agent.                  |
 | **Reviewer** | Approves, rejects, or overrides drafts. Usually a human. |
-| **Operator** | Runs the workspace itself. Pauses, resumes, snapshots, promotes modes. Privileged. |
+| **Operator** | Runs the workspace itself. Pauses, resumes, snapshots, sets the mode ceiling. Privileged. |
 | **Auditor**  | Reads the audit log; produces reports. Read-only.        |
 | **Bridge**   | Represents an external A2A peer inside the workspace.    |
 
@@ -102,9 +103,12 @@ approvals" is a third. The benefits:
 
 - Audit trails are queryable by workspace, not by tag.
 - Policy (who can do what) lives at the workspace.
-- Modes are per-workspace; you can promote one to `production`
-  without affecting another.
-- Performance is per-workspace; a hot one doesn't crowd a cold one.
+- Mode ceilings are per workspace; you can raise one to `production`
+  without affecting another. A workspace's own mode is fixed at
+  creation until `workspace.set_mode` is built.
+- All workspaces in one coordinator share its serial dispatch, so a
+  hot one can slow a cold one; put busy workspaces on separate
+  coordinators.
 
 ### 3.2 Membership policy
 
@@ -116,6 +120,10 @@ and how Operators are appointed. Common shapes:
 | Closed            | Operator explicitly admits each participant.           |
 | Open within org   | Anyone with the right OIDC scope auto-joins.           |
 | Federation        | Members of named partner workspaces auto-join via bridge participants. |
+
+Neither coordinator controls admission yet: `participant.join` admits
+any caller in the role it asks for. Until milestone 0.6, authenticate
+joins and enforce role policy in front of the coordinator.
 
 ### 3.3 Decision policy
 
@@ -135,7 +143,7 @@ task_kinds:
     review:        required
     rule:          quorum:2
   release_decision:
-    review:        required
+    deliberation:  required
     rule:          weighted_vote_with_veto:2.0
     weights:       { eng-lead: 1.0, security: 1.0, product: 1.0 }
     veto:          { security: true }
@@ -164,16 +172,21 @@ weighted votes, vetoes.
 **If shifts change or work routes between humans** → add `handoff`.
 
 **If you need a production control plane** (pause an agent, snapshot
-a workspace, roll back a misconfigured policy) → add `control`.
+a workspace, roll back the mode ceiling and members' roles and scopes)
+→ add `control`.
 
-**If non-repudiation matters** → add `security-signed`. Every
-message becomes Ed25519-signed.
+**If non-repudiation matters** → add `security-signed` through the
+`requireSignatures` option (`require_signatures` in Python);
+advertising it at `workspace.create` without the option is refused,
+and every call except `workspace.create` and `participant.join` then
+needs a client signature.
 
-**If regulatory audit matters** → add `audit-scitt`. The audit log
-becomes a SCITT transparency service.
+**If regulatory audit matters** → add `audit-scitt`: the hash chain
+switches on, and `audit.submit_to_scitt` prepares statements for a
+transparency service you connect.
 
-**If verified human identity matters** → add `identity-oidc`. Step-up
-auth, `cnf.jwk` binding.
+**If verified human identity matters** → add `identity-oidc` with
+`verifyOidcToken`; `enforceStepUp` adds step-up.
 
 **If cross-org or regulated-profession identity matters** → add
 `identity-vc`. W3C Verifiable Credentials.
@@ -204,8 +217,11 @@ shadow → trial → production
 ### 5.1 Shadow (1-4 weeks)
 
 The new agent processes real traffic, but its output is **not
-delivered** to the end recipient. Output goes only to a shadow
-observers list, which compares it against the live flow's output.
+delivered** to the end recipient. Your delivery layer sends it only to
+shadow observers, who compare it against the live flow's output.
+Withholding shadow output is the deployment's job: the Coordinator
+checks a new task's mode against the ceiling and keeps no list of
+shadow observers.
 
 Promotion criteria (typical):
 
@@ -243,7 +259,9 @@ learning signal, but it covers a fraction of traffic.
 A regression in production override rate, an incident, or a policy
 change can demote an agent back to `trial` or `shadow`. The
 `control.set_mode_ceiling` operation records the change in the
-audit log.
+audit log. New tasks above the lowered ceiling are refused with
+`-32040`, including those that would take a production workspace's
+own mode, so pass `mode: "trial"` on new tasks.
 
 ---
 
@@ -273,14 +291,15 @@ Read the audit log filtering for `decide.override`:
   "method": "audit.read",
   "params": {
     "workspace": "wsp_code_review",
-    "filter":    { "method": "decide.override", "ts_range": { "from": "2026-05-01", "to": "2026-05-17" } }
+    "filter":    { "method": "decide.override", "outcome": "accepted" }
   }
 }
 ```
 
-You get an array of override envelopes. Aggregate by `tags`, by
-`from` (which reviewer), by `policy_refs`, or by the originating
-agent (which is in the based-on artefact's metadata).
+You get the accepted `decide.override` entries, each holding its call
+under `envelope`. Filter dates on `arrived`, client-side; find the
+originating agent through the task's `review.request` entry. Aggregate
+by `tags`, by `from` (which reviewer) or by `policy_refs`.
 
 ### 6.3 What to do with the aggregates
 
@@ -340,23 +359,25 @@ participant categories.
 
 ### 7.3 Step-up auth
 
-Privileged operations, anything in the `control` profile, plus
-mode promotion and policy changes, require step-up authentication.
-The pattern:
+With `enforceStepUp` (`enforce_step_up` in Python) on, step-up guards
+the control methods, `workspace.set_profiles` and the two key methods
+for humans and OIDC-bound members, using the `auth_time` of the token
+last verified at `participant.join`. The pattern:
 
 ```
-operation issued
+privileged call arrives
    │
    ▼
-Coordinator checks id_token.auth_time
+Coordinator checks the auth_time stored at participant.join
    │
-   ├── recent (< step_up_window) → proceed
+   ├── within step_up_window_sec → proceed
    │
-   └── stale → return -32402, client triggers prompt=login
+   └── stale → return -32402; the client signs in again (prompt=login)
+               and repeats participant.join with the new token
 ```
 
-The default window is 5 minutes. Configure via the workspace
-descriptor.
+Set `step_up_window_sec` (default 300) on `workspace.create`. A
+`min_acr` set there also requires the token's `acr` to match.
 
 ### 7.4 Mapping OIDC scopes to CHAP roles
 
@@ -370,7 +391,7 @@ oidc_scope_to_role:
   chap.audit:   auditor
 ```
 
-Role-to-method permissions live in workspace policy. Example:
+Role-to-method permissions live in your deployment's policy. Example:
 
 ```yaml
 role_permissions:
@@ -380,17 +401,26 @@ role_permissions:
   operator:   [control.*, workspace.*, participant.leave]
 ```
 
+Neither coordinator controls admission yet: `participant.join` admits
+any caller in the role it asks for, and the only role checks are the
+admin role on `workspace.set_profiles` and on revoking another member's
+key. Until milestone 0.6, authenticate joins and enforce role policy in
+front of the coordinator.
+
 ### 7.5 What the Coordinator enforces before your policy runs
 
 Two checks happen in the Coordinator itself, beneath whatever
 role-to-method policy you configure above:
 
-1. **Membership.** The actor (`from`) of every method except
-   `participant.join` must be a joined member of the workspace.
-   A non-member is rejected with `not_authorised` (-32011) before any
-   policy or profile logic runs. You do not configure this; it is always
-   on. Its purpose is audit integrity: the log can never record an action
-   by someone who never joined.
+1. **Membership.** Membership (`-32011`) is checked for
+   `task.create`, `task.update`, `task.complete`, the `review/1.0`
+   methods, `workspace.set_profiles` and every control, deliberation,
+   handoff and whisper method. The `routing/1.0` methods and
+   `participant.leave` do not check it yet, so a non-member's routing
+   call is accepted and recorded; `workspace.create`,
+   `participant.join`, `audit.submit_to_scitt` and the reads are exempt
+   by design. The `requireReadMembership` option adds the check to
+   `audit.read` and `workspace.describe`; the rest is always on.
 2. **Reviewer-set eligibility (with `review/1.0`).** A review decision
    (`decide.*`, `abstain.declare`) is accepted only from a member who was
    named in the review's `to` set. A member who was not asked to review
@@ -401,14 +431,14 @@ role-to-method policy you configure above:
    member eligible. A `group:` target does not narrow eligibility to the
    members of that named group.
 
-These are floors, not a replacement for your policy. Your
-`role_permissions` map still decides, for example, that only `reviewer`
-may call `decide.*` at all. The Coordinator's checks sit underneath:
-even a participant your policy would allow must first be a member, and
-for a review decision must first be an addressed reviewer. Admitting
-someone new (an escalation target, an emergency approver) is done by
-joining them first; there is no path for a non-member to act, so the
-admission itself is always on the record. See SPECIFICATION.md §6.3.1
+These checks sit underneath your policy. Neither coordinator reads a
+`role_permissions` map, so a rule such as "only `reviewer` may call
+`decide.*`" is enforced in front of the coordinator until milestone
+0.6. Even a participant your policy would allow must first be a
+member, and for a review decision must first be an addressed reviewer.
+Admitting someone new (an escalation target, an emergency approver) is
+done by joining them first; a non-member cannot decide a review, so
+the admission itself is always on the record. See SPECIFICATION.md §6.3.1
 and profiles/review.md §3.2.
 
 ---
@@ -417,11 +447,14 @@ and profiles/review.md §3.2.
 
 ### 8.1 What the audit log contains
 
-Every accepted envelope, verbatim, in arrival order, with the
-Coordinator's arrival timestamp, and every refused call that
-[SPECIFICATION §10.1](./SPECIFICATION.md) records, under `request` with
-its outcome. With `security-signed`, the signatures are preserved;
-with `audit-scitt`, each entry produces a SCITT receipt.
+Every accepted state-changing envelope, verbatim, in arrival order,
+with the Coordinator's arrival timestamp. From 0.3.0 it also holds
+every refused call that [SPECIFICATION §10.1](./SPECIFICATION.md)
+records, under `request` with its outcome. Reads are not recorded.
+With `security-signed`, the signatures are preserved. With
+`audit-scitt` and a configured submitter, `audit.submit_to_scitt`
+sends a statement for each entry to a transparency service, and the
+receipts come back to the caller.
 
 ### 8.2 Retention
 
@@ -436,74 +469,82 @@ Retention is deployment policy, not protocol. Common settings:
 
 ### 8.3 Right-to-be-forgotten
 
-Append-only logs and GDPR's erasure right are in genuine tension.
+Append-only logs and GDPR's erasure right are in conflict.
 CHAP's recommended pattern:
 
 1. **Don't store personal data in envelopes that don't need it.**
    Pseudonymise wherever possible: refer to a customer by an opaque
    id, not by name in the envelope body.
-2. **Use the redaction registry.** Personal data that does end up
+2. **Use a redaction registry.** Personal data that does end up
    in the log is referenced by a redaction key; when a subject
    exercises erasure rights, the key is rotated and the cleartext
    is removed from any side-store, leaving the envelope's hash
    intact but its referenced cleartext unrecoverable.
-3. **Document the policy.** In your workspace's descriptor, link
-   to your data-handling policy so subject-rights requests have a
-   defined path.
+3. **Document the policy.** The descriptor schema's `policy_uri` is
+   stored by neither coordinator, so publish your data-handling policy
+   alongside the workspace, giving subject-rights requests a defined
+   path.
 
-The protocol doesn't specify a redaction mechanism; it provides the
-hooks and leaves the mechanism to the deployment. See
+[SPECIFICATION §10.6](./SPECIFICATION.md#106-retention-and-redaction)
+specifies `audit.redact`, which is not yet built, so the mechanism is
+the deployment's for now. See
 [`SECURITY.md`](./SECURITY.md) §8, which records the absence of
 confidentiality for evidence-chain content and recommends opaque
 artefact URIs with external content storage.
 
 ### 8.4 Auditor access
 
-An Auditor reads the log, never writes to it. With the `audit-scitt`
-profile, Auditors verify SCITT receipts offline, they don't need
-the Coordinator's cooperation to confirm an entry is genuine.
+An Auditor reads the log, never writes to it. With the chain on,
+`audit.verify_chain` checks the hash links. Under `audit-scitt/1.0`,
+receipts from the transparency service your deployment connects are
+checked against that service, and `audit.verify_receipt` passes a
+receipt to a verifier your deployment supplies. Neither coordinator
+runs a transparency service.
 
 ---
 
 ## 9. Production deployment
 
-A reference production deployment is described fully in
-[`integrations/CHAP-deployment-patterns.md`](./integrations/CHAP-deployment-patterns.md).
-The essentials:
+[`integrations/CHAP-deployment-patterns.md`](./integrations/CHAP-deployment-patterns.md)
+sketches wider patterns, some using transports and stores neither
+coordinator ships. What the coordinators support today:
 
 ### 9.1 Topology
 
 | Component                | What it does                                  | Typical implementation       |
 |--------------------------|-----------------------------------------------|------------------------------|
-| Coordinator              | Accepts envelopes, routes, appends audit log. | Stateful service (1+ replicas) |
-| Audit store              | Durable storage of the log.                   | Postgres, S3, or SCITT       |
+| Coordinator              | Accepts envelopes, checks them, appends the audit log. | Stateful single writer: one active instance per workspace |
+| Audit store              | Durable storage of workspace state and the log. | The SQLite store each package ships, or your own store |
 | Identity provider        | OIDC tokens, key issuance.                    | Okta, Auth0, Keycloak, etc.  |
-| SCITT service (optional) | Transparency log + receipts.                  | A SCITT-compliant service    |
+| SCITT service (optional) | Transparency log + receipts.                  | A SCITT-compliant service, connected through the submitter option |
 | Participant clients      | Humans (UI), agents (libraries), services.    | Implementation-specific      |
 
 ### 9.2 Transport
 
-| Transport       | When                                       |
-|-----------------|--------------------------------------------|
-| HTTP POST       | Default; works through any proxy and CDN.  |
-| WebSocket       | Interactive UIs that need server push.     |
-| HTTP + SSE      | Firewall-friendly server push fallback.    |
-| Kafka / NATS    | High-throughput server-to-server flows.    |
+| Transport                           | Status                                              |
+|-------------------------------------|-----------------------------------------------------|
+| HTTP POST                           | Required by Core; both reference servers speak it.  |
+| MCP, A2A                            | Through the adapter packages.                       |
+| WebSocket, HTTP + SSE, Kafka / NATS | Specified in SPECIFICATION.md §14; unbuilt.         |
+
+Neither reference coordinator pushes. A UI polls `audit.read`, passing
+`range.from_seq` as the last `next_seq` it received; milestone 0.5
+decides on notifications.
 
 ### 9.3 Sizing
 
-A single Coordinator instance handles thousands of envelopes per
-second on commodity hardware. The audit store is the typical
-bottleneck; size it for ~10× your peak envelope rate to leave
-headroom for audit queries.
+No benchmark is published yet; milestone 0.4 adds one to every
+release. Size from measurements of your own workload.
 
 ### 9.4 High availability
 
-Coordinator stateless behind a load balancer; audit store
-replicated; identity provider per its own HA story. Cross-region
-needs careful audit-store replication (eventual vs synchronous);
-default to one region per workspace and federate via the bridge
-pattern.
+The Coordinator is a single writer that holds state in memory; two
+instances writing one workspace lose entries silently
+([SPECIFICATION.md §10.3](./SPECIFICATION.md#103-single-writer-requirement)).
+Run one active instance per workspace, partition workspaces or lock
+writes externally, and start a standby from the store on failover.
+Replicate the store, and keep each workspace in one region; federate
+across regions through the bridge pattern.
 
 ---
 
@@ -518,7 +559,7 @@ A useful CHAP deployment publishes:
 | Override rate by task kind                       | Audit query                         |
 | Abstention rate by participant                   | Audit query                         |
 | Time-to-review (review.request → decide.*)       | Audit query                         |
-| Mode promotion events                            | `control.*` audit entries           |
+| Mode ceiling changes                             | `control.set_mode_ceiling` entries  |
 | Active participants per workspace                | `workspace.describe`                |
 | SCITT receipt latency (if audit-scitt enabled)   | SCITT service                       |
 
@@ -537,6 +578,8 @@ When something goes wrong with an agent:
 {
   "method": "control.pause",
   "params": {
+    "workspace":       "wsp_support_triage",
+    "from":            "human:oncall@example.org",
     "scope":           "participant",
     "participant_uri": "agent:triage-bot#v3.3",
     "reason":          "Override-rate spike: 38% in last 15 minutes.",
@@ -545,48 +588,79 @@ When something goes wrong with an agent:
 }
 ```
 
-The agent stops accepting new work immediately. In-flight tasks
-complete normally (you don't want abandoned half-states).
+New tasks assigned to the agent are refused with `-32063` from now
+on. Tasks already in flight carry on: the coordinator echoes
+`in_flight_policy` and leaves them alone, so nothing is abandoned
+half-done.
 
 ### 11.2 Demote the mode
 
 ```json
 {
   "method": "control.set_mode_ceiling",
-  "params": { "new_ceiling": "trial" }
+  "params": {
+    "workspace":   "wsp_support_triage",
+    "from":        "human:oncall@example.org",
+    "new_ceiling": "trial"
+  }
 }
 ```
 
-Future tasks for this workspace cannot run in `production`; they
-all go through review.
+New tasks above `trial` are refused with `-32040`, including those
+that would take a production workspace's own mode, so pass
+`mode: "trial"`. Under `modes/1.0`, a trial task requires review.
 
 ### 11.3 Snapshot, investigate, decide
 
 ```json
-{ "method": "control.snapshot", "params": { "label": "pre-rollback-investigation" } }
+{
+  "method": "control.snapshot",
+  "params": {
+    "workspace": "wsp_support_triage",
+    "from":      "human:oncall@example.org",
+    "label":     "pre-rollback-investigation"
+  }
+}
 ```
 
-Use the snapshot to gather state for the incident review. The
-audit log between the snapshot and now contains everything; query
-it for the symptomatic methods.
+Use the snapshot to gather state for the incident review. Its
+`audit_seq` marks where it was taken: pass it to `audit.read` as
+`range.from_seq` to see everything since, and query for the
+symptomatic methods.
 
 ### 11.4 Roll back if appropriate
 
 If a misconfiguration is the cause, `control.rollback` restores the
-named snapshot, appending, never truncating, the audit log.
+mode ceiling and members' roles and scopes from the named snapshot, and
+is appended to the log.
 
 ### 11.5 Reactivate
 
-Promote modes back up when the fix is verified:
+Raise the ceiling again when the fix is verified:
 
 ```json
-{ "method": "control.set_mode_ceiling", "params": { "new_ceiling": "production" } }
+{
+  "method": "control.set_mode_ceiling",
+  "params": {
+    "workspace":   "wsp_support_triage",
+    "from":        "human:oncall@example.org",
+    "new_ceiling": "production"
+  }
+}
 ```
 
 And resume:
 
 ```json
-{ "method": "control.resume", "params": { "scope": "participant", "participant_uri": "agent:triage-bot#v3.3" } }
+{
+  "method": "control.resume",
+  "params": {
+    "workspace":       "wsp_support_triage",
+    "from":            "human:oncall@example.org",
+    "scope":           "participant",
+    "participant_uri": "agent:triage-bot#v3.3"
+  }
+}
 ```
 
 The full incident is reconstructible from the audit log: when the
@@ -680,16 +754,17 @@ promotion affects unrelated work.
 need approval, the structured-edit data is the point.
 
 **Free-text answers in `whisper`.** Defeats aggregation. Always
-provide a closed option set unless free text is genuinely needed.
+provide a closed option set unless the question needs free text.
 
 **Replacing the audit log when GDPR erasure is requested.** Use the
 redaction-key mechanism (see [§8.3](#83-right-to-be-forgotten)).
 Truncating the log breaks every signature chain and every SCITT
 receipt downstream.
 
-**Treating `mode_ceiling` as configuration.** It's a privileged
-operation, audited, with step-up auth required. Don't read it from
-an unsigned config file.
+**Treating `mode_ceiling` as configuration.** It is set by
+`control.set_mode_ceiling`, a privileged call that is recorded, and
+step-up guards it where the coordinator enforces step-up. Don't read
+it from an unsigned config file.
 
 **Per-participant audit logs.** The log is workspace-scoped. A
 participant doesn't have its own log; it has its messages in

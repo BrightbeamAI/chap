@@ -35,7 +35,9 @@ directions:
   every CHAP method as an `AgentSkill`. Any A2A-aware orchestrator
   can register it by URL and delegate work. Reference servers ship
   in [`reference/a2a-server-ts/`](./reference/a2a-server-ts/) and
-  [`reference/a2a-server-py/`](./reference/a2a-server-py/).
+  [`reference/a2a-server-py/`](./reference/a2a-server-py/). The
+  TypeScript adapter speaks A2A 0.3 and the Python adapter A2A 1.0.
+  Milestone 0.5 moves the TypeScript adapter to A2A 1.0.
 
 The three protocols own different layers of the same stack. See
 [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md) and
@@ -46,8 +48,9 @@ The three protocols own different layers of the same stack. See
 You can. For internal-team chat with the occasional bot, Slack is
 fine. CHAP exists because:
 
-1. Slack's audit semantics are vendor-specific. CHAP's audit log is
-   portable across implementations.
+1. Slack's audit semantics are vendor-specific. CHAP's audit log has
+   one documented entry shape, the same in both reference
+   coordinators; a portable export format arrives in milestone 0.6.
 2. Slack has no protocol-level concept of structured override.
    Edits to bot output are lost as plain conversation.
 3. Slack offers no mode promotion ladder. New bots are released or
@@ -112,10 +115,10 @@ the audit happens to record.
 ### How long does it take to implement CHAP?
 
 - **CHAP Core**, in any language with basic JSON tooling: a weekend.
-  ~300-500 LOC. The reference at [`reference/core/`](./reference/core/)
-  is ~400 lines of TypeScript.
-- **CHAP Core + `review` profile**: another day. ~150 LOC of additional
-  state-machine and method handlers.
+  The reference at [`reference/core/`](./reference/core/) is a single
+  short server file in TypeScript.
+- **CHAP Core + `review` profile**: another day of state-machine and
+  method handlers.
 - **A production deployment** with `identity-oidc`, `security-signed`,
   durable audit, monitoring: weeks. The protocol parts are small;
   the operational parts (HA, retention, incident playbooks) are the
@@ -123,15 +126,11 @@ the audit happens to record.
 
 ### Can I implement Core and call myself CHAP-compliant?
 
-Yes. Implementing all 7 Core methods plus the wire format and audit
-log makes you Core-conformant at the **Minimal** level (§17). File
-an in-toto attestation listing exactly which methods you implement.
-A **Full** conformance claim is not yet possible under the 0.2
-revision, it requires a second interoperable implementation and an
-exhaustive interop test suite that the spec does not yet have.
-Implementations that exceed Recommended are welcome to list the
-additional methods in their attestation; promotion to Full opens
-once the interop substrate is in place.
+Not under the 0.2 text: the **Minimal** level in
+[SPECIFICATION.md §17](./SPECIFICATION.md#17-conformance) also needs
+Ed25519 signing, the hash-chained log, `participant.describe` and
+three `review/1.0` methods. Attest exactly what you implement and
+which harness tests pass; milestone 0.4 replaces the levels.
 
 ### Which profiles are "must have"?
 
@@ -157,17 +156,19 @@ an optional `routing_hints` object. Tasks declare what the work is
 and what it's allowed to cost (`criticality`, `deadline`,
 `max_cost_usd`, `risk_tier`). Artefacts declare what was produced
 and at what cost (`confidence`, `model_id`, `cost_consumed_usd`,
-`latency_ms`). CHAP signs these into the evidence chain like any
-other field but assigns them no semantics, confidence is
-model-specific, criticality is operator-defined.
+`latency_ms`). CHAP records these with the call, signed under
+`security-signed/1.0` and hashed when the chain is on, but assigns
+them no semantics: confidence is model-specific, criticality is
+operator-defined.
 
 **The decisions** live in the optional `routing/1.0` profile.
 Three methods: `task.route` picks an assignee from candidates,
 `review.depth` decides whether to skip, spot-check, or fully review,
 and `escalate.auto` evaluates rules and auto-escalates when they
-fire. Each decision becomes a `route_decision` artefact citing the
-exact hints it consulted, so the audit log shows not just *what*
-happened but *why*.
+fire. Each decision is a `route_decision` artefact citing the exact
+hints it consulted. The Coordinator holds it in the workspace and
+returns it to the caller, and the audit log records the request, so
+keep the response if you need the reasons later.
 
 **The policies themselves** live outside CHAP. The protocol carries
 a `policy_id` that resolves under the workspace's
@@ -201,18 +202,20 @@ close because the signal was never captured in the first place.
 
 ### Is CHAP versioned?
 
-The wire format and methods are stable. Each profile carries its
-own semantic version (`review/1.0`, `core/1.0`, etc.) so an
-implementation can advertise which profiles it implements and at
-which version. Changes follow the CEP process in
+Yes. Releases follow [`ROADMAP.md`, Version numbers](./ROADMAP.md#version-numbers),
+and a workspace advertises versioned profiles such as `review/1.0`.
+From 0.3.0 a workspace refuses methods of profiles it does not
+advertise; requests carry a protocol version from 0.4, and parts gain
+maturity levels in 0.5. Changes follow the CEP process in
 [`GOVERNANCE.md`](./GOVERNANCE.md).
 
 ### Will my Core implementation keep working as profiles evolve?
 
-Yes. Profiles are independent of Core; Core's wire format is
-backward-compatible. A profile change that breaks an existing
-profile implementation requires that profile's major-version bump,
-documented in [`CHANGELOG.md`](./CHANGELOG.md).
+Not guaranteed before 1.0. A minor release may break things, and
+its changelog lists each break with a migration. From 1.0 the
+specification follows Semantic Versioning, and a breaking change to a
+Stable profile takes a new major version
+([`ROADMAP.md`, Version numbers](./ROADMAP.md#version-numbers)).
 
 ---
 
@@ -220,7 +223,7 @@ documented in [`CHANGELOG.md`](./CHANGELOG.md).
 
 ### Will a permanent record of overrides feel like surveillance to my team?
 
-It can, and this is worth taking seriously. The same data that helps an honest
+It can, and this is worth taking seriously. The same data that helps a high-trust
 team learn from its mistakes can be weaponised by a low-trust organisation
 against its own people. We have seen this in practice: "overrides by reviewer"
 reads very differently to a senior engineer than to a junior one, and reads
@@ -234,7 +237,7 @@ performance management will hurt itself. A team that aggregates
 *overrides-by-tag-and-path* and uses it to improve the agent will help itself.
 Same data, different governance, very different culture.
 
-The honest framing: if a team is not ready for that visibility, for reasons
+Put plainly: if a team is not ready for that visibility, for reasons
 that may be entirely legitimate, including concerns about job design or
 autonomy, then CHAP is probably not the right thing to introduce yet. The
 trust conversation comes first; the protocol comes after. Aggregations that
@@ -250,8 +253,8 @@ anti-patterns.
 Possibly. A five-person team building a one-off RAG system for one client,
 with no trust boundaries to cross and no compliance obligations to a third
 party, can probably get away with logs and conversations. The Core-only path
-exists for exactly this case; the entire `reference/core/` implementation is
-around 400 lines of TypeScript, weekend-buildable.
+exists for exactly this case; the whole `reference/core/` implementation is
+a single short server file in TypeScript, weekend-buildable.
 
 The same five-person team six months later, when their client asks them to
 demonstrate "AI governance" for the client's own customers, will be
@@ -307,8 +310,10 @@ issuer. There's no vendor dependency at the protocol layer.
 ### Who can approve, reject, or override a review?
 
 Two conditions, checked in order. First, the actor (`from`) must be a
-joined member of the workspace; a Coordinator rejects any method whose
-actor never joined. Second, for a review decision specifically, the
+joined member of the workspace; a Coordinator refuses a review decision
+from a non-member with `-32011`. (Membership is not yet checked on every
+method: the `routing/1.0` methods and `participant.leave` accept a
+non-member.) Second, for a review decision specifically, the
 actor must be one of the reviewers the review was addressed to in
 `review.request`'s `to` set. A member who was not addressed cannot
 decide that review. The `rule` field (`any_one_approves`, `all_approve`,
@@ -331,7 +336,7 @@ and profiles/review.md S3.2.
 
 ### How does CHAP handle GDPR / right-to-be-forgotten?
 
-Append-only logs and erasure rights are in genuine tension. CHAP's
+Append-only logs and erasure rights are in conflict. CHAP's
 pattern (see [`HANDBOOK.md`](./HANDBOOK.md) §8.3 and the
 confidentiality limitation in [`SECURITY.md`](./SECURITY.md) §8):
 
@@ -350,11 +355,18 @@ Documented in [`SECURITY.md`](./SECURITY.md). In short:
 
 - Transport may be observed; integrity does not depend on
   confidentiality.
-- Coordinator is trusted for routing and ordering, **not** for
-  content. A malicious Coordinator cannot forge content.
+- The Coordinator is trusted to order and store the log. A malicious
+  Coordinator cannot forge a signed call where `security-signed/1.0`
+  is in force; that holds for a verifier who knows the members' keys
+  from a source outside the Coordinator, which keeps the list of keys
+  itself. The Coordinator still writes the chain and, from 0.3.0, each
+  refusal's outcome.
 - Individual participant compromise must not destroy the integrity
   of decisions by other participants.
-- Replay and reorder must be detectable.
+- The log is ordered by acceptance, whatever the sender's clock says.
+  From 0.3.0, a signed copy of a recorded refusal is answered with
+  that refusal; any other copy of an accepted call is evaluated again
+  ([`SECURITY.md`](./SECURITY.md#envelope-id-replay)).
 
 Out of scope: protocol-level confidentiality (use TLS),
 denial-of-service resistance (use normal rate-limiting),
@@ -367,31 +379,37 @@ library).
 
 ### Is CHAP suitable for regulated environments?
 
-Yes, with the right profile combination. A regulated deployment
-typically uses `core` + `review` + `identity-oidc` (or
-`identity-vc`) + `security-signed` + `audit-scitt`. This gives you:
+It can be, with the right profiles and deployment controls. Until
+milestone 0.6, authenticate joins in front of the coordinator; no
+outside security review has taken place yet
+([`SECURITY.md`](./SECURITY.md) §8). A regulated deployment typically
+uses `core` + `review` + `identity-oidc` (or `identity-vc`) +
+`security-signed` + `audit-scitt`. This gives you:
 
 - Verified participant identity.
 - Per-message non-repudiation.
-- Cryptographic transparency log offline-verifiable by any auditor.
+- A hash-chained log that `audit.verify_chain` checks, and SCITT
+  statements for a transparency service you connect.
 - Structured decision records (approvals, rejections, overrides,
   abstentions, escalations).
 - Step-up auth for privileged operations.
 
-Specific regulatory fits. SOX, HIPAA, GDPR, FDA QSR, EU AI Act.
+Specific regulatory fits (SOX, HIPAA, GDPR, FDA QSR, EU AI Act)
 depend on your deployment's controls; the protocol provides the
 hooks.
 
 ### Does the audit log work offline?
 
-With the `audit-scitt` profile, yes. SCITT receipts are
-self-contained: anyone with the receipt and the transparency
-service's public key can verify it without contacting the
-Coordinator.
-
-Without `audit-scitt`, the audit log is queryable via `audit.read`
-on the Coordinator; offline verification of individual entries is
-not provided.
+Not yet. CHAP keeps its own log and, with the chain on, its own hash
+chain ([SPECIFICATION.md §10.1](./SPECIFICATION.md#101-evidence-chain)),
+checked on the Coordinator by `audit.verify_chain`. Neither coordinator
+ships an offline verifier; milestone 0.6 adds one, with an export
+format. `audit-scitt/1.0` adds an outside witness under the SCITT
+architecture ([RFC 9943](https://www.rfc-editor.org/rfc/rfc9943)):
+`audit.submit_to_scitt` builds a statement per entry for a submitter
+the deployment supplies, which signs and registers it, and
+`audit.verify_receipt` calls a deployment verifier. Neither
+coordinator runs a transparency service.
 
 ### How long should I keep the audit log?
 
@@ -408,7 +426,8 @@ The protocol doesn't impose a retention policy.
 You, a third-party notary, or a federation. SCITT is a standard;
 the service is software. Recommended: a third party for production
 to avoid the Coordinator being its own notary, but a same-org
-service is fine for development.
+service is fine for development. Neither reference coordinator runs
+one; you connect it through the submitter option.
 
 ---
 
@@ -474,16 +493,18 @@ referenced.
 
 ### Who runs CHAP?
 
-CHAP is developed in the open. Substantive changes go through the
-CEP (CHAP Enhancement Proposal) process: discussion, reference
-implementation, public comment, ratification. See
-[`GOVERNANCE.md`](./GOVERNANCE.md) for the full mechanics.
+The maintainers listed in [`MAINTAINERS.md`](./MAINTAINERS.md) review
+and merge changes and run releases, and protocol decisions rest with
+the maintainer named there. Substantive changes go through a CEP (CHAP
+Enhancement Proposal). [`GOVERNANCE.md`](./GOVERNANCE.md) describes the
+structure intended for standards-track promotion.
 
 ### Is CHAP free to use?
 
-Yes. The specification is licensed CC-BY 4.0; the reference code is
-Apache 2.0. Implement freely, fork freely, redistribute freely.
-Patent licence granted via Apache 2.0 for code contributions.
+Yes. The specification text listed in `LICENSE-SPEC.md` is CC BY 4.0;
+everything else, including the reference code, is Apache 2.0, which
+carries a patent licence from code contributors. A royalty-free patent
+commitment for the specification arrives in milestone 0.5.
 
 ### Can my company contribute?
 
@@ -506,15 +527,16 @@ Yes, with three constraints (see [`GOVERNANCE.md`](./GOVERNANCE.md) §7):
 ### What language should I implement CHAP in?
 
 Any language with HTTP, JSON, and (for `security-signed`) Ed25519
-and JCS libraries. Reference implementations are in TypeScript;
-ports to Go, Python, Rust, Java, and C# are straightforward.
+and JCS libraries. Reference implementations are in TypeScript and
+Python. Ports to Go, Rust, Java and C# are welcome.
 
 ### Do I need a database for Core?
 
-No. Core works fine with in-memory state for testing, and the
-reference implementation uses Maps. For production, swap to any
-durable store. Postgres, SQLite, S3 + manifest, whatever fits.
-The protocol has no opinion.
+No. Both coordinators hold state in memory and can save it to a
+store you configure, such as the SQLite store each package ships.
+Both coordinators answer a call whether or not its write to storage
+succeeds; milestone 0.5 decides whether a call must be stored first.
+The protocol has no opinion on the database.
 
 ### How do I handle high throughput?
 
@@ -530,19 +552,23 @@ audit-volume limits hit first; size for storage.
 
 ### What about partial failures and idempotency?
 
-CHAP envelope IDs are unique per sender, and a Coordinator rejects an
-id it has already seen rather than replaying it, so a blind retry is
-not automatically safe. Where you need a retry to be idempotent, use
-the `idempotency_key` parameter on `task.create`: a redelivered create
-carrying a key the Coordinator has already seen returns the original
-task, with no duplicate and no second audit entry.
+Neither coordinator tracks envelope ids, so a blind retry of a call
+that took effect is evaluated again. Where you need a retry to be
+idempotent, use the `idempotency_key` parameter on `task.create`: a
+redelivered create carrying a key the Coordinator has already seen
+returns the original task, with no duplicate and no second audit
+entry. `task.create` is the one method that takes a key until
+milestone 0.5.
 
 ### How do real-time UIs get updates?
 
-A WebSocket binding to the same wire format. The Coordinator
-push-delivers envelopes the participant is the recipient of; the
-participant receives them as if they were the response to a
-long-poll. Same envelopes, same JSON-RPC shape, different transport.
+Neither reference coordinator pushes. A UI polls `audit.read`,
+passing `range.from_seq` as the last `next_seq` it received. An
+application that embeds a coordinator can also register an audit
+listener (`onAudit` in TypeScript, `add_audit_listener` in Python)
+and forward entries itself. [SPECIFICATION.md §14](./SPECIFICATION.md#14-transports)
+describes WebSocket, SSE and broker bindings that neither coordinator
+implements; milestone 0.5 decides on notifications.
 
 ---
 

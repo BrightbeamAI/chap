@@ -35,7 +35,7 @@ CHAP is two layers, and you adopt them in sequence.
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Core is enough on its own. A Core deployment is a real, useful, conformant CHAP deployment. Profiles get added only when their specific capability is needed.
+Core is enough on its own: a Core deployment is a real, useful CHAP deployment. It does not meet a 0.2 conformance level by itself; see [Conformance](#conformance). Profiles get added only when their specific capability is needed.
 
 The common adoption path:
 
@@ -54,7 +54,7 @@ CHAP is the third pillar of the open agent-protocol stack. It composes with MCP 
 | Protocol  | Owns                                          |
 |-----------|-----------------------------------------------|
 | [MCP](https://modelcontextprotocol.io)  | Agents talking to tools.        |
-| [A2A](https://a2a.dev)                  | Agents talking to agents.       |
+| [A2A](https://a2a-protocol.org)         | Agents talking to agents.       |
 | **CHAP**                                 | Humans, agents, and services talking together in a shared, auditable workspace. |
 
 **MCP tool calls inside CHAP work.** When an agent in a CHAP workspace invokes an MCP tool to do its job, the call is recorded as a `citation` inside the agent's CHAP artefact, with input and output hashes providing a cryptographic boundary. The CHAP audit log references the MCP transcript without duplicating it. See [`integrations/CHAP-with-MCP.md`](./integrations/CHAP-with-MCP.md).
@@ -67,7 +67,7 @@ CHAP is the third pillar of the open agent-protocol stack. It composes with MCP 
 
 ## Standards CHAP reuses
 
-CHAP defers to existing standards wherever they exist. The only protocol-level things it introduces are its seven Core methods, the override envelope shape, and the profile binding model. Everything else is composition.
+CHAP defers to existing standards wherever they exist. The only protocol-level things it introduces are its Core methods, the override envelope shape, and the profile binding model. Everything else is composition.
 
 | Need                       | Standard                                          |
 |----------------------------|---------------------------------------------------|
@@ -77,9 +77,9 @@ CHAP defers to existing standards wherever they exist. The only protocol-level t
 | Human identity             | OIDC + `cnf.jwk` (RFC 7800) or DPoP (RFC 9449)    |
 | Richer identity            | W3C Verifiable Credentials 2.0                    |
 | Service identity           | SPIFFE / SPIRE                                    |
-| Transparency log           | IETF SCITT (COSE, RFC 9052)                       |
-| Federation                 | ActivityPub (optional binding)                    |
-| Provisioning               | SCIM 2.0 (optional binding)                       |
+| Transparency log           | IETF SCITT architecture (RFC 9943), COSE (RFC 9052) |
+| Federation                 | ActivityPub (a possible mapping, which no profile defines) |
+| Provisioning               | SCIM 2.0 (a possible mapping, which no profile defines) |
 | Conformance attestations   | in-toto                                           |
 
 The full mapping with rationale is in [`RELATIONSHIP-TO-OTHER-STANDARDS.md`](./RELATIONSHIP-TO-OTHER-STANDARDS.md).
@@ -93,7 +93,7 @@ To save you time:
 - **Not a new identity protocol.** CHAP reuses OIDC, OAuth 2.0, and W3C Verifiable Credentials.
 - **Not a new transparency log.** CHAP's `audit-scitt/1.0` profile uses IETF SCITT.
 - **Not a new RPC.** CHAP envelopes are JSON-RPC 2.0.
-- **Not vendor-locked.** Multi-implementation by construction; Apache 2.0 + CC-BY 4.0 throughout.
+- **Not vendor-locked.** Anyone may implement it: the specification text is CC BY 4.0 and the code Apache 2.0.
 
 CHAP also deliberately does **not** define:
 
@@ -108,10 +108,10 @@ CHAP **is** the small set of common verbs that every team rebuilds in their own 
 
 CHAP is a working draft (0.2). Concretely:
 
-- Two reference implementations, each covering Core plus every profile (39 method handlers in total): TypeScript at [`packages/coordinator/`](./packages/coordinator/) and Python at [`packages/coordinator-py/`](./packages/coordinator-py/). Both pass the conformance harness on the same JSON-RPC 2.0 wire.
-- Stable enough for experimentation, pilots, and early production deployments that need every profile.
-- Not yet sufficient for a normative conformance claim under a Full level; the Full level still requires the harness to be expanded to cover every profile, not just Core and `review/1.0`.
-- Breaking changes follow Semantic Versioning.
+- Two reference coordinators, in TypeScript at [`packages/coordinator/`](./packages/coordinator/) and Python at [`packages/coordinator-py/`](./packages/coordinator-py/), implement the same methods, and a differential fuzzer checks that they answer and log alike. The conformance harness covers Core and `review/1.0` and runs against the Python coordinator and a standalone TypeScript server.
+- Stable enough for experimentation and early production pilots, after reading the known limitations in [`SECURITY.md`](./SECURITY.md) §8.
+- Neither reference coordinator meets a 0.2 conformance level: Minimal needs `participant.describe`, and Recommended needs `capture.append` and `audit.verify`, all specified and not yet built. Milestone 0.4 replaces the levels with conformance by profile.
+- Before 1.0 a minor release may break things, and its changelog lists each break with a migration. From 1.0 the specification follows Semantic Versioning ([`ROADMAP.md`, Version numbers](./ROADMAP.md#version-numbers)).
 - Profile surfaces evolve faster than Core. Core is more stable; profile API surface should be expected to change.
 - Deployments needing strict stability guarantees should wait for 1.0.
 
@@ -119,11 +119,11 @@ The full Status statement is in [`SPECIFICATION.md`](./SPECIFICATION.md#status-o
 
 ## Conformance
 
-An implementation is **CHAP-conformant** if it implements every Core method and conforms to the wire format. Profile conformance is declared separately, one attestation per profile.
+Implementing every Core method and the wire format does not meet a level under the 0.2 text: the **Minimal** level in [`SPECIFICATION.md`](./SPECIFICATION.md#17-conformance) §17 also needs Ed25519 signing, the hash-chained log, `participant.describe` and three `review/1.0` methods. Attest exactly what you implement and which harness tests pass.
 
-Conformance levels in 0.2 are **Minimal** and **Recommended**. A **Full** level requires two things that don't exist yet: an interop run against an independently authored implementation (the two references here share authorship), and harness coverage beyond Core and `review/1.0`. The expected base conformance for production deployments is **Core + `review/1.0` + `modes/1.0`**.
+Conformance levels in 0.2 are **Minimal** and **Recommended**, with **Full** planned. Full needs an interop run against an independently authored implementation (the two references here share authorship). A common base for production deployments is Core, `review/1.0` and `modes/1.0`.
 
-Conformance attestations are published as [in-toto attestations](https://github.com/in-toto/attestation) and linked from the [implementation registry](./IMPLEMENTATIONS.md). See [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md) and [`conformance/test-vectors.md`](./conformance/test-vectors.md).
+The harness can write an [in-toto attestation](https://github.com/in-toto/attestation) (`--attest`). See [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md) and [`conformance/test-vectors.md`](./conformance/test-vectors.md).
 
 ## Reading paths
 
@@ -149,7 +149,7 @@ For a single end-to-end document combining Core and every profile into one cross
 The repo has four kinds of content: top-level Markdown docs (landing, reference, governance), normative specs (Core and profiles, plus schemas), runnable code (reference implementations, packages, demo, conformance), and supporting material (integrations, examples, diagrams).
 
 ```
-chap-protocol/
+chap/
 │
 ├── README.md                            Landing page.
 ├── START_HERE.md                        One command to a first recorded decision.
@@ -208,7 +208,13 @@ chap-protocol/
 │   ├── coordinator/                     @brightbeamai/chap-coordinator (TypeScript): protocol as a library.
 │   ├── coordinator-py/                  chap-coordinator (Python): Core + every profile.
 │   ├── coordinator-mcp/                 @brightbeamai/chap-coordinator-mcp: MCP transport adapter.
-│   └── coordinator-a2a/                 @brightbeamai/chap-coordinator-a2a: A2A transport adapter.
+│   ├── coordinator-a2a/                 @brightbeamai/chap-coordinator-a2a: A2A transport adapter.
+│   ├── chap-langgraph/                  Bridge for LangGraph (Python).
+│   ├── chap-pydantic-ai/                Bridge for Pydantic AI (Python).
+│   ├── chap-ag2/                        Bridge for AG2 / AutoGen (Python).
+│   ├── chap-llama-index/                Bridge for LlamaIndex Workflows (Python).
+│   ├── chap-google-adk/                 Bridge for Google ADK (Python).
+│   └── chap-analytics/                  Reads logs back as tables and charts (Python).
 │
 ├── conformance/                         Test suite for implementers.
 │   ├── conformance-checklist.md
@@ -261,4 +267,4 @@ CHAP is developed in the open. Issues, discussions, and proposed changes are wel
 
 ## Licence
 
-[Apache 2.0](./LICENSE) for code, CC-BY 4.0 for the specification. Implementable royalty-free, in any language, in any deployment.
+CC BY 4.0 for the specification text listed in `LICENSE-SPEC.md`, and [Apache 2.0](./LICENSE) for everything else, including all code. A written royalty-free patent commitment is planned for milestone 0.5.

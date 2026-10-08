@@ -146,6 +146,11 @@ caller who asked, and no reference has a delivery layer to filter.
 
 ### Fixed
 
+- **The guides describe what the coordinators do today.** The README tour
+  switches the hash chain on, HANDBOOK says to run one active coordinator per
+  workspace because two writers lose entries, the IN_PRACTICE samples use only
+  calls both coordinators accept, and features that are specified and not yet
+  built are marked as such.
 - **A TypeScript coordinator started on a store brings back every workspace.**
   It restored the stored records one at a time, each restore replacing the
   last, so only one workspace came back. The next call naming a lost
