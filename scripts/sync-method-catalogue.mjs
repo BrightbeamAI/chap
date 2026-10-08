@@ -58,16 +58,44 @@ ${comment} Source: schemas/profiles/chap-methods.schema.json`;
 
 const pad = Math.max(...owners.map(([m]) => m.length)) + 3;
 
+// The namespaces whose methods belong to more than one profile, read from the
+// catalogue, so the comment below cannot fall out of step with it.
+const profilesByNamespace = new Map();
+for (const [name, profile] of owners) {
+  const ns = name.split(".")[0];
+  if (!profilesByNamespace.has(ns)) profilesByNamespace.set(ns, new Set());
+  profilesByNamespace.get(ns).add(profile.split("/")[0]);
+}
+const spans = [...profilesByNamespace]
+  .filter(([, profiles]) => profiles.size > 1)
+  .map(([ns, profiles]) => {
+    const names = [...profiles].sort();
+    return `${ns} spans ${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  });
+const spanSentence = `The rule applies to each method, since a namespace can span profiles: ${spans.join("; ")}.`;
+
+/** Wrap a sentence to the given width, each line starting with the prefix. */
+function wrap(text, prefix, width = 79) {
+  const lines = [];
+  let line = prefix;
+  for (const word of text.split(" ")) {
+    if (line.length + word.length + 1 > width && line.trim() !== prefix.trim()) {
+      lines.push(line.trimEnd());
+      line = prefix;
+    }
+    line += (line === prefix ? "" : " ") + word;
+  }
+  lines.push(line.trimEnd());
+  return lines.join("\n");
+}
+
 const ts = `${banner("//")}
 /**
  * Which profile owns which method, and which methods are never gated.
  *
  * SPECIFICATION 15.4: a Coordinator refuses a method whose owning profile the
- * workspace does not advertise. The rule is per method rather than per
- * namespace, because six of the twelve namespaces span profiles: workspace
- * covers core, modes and control; participant covers core and
- * security-signed; task, review and escalate each straddle their home profile
- * and routing; audit covers core and audit-scitt.
+ * workspace does not advertise.
+${wrap(spanSentence, " * ")}
  */
 
 /** The profile that introduces each method the references implement. */
@@ -93,11 +121,8 @@ const py = `${banner("#")}
 """Which profile owns which method, and which methods are never gated.
 
 SPECIFICATION 15.4: a Coordinator refuses a method whose owning profile the
-workspace does not advertise. The rule is per method rather than per namespace,
-because six of the twelve namespaces span profiles: workspace covers core,
-modes and control; participant covers core and security-signed; task, review
-and escalate each straddle their home profile and routing; audit covers core
-and audit-scitt.
+workspace does not advertise.
+${wrap(spanSentence, "")}
 """
 from __future__ import annotations
 

@@ -98,6 +98,8 @@ const SITES = [
   ["packages/coordinator-py/chap_coordinator/transports/mcp_server.py", /make_chap_mcp_server\(coord, name="chap", version="([^"]+)"\)/, "usage example"],
   ["examples/drive-chap-from-claude-desktop.md", /@brightbeamai\/chap-coordinator-mcp@([0-9][^`\s]*)/, "pinned install example"],
   [".github/actions/chap-conformance/README.md", /chap-conformance@v([0-9][^\s`|]*)/, "pinned action tag"],
+  [".github/actions/chap-conformance/README.md", /^\| `ref` +\| no +\| `v([0-9][^`]*)`/m, "default harness ref"],
+  [".github/actions/chap-conformance/action.yml", /^    default: 'v([0-9][^']*)'$/m, "default harness ref"],
 
   // -- documentation tables ------------------------------------------------
   ["IMPLEMENTATIONS.md", /\| ([0-9]+\.[0-9]+\.[0-9]+) +\|/g, "implementations table", "all"],

@@ -479,7 +479,7 @@ const handlers: Record<string, Handler> = {
     const newState = p.state as TaskState;
     const legal: Partial<Record<TaskState, TaskState[]>> = {
       created:          ["in_progress", "declined"],
-      in_progress:      ["in_progress", "completed", "declined", "review_requested"],
+      in_progress:      ["in_progress", "completed", "declined"],
       review_requested: ["in_progress"],
     };
     if (!legal[task.state]?.includes(newState)) {
@@ -585,7 +585,7 @@ const handlers: Record<string, Handler> = {
         return true;
       });
 
-    return { result: { entries, next_seq: toSeq } };
+    return { result: { entries, next_seq: Math.min(toSeq, ws.audit.length) } };
   },
 
   // -------- Review profile --------

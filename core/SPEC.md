@@ -195,11 +195,11 @@ A Task is a finite-state machine over these states:
 Core's states are `created`, `in_progress`, `completed` and `declined`.
 No Core method moves a task out of `completed`; `review.request`
 (`review/1.0`) and `control.supersede` (`control/1.0`) can.
-`review_requested` is reachable on every workspace: `task.update` accepts
-`in_progress` to `review_requested`, and `task.complete` opens a review on a
-task that requires one (§4.6). Where `review/1.0` is not advertised the
-decision methods are refused with `-32601`, and `task.update` back to
-`in_progress` is the way out. `abstained`, `escalated`, `paused`, `cancelled`
+`review_requested` is reachable on every workspace: `task.complete` opens a
+review on a task that requires one (§4.6). `task.update` does not open a
+review, and refuses `review_requested` as a target with `-32602`. Where
+`review/1.0` is not advertised the decision methods are refused with
+`-32601`, and `task.update` back to `in_progress` is the way out. `abstained`, `escalated`, `paused`, `cancelled`
 and `superseded` exist only when the relevant profile is in use. The full
 transition table is
 [`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1.
@@ -395,8 +395,9 @@ workspace member.
 Change a task's state, optionally with a `progress_note`. Every
 `task.update` MUST carry `state`; without it the call is refused with
 `-32602`. From `created` a task may move to `in_progress` or `declined`;
-from `in_progress` to `in_progress`, `completed`, `declined` or
-`review_requested`, with `completed` refused on a task that requires review.
+from `in_progress` to `in_progress`, `completed` or `declined`, with
+`completed` refused on a task that requires review. `review_requested` is
+refused as a target (§3.1).
 The full set is the `task.update` rows of
 [`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1. A progress
 report repeats `state: "in_progress"`. Each accepted `task.update` is
@@ -502,8 +503,9 @@ Response:
 ```
 
 `range.from_seq` is inclusive and `range.to_seq` is exclusive. `next_seq` is
-the `to_seq` the call used, or the length of the log when `to_seq` is
-omitted.
+the `to_seq` the call used, or the length of the log when `to_seq` is omitted
+or runs past the end, so a reader that pages forward from `next_seq` meets
+every entry written after its read.
 
 Filters supported in Core:
 

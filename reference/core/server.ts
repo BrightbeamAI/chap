@@ -331,7 +331,7 @@ const handlers: Record<string, Handler> = {
     return {
       result: {
         entries,
-        next_seq: toSeq,
+        next_seq: Math.min(toSeq, ws.audit.length),
       },
     };
   },

@@ -96,6 +96,24 @@ for (const state of ["in_progress", "declined"]) {
   });
 }
 
+test("task.update does not open a review", () => {
+  // review_requested with no review left decide.* failing with an internal
+  // error. A review opens with review.request, or with task.complete on a
+  // task that requires one.
+  const { c, send } = ready();
+  const id = send("task.create", { kind: "k", input: {}, assignee: "agent:b" }).result.task_id;
+  send("task.update", { task_id: id, state: "in_progress" });
+
+  const r = send("task.update", { task_id: id, state: "review_requested" });
+
+  assert.equal(r.error?.code, E.PARAMS);
+  assert.equal(r.error?.message, "Illegal transition in_progress -> review_requested");
+  assert.equal(task(c, id).state, "in_progress");
+  assert.equal(task(c, id).review, undefined);
+  const opened = send("review.request", { task_id: id, to: ["human:a"], artefact: ARTEFACT });
+  assert.equal(opened.result?.state, "review_requested");
+});
+
 // -- widening an open review -----------------------------------------------
 
 test("a reviewer can be added without restating the rule", () => {

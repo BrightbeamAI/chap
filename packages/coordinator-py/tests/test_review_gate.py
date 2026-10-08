@@ -102,6 +102,24 @@ def test_the_other_task_update_transitions_are_unaffected(state):
     assert _task(c, tid).state == state
 
 
+def test_task_update_does_not_open_a_review():
+    # review_requested with no review left decide.* failing with an internal
+    # error. A review opens with review.request, or with task.complete on a
+    # task that requires one.
+    c, send = _ready()
+    tid = send("task.create", kind="k", input={}, assignee="agent:b")["result"]["task_id"]
+    send("task.update", task_id=tid, state="in_progress")
+
+    r = send("task.update", task_id=tid, state="review_requested")
+
+    assert r["error"]["code"] == E.PARAMS
+    assert r["error"]["message"] == "Illegal transition in_progress -> review_requested"
+    assert _task(c, tid).state == "in_progress"
+    assert _task(c, tid).review is None
+    opened = send("review.request", task_id=tid, to=["human:a"], artefact=ARTEFACT)
+    assert opened["result"]["state"] == "review_requested"
+
+
 # -- widening an open review -----------------------------------------------
 
 def test_a_reviewer_can_be_added_without_restating_the_rule():

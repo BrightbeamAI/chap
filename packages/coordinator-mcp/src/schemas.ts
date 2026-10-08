@@ -202,8 +202,8 @@ export const SCHEMAS: Record<string, JsonSchema> = {
       task_id:   TASK_ID,
       state: {
         type: "string",
-        enum: ["in_progress", "review_requested", "declined", "paused", "cancelled", "completed"],
-        description: "The state to move the task to. Only the transitions in SPECIFICATION.md 8.1 are legal from the task's current state; others are refused with -32602. A task marked review_required cannot be moved to 'completed' here: submit the output with chap.task.complete, which opens the review.",
+        enum: ["in_progress", "declined", "cancelled", "completed"],
+        description: "The state to move the task to. Only the transitions in SPECIFICATION.md 8.1 are legal from the task's current state; others are refused with -32602. A review opens with chap.review.request, or with chap.task.complete on a task that requires one, so 'review_requested' is not a target here. A task marked review_required cannot be moved to 'completed' here: submit the output with chap.task.complete, which opens the review.",
       },
       progress_note: { type: "string", description: "Short note on what changed, kept in the task's history." },
     },

@@ -168,3 +168,24 @@ test("a non-member cannot act on the workspace", () => {
   const done = call("task.complete", { workspace: "w8", from: "agent:bot", task_id: id, output: { d: 1 } });
   assert.equal(done.result.state, "completed", "the task was left as it was");
 });
+
+test("task.update does not open a review", () => {
+  workspace("w-upd", [["human:a", "human"], ["agent:bot", "agent"]]);
+  const id = activeTask("w-upd", "human:a", "agent:bot", true);
+
+  const r = call("task.update", {
+    workspace: "w-upd", from: "agent:bot", task_id: id, state: "review_requested",
+  });
+  assert.equal(r.error?.code, -32602,
+    "task.complete or review.request opens a review; task.update into review_requested is refused");
+});
+
+test("audit.read never reports a next_seq past the end of the log", () => {
+  workspace("w-seq", [["human:a", "human"], ["agent:bot", "agent"]]);
+  const all = call("audit.read", { workspace: "w-seq", from: "human:a" }).result;
+  const past = call("audit.read", {
+    workspace: "w-seq", from: "human:a", range: { from_seq: 0, to_seq: 1000 },
+  }).result;
+  assert.equal(past.next_seq, all.entries.length);
+  assert.equal(past.entries.length, all.entries.length);
+});

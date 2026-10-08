@@ -837,7 +837,7 @@ export class Coordinator {
     const params = (envelope.params ?? {}) as Record<string, unknown>;
     const sender = params.from;
     const wsId = params.workspace;
-    const ts = (params.ts as string | undefined) ?? this.now();
+    const rawTs = params.ts;
     // Fail closed: a signature is present and requireSignatures is on, so it
     // must verify. If we cannot resolve the context needed to verify it,
     // reject rather than skip -- a signature we cannot check must never be
@@ -846,6 +846,12 @@ export class Coordinator {
     if (typeof sender !== "string" || !sender || typeof wsId !== "string" || !wsId) {
       return rpcError(E.SIG_VERIFY_FAILED, "Cannot verify signature: missing from/workspace");
     }
+    // The key is chosen by the time the sender gives. A `ts` that is not a
+    // string gives no time, so no key can be chosen for it.
+    if (rawTs !== undefined && rawTs !== null && typeof rawTs !== "string") {
+      return rpcError(E.SIG_VERIFY_FAILED, "Cannot verify signature: ts must be a string");
+    }
+    const ts = (rawTs as string | null | undefined) ?? this.now();
     const ws = this.workspaces.get(wsId);
     if (!ws) {
       return rpcError(E.SIG_VERIFY_FAILED, "Cannot verify signature: unknown workspace");
@@ -1302,10 +1308,13 @@ export class Coordinator {
     const newState = p.state as Task["state"];
     // Pausing and resuming both belong to control/1.0. A Core-only workspace
     // that could pause through task.update would hold a task nothing it
-    // advertises can lift.
+    // advertises can lift. A review opens with review.request, or with
+    // task.complete on a task that requires one: task.update into
+    // review_requested would leave the task under review with no review for a
+    // decision to act on.
     const legal: Record<string, string[]> = {
       created:          ["in_progress", "declined"],
-      in_progress:      ["in_progress", "completed", "declined", "review_requested"],
+      in_progress:      ["in_progress", "completed", "declined"],
       review_requested: ["in_progress"],
       paused:           ["cancelled"],
     };
@@ -1431,7 +1440,10 @@ export class Coordinator {
       if (entry.prev_hash) item.prev_hash = entry.prev_hash;
       out.push(item);
     }
-    return { result: { entries: out, next_seq: toSeq } };
+    // The next entry to read: the end of the range, or the end of the log
+    // where the range runs past it, so a reader paging forward meets the
+    // entries written after this read.
+    return { result: { entries: out, next_seq: Math.min(toSeq, ws.audit.length) } };
   }
 
   // ==========================================================

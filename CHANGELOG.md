@@ -155,6 +155,15 @@ caller who asked, and no reference has a delivery layer to filter.
   It restored the stored records one at a time, each restore replacing the
   last, so only one workspace came back. The next call naming a lost
   workspace re-created it empty and overwrote its stored log.
+- **`audit.read` reports where the next read starts.** A `range.to_seq` past
+  the end of the log came back as `next_seq`, so a reader paging forward from
+  it skipped every entry written after its read. `next_seq` is now the length
+  of the log in that case.
+- **The `chap-conformance` GitHub Action runs.** It passed a `--profiles`
+  argument the harness refuses, so every run failed before testing anything.
+  The `profiles` input is replaced by `core-only`, the default `ref` is the
+  release the action ships in, and the inputs reach the script through the
+  environment.
 - **`reference/core-plus-review` holds every actor to membership.** It
   checked membership on `review.request` and the review decisions alone, so a
   non-member could create, update and complete tasks, escalate them and write
@@ -257,6 +266,18 @@ left different chains. An empty `successor_task.mode` on `control.supersede`
 now falls back to the superseded task's mode in TypeScript as it did in
 Python. Migration: send `review_required` as `true` or `false`; `null` still
 counts as `false`.
+
+**Behaviour change.** `task.update` does not open a review: `review_requested`
+is refused as a target with `-32602`. It left the task under review with no
+review, so `decide.approve`, `decide.reject` and `abstain.declare` then failed
+with `-32603` and `decide.override` with `-32602`. Migration: open a review
+with `review.request`, or with `task.complete` on a task that requires one.
+
+**Behaviour change.** A signed call whose `ts` is not a string is refused with
+`-32070` by both references. TypeScript chose a key for it anyway, and Python
+raised out of `dispatch`. An empty `ts` is a time no key covers, and Python now
+answers it with `-32071` as TypeScript does. Migration: send `ts` as an
+RFC 3339 string, or omit it.
 
 **Behaviour change.** A paused participant is assigned no new tasks through
 `task.route` or `handoff.accept`. The default routing policy passes over a

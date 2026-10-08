@@ -843,7 +843,7 @@ class Coordinator:
         params = envelope.get("params") or {}
         sender = params.get("from") if isinstance(params, dict) else None
         ws_id = params.get("workspace") if isinstance(params, dict) else None
-        ts = params.get("ts") or envelope.get("ts") or self.now_iso()
+        raw_ts = params.get("ts") if isinstance(params, dict) else None
         # Fail closed: a signature is present (checked above) and
         # require_signatures is on, so it must verify. If we cannot resolve
         # the context needed to verify it, reject rather than skip -- a
@@ -854,6 +854,18 @@ class Coordinator:
                 or not isinstance(ws_id, str) or not ws_id):
             return rpc_error(E.SIG_VERIFY_FAILED,
                              "Cannot verify signature: missing from/workspace")
+        # The key is chosen by the time the sender gives. A `ts` that is not a
+        # string gives no time, so no key can be chosen for it.
+        if raw_ts is not None and not isinstance(raw_ts, str):
+            return rpc_error(E.SIG_VERIFY_FAILED,
+                             "Cannot verify signature: ts must be a string")
+        envelope_ts = envelope.get("ts")
+        if raw_ts is not None:
+            ts = raw_ts
+        elif isinstance(envelope_ts, str) and envelope_ts:
+            ts = envelope_ts
+        else:
+            ts = self.now_iso()
 
         ws = self.workspaces.get(ws_id)
         if not ws:
@@ -1308,11 +1320,13 @@ class Coordinator:
         new_state = p.get("state")
         # Pausing and resuming both belong to control/1.0. A Core-only
         # workspace that could pause through task.update would hold a task
-        # nothing it advertises can lift.
+        # nothing it advertises can lift. A review opens with review.request,
+        # or with task.complete on a task that requires one: task.update into
+        # review_requested would leave the task under review with no review
+        # for a decision to act on.
         legal = {
             "created":          ["in_progress", "declined"],
-            "in_progress":      ["in_progress", "completed", "declined",
-                                 "review_requested"],
+            "in_progress":      ["in_progress", "completed", "declined"],
             "review_requested": ["in_progress"],
             "paused":           ["cancelled"],
         }
@@ -1448,7 +1462,10 @@ class Coordinator:
                 if task_id != flt["task_id"]:
                     continue
             out.append(entry.to_dict())
-        return {"result": {"entries": out, "next_seq": to_seq}}
+        # The next entry to read: the end of the range, or the end of the log
+        # where the range runs past it, so a reader paging forward meets the
+        # entries written after this read.
+        return {"result": {"entries": out, "next_seq": min(to_seq, len(ws.audit))}}
 
     # ============================================================
     #   review/1.0 handlers

@@ -36,12 +36,12 @@ jobs:
 
 ## Inputs
 
-| Input          | Required | Default                                                              | Description                                                       |
-| -------------- | -------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `url`          | yes      | (required)                                                           | JSON-RPC endpoint of your coordinator.                            |
-| `ref`          | no       | `v0.2.5`                                                             | Tag/branch of the CHAP repo to source the harness from.           |
-| `profiles`     | no       | `core,review,whisper,deliberation,handoff,control,routing`           | Comma-separated profiles to test.                                 |
-| `node-version` | no       | `20`                                                                 | Node version for the harness.                                     |
+| Input          | Required | Default      | Description                                                                                  |
+| -------------- | -------- | ------------ | -------------------------------------------------------------------------------------------- |
+| `url`          | yes      | (required)   | JSON-RPC endpoint of your coordinator.                                                       |
+| `ref`          | no       | `v0.2.13`    | Tag or branch of the CHAP repository to source the harness from: the release of this action. |
+| `core-only`    | no       | `false`      | `true` runs the Core vectors alone, for a coordinator without `review/1.0`.                  |
+| `node-version` | no       | `20`         | Node version for the harness.                                                                |
 
 ## Outputs
 

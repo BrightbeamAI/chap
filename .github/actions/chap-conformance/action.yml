@@ -10,13 +10,13 @@ inputs:
     description: "URL of the CHAP coordinator endpoint to test against (e.g. http://localhost:8080/chap). The endpoint must accept JSON-RPC 2.0 POSTs."
     required: true
   ref:
-    description: "Git ref of the BrightbeamAI/chap repository to source the harness from. Defaults to v0.2.9."
+    description: "Git ref of the BrightbeamAI/chap repository to source the harness from. Defaults to the release this action ships in."
     required: false
-    default: 'v0.2.9'
-  profiles:
-    description: "Comma-separated list of profiles to test. Default is the v0.2 conformance set: core,review,whisper,deliberation,handoff,control,routing."
+    default: 'v0.2.13'
+  core-only:
+    description: "Set to 'true' to run the Core vectors alone, for a coordinator that does not implement review/1.0. By default the harness runs the Core and review/1.0 vectors."
     required: false
-    default: 'core,review,whisper,deliberation,handoff,control,routing'
+    default: 'false'
   node-version:
     description: "Node version to use."
     required: false
@@ -58,22 +58,36 @@ runs:
     - name: Run conformance harness
       id: harness
       shell: bash
+      env:
+        CHAP_URL: ${{ inputs.url }}
+        CHAP_CORE_ONLY: ${{ inputs.core-only }}
       run: |
         cd .chap-conformance/conformance/harness
         set +e
-        npx tsx harness.ts \
-          --url='${{ inputs.url }}' \
-          --profiles='${{ inputs.profiles }}' \
-        | tee harness-output.txt
+        args=(--url="${CHAP_URL}")
+        if [ "${CHAP_CORE_ONLY}" = "true" ]; then args+=(--core-only); fi
+        npx tsx harness.ts "${args[@]}" | tee harness-output.txt
         rc=${PIPESTATUS[0]}
         set -e
 
-        passed=$(grep -oE '[0-9]+ tests passed' harness-output.txt | tail -1 | grep -oE '[0-9]+' || echo 0)
-        failed=$(grep -oE '[0-9]+ tests failed' harness-output.txt | tail -1 | grep -oE '[0-9]+' || echo 0)
+        # The harness ends with "All N tests passed." or "F of T tests failed."
+        summary=$(grep -oE '[0-9]+ of [0-9]+ tests failed' harness-output.txt | tail -1 || true)
+        if [ -n "$summary" ]; then
+          failed=${summary%% of *}
+          total=$(echo "$summary" | grep -oE 'of [0-9]+' | grep -oE '[0-9]+')
+          passed=$((total - failed))
+        else
+          passed=$(grep -oE '[0-9]+ tests passed' harness-output.txt | tail -1 | grep -oE '[0-9]+' || echo 0)
+          failed=0
+        fi
         echo "passed=$passed" >> "$GITHUB_OUTPUT"
         echo "failed=$failed" >> "$GITHUB_OUTPUT"
 
+        if [ "$rc" -eq 2 ]; then
+          echo "::error::The conformance harness could not run (exit code 2). Check the url input and that the endpoint answers JSON-RPC."
+          exit 2
+        fi
         if [ "$rc" -ne 0 ]; then
-          echo "::error::Conformance harness failed: $failed vector(s) did not match."
+          echo "::error::Conformance harness failed: $failed of $((passed + failed)) vector(s) did not match."
           exit "$rc"
         fi

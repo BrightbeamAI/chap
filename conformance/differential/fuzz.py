@@ -462,6 +462,12 @@ class Recorder:
                                candidates=list(AGENTS)),
             lambda: self._send("participant.leave", "human:outsider"),
             lambda: self._send("participant.leave", None),
+            # task.update opens no review, and a range past the end of the log
+            # still reports where the next read starts.
+            lambda: self._send("task.update", self._assignee(tid), task_id=tid,
+                               state="review_requested"),
+            lambda: self._send("audit.read", "human:a",
+                               range={"from_seq": 0, "to_seq": 100_000}),
             lambda: self._send("task.route", ["human:a"], task_id=tid,
                                candidates=list(AGENTS)),
         ])()

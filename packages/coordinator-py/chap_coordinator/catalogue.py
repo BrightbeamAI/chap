@@ -3,11 +3,10 @@
 """Which profile owns which method, and which methods are never gated.
 
 SPECIFICATION 15.4: a Coordinator refuses a method whose owning profile the
-workspace does not advertise. The rule is per method rather than per namespace,
-because six of the twelve namespaces span profiles: workspace covers core,
-modes and control; participant covers core and security-signed; task, review
-and escalate each straddle their home profile and routing; audit covers core
-and audit-scitt.
+workspace does not advertise.
+The rule applies to each method, since a namespace can span profiles: audit
+spans audit-scitt and core; escalate spans review and routing; review spans
+review and routing; task spans core and routing.
 """
 from __future__ import annotations
 

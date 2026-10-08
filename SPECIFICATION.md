@@ -769,7 +769,7 @@ categories, because several methods carry preconditions of their own.
 | created, in_progress | `task.complete` (review not required) | completed |
 | created, in_progress | `task.complete` (review required) | review_requested, output held as the artefact under review |
 | created | `task.update` | in_progress, declined |
-| in_progress | `task.update` | in_progress, completed, declined, review_requested |
+| in_progress | `task.update` | in_progress, completed, declined |
 | in_progress | `task.update` to completed (review required) | refused, -32602 |
 | review_requested | `task.update` | in_progress |
 | paused | `task.update` | cancelled |
@@ -813,6 +813,11 @@ Preconditions that are narrower or wider than "non-terminal":
   captured, for example a task resumed from a snapshot written before this was
   recorded. A second `control.pause` on an already paused task captures
   nothing, so the state held at the first pause is the one restored.
+- **`task.update` does not open a review.** A review opens with
+  `review.request`, or with `task.complete` on a task that requires one, and
+  either way carries the artefact and the reviewers a decision acts on.
+  `task.update` to `review_requested` is refused with `-32602`, since it
+  would leave the task under review with no review to decide.
 - **`task.update` MUST NOT complete a task that requires review.**
   `in_progress → completed` is otherwise legal, so without this the review
   could be skipped: the task would finish carrying no artefact and no
