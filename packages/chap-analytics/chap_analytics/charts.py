@@ -690,13 +690,21 @@ def assurance(a: pd.DataFrame) -> Chart:
     d = "A line at 100% means every entry in the period carries that property. A dip is a period whose entries carry less than the rest."
     if a.empty:
         return _empty(name, "Chain assurance", q, d, "No entries in this chain.")
-    long = pd.concat([
+    # A coordinator from 0.3.0 keeps no submission on the log, so the submitted
+    # share is drawn only where the log holds one.
+    on_record = int(a["scitt_submitted"].sum()) > 0
+    parts = [
         a[["period", "n", "chained_share"]].rename(columns={"chained_share": "share"}).assign(property="hash-linked"),
         a[["period", "n", "signed_share"]].rename(columns={"signed_share": "share"}).assign(property="signed"),
-        a[["period", "n", "scitt_share"]].rename(columns={"scitt_share": "share"}).assign(property="SCITT submitted"),
-    ])
+    ]
+    if on_record:
+        parts.append(a[["period", "n", "scitt_share"]].rename(columns={"scitt_share": "share"}).assign(property="SCITT submitted"))
+    long = pd.concat(parts)
     data = _records(long, ["period", "n", "share", "property"])
-    spec = _base(name, "Chain assurance", "Share of entries per period that are hash-linked, signed, and submitted to a transparency log",
+    subtitle = ("Share of entries per period that are hash-linked, signed, and submitted to a transparency log"
+                if on_record else
+                "Share of entries per period that are hash-linked and signed. The log holds no submission to a transparency log.")
+    spec = _base(name, "Chain assurance", subtitle,
                  data, width=620, height=240,
                  mark={"type": "line", "point": True, "interpolate": "monotone"},
                  encoding={"x": {"field": "period", "type": "temporal", "title": None,

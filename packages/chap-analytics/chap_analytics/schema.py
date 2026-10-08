@@ -91,7 +91,7 @@ EVENTS = Table(
         _c("prev_hash", "string", "envelopes", "Hash link to the previous entry, when chaining is on."),
         _c("chained", "boolean", "derived", "Whether this entry carries a chain link."),
         _c("signed", "boolean", "derived", "Whether the envelope carried a top-level signature (security-signed/1.0)."),
-        _c("scitt_submitted", "boolean", "derived", "Whether a later audit.submit_to_scitt call recorded on the chain covered this entry's position. Whether the transparency service returned a receipt is in that call's result, which the log does not carry."),
+        _c("scitt_submitted", "boolean", "derived", "Whether a later audit.submit_to_scitt call recorded on the chain covered this entry's position. Whether the transparency service returned a receipt is in that call's result, which the log does not carry. A coordinator from 0.3.0 keeps no submission on the log, so on its logs this is False for every entry."),
     ),
 )
 

@@ -342,8 +342,11 @@ def assurance(f: Frames) -> Brief:
     chained = int(e["chained"].fillna(False).sum())
     signed = int(e["signed"].fillna(False).sum())
     sub = int(e["scitt_submitted"].fillna(False).sum())
+    # A coordinator from 0.3.0 keeps no submission on the log, so a share of
+    # zero would misstate a log whose submissions happened.
     head = (f"{_n(n, 'entry', 'entries')}: {_pct(chained / n)} hash-linked, {_pct(signed / n)} signed, "
-            f"{_pct(sub / n)} submitted to a transparency log.")
+            + (f"{_pct(sub / n)} submitted to a transparency log." if sub
+               else "and no submission to a transparency log on record."))
     text = ("A hash-linked entry carries the hash of the one before it, so a change to an earlier entry shows up "
             "when the chain is checked against an independently held head. A signed entry carries its sender's "
             "signature, which a verifier can check against the sender's key. A submitted entry was sent to a "

@@ -168,10 +168,14 @@
     assurance(F) {
       const out = [];
       // Accepted calls and recorded refusals are both entries on the chain.
+      // A coordinator from 0.3.0 keeps no submission on the log, so the
+      // submitted share is drawn only where the whole log holds one, as the
+      // library's chart does.
+      const onRecord = D.events.concat(D.refusals || []).some((e) => e.scitt_submitted === true);
       for (const r of S.assurance(F.events.concat(F.refusals), "D")) {
         out.push({ period: r.period, n: r.n, share: r.chained_share, property: "hash-linked" });
         out.push({ period: r.period, n: r.n, share: r.signed_share, property: "signed" });
-        out.push({ period: r.period, n: r.n, share: r.scitt_share, property: "SCITT submitted" });
+        if (onRecord) out.push({ period: r.period, n: r.n, share: r.scitt_share, property: "SCITT submitted" });
       }
       return out;
     },
@@ -271,7 +275,7 @@
     const n = entries.length;
     const chained = entries.filter((e) => e.chained).length, signed = entries.filter((e) => e.signed).length, sub = entries.filter((e) => e.scitt_submitted).length;
     cards.push({ id: "assurance", label: "Entries hash-linked", value: n ? pct(chained / n) : "n/a",
-      detail: n ? `${n} entries; ${pct(signed / n)} signed; ${pct(sub / n)} SCITT submitted` : "no entries", thin: !n, tone: n && chained === n ? "ok" : "warn" });
+      detail: n ? `${n} entries; ${pct(signed / n)} signed; ${sub ? `${pct(sub / n)} SCITT submitted` : "no SCITT submission on record"}` : "no entries", thin: !n, tone: n && chained === n ? "ok" : "warn" });
     const cs = S.cusum(F.tasks, { shift: META.shift, threshold: thresholdFor });
     const alarms = cs.filter((x) => x.alarm).length;
     cards.push({ id: "drift", label: "Drift alarms", value: cs.length ? String(alarms) : "n/a",

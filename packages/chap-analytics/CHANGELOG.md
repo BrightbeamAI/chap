@@ -6,6 +6,11 @@ one where it is until the tables or the analyses change.
 
 ## Unreleased
 
+## 0.2.1
+
+Reads the logs a 0.3 coordinator writes. Install it with `chap-coordinator`
+0.3.0 or later where the `coordinator` extra drives a live coordinator.
+
 ### Added
 
 - **A `refusals` table.** A coordinator now records a member's refused call
@@ -36,6 +41,12 @@ one where it is until the tables or the analyses change.
   completed directly, the successor of a reviewed task or a trial successor
   of `escalate.raise` under `modes/1.0`, as requiring review, in state
   `review_requested` with outcome `open`.
+- **A log without a recorded submission says so.** A coordinator from 0.3.0
+  returns receipts from `audit.submit_to_scitt` and keeps no submission on the
+  log, so its logs mark no entry as submitted. Where the log holds no
+  submission, the assurance brief and the report say none is on record, and
+  the assurance chart leaves the submitted share out. The receipts the
+  coordinator returns are the record of what was submitted.
 
 ### Fixed
 

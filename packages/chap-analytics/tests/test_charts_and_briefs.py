@@ -136,3 +136,51 @@ def test_coverage_and_duties_briefs_flag_an_unwatched_workspace():
     d = briefs.duties(unwatched)
     assert "agent_decided" in d.headline.replace(" ", "_") or "agent decided" in d.headline
     assert "Route them to a human" in d.decision
+
+
+# ------------------------------------------------- transparency-log submissions
+
+def _recorded_submission_chain():
+    # A log from a coordinator that recorded audit.submit_to_scitt, as earlier
+    # coordinators did: the submission covers the first two positions.
+    events = []
+    for i in range(3):
+        events.append({"seq": i, "arrived": f"2026-01-0{i + 1}T10:00:00Z", "prev_hash": "sha256:" + "0" * 64,
+                       "envelope": {"jsonrpc": "2.0", "id": str(i), "method": "task.update",
+                                    "params": {"workspace": "w", "from": "human:a",
+                                               "ts": f"2026-01-0{i + 1}T10:00:00Z"}}})
+    events.append({"seq": 3, "arrived": "2026-01-04T10:00:00Z", "prev_hash": "sha256:" + "0" * 64,
+                   "envelope": {"jsonrpc": "2.0", "id": "s", "method": "audit.submit_to_scitt",
+                                "params": {"workspace": "w", "from": "service:ops", "ts": "2026-01-04T10:00:00Z",
+                                           "range": {"from_seq": 0, "to_seq": 2}}}})
+    return frames(Chain(workspace="w", events=events, state=None, source="test"))
+
+
+def test_a_recorded_submission_is_reported_as_a_share():
+    f = _recorded_submission_chain()
+    assert "submitted to a transparency log" in briefs.assurance(f).headline
+    assert "SCITT submitted" in set(charts.assurance(stats.assurance(f, "D")).data["property"])
+
+
+def test_a_log_without_a_recorded_submission_says_none_is_on_record():
+    # A coordinator from 0.3.0 returns receipts and keeps no submission on the
+    # log, so the log cannot show that its entries were submitted.
+    from chap_coordinator import Coordinator, CoordinatorOptions
+    from chap_analytics import from_coordinator
+
+    c = Coordinator(CoordinatorOptions(scitt_submitter=lambda statement: {"receipt": "r"}))
+    send = lambda m, p, a="human:a": c.dispatch({"jsonrpc": "2.0", "id": m, "method": m,  # noqa: E731
+                                                  "params": {"workspace": "w", "from": a, **p}})
+    send("workspace.create", {"profiles": ["core/1.0", "audit-scitt/1.0"]})
+    send("participant.join", {"type": "human"})
+    receipts = send("audit.submit_to_scitt", {})["result"]["receipts"]
+    assert receipts
+
+    f = frames(from_coordinator(c, workspace="w"))
+    assert not f.events["scitt_submitted"].any()
+    b = briefs.assurance(f)
+    assert "no submission to a transparency log on record" in b.headline
+    assert "0% submitted" not in b.headline
+    chart = charts.assurance(stats.assurance(f, "D"))
+    assert "SCITT submitted" not in set(chart.data["property"])
+    assert "no submission" in chart.spec["title"]["subtitle"]

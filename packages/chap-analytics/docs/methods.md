@@ -196,7 +196,10 @@ Integrity, Transparency and Trust). The three columns record what the
 chain carries; they do not verify a hash, check a signature or fetch a
 receipt. A hash-linked entry can be checked against the one before it; a
 signed entry can be checked against its sender's key; a submitted entry
-was sent to a log, and the receipt lives outside the chain.
+was sent to a log, and the receipt lives outside the chain. A coordinator
+from 0.3.0 keeps no submission on the log, so its logs mark no entry as
+submitted. Where the log holds no submission, the brief and the report say
+none is on record, and the chart leaves the submitted share out.
 
 ## Drift
 
