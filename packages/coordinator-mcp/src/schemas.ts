@@ -13,7 +13,7 @@
  * on says so; describing an intention the code does not implement is
  * worse than saying nothing.
  *
- * Aligned with CHAP 0.2 (see profiles/*.md) and MCP 2025-11-25.
+ * Aligned with CHAP 0.3 (see profiles/*.md) and MCP 2025-11-25.
  */
 
 export interface JsonSchema {
@@ -560,7 +560,7 @@ export const SCHEMAS: Record<string, JsonSchema> = {
         type: "string",
         enum: ["task", "participant", "workspace"],
         default: "task",
-        description: "What the resume applies to. 'task' returns a paused task to 'in_progress'; a task that is not paused is refused with -32061. 'participant' allows that member to be assigned tasks again. 'workspace' returns the workspace to active.",
+        description: "What the resume applies to. 'task' returns a paused task to the state it held at the pause; a task that is not paused is refused with -32061. 'participant' allows that member to be assigned tasks again. 'workspace' returns the workspace to active.",
       },
       task_id: TASK_ID,
       participant_uri: { ...PARTICIPANT_URI, description: "Whose work to resume, when scope is 'participant'. Must be a workspace member." },

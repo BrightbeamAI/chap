@@ -28,7 +28,7 @@ function buildStatement(workspaceId: string, record: unknown, issuer: string): R
       iss: issuer,
       kid: "scitt-issuer",
       cwt_claims: { sub: workspaceId, iat: null },
-      "content-type": "application/chap+json;version=0.2",
+      "content-type": "application/chap+json;version=0.3",
     },
     payload: canonicalize(record).toString("utf-8"),
     signature: "<deployment-supplied>",

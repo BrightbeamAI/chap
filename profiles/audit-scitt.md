@@ -83,7 +83,7 @@ COSE_Sign1 {
       sub: <workspace id>
       iat: null
     }
-    content-type: "application/chap+json;version=0.2"
+    content-type: "application/chap+json;version=0.3"
   }
   payload: <JCS canonicalisation of the entry's record>
   signature: "<deployment-supplied>"

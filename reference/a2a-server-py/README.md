@@ -8,7 +8,7 @@ different SDK ecosystem.
 Spec target: A2A 1.0 with v0.3 compatibility enabled (the Python
 `a2a-sdk` 1.x dispatches by PascalCase method names under v1.0; the
 server enables `enable_v0_3_compat=True` so the older `message/send`
-slash form continues to work). CHAP 0.2.
+slash form continues to work). CHAP 0.3.
 
 ## Install
 

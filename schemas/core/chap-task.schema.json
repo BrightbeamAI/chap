@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://chap.dev/schemas/0.2/chap-task.schema.json",
+  "$id": "https://chap.dev/schemas/0.3/chap-task.schema.json",
   "title": "CHAP Task / Artefact / Override",
   "description": "Schemas for the Task, Artefact, and Override primitives.",
   "$defs": {

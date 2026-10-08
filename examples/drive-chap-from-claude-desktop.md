@@ -54,7 +54,7 @@ For another MCP client, configure a local stdio server with:
 
 The client downloads and launches the published package when it needs the
 server. For reproducible deployments, pin the package to a tested version,
-for example `@brightbeamai/chap-coordinator-mcp@0.2.13`.
+for example `@brightbeamai/chap-coordinator-mcp@0.3.0`.
 
 ## Step 2: Choose whether to persist the workspace
 
@@ -239,7 +239,7 @@ and should not be treated as a complete production deployment.
   OIDC identity, signed approvals, or external transparency anchoring.
 - **Multi-tenancy:** SQLite persistence does not provide tenant isolation,
   service-level access control, operational monitoring, or high availability.
-- **Long-term stability:** CHAP 0.2 is a public draft. Pin versions and review
+- **Long-term stability:** CHAP 0.3 is a public draft. Pin versions and review
   release notes when evaluating it in durable workflows.
 
 For a production-oriented service, import `makeChapMcpServer` from

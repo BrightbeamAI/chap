@@ -69,7 +69,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "chap.control.pause":
         "Pause work. Scoped to a task it moves that task to paused; to a participant it stops new tasks being assigned to them; to the workspace it refuses every method except describing, reading the audit log, joining, leaving and resuming.",
     "chap.control.resume":
-        "Resume work paused at the same scope: a task returns to in_progress, a participant can be assigned tasks again, a workspace returns to active.",
+        "Resume work paused at the same scope: a task returns to the state it held at the pause, a participant can be assigned tasks again, a workspace returns to active.",
     "chap.control.cancel":
         "Cancel a task. Cancelled is terminal, and a task that has already settled cannot be cancelled.",
     "chap.control.snapshot":

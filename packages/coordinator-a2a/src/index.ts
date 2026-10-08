@@ -5,7 +5,7 @@
  * instance and exposes every CHAP method as an A2A skill.
  *
  * Spec target: A2A 0.3.0 (the version implemented by the @a2a-js/sdk
- * SDK we depend on). CHAP 0.2.
+ * SDK we depend on). CHAP 0.3.
  *
  * Usage::
  *

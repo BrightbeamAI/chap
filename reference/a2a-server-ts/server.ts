@@ -14,7 +14,7 @@
  * the process exits.
  *
  * Spec target: A2A 0.3.0 (the version implemented by @a2a-js/sdk).
- * CHAP 0.2.
+ * CHAP 0.3.
  */
 
 import express from "express";
@@ -53,7 +53,7 @@ const coord = new Coordinator({
 const card = makeChapAgentCard({
   baseUrl,
   name: "CHAP Coordinator",
-  version: "0.2.13",
+  version: "0.3.0",
 });
 
 const executor = makeChapAgentExecutor(coord);

@@ -15,7 +15,7 @@ profiles that add to it, such as review, control and whisper.
 [Words used here](#words-used-here) explains these and the other terms on
 this page.
 
-CHAP 0.2 is a public draft. This roadmap sets out what CHAP 1.0 will promise
+CHAP 0.3 is a public draft. This roadmap sets out what CHAP 1.0 will promise
 the people who build on it, the milestones that lead there, and how you can
 take part.
 
@@ -97,7 +97,7 @@ goes through a CHAP Enhancement Proposal (CEP).
 
 ### What still needs work
 
-![Known gaps on a board with one column per milestone. 0.3, the milestone in progress: version numbers, governance documents, smaller mismatches. 0.4: two message descriptions, no version on requests, an optional and partial chain, conformance levels, participant names. 0.5: two lists of Core methods, no maturity labels, safe retries, calls answered and never stored, the A2A adapter on A2A 0.3, a patent commitment. 0.6: unbuilt methods, open joining, refusal records, one maintaining organisation. 0.7: test coverage. Release candidate: implementations from one team, no outside security review. After 1.0: known security limits. A "from" label marks a gap whose work starts in an earlier milestone.](docs/img/roadmap-gaps-to-milestones.svg)
+![Known gaps on a board with one column per milestone. 0.3, the milestone in progress: governance documents. 0.4: two message descriptions, no version on requests, an optional and partial chain, conformance levels, participant names. 0.5: two lists of Core methods, no maturity labels, safe retries, calls answered and never stored, the A2A adapter on A2A 0.3, a patent commitment. 0.6: unbuilt methods, open joining, refusal records, one maintaining organisation. 0.7: test coverage. Release candidate: implementations from one team, no outside security review. After 1.0: known security limits. A "from" label marks a gap whose work starts in an earlier milestone.](docs/img/roadmap-gaps-to-milestones.svg)
 
 These are the known gaps between the draft and 1.0, grouped by the milestone
 that closes them. Where the work spans more than one milestone, the table says
@@ -105,9 +105,7 @@ where it starts and where it closes.
 
 | Gap | What it means | Milestones |
 |---|---|---|
-| Version numbers and the release policy disagree | Patch releases in the 0.2 series carried behaviour changes. The next release is 0.3.0, and it writes the versioning rules down. | 0.3 |
 | The governance documents describe bodies yet to form | GOVERNANCE.md gives decisions to a steering committee and working groups that have yet to form, and lets only that committee amend the document. Editorial notes in GOVERNANCE.md and CONTRIBUTING.md point to MAINTAINERS.md for current practice. | 0.3 |
-| Smaller mismatches between text and code | The documents and the coordinators differ in a number of smaller places. The 0.3 sweep corrects each one and publishes the list. | 0.3 |
 | Two descriptions of the messages | core/SPEC.md describes the JSON-RPC messages both coordinators send. Parts of SPECIFICATION.md describe a different message shape. | 0.4 |
 | No protocol version on requests | A client has no way to ask which revision a coordinator speaks, and the log has no record of which rules applied to an entry. | 0.4 |
 | The chain is optional and partly hashed | A profile or an option switches the hash chain on. Where it is on, an entry's sequence number and arrival time sit outside the hash. | 0.4 |
@@ -271,9 +269,9 @@ public.
 
 **Finished when**
 
-- [ ] 0.3.0 is tagged and published, and its changelog lists every breaking
+- [x] 0.3.0 is tagged and published, and its changelog lists every breaking
       change with a migration.
-- [ ] The documents agree with the coordinators, apart from the gaps that
+- [x] The documents agree with the coordinators, apart from the gaps that
       later milestones close. The release notes record the sweep.
 - [ ] GOVERNANCE.md and CONTRIBUTING.md describe the process in use, and the
       licence terms agree.

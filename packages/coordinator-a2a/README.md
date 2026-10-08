@@ -8,7 +8,7 @@ AgentCore, Google ADK, custom multi-agent systems) can register the
 coordinator by URL and delegate work to it.
 
 Spec target: **A2A 0.3.0** (the version implemented by `@a2a-js/sdk`).
-CHAP 0.2.
+CHAP 0.3.
 
 ## Install
 

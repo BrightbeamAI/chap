@@ -21,10 +21,9 @@ for both unless it says otherwise. A differential fuzzer in CI sends both the
 same generated calls and fails the build if their answers or their chain heads
 differ. It does not yet send signed calls, modes or calls to the SCITT profile.
 
-The latest release is 0.2.13. The main branch holds work that ships in 0.3.0,
-and this document marks each behaviour that exists only on main with
-**(0.3.0)**. Where the specification describes something neither coordinator
-builds, this document says so. [ROADMAP.md](./ROADMAP.md) names the milestone
+The latest release is 0.3.0, and this document marks each behaviour that is
+new in it with **(0.3.0)**. Where the specification describes something
+neither coordinator builds, this document says so. [ROADMAP.md](./ROADMAP.md) names the milestone
 that closes each gap.
 
 Option names are given in their TypeScript form. The Python options have the
@@ -378,9 +377,9 @@ it.
 
 ### Refused calls
 
-**(0.3.0)** Everything in this section is behaviour on main that ships in
-0.3.0. In 0.2.13 a refused call leaves no entry, and a copy of a refused call
-is evaluated like any other request.
+**(0.3.0)** Everything in this section is new in 0.3.0. In 0.2.13 and
+earlier a refused call leaves no entry, and a copy of a refused call is
+evaluated like any other request.
 
 A member's refused call that is a governed attempt is recorded on the log,
 under `request` with an `outcome` giving the code (SPECIFICATION.md §10.1): a
@@ -578,12 +577,12 @@ advisory within 90 days where feasible.
 
 | Version | Security fixes |
 |---|---|
-| main | Unreleased. Fixes land here, and main becomes 0.3.0. |
-| 0.2.13 | Yes, until 0.3.0 is released. |
-| 0.2.12 and earlier | No. Upgrade to the latest release. |
+| main | Unreleased. Fixes land here first. |
+| 0.3.0 | Yes. |
+| 0.2.13 and earlier | No. Upgrade to the latest release. |
 
 Fixes land on main, and on the latest release line as a patch release, for
-example 0.2.14. The advisory is published after the fixed release.
+example 0.3.1. The advisory is published after the fixed release.
 
 ---
 

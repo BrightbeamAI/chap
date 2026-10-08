@@ -12,7 +12,7 @@
  * the schemas automatically; for now the source of truth remains
  * the running tests under `tests/`.
  *
- * Scope: 39 method handlers shipped by both v0.2 reference
+ * Scope: 39 method handlers shipped by both reference
  * implementations (Core + every shipped profile). Spec-only methods
  * are excluded - they would mislead callers into thinking the local
  * Coordinator can dispatch them.

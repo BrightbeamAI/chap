@@ -73,6 +73,9 @@ const SITES = [
   ["server.json", /"version": "([^"]+)",\n  "websiteUrl"/, "registry server version"],
   ["server.json", /"identifier": "@brightbeamai\/chap-coordinator-mcp",\n      "version": "([^"]+)"/, "registry npm package version"],
 
+  // -- citation ------------------------------------------------------------
+  ["CITATION.cff", /^version: (.+)$/m, "cited release"],
+
   // -- container images ----------------------------------------------------
   ["Dockerfile.mcp", /^ARG CHAP_MCP_VERSION=(.+)$/m, "pinned image version"],
 
@@ -127,7 +130,9 @@ for (const [file, pattern, note, all] of SITES) {
     continue;
   }
 
-  for (const m of matches) {
+  // Last match first, so a replacement of a different length leaves the
+  // positions of the matches before it where the regex found them.
+  for (const m of [...matches].reverse()) {
     if (m[1] === VERSION) continue;
     if (WRITE) {
       const replaced = m[0].replace(m[1], VERSION);

@@ -14,7 +14,7 @@ Usage::
 The coordinator runs in-memory in this process. State is lost when
 the process exits.
 
-Spec target: A2A 1.0 (via a2a-sdk 1.x). CHAP 0.2.
+Spec target: A2A 1.0 (via a2a-sdk 1.x). CHAP 0.3.
 """
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ def build_app(base_url: str = "http://localhost:9090") -> FastAPI:
     app = FastAPI(
         title="CHAP A2A Reference Server",
         description="CHAP Coordinator exposed as an A2A 1.0 agent.",
-        version="0.2.13",
+        version="0.3.0",
     )
     add_a2a_routes_to_fastapi(
         app,

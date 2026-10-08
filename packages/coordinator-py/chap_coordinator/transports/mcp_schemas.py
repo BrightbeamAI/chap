@@ -14,7 +14,7 @@ written for that audience as well as for validation.
 Mirrors ``packages/coordinator-mcp/src/schemas.ts`` exactly; the two
 implementations must stay in lockstep.
 
-Aligned with CHAP 0.2 (see ``profiles/*.md``) and MCP 2026-07-28.
+Aligned with CHAP 0.3 (see ``profiles/*.md``) and MCP 2026-07-28.
 """
 from __future__ import annotations
 
@@ -1209,7 +1209,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "workspace",
                 ],
                 "default": "task",
-                "description": "What the resume applies to. 'task' returns a paused task to 'in_progress'; a task that is not paused is refused with -32061. 'participant' allows that member to be assigned tasks again. 'workspace' returns the workspace to active.",
+                "description": "What the resume applies to. 'task' returns a paused task to the state it held at the pause; a task that is not paused is refused with -32061. 'participant' allows that member to be assigned tasks again. 'workspace' returns the workspace to active.",
             },
             "task_id": {
                 "type": "string",

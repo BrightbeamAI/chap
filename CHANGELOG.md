@@ -23,377 +23,220 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
 
 ## Unreleased
 
-**Behaviour change.** A refused call that is a governed attempt is recorded on
-the log (SPECIFICATION 10.1). A member's refused call is recorded unless it was
-malformed or invalid, failed a signature or key check, hit an internal error,
-or was answered `-32601` other than by the profile gate refusing a privileged
-method. Refusals of the reads, of `audit.submit_to_scitt`, of
-`workspace.create` and `participant.join`, and of a request that cannot be
-canonicalised are not recorded either. So a decision on a review addressed to
-someone else is recorded, as are an approval whose artefact digest does not
-match, an act on a paused workspace, and `control.pause` on a workspace that
-has switched `control/1.0` off, while `whisper.ask` on a workspace without
-`whisper/1.0` and a method that does not exist are not. A call from a caller
-who is not a member is never recorded.
+## 0.3.0: documents that match the code, refused calls on the record, and review that holds
 
-**Behaviour change.** A signed request that is a copy of a recorded refusal is
-answered with that refusal, with `data.refused_at_seq`, and is neither
-evaluated nor recorded again, so a refused request read from the log cannot
-be sent later to take effect. A signed copy of a call that took effect is
-evaluated, and its refusal is not recorded. Both rules compare what the signer
-signed, the request without its `sig`, so re-encoding a signature does not
-make a new request. A retry is a new request with a new `id`. Unsigned calls
-are not compared with the log, and each of their refusals is recorded.
+Read the Breaking section before upgrading. The packages implement
+specification 0.3. [RELEASE_NOTES_0.3.0.md](./RELEASE_NOTES_0.3.0.md)
+summarises the upgrade, the security fixes and the known issues.
 
-**Behaviour change.** A Coordinator checks a call in the order SPECIFICATION
-10.1 now fixes, since which refusal a call receives decides whether it is
-recorded. A method that does not exist and a request that cannot be
-canonicalised are refused before the signature, the gate and the pause, so on
-a paused workspace they are answered `-32601` and `-32602` where they were
-answered `-32063`. An empty method is `-32600` in both references, and the
-TypeScript reference answers a method that is not a string with `-32600`
-where it failed with an internal error. A request nested deeper than 64
-levels is refused `-32600`. The reference HTTP servers already refused such a
-body, and in process the two coordinators failed on it at different depths,
-after the call had taken effect.
+### Breaking
 
-**Wire change.** A refusal entry holds the call under `request` rather than
-`envelope`, with `outcome: {"status": "refused", "code": …}` beside it, so a
-reader that replays `envelope` never treats a refusal as a call that took
-effect. Its chain link hashes the outcome together with the request, so
-altering either breaks the chain, and `audit.verify_chain` reports an entry as
-malformed unless it holds exactly one JSON-RPC call, under `envelope` or under
-`request` with a valid outcome. An entry with no outcome hashes exactly as
-before, so every existing chain still verifies. `audit.read` returns
-refusal entries, and a new `outcome` filter selects `accepted` or `refused`.
-Statements from `audit.submit_to_scitt` carry the record the link hashes. In
-the TypeScript package `AuditEntry.envelope` is now optional, and `entryCall`,
-`entryRecord`, `isRefusal` and `linkHash` are exported for readers. A reader
-that indexes `envelope` on every entry has to allow for entries without one.
-A store the Python coordinator writes with a refusal entry in it cannot be
-read by an earlier release, which skips that workspace, and the next call that
-names the workspace re-creates it empty and overwrites the stored log. Back up
-the store before going back to an earlier release.
+- **A token or presentation binds only to its participant.** A
+  `participant.join` whose token carries a `chap_participant_uri` naming
+  another participant is refused with `-32404`. A join under an existing
+  member's name is accepted with a token only for the member's recorded
+  subject, or, for a member with no recorded subject, with a token whose
+  `chap_participant_uri` names the member (`-32404` otherwise), and with a
+  presentation only from the member's recorded holder (`-32411` otherwise). A
+  re-join token with no `acr` clears the member's old `acr`. Before, anyone
+  holding a token or presentation the deployment's verifier accepted could
+  join under an existing member's name, add a key and sign as that member.
+  Migration: a deployment that binds an identity to a member after it first
+  joined issues tokens carrying `chap_participant_uri`, or has its verifier add
+  the claim. A member with no recorded holder cannot bind a presentation by
+  joining again.
+- **The routing methods and `participant.leave` need a member.** `task.route`,
+  `review.depth`, `escalate.auto` and `participant.leave` refuse a caller who
+  is not a workspace member with `-32011`, as SPECIFICATION 6.3.1 requires of
+  every method outside its exemptions. A non-member's `task.route` reassigned
+  the task, its `review.depth` and `escalate.auto` recorded decisions, and its
+  `participant.leave` wrote a leave to the log, each under whatever name the
+  caller gave. The refusal is not recorded. A second `participant.leave` from
+  the same caller is refused, where it answered `left: true`, and the routing
+  parameter schemas list `from` as required. A `from` that is not a string is
+  refused by both references with `-32011` and the words `Not a workspace
+  member: from is not a participant URI`, or with `-32070` before that where
+  signatures are required; the Python coordinator raised out of `dispatch` on
+  a list or an object `from`, and with signatures or step-up on, on a list or
+  an object `workspace`. Migration: send these calls from a member.
+- **`escalate.raise` applies the checks a created task meets.** The successor
+  requires review when the original did, or when it is a `trial` task on a
+  workspace that advertises `modes/1.0`; it never required review before, so
+  escalating a task let its successor complete with no reviewer decision. An
+  assignee who is paused is refused with `-32063`. The successor takes the
+  mode `new_task.mode` names, or else the original's, and a mode above the
+  workspace's current ceiling is refused with `-32040`; an escalation carried
+  the original's mode past a lowered ceiling. Migration: completing the
+  successor of a reviewed task opens a review addressed to the human members
+  other than its assignee and completer, and is refused with `-32011` where
+  there are none, so escalating a reviewed task to the only human member needs
+  another human to join, or an explicit `review.request` naming the reviewers.
+  To escalate a task whose mode is above a lowered ceiling, name a mode within
+  the ceiling in `new_task.mode`.
+- **`control.supersede` keeps the review requirement and refuses a paused
+  assignee.** The successor requires review when the original did, whatever
+  `successor_task.review_required` says; any member, the assignee included,
+  could supersede a task awaiting review with a successor that needed none and
+  complete it unreviewed. A paused assignee is refused with `-32063`, as at
+  `task.create`. Migration: a successor of a reviewed task is reviewed, as its
+  original would have been, and a participant is resumed before work is
+  handed to it.
+- **A paused participant is assigned no new tasks through `task.route` or
+  `handoff.accept`.** The default routing policy passes over a paused
+  candidate, lists it in `alternatives_considered` with the reason `paused`,
+  and answers `-32510` when no candidate is a member who is not paused. A
+  deployment's policy that selects a paused participant is refused with
+  `-32063`, and the task keeps its assignee. `handoff.accept` from a paused
+  participant is refused with `-32063`, and the handoff stays open. The pause
+  binds only a participant that cooperates: any member can lift it with
+  `control.resume`. Migration: resume a participant before routing work to it
+  or having it accept a handoff.
+- **A member's refused attempt is recorded, under `request`.** A refused call
+  that is a governed attempt is an entry on the log (SPECIFICATION 10.1). A
+  member's refused call is recorded unless it was malformed or invalid, failed
+  a signature or key check, hit an internal error, or was answered `-32601`
+  other than by the profile gate refusing a privileged method. Refusals of the
+  reads, of `audit.submit_to_scitt`, of `workspace.create` and
+  `participant.join`, and of a request that cannot be canonicalised are not
+  recorded, and neither is any call from a caller who is not a member. So a
+  decision on a review addressed to someone else is recorded, as are an
+  approval whose artefact digest does not match, an act on a paused workspace,
+  and `control.pause` on a workspace that has switched `control/1.0` off. A
+  refusal entry holds the call under `request`, with
+  `outcome: {"status": "refused", "code": …}` beside it, and its chain link
+  hashes the outcome together with the request, so altering either breaks the
+  chain. `audit.verify_chain` reports an entry as malformed unless it holds
+  exactly one JSON-RPC call, under `envelope`, or under `request` with a valid
+  outcome. An entry with no outcome hashes exactly as before, so every
+  existing chain still verifies. `audit.read` returns refusal entries and takes
+  an `outcome` filter of `accepted` or `refused`, and statements from
+  `audit.submit_to_scitt` carry the record the link hashes. In the TypeScript
+  package `AuditEntry.envelope` is optional, and `entryCall`, `entryRecord`,
+  `isRefusal` and `linkHash` are exported for readers. Migration: a reader
+  that takes `envelope` from every entry allows for entries without one, reads
+  the call with `entryCall`, or asks `audit.read` for
+  `filter.outcome: "accepted"`. Back up a Python store before going back to an
+  earlier release: an earlier release skips a workspace whose log holds a
+  refusal, and the next call naming that workspace re-creates it empty and
+  overwrites the stored log.
+- **A signed copy of a recorded refusal is answered with that refusal.** It
+  carries `data.refused_at_seq` and is neither evaluated nor recorded again,
+  so a refused request read from the log cannot be sent later to take effect.
+  A signed copy of a call that took effect is evaluated, and its refusal is
+  not recorded. Both rules compare what the signer signed, the request without
+  its `sig`, so re-encoding a signature does not make a new request. Unsigned
+  calls are not compared with the log. Migration: a retry is a new request
+  with a new `id`.
+- **Calls are checked in the order SPECIFICATION 10.1 fixes.** A method that
+  does not exist and a request that cannot be canonicalised are refused
+  before the signature, the profile gate and the pause, so on a paused
+  workspace they answer `-32601` and `-32602` where they answered `-32063`. An
+  empty method is `-32600` in both references, and the TypeScript reference
+  answers a method that is not a string with `-32600` where it failed with an
+  internal error. A request nested deeper than 64 levels is refused with
+  `-32600`; the two coordinators failed on it at different depths, after the
+  call had taken effect. Migration: read `-32601` and `-32602` from a paused
+  workspace as errors in the call itself.
+- **A workspace serves the methods of the profiles it advertises.** A method
+  whose owning profile the workspace does not advertise is refused with
+  `-32601`, the answer a coordinator that never implemented it would give,
+  with `data: {"profile": …, "advertised": [...]}` for an operator.
+  SPECIFICATION 15.4 has required this since 0.1 and neither reference did, so
+  removing `control/1.0` from a workspace left its emergency brake fully live.
+  The reads (`workspace.describe`, `audit.read`, `audit.verify_chain`,
+  `audit.verify_receipt`) and the key lifecycle (`participant.rotate_key`,
+  `participant.revoke_key`, now in Core) are always served. Migration:
+  advertise every profile whose methods a workspace calls, at
+  `workspace.create` or with `workspace.set_profiles`.
+- **`workspace.create` refuses a descriptor that understates enforcement.** A
+  coordinator requiring signatures adds `security-signed/1.0` to the
+  advertised profiles, and one with a token verifier adds
+  `identity-oidc/1.0`. Advertising either without the matching enforcement is
+  refused with `-32602`. Advertising still turns no enforcement on. Migration:
+  advertise `security-signed/1.0` or `identity-oidc/1.0` only on a coordinator
+  that enforces it.
+- **`task.update` opens no review and reaches no pause.** `review_requested`
+  as a target is refused with `-32602`: it left the task under review with no
+  review, so `decide.approve`, `decide.reject` and `abstain.declare` then
+  failed with `-32603` and `decide.override` with `-32602`. `paused` as a
+  target is refused too, since `control.resume` was the only way out and a
+  workspace advertising `core/1.0` alone could hold a task it had no method to
+  lift. `paused` to `cancelled` through `task.update` is unchanged, so a task
+  paused by an earlier version can still be closed. Migration: open a review
+  with `review.request`, or with `task.complete` on a task that requires one,
+  and pause with `control.pause`.
+- **Fields of the wrong type are refused with `-32602` in the same words by
+  both references.** `task.create` and `control.supersede` refuse a `mode`
+  that is not a string and a `review_required` that is not a boolean,
+  `task.route` refuses `candidates` that are not a list, and `escalate.raise`
+  refuses a `new_task` that is not an object. The references read such values
+  differently: a list or object `review_required` was true in TypeScript and
+  false in Python, and Python iterated a `candidates` object and reassigned
+  the task where TypeScript refused it, so the same call left different
+  chains. An empty `successor_task.mode` falls back to the superseded task's
+  mode in TypeScript as it did in Python. Migration: send `review_required` as
+  `true` or `false`; `null` still counts as `false`.
+- **A signed call whose `ts` is not a string is refused with `-32070`.**
+  TypeScript chose a key for it anyway, and Python raised out of `dispatch`.
+  An empty `ts` is a time no key covers, and Python answers it with `-32071`
+  as TypeScript does. Migration: send `ts` as an RFC 3339 string, or omit it.
+- **An explicitly empty selection list is refused with `-32602`.** This covers
+  `accepted_task_ids: []` on `handoff.accept`, `include: []` on
+  `control.snapshot` and `what_to_restore: []` on `control.rollback`. Each wrote
+  an audit entry for an event that did not happen, and the references
+  disagreed on them. Migration: omit the field to select everything, or name
+  a non-empty subset.
+- **`control.snapshot` returns the `Artefact` shape.** The result is the shape
+  [`chap-task.schema.json`](schemas/core/chap-task.schema.json) defines: `id`,
+  `kind`, `produced_by`, `produced_at`, `content_hash` and inline `content`,
+  with `content_hash` the SHA-256 of the JCS bytes of `content`. Each `include`
+  slice has one documented projection, absent and empty optional fields are
+  omitted, and `control.rollback` reads the captured `content.state`. Records
+  written by an earlier version are normalised when a store loads them.
+  Migration: read a snapshot's captured state from `content.state`.
+- **`control.resume` restores the state the task held at the pause.** It set
+  `in_progress` unconditionally, so a task paused during a review came back
+  with the review attached and no way for a reviewer to act. A task paused
+  before work began resumes to `created`. Where no state was captured, as in a
+  snapshot written before this release, the result is still `in_progress`.
+  Migration: read the restored state from the result's `state`.
+- **The schema identifiers carry 0.3.** Every schema's `$id` is
+  `https://chap.dev/schemas/0.3/…`, and the method catalogue's `version` is
+  `0.3`. Migration: point `$ref`s at the 0.3 identifiers.
+- **`whisper.answer` is recorded as the client sent it.** Both references
+  wrote the whisper's `task_id` into the request after the signature had been
+  verified, so the recorded envelope no longer verified under its own
+  signature. The answer's task is resolved from the whisper at read time, so
+  an `audit.read` filtered by task still returns the answer with the ask.
+  Migration: take an answer's task from its whisper, which the answer names by
+  `whisper_id`, or filter `audit.read` by `task_id`.
+- **`audit.submit_to_scitt` is a read.** It was recorded, so submitting the
+  chain appended to the chain being submitted and moved its head, and the
+  receipt attested a log one entry shorter than the workspace then held. A
+  submission now leaves no entry on the log. Migration: keep the receipts the
+  method returns as the record of what was submitted.
+- **SCITT statements carry `version=0.3`.** The `content-type` in a
+  statement's protected header is `application/chap+json;version=0.3`.
+  Migration: a verifier that matches the content type accepts `version=0.3`.
 
-**Behaviour change.** A Coordinator refuses a method whose owning profile the
-workspace does not advertise, which SPECIFICATION 15.4 has required since 0.1
-and neither reference did. Removing `control/1.0` from a workspace advertised
-nothing and changed nothing: the governance emergency brake stayed fully live.
-The refusal is `-32601`, the answer a Coordinator that never implemented the
-method would give, carrying `data: {"profile": …, "advertised": [...]}` for an
-operator. Two sets of methods are never refused: the reads
-(`workspace.describe`, `audit.read`, `audit.verify_chain`,
-`audit.verify_receipt`), because a workspace must be able to say what it is and
-check its own chain; and the key lifecycle (`participant.rotate_key`,
-`participant.revoke_key`), reattributed to Core so an operator's response to a
-compromised key does not depend on a profile entry. The rule is per method: six
-of the twelve namespaces span profiles, so it cannot be written per namespace.
-A workspace that calls a profile method now has to advertise that profile.
+### Specification
 
-**Behaviour change.** `workspace.create` refuses a configuration whose
-descriptor understates what is enforced. A Coordinator requiring signatures
-adds `security-signed/1.0` to the advertised set; advertising it with
-signatures off is refused with `-32602`. The same rule for `identity-oidc/1.0`
-and its token verifier. Advertising still does not turn enforcement on, because
-that would break existing workspaces at their second call rather than at
-configuration time.
-
-**Specification.** New 6.5, a normative table saying what advertising each
-profile does. Advertising had grown three meanings: changing behaviour, doing
-nothing while a separate option did the work, and doing nothing at all. 15.4's
-dispatch rule follows from the table and is rewritten as a per-method rule.
-
-Two requirements no reference met have left the normative voice for
-[SECURITY.md](SECURITY.md), which is where 15.4 already points for the
-operational model. Refusing a repeated envelope `id` with `-32701`: the size of
-a seen-id set is a deployment decision, and `idempotency_key` already covers
-the retry case it would break. Refusing a non-monotonic `ts` with `-32401`:
-4.3 said strictly monotonic and 15.4 said non-decreasing, so the two could not
-both be met, and millisecond precision makes the strict rule refuse a
-participant that sends twice in one millisecond. Neither code was allocated in
-either reference. The chain is ordered by arrival and `prev_hash`, not by the
-sender's clock, and 15.1 now says so.
-
-**Specification.** 15.1 is regrouped by who has to do the work. It read as
-eight obligations on the Coordinator and three of them were not that:
-signature verification and step-up are turned on by a profile, TLS and
-delivery filtering belong to the deployment, and a `required_scope` is
-declared per method and enforced by neither reference, which the text now
-says. 11.3's shadow-observer MUST moves with it: a Coordinator answers the
-caller who asked, and no reference has a delivery layer to filter.
-
-### Added
-
-- **One catalogue, generated into both references.** Which profile owns which
-  method is stated once, in `chap-methods.schema.json`, and
-  `scripts/sync-method-catalogue.mjs` writes the table each reference
-  dispatches against. CI fails when a committed copy is stale.
-- **Shared dispatch-gate vectors.** `conformance/profile-gate-vectors.json`
-  fixes the exact response for four refusals and four calls that pass the gate,
-  read by both suites.
-- **An error-code check.** Every code the normative tables allocate must exist
-  in both references, and a code in one reference alone is a divergence. Run in
-  CI.
-- **Shared refusal-recording vectors.** `conformance/refusal-record-vectors.json`
-  fixes, for each refused call it holds, the response, whether the refusal is
-  recorded, the recorded entry, and the chain head after it. Both suites read
-  it, and the Python suite recomputes every head with a canonicaliser of its
-  own. Harness vector `rv-13` checks the same rule over HTTP.
-- **A roadmap to 1.0.** [`ROADMAP.md`](./ROADMAP.md) sets out what 1.0 will
-  promise, the known gaps and the milestone that closes each one, the
-  milestones in order with the checks that finish them, and the open
-  questions.
-
-### Fixed
-
-- **The guides describe what the coordinators do today.** The README tour
-  switches the hash chain on, HANDBOOK says to run one active coordinator per
-  workspace because two writers lose entries, the IN_PRACTICE samples use only
-  calls both coordinators accept, and features that are specified and not yet
-  built are marked as such.
-- **A TypeScript coordinator started on a store brings back every workspace.**
-  It restored the stored records one at a time, each restore replacing the
-  last, so only one workspace came back. The next call naming a lost
-  workspace re-created it empty and overwrote its stored log.
-- **`audit.read` reports where the next read starts.** A `range.to_seq` past
-  the end of the log came back as `next_seq`, so a reader paging forward from
-  it skipped every entry written after its read. `next_seq` is now the length
-  of the log in that case.
-- **The `chap-conformance` GitHub Action runs.** It passed a `--profiles`
-  argument the harness refuses, so every run failed before testing anything.
-  The `profiles` input is replaced by `core-only`, the default `ref` is the
-  release the action ships in, and the inputs reach the script through the
-  environment.
-- **`reference/core-plus-review` holds every actor to membership.** It
-  checked membership on `review.request` and the review decisions alone, so a
-  non-member could create, update and complete tasks, escalate them and write
-  a leave. It now refuses those with `-32011`, as SPECIFICATION 6.3.1
-  requires, and an escalated task keeps its review requirement there too.
-- **The reference servers keep the log rules.** `reference/core` and
-  `reference/core-plus-review` recorded every accepted call with a workspace,
-  reads included, which core/SPEC.md 3.2 forbids. Both now leave reads off the
-  log and accept the `outcome` filter, and `reference/core-plus-review`
-  records governed refusals and answers a resubmitted refusal as the
-  coordinators do.
-- **The authorisation walkthrough runs.** It passed `confidence` as `0.82`,
-  which the canonical number rule refuses, so it stopped at `task.complete`.
-- **`whisper.answer` matches an option the same way in both references.** A
-  null `answer_option` is refused `-32602`, an option id matches only an equal
-  id of the same JSON type, and the refusal shows the option as JSON. Python
-  failed with an internal error on an object, matched `true` against `1` and
-  showed the option in Python notation. TypeScript refused a null option as
-  outside the set. An empty answer is no answer in both, where TypeScript
-  accepted one, and `whisper.ask` refuses `options` that are not a list.
-- **The workspace descriptor schema describes the descriptor.** It required
-  `name`, `coordinator` and `evidence_count`, none of which either reference
-  sends, and `evidence_head`, which a workspace with no chain cannot have. It
-  declared none of `profiles`, `audit_count`, `task_count`, `override_count`
-  or `routing_policy_uri`, all of which both references send. Nothing
-  validated a descriptor against it at runtime, so it had drifted unchecked;
-  a test in each reference now holds the two together.
-- **`workspace.describe` answers the same on both references.** Python sent
-  `evidence_head: null` where TypeScript omitted the key, so the same call
-  returned different JSON. A workspace with no chain has no head, and both now
-  omit it. Found by the new dispatch-gate vectors.
-- **SECURITY.md is one threat model that matches the specification and both
-  coordinators.** It replaces text that described an older message format, a
-  different chain formula, a key grace window and coordinator-signed
-  checkpoints, none of which exist. It sets out what each option switches on,
-  what the deployment supplies, which releases receive fixes and the known
-  limitations.
-
-**Behaviour change.** A token or presentation binds only to the participant it
-belongs to. A `participant.join` whose token carries a `chap_participant_uri`
-naming another participant is refused with `-32404`. A join under an existing
-member's name is accepted with a token only for the member's recorded subject,
-or, for a member with no recorded subject, with a token whose
-`chap_participant_uri` names the member (`-32404` otherwise), and with a
-presentation only from the member's recorded holder (`-32411` otherwise). A
-re-join token with no `acr` clears the member's old `acr`. Before, anyone
-holding a token or presentation the deployment's verifier accepted could join
-under an existing member's name, add a key and sign as that member. Migration:
-a deployment that binds an identity to a member after it first joined issues
-tokens carrying `chap_participant_uri`, or has its verifier add the claim. A
-member with no recorded holder cannot bind a presentation by joining again.
-
-**Behaviour change.** `task.route`, `review.depth`, `escalate.auto` and
-`participant.leave` refuse a caller who is not a workspace member with
-`-32011`, as SPECIFICATION 6.3.1 requires of every method outside its
-exemptions. A non-member's `task.route` reassigned the task, its
-`review.depth` and `escalate.auto` recorded decisions, and its
-`participant.leave` wrote a leave to the log, each under whatever name the
-caller gave. The refusal is not recorded. A second `participant.leave` from
-the same caller is now refused, where it answered `left: true`, and the
-routing parameter schemas in `chap-routing.schema.json` list `from` as
-required. A `from` that is not a string is refused by both references with
-`-32011` and the words `Not a workspace member: from is not a participant
-URI`, or with `-32070` before that where signatures are required. The Python
-coordinator raised out of `dispatch` on a list or an object `from`, and with
-signatures or step-up on, on a list or an object `workspace`. Migration: send
-these calls from a member.
-
-**Behaviour change.** `escalate.raise` applies the checks a created task
-meets. The successor requires review when the original did, or when it is a
-`trial` task on a workspace that advertises `modes/1.0`. It never required
-review before, so escalating a task let its successor complete with no
-reviewer decision. An assignee who is paused is refused with `-32063`. The
-successor takes the mode `new_task.mode` names, or else the original's, and a
-mode above the workspace's current ceiling is refused with `-32040`; before,
-an escalation carried the original's mode past a lowered ceiling. Migration:
-completing the successor of a reviewed task now opens a review addressed to
-the human members other than its assignee and completer, and is refused with
-`-32011` where there are none. Escalating a reviewed task to the only human
-member then needs another human to join, or an explicit `review.request`
-naming the reviewers. To escalate a task whose mode is above a lowered
-ceiling, name a mode within the ceiling in `new_task.mode`.
-
-**Behaviour change.** `control.supersede` keeps the review requirement of the
-task it replaces: the successor requires review when the original did,
-whatever `successor_task.review_required` says. Before, any member, the
-assignee included, could supersede a task awaiting review with a successor
-that needed none and complete it unreviewed. Migration: a successor of a
-reviewed task is reviewed, as its original would have been.
-
-**Behaviour change.** Fields of the wrong type are refused with `-32602` in
-the same words by both references. `task.create` and `control.supersede`
-refuse a `mode` that is not a string and a `review_required` that is not a
-boolean, `task.route` refuses `candidates` that are not a list, and
-`escalate.raise` refuses a `new_task` that is not an object. The two
-references read such values differently: a list or object `review_required`
-was true in TypeScript and false in Python, Python iterated a `candidates`
-object and reassigned the task where TypeScript refused it, and the same call
-left different chains. An empty `successor_task.mode` on `control.supersede`
-now falls back to the superseded task's mode in TypeScript as it did in
-Python. Migration: send `review_required` as `true` or `false`; `null` still
-counts as `false`.
-
-**Behaviour change.** `task.update` does not open a review: `review_requested`
-is refused as a target with `-32602`. It left the task under review with no
-review, so `decide.approve`, `decide.reject` and `abstain.declare` then failed
-with `-32603` and `decide.override` with `-32602`. Migration: open a review
-with `review.request`, or with `task.complete` on a task that requires one.
-
-**Behaviour change.** A signed call whose `ts` is not a string is refused with
-`-32070` by both references. TypeScript chose a key for it anyway, and Python
-raised out of `dispatch`. An empty `ts` is a time no key covers, and Python now
-answers it with `-32071` as TypeScript does. Migration: send `ts` as an
-RFC 3339 string, or omit it.
-
-**Behaviour change.** A paused participant is assigned no new tasks through
-`task.route` or `handoff.accept`. The default routing policy passes over a
-paused candidate, lists it in `alternatives_considered` with the reason
-`paused`, and answers `-32510` when no candidate is a member who is not
-paused. A deployment's policy that selects a paused participant is refused
-with `-32063`, and the task keeps its assignee. `handoff.accept` from a paused
-participant is refused with `-32063`, and the handoff stays open. The pause
-still binds only a participant that cooperates: any member can lift it with
-`control.resume`. Migration: resume a participant before routing work to it
-or having it accept a handoff.
-
-**Behaviour change.** Pausing a task is `control.pause` alone. `task.update`
-reached `paused` from `created` and from `in_progress`, while `control.resume`
-was already the only way out of a pause, so a workspace advertising `core/1.0`
-could hold a task it had no advertised method to lift. `paused → cancelled`
-through `task.update` is unchanged, so a task stranded by an earlier version
-can still be closed. SPECIFICATION 8.1 moves with it.
-
-**Behaviour change.** `whisper.answer` is recorded as the client sent it. Both
-references wrote the whisper's `task_id` into the request after the signature
-had been verified, so the recorded envelope no longer verified under its own
-signature and the chain held an envelope the signer never signed. The answer's
-task is now resolved from the whisper at read time, so an `audit.read` filtered
-by task still returns the answer with the ask, and a caller still cannot file an
-answer against another task.
-
-**Behaviour change.** `audit.submit_to_scitt` is a read. It was recorded, so
-submitting the chain appended to the chain being submitted and moved its head:
-the receipt attested a log one entry shorter than the workspace then held.
-
-**Behaviour change.** `control.supersede` applies the participant-paused check
-that `task.create` applies. Superseding was a way to hand work to a participant
-whose work had been stopped.
-
-**Behaviour change.** `control.resume` restores the state the task held at the
-`control.pause` that preceded it. It set `in_progress` unconditionally, so a
-task paused during a review came back as `in_progress` with the review still
-attached, and `decide.*` then refused it: the pass was stranded with no way for
-a reviewer to act. A task paused before work began now resumes to `created`.
-Where no state was captured, such as a snapshot written before this change,
-`in_progress` is still the result.
-
-**Behaviour change.** An explicitly empty selection list is refused with
-`-32602`: `accepted_task_ids: []` on `handoff.accept`, `include: []` on
-`control.snapshot`, and `what_to_restore: []` on `control.rollback`. Honouring
-the empty list wrote an audit entry for an event that did not happen: a handoff
-marked accepted with nothing transferred, a snapshot that captured nothing, a
-rollback that restored nothing. Omitting the field keeps its meaning, which is
-all of them, and a non-empty list still selects a subset. The two references
-disagreed on these three, so the refusal closes a cross-language divergence as
-well.
-
-**Wire change.** `control.snapshot` returns the `Artefact` shape
-[`chap-task.schema.json`](schemas/core/chap-task.schema.json) defines: `id`,
-`kind`, `produced_by`, `produced_at`, `content_hash` and inline `content`, with
-`content_hash` the SHA-256 of the JCS bytes of `content`. Each `include` slice
-has one documented projection, absent and empty optional fields are omitted,
-and `control.rollback` reads the captured `content.state`. Records written by an
-earlier version are normalised when the store loads them, so a restart against
-an existing store keeps working. Shared conformance vectors fix the exact
-response and hash for each slice in both references.
-
-### Added
-
-- **A wrapped call can name the decision it carries out.** The wrap helpers
-  take an optional `fulfils`, which records the id of the authorising decision
-  on the result artefact. SPECIFICATION 9.4 defines the field: it is asserted
-  by the producer and not verified by the Coordinator, so a wrong id is a
-  dangling reference the chain still verifies. `chap-analytics` projects it as
-  a `fulfils` column on the `tasks` table and as a `fulfils` edge in the graph.
-- **A licence file for the specification text.** `LICENSE-SPEC.md` names the
-  files licensed under CC BY 4.0; everything else, code included, stays under
-  Apache 2.0. Contributions made to those files before 0.3.0 also remain
-  available under Apache 2.0. A contribution takes the licence of the file it
-  changes (CONTRIBUTING.md §7), and the README's specification badge links to
-  the new file.
-- **Versioning rules, written down.** The header of this file, GOVERNANCE.md
-  §4 and CONTRIBUTING.md §5 follow ROADMAP.md: before 1.0 a minor release may
-  break things and lists each break with a migration, and a patch release
-  brings an implementation into line with the specification or corrects
-  documentation.
-- **IMPLEMENTATIONS.md says what backs each claim.** The packages are labelled
-  Beta, and a column names the run each claim was tested with.
-- **Editorial notes in GOVERNANCE.md and CONTRIBUTING.md** point to
-  MAINTAINERS.md for how decisions are made today.
-- **The differential fuzzer pauses participants and sends calls that fail the
-  membership floor.** It pauses and resumes participants, creates a share of
-  its tasks with `review_required`, and sends `task.route` and
-  `participant.leave` from a non-member and from a `from` that is not a
-  string, so those refusals and the successors of reviewed tasks are compared
-  across the two references.
-
-### Fixed
-
-- **The two references refuse the same JSON Patch in the same words.** They
-  gave the same error code and different text: Python quoted with apostrophes
-  and named Python types, TypeScript quoted with double quotes and named
-  JavaScript types. Both now speak JSON, and a shared vector file holds every
-  message so a drift in one fails the suite in both.
-- **`remove` and `replace` at the position after the last array element are
-  refused in both references.** RFC 6901 gives `-` the position after the last
-  element, which no element occupies, so RFC 6902 admits it for `add` alone.
-  TypeScript compared the token numerically, which NaN makes false both ways:
-  `remove` then deleted the first element and `replace` reported success
-  without changing anything. The same `decide.override` therefore produced a
-  different corrected artefact in each reference.
-- **Every typed collection on a workspace is rebuilt when a store is loaded.**
-  `overrides` and `route_decisions` came back as plain dicts in the Python
-  reference, which diverges from the TypeScript restore and breaks the first
-  attribute read after a restart.
-- **A captured snapshot no longer follows live state.** `control.snapshot`
-  held references to the workspace's own mutable structures, so later changes
-  to members or tasks, and callers modifying a returned response, reached the
-  saved snapshot. The capture is copied, and restored scopes are copied back,
-  so the content and its hash stay as they were at the capture.
+- **What advertising a profile does.** New 6.5 is a normative table of what
+  advertising each profile does. Advertising had grown three meanings:
+  changing behaviour, doing nothing while a separate option did the work, and
+  doing nothing at all. 15.4's dispatch rule follows from the table as a
+  per-method rule.
+- **Two requirements no reference met move to SECURITY.md.** Refusing a
+  repeated envelope `id` with `-32701`: the size of a seen-id set is a
+  deployment decision, and `idempotency_key` already covers the retry case it
+  would break. Refusing a non-monotonic `ts` with `-32401`: 4.3 said strictly
+  monotonic and 15.4 said non-decreasing, and millisecond precision makes the
+  strict rule refuse a participant that sends twice in one millisecond. The
+  chain is ordered by arrival and `prev_hash`, and 15.1 says so.
+- **15.1 is grouped by who does the work.** Signature verification and
+  step-up are turned on by a profile, TLS and delivery filtering belong to the
+  deployment, and a method's `required_scope` is declared and enforced by
+  neither reference. 11.3's shadow-observer requirement moves with them.
 - **The specification, the profiles and the conformance documents describe
   what both coordinators do.** Among the corrections:
   - Rotating a key ends the old key at once; there is no grace window
@@ -401,7 +244,7 @@ response and hash for each slice in both references.
   - Signatures are checked only where the Coordinator requires them, and never
     on `workspace.create` or `participant.join` (§5.2, §15.1).
   - Step-up covers every privileged method when the Coordinator enforces it,
-    and the catalogue's `privileged` flags now match them (§5.6, §12).
+    and the catalogue's `privileged` flags match them (§5.6, §12).
   - `review/1.0` supports `any_one_approves`, `all_approve` and `quorum:<n>`;
     weighted rules belong to `deliberation/1.0` (§8.3, profiles/review.md).
   - A copy of an accepted call is evaluated again; only a signed copy of a
@@ -413,6 +256,117 @@ response and hash for each slice in both references.
   - `profiles/audit-scitt.md` cites the SCITT architecture as RFC 9943.
   - SPECIFICATION §4.1 and §5.2 point to core/SPEC.md §2 for the messages the
     coordinators send today; milestone 0.4 settles the format.
+
+### Added
+
+- **One catalogue, generated into both references.** Which profile owns which
+  method is stated once, in `chap-methods.schema.json`, and
+  `scripts/sync-method-catalogue.mjs` writes the table each reference
+  dispatches against. CI fails when a committed copy is stale.
+- **Shared vectors for the profile gate and for refused calls.**
+  `conformance/profile-gate-vectors.json` fixes the exact response for
+  refusals and calls that pass the gate.
+  `conformance/refusal-record-vectors.json` fixes, for each refused call, the
+  response, whether it is recorded, the recorded entry and the chain head
+  after it; the Python suite recomputes every head with a canonicaliser of its
+  own, and harness vector `rv-13` checks the same rule over HTTP.
+- **An error-code check.** Every code the normative tables allocate must exist
+  in both references, and a code in one reference alone is a divergence. Run
+  in CI.
+- **A wrapped call can name the decision it carries out.** The wrap helpers
+  take an optional `fulfils`, which records the id of the authorising decision
+  on the result artefact. SPECIFICATION 9.4 defines the field: it is asserted
+  by the producer and not verified by the Coordinator, so a wrong id is a
+  dangling reference the chain still verifies.
+- **A roadmap to 1.0.** [`ROADMAP.md`](./ROADMAP.md) sets out what 1.0 will
+  promise, the known gaps and the milestone that closes each one, the
+  milestones in order with the checks that finish them, and the open
+  questions.
+- **A licence file for the specification text.** `LICENSE-SPEC.md` names the
+  files licensed under CC BY 4.0; everything else, code included, stays under
+  Apache 2.0. Contributions made to those files before 0.3.0 also remain
+  available under Apache 2.0. A contribution takes the licence of the file it
+  changes (CONTRIBUTING.md §7).
+- **Versioning rules, written down.** The header of this file, GOVERNANCE.md
+  §4 and CONTRIBUTING.md §5 follow ROADMAP.md: before 1.0 a minor release may
+  break things and lists each break with a migration, and a patch release
+  brings an implementation into line with the specification or corrects
+  documentation.
+- **IMPLEMENTATIONS.md says what backs each claim.** The packages are labelled
+  Beta, and a column names the run each claim was tested with.
+- **Editorial notes in GOVERNANCE.md and CONTRIBUTING.md** point to
+  MAINTAINERS.md for how decisions are made today.
+- **Wider differential fuzzing.** The fuzzer pauses and resumes participants,
+  lowers the mode ceiling, has members leave and join again, creates reviewed
+  tasks, and sends calls that fail the membership floor, so those paths are
+  compared across the two references.
+
+### Fixed
+
+- **The guides describe what the coordinators do today.** The README tour
+  switches the hash chain on, HANDBOOK says to run one active coordinator per
+  workspace because two writers lose entries, the IN_PRACTICE samples use only
+  calls both coordinators accept, and features that are specified and not yet
+  built are marked as such.
+- **SECURITY.md is one threat model that matches the specification and both
+  coordinators.** It replaces text that described an older message format, a
+  different chain formula, a key grace window and coordinator-signed
+  checkpoints, none of which exist. It sets out what each option switches on,
+  what the deployment supplies, which releases receive fixes and the known
+  limitations.
+- **A TypeScript coordinator started on a store brings back every workspace.**
+  It restored the stored records one at a time, each restore replacing the
+  last, so only one workspace came back, and the next call naming a lost
+  workspace re-created it empty and overwrote its stored log.
+- **Every typed collection on a workspace is rebuilt when a store is loaded.**
+  `overrides` and `route_decisions` came back as plain dicts in the Python
+  reference, which broke the first attribute read after a restart.
+- **A captured snapshot no longer follows live state.** `control.snapshot`
+  held references to the workspace's own mutable structures, so later changes
+  reached the saved snapshot. The capture is copied, and restored scopes are
+  copied back, so the content and its hash stay as they were at the capture.
+- **`audit.read` reports where the next read starts.** A `range.to_seq` past
+  the end of the log came back as `next_seq`, so a reader paging forward from
+  it skipped every entry written after its read. `next_seq` is the length of
+  the log in that case.
+- **The two references refuse the same JSON Patch in the same words.** Python
+  quoted with apostrophes and named Python types, TypeScript quoted with
+  double quotes and named JavaScript types. Both now speak JSON, and a shared
+  vector file holds every message.
+- **`remove` and `replace` at the position after the last array element are
+  refused in both references.** RFC 6902 admits `-` for `add` alone.
+  TypeScript compared the token numerically, so `remove` deleted the first
+  element and `replace` reported success without changing anything, and the
+  same `decide.override` produced a different corrected artefact in each
+  reference.
+- **`whisper.answer` matches an option the same way in both references.** A
+  null `answer_option` is refused with `-32602`, an option id matches only an
+  equal id of the same JSON type, and the refusal shows the option as JSON. An
+  empty answer is no answer in both, and `whisper.ask` refuses `options` that
+  are not a list.
+- **`workspace.describe` answers the same on both references.** Python sent
+  `evidence_head: null` where TypeScript omitted the key. A workspace with no
+  chain has no head, and both omit it.
+- **The workspace descriptor schema describes the descriptor.** It required
+  fields neither reference sends and declared none of `profiles`,
+  `audit_count`, `task_count`, `override_count` or `routing_policy_uri`, which
+  both send. A test in each reference now holds the two together.
+- **The `chap-conformance` GitHub Action runs.** It passed a `--profiles`
+  argument the harness refuses, so every run failed before testing anything.
+  The `profiles` input is replaced by `core-only`, the default `ref` is the
+  release the action ships in, and the inputs reach the script through the
+  environment.
+- **`reference/core-plus-review` holds every actor to membership** and keeps
+  the review requirement on escalation. It checked membership on
+  `review.request` and the review decisions alone, so a non-member could
+  create, update and complete tasks, escalate them and write a leave.
+- **The reference servers keep the log rules.** `reference/core` and
+  `reference/core-plus-review` recorded reads, which core/SPEC.md 3.2 forbids.
+  Both leave reads off the log and accept the `outcome` filter, and
+  `reference/core-plus-review` records governed refusals and answers a
+  resubmitted refusal as the coordinators do.
+- **The authorisation walkthrough runs.** It passed `confidence` as `0.82`,
+  which the canonical number rule refuses, so it stopped at `task.complete`.
 
 ---
 

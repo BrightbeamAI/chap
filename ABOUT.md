@@ -35,7 +35,7 @@ CHAP is two layers, and you adopt them in sequence.
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-Core is enough on its own: a Core deployment is a real, useful CHAP deployment. It does not meet a 0.2 conformance level by itself; see [Conformance](#conformance). Profiles get added only when their specific capability is needed.
+Core is enough on its own: a Core deployment is a real, useful CHAP deployment. It does not meet a conformance level by itself; see [Conformance](#conformance). Profiles get added only when their specific capability is needed.
 
 The common adoption path:
 
@@ -106,11 +106,11 @@ CHAP **is** the small set of common verbs that every team rebuilds in their own 
 
 ## Status
 
-CHAP is a working draft (0.2). Concretely:
+CHAP is a working draft (0.3). Concretely:
 
 - Two reference coordinators, in TypeScript at [`packages/coordinator/`](./packages/coordinator/) and Python at [`packages/coordinator-py/`](./packages/coordinator-py/), implement the same methods, and a differential fuzzer checks that they answer and log alike. The conformance harness covers Core and `review/1.0` and runs against the Python coordinator and a standalone TypeScript server.
 - Stable enough for experimentation and early production pilots, after reading the known limitations in [`SECURITY.md`](./SECURITY.md) §8.
-- Neither reference coordinator meets a 0.2 conformance level: Minimal needs `participant.describe`, and Recommended needs `capture.append` and `audit.verify`, all specified and not yet built. Milestone 0.4 replaces the levels with conformance by profile.
+- Neither reference coordinator meets a conformance level: Minimal needs `participant.describe`, and Recommended needs `capture.append` and `audit.verify`, all specified and not yet built. Milestone 0.4 replaces the levels with conformance by profile.
 - Before 1.0 a minor release may break things, and its changelog lists each break with a migration. From 1.0 the specification follows Semantic Versioning ([`ROADMAP.md`, Version numbers](./ROADMAP.md#version-numbers)).
 - Profile surfaces evolve faster than Core. Core is more stable; profile API surface should be expected to change.
 - Deployments needing strict stability guarantees should wait for 1.0.
@@ -119,9 +119,9 @@ The full Status statement is in [`SPECIFICATION.md`](./SPECIFICATION.md#status-o
 
 ## Conformance
 
-Implementing every Core method and the wire format does not meet a level under the 0.2 text: the **Minimal** level in [`SPECIFICATION.md`](./SPECIFICATION.md#17-conformance) §17 also needs Ed25519 signing, the hash-chained log, `participant.describe` and three `review/1.0` methods. Attest exactly what you implement and which harness tests pass.
+Implementing every Core method and the wire format does not meet a level under the 0.3 text: the **Minimal** level in [`SPECIFICATION.md`](./SPECIFICATION.md#17-conformance) §17 also needs Ed25519 signing, the hash-chained log, `participant.describe` and three `review/1.0` methods. Attest exactly what you implement and which harness tests pass.
 
-Conformance levels in 0.2 are **Minimal** and **Recommended**, with **Full** planned. Full needs an interop run against an independently authored implementation (the two references here share authorship). A common base for production deployments is Core, `review/1.0` and `modes/1.0`.
+Conformance levels in 0.3 are **Minimal** and **Recommended**, with **Full** planned. Full needs an interop run against an independently authored implementation (the two references here share authorship). A common base for production deployments is Core, `review/1.0` and `modes/1.0`.
 
 The harness can write an [in-toto attestation](https://github.com/in-toto/attestation) (`--attest`). See [`conformance/conformance-checklist.md`](./conformance/conformance-checklist.md) and [`conformance/test-vectors.md`](./conformance/test-vectors.md).
 

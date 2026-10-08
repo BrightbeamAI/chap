@@ -35,7 +35,7 @@ and only when, they appear in all capitals.
 [RFC 2119]: https://www.rfc-editor.org/rfc/rfc2119
 [RFC 8174]: https://www.rfc-editor.org/rfc/rfc8174
 
-**Maturity.** CHAP 0.2 is a public **Draft**. The protocol surface,
+**Maturity.** CHAP 0.3 is a public **Draft**. The protocol surface,
 schemas, and reference implementations are stable enough for
 experimentation and early production pilots; they are not yet
 sufficient for a normative conformance claim. Specifically: the
@@ -228,7 +228,7 @@ Every CHAP message is a JSON object conforming to
 
 ```json
 {
-  "chap": "0.2",
+  "chap": "0.3",
   "id": "01HZ9YWQ7K3X8M2V4N6P8R0T2A",
   "ts": "2026-05-17T09:14:22.184Z",
   "workspace": "wsp_support_triage",
@@ -1722,7 +1722,7 @@ contains exactly one envelope. The subprotocol identifier is
 `chap.v1`. Initial connection requires an `Authorization` header
 carrying the OIDC ID token or service credential.
 
-> The v0.2 reference implementations use plain HTTP POST; a
+> The reference implementations use plain HTTP POST; a
 > WebSocket reference binding is planned for a future revision.
 
 ### 14.3 HTTP+SSE binding (RECOMMENDED)
@@ -2068,7 +2068,7 @@ A **recommended** implementation additionally:
 A **full** level is reserved for a future revision of this
 specification. Reaching Full requires: implementation of all methods
 in the catalogue including the profile-defined methods marked
-*specified* in the v0.2 method index; A2A composition (§16.2);
+*specified* in the method index; A2A composition (§16.2);
 external evidence anchoring via `audit-scitt/1.0`; and successful
 execution of the published interop test suite against a second,
 independently authored implementation. The Python coordinator and a

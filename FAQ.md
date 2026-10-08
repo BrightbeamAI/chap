@@ -126,7 +126,7 @@ the audit happens to record.
 
 ### Can I implement Core and call myself CHAP-compliant?
 
-Not under the 0.2 text: the **Minimal** level in
+Not under the 0.3 text: the **Minimal** level in
 [SPECIFICATION.md §17](./SPECIFICATION.md#17-conformance) also needs
 Ed25519 signing, the hash-chained log, `participant.describe` and
 three `review/1.0` methods. Attest exactly what you implement and

@@ -8,7 +8,7 @@ agents (Azure AI Foundry, Amazon Bedrock AgentCore, Google ADK, the
 rest) can discover the Coordinator's capabilities via its Agent Card
 and delegate work to it.
 
-Spec target: A2A 1.0 (current stable). CHAP 0.2.
+Spec target: A2A 1.0 (current stable). CHAP 0.3.
 
 Usage::
 
@@ -92,7 +92,7 @@ def make_chap_agent_card(
         "can discover and drive workspaces, tasks, reviews, deliberations, "
         "handoffs, and audit operations."
     ),
-    version: str = "0.2.13",
+    version: str = "0.3.0",
     skill_filter: Callable[[str], bool] | None = None,
 ) -> AgentCard:
     """Build the AgentCard advertised at ``/.well-known/agent-card.json``.

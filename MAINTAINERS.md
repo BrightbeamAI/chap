@@ -6,7 +6,7 @@ Referenced by [`GOVERNANCE.md`](./GOVERNANCE.md) §2.1,
 
 ## Current state
 
-CHAP 0.2 is a public draft maintained by two people.
+CHAP 0.3 is a public draft maintained by two people.
 
 Arsalan Shahid and Bogdan Castraveti maintain the specification, schemas and
 reference implementations, review and merge changes, and run releases.

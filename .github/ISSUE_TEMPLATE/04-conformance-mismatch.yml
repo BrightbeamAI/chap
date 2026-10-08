@@ -21,14 +21,14 @@ body:
     attributes:
       label: First implementation
       description: Name and version. Include your own if it is a third-party implementation.
-      placeholder: chap-coordinator 0.2.9 (Python)
+      placeholder: chap-coordinator 0.3.0 (Python)
     validations:
       required: true
   - type: input
     id: impl_b
     attributes:
       label: Second implementation
-      placeholder: "@brightbeamai/chap-coordinator 0.2.9 (TypeScript)"
+      placeholder: "@brightbeamai/chap-coordinator 0.3.0 (TypeScript)"
     validations:
       required: true
   - type: textarea

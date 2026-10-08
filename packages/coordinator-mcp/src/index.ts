@@ -5,7 +5,7 @@
  * instance and exposes every CHAP method as an MCP tool.
  *
  * Spec target: MCP 2026-07-28 (current), serving MCP 2025-11-25
- * clients as well. CHAP 0.2.
+ * clients as well. CHAP 0.3.
  *
  * Usage (stdio):
  *
@@ -14,7 +14,7 @@
  *   import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
  *
  *   const coord = new Coordinator({ ... });
- *   const server = makeChapMcpServer(coord, { name: "chap", version: "0.2.13" });
+ *   const server = makeChapMcpServer(coord, { name: "chap", version: "0.3.0" });
  *   await server.connect(new StdioServerTransport());
  *
  * Usage (Streamable HTTP): see reference/mcp-server-ts/server.ts.
@@ -96,7 +96,7 @@ export const ServerDiscoverRequestSchema = z.object({
 export interface ChapMcpOptions {
   /** Server name advertised to MCP clients. Default: "chap". */
   name?: string;
-  /** Server version. Default: "0.2.13". */
+  /** Server version. Default: "0.3.0". */
   version?: string;
   /** Override the list of CHAP methods to expose. Default: all 39. */
   toolFilter?: (toolName: string) => boolean;
@@ -113,7 +113,7 @@ export interface ChapMcpOptions {
 export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = {}): Server {
   const serverInfo = {
     name:    options.name    ?? "chap",
-    version: options.version ?? "0.2.13",
+    version: options.version ?? "0.3.0",
   };
 
   const server = new Server(

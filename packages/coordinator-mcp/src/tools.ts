@@ -185,8 +185,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "joining, leaving and resuming.",
 
   "chap.control.resume":
-    "Resume work paused at the same scope: a task returns to in_progress, a participant can be assigned tasks " +
-    "again, a workspace returns to active.",
+    "Resume work paused at the same scope: a task returns to the state it held at the pause, a participant " +
+    "can be assigned tasks again, a workspace returns to active.",
 
   "chap.control.cancel":
     "Cancel a task. Cancelled is terminal, and a task that has already settled cannot be cancelled.",

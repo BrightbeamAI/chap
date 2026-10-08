@@ -64,7 +64,7 @@ def _build_statement(workspace_id: str, record: dict, issuer: str) -> dict:
                 "sub": workspace_id,
                 "iat": None,
             },
-            "content-type": "application/chap+json;version=0.2",
+            "content-type": "application/chap+json;version=0.3",
         },
         "payload": payload_canonical,
         "signature": "<deployment-supplied>",
