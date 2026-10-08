@@ -415,12 +415,11 @@ role-to-method policy you configure above:
 1. **Membership.** Membership (`-32011`) is checked for
    `task.create`, `task.update`, `task.complete`, the `review/1.0`
    methods, `workspace.set_profiles` and every control, deliberation,
-   handoff and whisper method. The `routing/1.0` methods and
-   `participant.leave` do not check it yet, so a non-member's routing
-   call is accepted and recorded; `workspace.create`,
-   `participant.join`, `audit.submit_to_scitt` and the reads are exempt
-   by design. The `requireReadMembership` option adds the check to
-   `audit.read` and `workspace.describe`; the rest is always on.
+   handoff and whisper method, and from 0.3.0 for `participant.leave`
+   and the `routing/1.0` methods. `workspace.create`, `participant.join`,
+   `audit.submit_to_scitt` and the reads are exempt by design. The
+   `requireReadMembership` option adds the check to `audit.read` and
+   `workspace.describe`; the rest is always on.
 2. **Reviewer-set eligibility (with `review/1.0`).** A review decision
    (`decide.*`, `abstain.declare`) is accepted only from a member who was
    named in the review's `to` set. A member who was not asked to review
@@ -588,10 +587,16 @@ When something goes wrong with an agent:
 }
 ```
 
-New tasks assigned to the agent are refused with `-32063` from now
-on. Tasks already in flight carry on: the coordinator echoes
-`in_flight_policy` and leaves them alone, so nothing is abandoned
-half-done.
+From now on no new task is assigned to the agent. `task.create` and
+`control.supersede` refuse it as an assignee with `-32063`. From 0.3.0
+`escalate.raise` and `handoff.accept` refuse it too, and `task.route`
+never assigns it. Tasks already in flight carry on: the coordinator
+echoes `in_flight_policy` and leaves them alone, so nothing is abandoned
+half-done. The pause binds an agent that cooperates. The agent can still
+act on its tasks and call any other method, `control.resume` on itself
+included. Where signatures are required, revoking its keys with
+`participant.revoke_key` stops its signed calls until it registers
+another key.
 
 ### 11.2 Demote the mode
 

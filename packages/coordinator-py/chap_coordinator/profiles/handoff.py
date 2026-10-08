@@ -113,6 +113,12 @@ def register_handoff(coord: "Coordinator") -> None:
             if acceptor not in ws.members:
                 return {"error": rpc_error(E.HANDOFF_RECIPIENT_NOT_MEMBER,
                                            "Acceptor is not a workspace member")}
+        # Accepting makes the acceptor the assignee. A paused participant is
+        # assigned no new tasks (control/1.0), so it cannot take tasks this
+        # way.
+        if ws.members[acceptor].paused:
+            return {"error": rpc_error(E.CONTROL_WORKSPACE_PAUSED,
+                                       f"Acceptor {acceptor} is paused")}
 
         # Omission accepts all proposed tasks; an explicit empty selection
         # is invalid and must not record a handoff with no ownership transfer.

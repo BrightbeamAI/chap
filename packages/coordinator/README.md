@@ -220,7 +220,10 @@ const coord = new Coordinator({
 
 Every call to `task.route`, `review.depth`, and `escalate.auto`
 emits a `route_decision` artefact. `task.route` also updates the
-task's `assignee`.
+task's `assignee`. The caller must be a workspace member. The default
+policy takes the first candidate that is a member and is not paused; a
+`routingPolicy` selection that is not a member is refused with
+`-32510`, and one that is paused with `-32063`.
 
 ## Audit and SCITT (audit-scitt/1.0)
 

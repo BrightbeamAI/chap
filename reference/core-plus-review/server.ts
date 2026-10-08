@@ -367,11 +367,15 @@ function requireFields(p: Params, fields: string[]): string | null {
 }
 
 // Authorisation preconditions (SPECIFICATION.md S6.3.1, profiles/review.md).
-// The actor (`from`) of every method other than participant.join MUST be a
-// joined member; for review decisions it MUST also be an addressed reviewer.
+// The actor (`from`) of every method other than workspace.create,
+// participant.join and the reads MUST be a joined member; for review
+// decisions it MUST also be an addressed reviewer.
 function requireMember(ws: Workspace, sender: unknown): ReturnType<typeof err> | null {
-  if (typeof sender !== "string" || !ws.members.has(sender as ParticipantUri)) {
-    return err(E.NOT_AUTHORISED, `Not a workspace member: ${String(sender)}`);
+  if (typeof sender !== "string") {
+    return err(E.NOT_AUTHORISED, "Not a workspace member: from is not a participant URI");
+  }
+  if (!ws.members.has(sender as ParticipantUri)) {
+    return err(E.NOT_AUTHORISED, `Not a workspace member: ${sender}`);
   }
   return null;
 }
@@ -431,6 +435,8 @@ const handlers: Record<string, Handler> = {
   "participant.leave": (p) => {
     const ws = getWorkspace(p.workspace as string);
     if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
+    const notMember = requireMember(ws, p.from);
+    if (notMember) return { error: notMember };
     ws.members.delete(p.from as string);
     return { result: { left: true } };
   },
@@ -440,6 +446,8 @@ const handlers: Record<string, Handler> = {
     if (missing) return { error: err(E.PARAMS, `Missing field: ${missing}`) };
     const ws = getWorkspace(p.workspace as string);
     if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
+    const notMember = requireMember(ws, p.from);
+    if (notMember) return { error: notMember };
 
     const assignee = (p.assignee as string) ?? (p.to as string);
     if (!assignee || !ws.members.has(assignee)) {
@@ -463,6 +471,8 @@ const handlers: Record<string, Handler> = {
   "task.update": (p) => {
     const ws = getWorkspace(p.workspace as string);
     if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
+    const notMember = requireMember(ws, p.from);
+    if (notMember) return { error: notMember };
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: err(E.PARAMS, `Unknown task`) };
 
@@ -496,6 +506,8 @@ const handlers: Record<string, Handler> = {
   "task.complete": (p) => {
     const ws = getWorkspace(p.workspace as string);
     if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
+    const notMember = requireMember(ws, p.from);
+    if (notMember) return { error: notMember };
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: err(E.PARAMS, `Unknown task`) };
 
@@ -744,6 +756,8 @@ const handlers: Record<string, Handler> = {
     if (missing) return { error: err(E.PARAMS, `Missing field: ${missing}`) };
     const ws = getWorkspace(p.workspace as string);
     if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
+    const notMember = requireMember(ws, p.from);
+    if (notMember) return { error: notMember };
     const orig = ws.tasks.get(p.original_task_id as string);
     if (!orig) return { error: err(E.PARAMS, `Unknown original task`) };
 
@@ -761,6 +775,9 @@ const handlers: Record<string, Handler> = {
       input: (nt.input as Record<string, unknown>) ?? {},
       created_at: now, updated_at: now,
       supersedes: orig.id,
+      // Escalating hands the work on and keeps its review: the successor
+      // requires review when the original did, as in both coordinators.
+      ...(orig.review_required ? { review_required: true } : {}),
       history: [{ ts: now, from: p.from as string, state: "created", note: `escalated from ${orig.id}` }],
     });
     orig.state = "escalated";

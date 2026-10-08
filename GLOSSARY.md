@@ -27,8 +27,8 @@ the actor MUST be a joined member of the named workspace (the error table
 calls a breach `unknown_participant`; the reference implementations return
 `not_authorised`, -32011). Both coordinators check this for the Core task
 methods, the `review/1.0` methods, `workspace.set_profiles` and every
-control, deliberation, handoff and whisper method. The `routing/1.0`
-methods and `participant.leave` do not check it yet; `workspace.create`,
+control, deliberation, handoff and whisper method, and from 0.3.0 for
+`participant.leave` and the `routing/1.0` methods. `workspace.create`,
 `participant.join`, `audit.submit_to_scitt` and the reads are exempt by
 design. See SPECIFICATION.md S6.3.1.
 

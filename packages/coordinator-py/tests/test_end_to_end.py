@@ -70,11 +70,13 @@ def test_full_lifecycle_every_profile(coord):
     assert r["result"]["answered"] is True
 
     # ----- review.depth + escalate.auto + task.route (routing/1.0) -----
-    r = send(coord, "review.depth", workspace="wsp_e2e", task_id=tid)
+    r = send(coord, "review.depth", workspace="wsp_e2e", task_id=tid,
+             **{"from": "human:alice@x"})
     assert r["result"]["depth"] in ("skip", "spot_check", "full")
 
     r = send(coord, "escalate.auto", workspace="wsp_e2e", task_id=tid,
-             default_escalation_target="human:bob@x")
+             default_escalation_target="human:bob@x",
+             **{"from": "human:alice@x"})
     assert r["result"]["escalate"] in (True, False)
 
     # ----- review.request + decide.override (review/1.0) -----

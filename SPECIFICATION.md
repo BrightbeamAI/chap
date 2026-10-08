@@ -574,9 +574,7 @@ member. The exemptions are:
   `audit.submit_to_scitt`.
 
 Every other method is bound by it, the `routing/1.0` methods and
-`participant.leave` included; neither reference yet enforces it for
-`participant.leave`, `task.route`, `review.depth` or `escalate.auto`.
-The refusal is `-32011` (`not_authorised`,
+`participant.leave` included. The refusal is `-32011` (`not_authorised`,
 [`profiles/review.md`](./profiles/review.md) §5), and
 `participant.rotate_key` refuses a non-member with `-32071`. Enforcing
 the precondition makes the audit log's attribution sound: a recorded
@@ -604,8 +602,7 @@ here applies whether or not those profiles are in force.
 Legitimately admitting a new actor (an escalation target, or an
 emergency "break-glass" approver) is done by joining them first, which
 records the entry into the workspace as its own audit event. Outside
-the exemptions above and those four methods, there is no path by which
-a non-member acts; the
+the exemptions above, there is no path by which a non-member acts; the
 exceptional nature of an admission is captured in how, and under what
 role, the Participant joined.
 
@@ -829,7 +826,9 @@ A task whose review is required does not complete on `task.complete`. The
 call opens a review instead, holding the submitted output as the artefact
 under review, and only a reviewer decision then reaches `completed`. Review
 is required when the task carries `review_required`, or when it runs in
-`trial` mode on a workspace that has loaded `modes/1.0`.
+`trial` mode on a workspace that has loaded `modes/1.0`. The successor that
+`escalate.raise` or `control.supersede` makes requires review when the task
+it replaces did, so neither removes a required review.
 
 `task.complete` reads no reviewer list from `to`, so the Coordinator
 selects the reviewer set: the members of `type: "human"` other than the
@@ -1458,7 +1457,9 @@ defaults to the mode of the task replaced. It MAY be lower or higher
 than the workspace's mode (e.g. running a single task in `shadow`
 inside an otherwise `production` workspace, for debugging) and MUST NOT
 exceed the `mode_ceiling` in force when it is created. `escalate.raise`
-gives the new task the mode of the task it escalates.
+gives the new task the mode `new_task.mode` names, or else the mode of the
+task it escalates, and refuses the escalation with `-32040` when that mode
+is above the ceiling in force.
 
 ---
 

@@ -500,7 +500,8 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
         Whether a task made from this spec requires review, as the coordinator
         decides it for task.create and control.supersede alike: a trial task
         under modes/1.0 does regardless, otherwise the spec's own flag, and
-        otherwise the coordinator leaves it unset.
+        otherwise the coordinator leaves it unset. escalate.raise passes an
+        empty spec, since it reads no flag from its new_task.
         """
         if mode == "trial" and any(x == "modes" or x.startswith("modes/") for x in ws_profiles):
             return True
@@ -742,13 +743,20 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
                 old.state, old.settled_at = "escalated", ts
             spec = p.get("new_task") if isinstance(p.get("new_task"), dict) else {}
             # The successor inherits the original's kind where the spec names
-            # none, and its mode always. The coordinator leaves review_required
-            # at its default here.
-            inherited = {"mode"} | ({"kind"} if not spec.get("kind") else set())
+            # none, and its mode where the spec names none. It requires review
+            # when the original did, and otherwise under the rule task.create
+            # applies to its mode. The coordinator reads no review_required
+            # from the spec.
+            mode = spec.get("mode") or (old.mode if old else None)
+            keeps_review = bool(old is not None and old.review_required)
+            inherited = ({"mode"} if not spec.get("mode") else set()) \
+                | ({"kind"} if not spec.get("kind") else set()) \
+                | ({"review_required"} if keeps_review else set())
             created(_Creation(
                 pos=pos, kind=spec.get("kind") or (old.kind if old else None),
                 delegator=actor, original_assignee=spec.get("assignee"),
-                assignee=spec.get("assignee"), mode=old.mode if old else None,
+                assignee=spec.get("assignee"), mode=mode,
+                review_required=True if keeps_review else review_rule({}, mode),
                 created_at=ts, supersedes=orig, inherited=frozenset(inherited)))
 
         elif method == "control.cancel" and tid:
@@ -760,17 +768,20 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
             old.state, old.settled_at = "superseded", ts
             spec = p.get("successor_task") if isinstance(p.get("successor_task"), dict) else {}
             # A successor is a created task and is bound as one: it takes the
-            # original's assignee and mode where the spec names none, and the
-            # same review rule task.create applies.
+            # original's assignee and mode where the spec names none, keeps
+            # the original's review requirement, and otherwise meets the same
+            # review rule task.create applies.
             assignee = spec.get("assignee") or old.assignee
             mode = spec.get("mode") or old.mode or ws_mode
+            keeps_review = bool(old.review_required)
             inherited = ({"assignee"} if not spec.get("assignee") else set()) \
-                | ({"mode"} if not spec.get("mode") else set())
+                | ({"mode"} if not spec.get("mode") else set()) \
+                | ({"review_required"} if keeps_review else set())
             created(_Creation(
                 pos=pos, kind=spec.get("kind"), delegator=actor,
                 original_assignee=assignee, assignee=assignee, mode=mode,
-                review_required=review_rule(spec, mode), created_at=ts, supersedes=tid,
-                inherited=frozenset(inherited)))
+                review_required=True if keeps_review else review_rule(spec, mode),
+                created_at=ts, supersedes=tid, inherited=frozenset(inherited)))
 
         elif method == "control.pause" and tid and p.get("scope", "task") == "task":
             t = task(tid)
@@ -1267,8 +1278,11 @@ def _merge_state(ix: _Index, chain: Chain) -> None:  # noqa: C901 - one block pe
         t.delegator = stored.get("delegator", t.delegator)
         t.mode = stored.get("mode", t.mode)
         t.supersedes = stored.get("supersedes", t.supersedes)
-        if stored.get("review_required") is not None:
-            t.review_required = stored["review_required"]
+        # A coordinator stores review_required only where it set it, so its
+        # absence is the coordinator's own unset value. The replay infers an
+        # escalated task's requirement from the task it replaces, and the
+        # stored value settles it.
+        t.review_required = stored.get("review_required")
         t.created_at = t.created_at or _ts(stored.get("created_at"))
         if t.confidence is None:
             t.confidence = _decimal(stored.get("confidence"))
@@ -1288,6 +1302,13 @@ def _merge_state(ix: _Index, chain: Chain) -> None:  # noqa: C901 - one block pe
             r.requested_at = r.requested_at or _ts(review.get("requested_at"))
             r.rule = review.get("rule") or r.rule
             r.requested_to = list(review.get("requested_to") or r.requested_to)
+        else:
+            # A coordinator keeps a review once it opens one, so a task it
+            # holds no review on never had one. A pass the replay opened with
+            # no decision in it was inferred, such as the review an escalated
+            # task's completion opens on a chain written before successors
+            # kept the requirement, and is dropped.
+            t.reviews = [r for r in t.reviews if r.decisions]
 
     # Overrides are matched to stored artefacts per task, in order: one
     # reviewer may correct the same task twice, so the pair (task, reviewer)

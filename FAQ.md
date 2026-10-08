@@ -311,9 +311,9 @@ issuer. There's no vendor dependency at the protocol layer.
 
 Two conditions, checked in order. First, the actor (`from`) must be a
 joined member of the workspace; a Coordinator refuses a review decision
-from a non-member with `-32011`. (Membership is not yet checked on every
-method: the `routing/1.0` methods and `participant.leave` accept a
-non-member.) Second, for a review decision specifically, the
+from a non-member with `-32011`. (Every method outside the exemptions in
+SPECIFICATION.md §6.3.1 checks membership, the `routing/1.0` methods and
+`participant.leave` from 0.3.0.) Second, for a review decision specifically, the
 actor must be one of the reviewers the review was addressed to in
 `review.request`'s `to` set. A member who was not addressed cannot
 decide that review. The `rule` field (`any_one_approves`, `all_approve`,

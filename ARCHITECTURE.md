@@ -140,9 +140,8 @@ decided in layers, innermost first:
 1. **Membership (Core).** The actor (`from`) must be a joined member of
    the Workspace. Both coordinators check this for the Core task methods,
    the `review/1.0` methods, `workspace.set_profiles` and every control,
-   deliberation, handoff and whisper method. The `routing/1.0` methods and
-   `participant.leave` do not check it yet, so a non-member's routing call
-   is accepted and recorded.
+   deliberation, handoff and whisper method, and from 0.3.0 for
+   `participant.leave` and the `routing/1.0` methods.
 2. **Eligibility (profile).** A profile may narrow who, among members,
    may invoke a given method. `review/1.0` requires that the actor of a
    review decision be one of the reviewers the review was addressed to;

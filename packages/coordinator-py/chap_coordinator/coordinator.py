@@ -73,6 +73,12 @@ PRIVILEGED_METHODS = frozenset({
 })
 
 
+# Methods outside the control, deliberate, handoff and whisper namespaces that
+# dispatch holds to the membership floor before the handler runs.
+_MEMBER_ONLY_METHODS = frozenset({
+    "task.route", "review.depth", "escalate.auto", "participant.leave",
+})
+
 # Read-only methods return workspace state but do not mutate it, so they are not
 # recorded in the audit chain -- recording a read would grow and re-link it.
 _READ_ONLY_METHODS = frozenset({
@@ -417,7 +423,7 @@ class Coordinator:
     # -- authorisation preconditions -----------------------------------
 
     @staticmethod
-    def _require_member(ws: Workspace, sender: str | None) -> dict | None:
+    def _require_member(ws: Workspace, sender: Any) -> dict | None:
         """Assert that ``sender`` is a joined member of ``ws``.
 
         Returns an error envelope fragment if not, else ``None``. Every
@@ -432,7 +438,15 @@ class Coordinator:
         OIDC_TOKEN_INVALID. The spec-vs-implementation error-table
         divergence is tracked separately.)
         """
-        if not sender or sender not in ws.members:
+        # A `from` that is not a string names nobody. It is answered in fixed
+        # words, so both references refuse it alike whatever was sent, and a
+        # list or object never reaches the membership lookup.
+        if not isinstance(sender, str):
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED,
+                "Not a workspace member: from is not a participant URI",
+            )}
+        if sender not in ws.members:
             return {"error": rpc_error(
                 E.NOT_AUTHORISED,
                 f"Not a workspace member: {sender}",
@@ -603,10 +617,14 @@ class Coordinator:
         # close a deliberation to finalize an outcome early. (The per-voter
         # eligibility check in deliberate.vote is separate and still applies.
         # Deployments needing a stricter role gate than membership layer it on
-        # top via an identity-* profile or application check.)
+        # top via an identity-* profile or application check.) The routing
+        # methods and participant.leave sit under the same floor
+        # (SPECIFICATION 6.3.1): without it a non-member could reassign a task
+        # with task.route, or write a leave to the log under any name.
         if (method.startswith("control.") or method.startswith("deliberate.")
                 or method.startswith("handoff.")
-                or method.startswith("whisper.")):
+                or method.startswith("whisper.")
+                or method in _MEMBER_ONLY_METHODS):
             ws_id = params.get("workspace") if isinstance(params, dict) else None
             ws = self.workspaces.get(ws_id) if isinstance(ws_id, str) else None
             if ws is not None:
@@ -829,8 +847,11 @@ class Coordinator:
         # Fail closed: a signature is present (checked above) and
         # require_signatures is on, so it must verify. If we cannot resolve
         # the context needed to verify it, reject rather than skip -- a
-        # signature we cannot check must never be treated as valid.
-        if not sender or not ws_id:
+        # signature we cannot check must never be treated as valid. A `from`
+        # or `workspace` that is not a string names nothing, so it counts as
+        # missing, and never reaches a lookup.
+        if (not isinstance(sender, str) or not sender
+                or not isinstance(ws_id, str) or not ws_id):
             return rpc_error(E.SIG_VERIFY_FAILED,
                              "Cannot verify signature: missing from/workspace")
 
@@ -887,9 +908,12 @@ class Coordinator:
     # -- step-up check (identity-oidc/1.0) ----------------------------
 
     def _check_step_up(self, params: dict) -> dict | None:
+        # A `from` or `workspace` that is not a string names no member to hold
+        # to step-up; the membership check answers such a call.
         ws_id = params.get("workspace")
         sender = params.get("from")
-        if not ws_id or not sender:
+        if (not isinstance(ws_id, str) or not isinstance(sender, str)
+                or not ws_id or not sender):
             return None
         ws = self.workspaces.get(ws_id)
         if not ws:
@@ -1216,7 +1240,7 @@ class Coordinator:
         if not_member:
             return not_member
         assignee = p.get("assignee") or p.get("to")
-        if not assignee or assignee not in ws.members:
+        if not isinstance(assignee, str) or assignee not in ws.members:
             return {"error": rpc_error(E.PARAMS, "Assignee not in workspace")}
 
         # control/1.0 participant-paused check
@@ -1224,13 +1248,19 @@ class Coordinator:
             return {"error": rpc_error(E.CONTROL_WORKSPACE_PAUSED,
                                        f"Assignee {assignee} is paused")}
 
-        # modes/1.0 ceiling check
+        # modes/1.0 ceiling check. A mode or review_required of the wrong type
+        # is refused, so both references read the same task from the same call.
+        if p.get("mode") is not None and not isinstance(p.get("mode"), str):
+            return {"error": rpc_error(E.PARAMS, "mode must be a string")}
         requested_mode = p.get("mode") or ws.mode
         if not mode_le(requested_mode, ws.mode_ceiling):
             return {"error": rpc_error(
                 E.MODE_CEILING_EXCEEDED,
                 f"Requested mode {requested_mode} exceeds ceiling {ws.mode_ceiling}",
             )}
+        if (p.get("review_required") is not None
+                and not isinstance(p.get("review_required"), bool)):
+            return {"error": rpc_error(E.PARAMS, "review_required must be a boolean")}
 
         task_id = self.ids.task_id()
         now = self.now_iso()
@@ -1716,21 +1746,41 @@ class Coordinator:
         not_member = self._require_member(ws, p.get("from"))
         if not_member:
             return not_member
-        orig = ws.tasks.get(p["original_task_id"])
+        orig_id = p["original_task_id"]
+        orig = ws.tasks.get(orig_id) if isinstance(orig_id, str) else None
         if not orig:
             return {"error": rpc_error(E.PARAMS, "Unknown original task")}
         if orig.state in ("completed", "cancelled", "superseded"):
             return {"error": rpc_error(
                 E.PARAMS, f"Cannot escalate a terminal task: {orig.state}")}
         nt = p["new_task"]
+        if not isinstance(nt, dict):
+            return {"error": rpc_error(E.PARAMS, "new_task must be an object")}
         assignee = nt.get("assignee")
-        if not assignee or assignee not in ws.members:
+        if not isinstance(assignee, str) or assignee not in ws.members:
             return {"error": rpc_error(E.PARAMS,
                                        "Escalation assignee not in workspace")}
+        named = nt.get("mode")
+        if named is not None and not isinstance(named, str):
+            return {"error": rpc_error(E.PARAMS, "new_task.mode must be a string")}
+        # The successor is a created task, so it meets the checks task.create
+        # and control.supersede apply: its assignee must not be paused, and its
+        # mode, the one new_task names or else the original's, must be within
+        # the ceiling in force now. Naming a lower mode is how work is
+        # escalated after the ceiling has been lowered.
+        if ws.members[assignee].paused:
+            return {"error": rpc_error(E.CONTROL_WORKSPACE_PAUSED,
+                                       f"Assignee {assignee} is paused")}
+        mode = named or orig.mode
+        if not mode_le(mode, ws.mode_ceiling):
+            return {"error": rpc_error(
+                E.MODE_CEILING_EXCEEDED,
+                f"Requested mode {mode} exceeds ceiling {ws.mode_ceiling}",
+            )}
 
         now = self.now_iso()
         new_id = self.ids.task_id()
-        ws.tasks[new_id] = Task(
+        new_task = Task(
             id=new_id,
             kind=nt.get("kind") or orig.kind,
             state="created",
@@ -1740,12 +1790,19 @@ class Coordinator:
             created_at=now,
             updated_at=now,
             supersedes=orig.id,
-            mode=orig.mode,
+            mode=mode,
             history=[TaskHistoryEntry(
                 ts=now, from_=p["from"], state="created",
                 note=f"escalated from {orig.id}",
             )],
         )
+        # Escalating hands the work on and keeps its review requirement. The
+        # successor requires review when the original did, and a trial task
+        # forces review under modes/1.0 as it does at task.create.
+        if orig.review_required or (ws.has_profile("modes")
+                                    and new_task.mode == "trial"):
+            new_task.review_required = True
+        ws.tasks[new_id] = new_task
         orig.state = "escalated"
         orig.updated_at = now
         orig.superseded_by = new_id

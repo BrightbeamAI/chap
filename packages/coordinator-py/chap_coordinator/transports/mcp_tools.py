@@ -47,7 +47,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "chap.abstain.declare":
         "Stand aside from a review this participant cannot decide, for example on a conflict of interest or for want of context. Use it in place of chap.decide.reject, which judges the work; abstaining judges nothing and leaves the artefact intact. It requires an open review addressed to the caller and answers -32010 otherwise. The task moves to abstained, which is not terminal: chap.escalate.raise or a fresh chap.review.request can still carry it forward.",
     "chap.escalate.raise":
-        "Hand a task upwards, where the current holder can act but should not decide alone. The original moves to escalated and is linked to a new task for whoever takes it on. Use chap.handoff.propose to pass work sideways without that link, and chap.control.supersede to replace a task rather than raise it. The successor starts with an empty input unless one is supplied, so restate whatever the new assignee needs. A completed, cancelled or superseded task cannot be escalated.",
+        "Hand a task upwards, where the current holder can act but should not decide alone. The original moves to escalated and is linked to a new task for whoever takes it on. Use chap.handoff.propose to pass work sideways without that link, and chap.control.supersede to replace a task outright. The successor starts with an empty input unless one is supplied, so restate whatever the new assignee needs. A completed, cancelled or superseded task cannot be escalated. The successor takes the mode new_task.mode names, or else the original's, and requires review when the original did, or when it is a trial task under modes/1.0. A paused assignee is refused with -32063, and a mode above the workspace's current ceiling with -32040; after the ceiling is lowered, name a mode within it.",
     "chap.whisper.ask":
         "Put one question to one or more participants, with a deadline and a default. If the deadline passes unanswered the default applies, so a task is never blocked waiting on a reply.",
     "chap.whisper.answer":
@@ -63,7 +63,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "chap.handoff.propose":
         "Propose handing one or more tasks to another participant or a group, with the context needed to pick them up. Every task must currently be assigned to the proposer.",
     "chap.handoff.accept":
-        "Accept a proposed handoff. The accepted tasks are reassigned to the accepting participant, which is the point at which responsibility actually moves. Omitting accepted_task_ids accepts all of them. Accepting resolves the proposal for good: a later accept or decline on the same handoff answers -32051.",
+        "Accept a proposed handoff. The accepted tasks are reassigned to the accepting participant, which is the point at which responsibility actually moves. Omitting accepted_task_ids accepts all of them. Accepting resolves the proposal for good: a later accept or decline on the same handoff answers -32051. A paused participant cannot accept and is refused with -32063.",
     "chap.handoff.decline":
         "Decline a proposed handoff. The tasks stay with the proposer and nothing is reassigned, which is the difference from chap.handoff.accept. Declining resolves the proposal for good: a later accept or decline on the same handoff answers -32051, and trying again means a fresh proposal. The reason is recorded so the proposer can route the work elsewhere.",
     "chap.control.pause":
@@ -77,11 +77,11 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "chap.control.rollback":
         "Restore workspace state from a snapshot. The mode ceiling and member roles are restored; the rollback is appended to the audit log rather than rewriting it.",
     "chap.control.supersede":
-        "Replace a task with a successor in one call. The original moves to superseded and stays linked to its replacement.",
+        "Replace a task with a successor in one call. The original moves to superseded and stays linked to its replacement. The successor requires review when the original did, whatever its own review_required says, and a paused assignee is refused with -32063.",
     "chap.control.set_mode_ceiling":
         "Set the highest operating mode tasks in this workspace may request. A task above the ceiling is refused.",
     "chap.task.route":
-        "Choose an assignee for a task from a list of candidates and reassign the task to the one selected. Use it where the choice itself belongs on the record: it writes a route_decision artefact naming the policy, the candidate chosen and the alternatives passed over, none of which is captured by setting assignee directly on chap.task.create. The default policy takes the first candidate that is a workspace member; an operator-supplied policy may choose on any basis.",
+        "Choose an assignee for a task from a list of candidates and reassign the task to the one selected. Use it where the choice itself belongs on the record: it writes a route_decision artefact naming the policy, the candidate chosen and the alternatives passed over, none of which is captured by setting assignee directly on chap.task.create. The default policy takes the first candidate that is a workspace member and is not paused. An operator-supplied policy may choose on any basis, and the call is refused with -32510 when its choice is not a member, or with -32063 when its choice is paused.",
     "chap.review.depth":
         "Decide how much review a task warrants, skip, spot_check or full, from its routing hints. Records a route_decision artefact giving the rule that produced the answer.",
     "chap.escalate.auto":

@@ -339,7 +339,8 @@ def test_review_depth_high_criticality_returns_full(ready):
     coord.workspaces["wsp_p"].tasks[tid].routing_hints = {
         "criticality": "critical", "confidence": "0.9",
     }
-    r = send("review.depth", workspace="wsp_p", task_id=tid)
+    r = send("review.depth", workspace="wsp_p", task_id=tid,
+             **{"from": "human:alice@x"})
     assert r["result"]["depth"] == "full"
     assert r["result"]["decision_artefact"].startswith("art_")
 
@@ -349,7 +350,8 @@ def test_review_depth_low_crit_high_conf_skips(ready):
     coord.workspaces["wsp_p"].tasks[tid].routing_hints = {
         "criticality": "low", "confidence": "0.97",
     }
-    r = send("review.depth", workspace="wsp_p", task_id=tid)
+    r = send("review.depth", workspace="wsp_p", task_id=tid,
+             **{"from": "human:alice@x"})
     assert r["result"]["depth"] == "skip"
 
 
@@ -358,7 +360,8 @@ def test_review_depth_spot_check_has_sampling(ready):
     coord.workspaces["wsp_p"].tasks[tid].routing_hints = {
         "criticality": "low", "confidence": "0.85",
     }
-    r = send("review.depth", workspace="wsp_p", task_id=tid)
+    r = send("review.depth", workspace="wsp_p", task_id=tid,
+             **{"from": "human:alice@x"})
     assert r["result"]["depth"] == "spot_check"
     assert 0.0 < r["result"]["sampling_probability"] <= 1.0
 
@@ -366,7 +369,8 @@ def test_review_depth_spot_check_has_sampling(ready):
 def test_task_route_picks_eligible_and_updates_assignee(ready):
     coord, send, tid = ready
     r = send("task.route", workspace="wsp_p", task_id=tid,
-             candidates=["nobody@nowhere", "human:bob@x"])
+             candidates=["nobody@nowhere", "human:bob@x"],
+             **{"from": "human:alice@x"})
     assert r["result"]["selected"] == "human:bob@x"
     assert coord.workspaces["wsp_p"].tasks[tid].assignee == "human:bob@x"
     # And a route_decision artefact was emitted
@@ -376,7 +380,8 @@ def test_task_route_picks_eligible_and_updates_assignee(ready):
 
 def test_task_route_candidates_empty(ready):
     coord, send, tid = ready
-    r = send("task.route", workspace="wsp_p", task_id=tid, candidates=[])
+    r = send("task.route", workspace="wsp_p", task_id=tid, candidates=[],
+             **{"from": "human:alice@x"})
     assert r["error"]["code"] == -32513  # CANDIDATES_EMPTY
 
 
@@ -386,7 +391,8 @@ def test_escalate_auto_critical_triggers(ready):
         "criticality": "critical", "confidence": "0.9",
     }
     r = send("escalate.auto", workspace="wsp_p", task_id=tid,
-             default_escalation_target="human:bob@x")
+             default_escalation_target="human:bob@x",
+             **{"from": "human:alice@x"})
     assert r["result"]["escalate"] is True
     assert r["result"]["to"] == "human:bob@x"
 
@@ -523,7 +529,11 @@ def test_escalate_auto_refusal_records_no_artefact():
     audit_before, rd_before = len(ws.audit), len(ws.route_decisions)
 
     r = send("escalate.auto", workspace="w", task_id=tid,
-             default_escalation_target="human:ghost")
+             default_escalation_target="human:ghost",
+             **{"from": "human:alice"})
     assert r["error"]["code"] == -32516
     assert len(ws.route_decisions) == rd_before
-    assert len(ws.audit) == audit_before
+    # A member's refused call is recorded as a refusal (SPECIFICATION 10.1),
+    # and nothing else reaches the log.
+    assert len(ws.audit) == audit_before + 1
+    assert ws.audit[-1].outcome == {"status": "refused", "code": -32516}

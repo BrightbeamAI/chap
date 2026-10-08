@@ -18,7 +18,7 @@ log as a first-class entry.
 | `control.supersede`          | request | yes        | Replace one task with another.                |
 | `control.snapshot`           | request | yes        | Produce a point-in-time workspace artefact.   |
 | `control.rollback`           | request | yes        | Restore workspace state from a snapshot. Appends, does not truncate. |
-| `control.set_mode_ceiling`   | request | yes        | Change the workspace's mode ceiling to `new_ceiling`. Works without `modes`; `task.create` enforces the ceiling either way. |
+| `control.set_mode_ceiling`   | request | yes        | Change the workspace's mode ceiling to `new_ceiling`. Works without `modes`; `task.create`, `control.supersede` and `escalate.raise` enforce the ceiling either way. |
 
 ---
 
@@ -29,7 +29,7 @@ log as a first-class entry.
 | Scope         | Effect                                                          |
 |---------------|-----------------------------------------------------------------|
 | `task`        | A specific task stops accepting updates.                        |
-| `participant` | A specific participant stops being assigned new tasks; in-flight tasks complete by default. Neither reference yet consults the pause in `task.route`, `escalate.raise` or `handoff.accept`. |
+| `participant` | A specific participant stops being assigned new tasks; in-flight tasks complete by default. `task.create`, `control.supersede` and `escalate.raise` refuse a paused assignee with `-32063`, `handoff.accept` refuses a paused acceptor with `-32063`, and `task.route` passes over a paused candidate, and refuses with `-32063` when an operator policy picks one. Any member can resume the participant, the participant included. |
 | `workspace`   | The workspace refuses every call with `-32063` except `workspace.create`, `workspace.describe`, `audit.read`, `participant.join`, `participant.leave` and `control.resume`. |
 
 At task scope, `control.resume` returns the task to the state it held at the
@@ -198,7 +198,11 @@ any state, terminal states included (SPECIFICATION §8.1):
 ```
 
 The old task transitions to `superseded` (terminal); the successor
-is created with `supersedes` linkage.
+is created with `supersedes` linkage. The successor requires review when
+the old task did, or when it is a `trial` task on a workspace that
+advertises `modes/1.0`, whatever `successor_task.review_required` says, so
+superseding never removes a required review. Otherwise its own
+`review_required` applies.
 
 ---
 
@@ -219,7 +223,7 @@ enforcement is left to the deployment.
 | `-32060`  | Allocated for a stale step-up. The Coordinator answers that condition with `-32402` from `identity-oidc`, so this code is not returned. |
 | `-32061`  | `control.pause` or `control.cancel` on a `completed`, `declined`, `cancelled` or `superseded` task, or `control.resume` on a task that is not paused. A caller who is not a workspace member is refused with `-32011`. |
 | `-32062`  | Snapshot artefact not found.                             |
-| `-32063`  | The workspace is paused, or the named assignee is a paused participant. |
+| `-32063`  | The workspace is paused, or the participant a call would assign a task to is paused: the assignee of `task.create`, `control.supersede` or `escalate.raise`, the acceptor of `handoff.accept`, or the participant a `task.route` policy picks. |
 
 ---
 

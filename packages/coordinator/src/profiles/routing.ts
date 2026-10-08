@@ -42,7 +42,10 @@ export function registerRouting(coord: Coordinator): void {
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
-    const candidates = (p.candidates as string[]) ?? [];
+    if (p.candidates !== undefined && p.candidates !== null && !Array.isArray(p.candidates)) {
+      return { error: rpcError(E.PARAMS, "candidates must be a list") };
+    }
+    const candidates = (p.candidates as string[] | null | undefined) ?? [];
     if (!candidates.length) {
       return { error: rpcError(E.ROUTING_CANDIDATES_EMPTY, "candidates array was empty") };
     }
@@ -58,23 +61,40 @@ export function registerRouting(coord: Coordinator): void {
         return { error: rpcError(E.ROUTING_POLICY_UNREACHABLE, `routing policy error: ${msg}`) };
       }
     } else {
-      const eligible = candidates.filter(c => ws.members.has(c));
+      // A paused participant is assigned no new tasks (control/1.0), so the
+      // default policy passes over one as it passes over a non-member, and
+      // names it among the alternatives with that reason.
+      const memberOf = (c: unknown) => (typeof c === "string" ? ws.members.get(c) : undefined);
+      const eligible = candidates.filter(c => { const m = memberOf(c); return !!m && !m.paused; });
       if (!eligible.length) {
-        return { error: rpcError(E.ROUTING_NO_ELIGIBLE_ASSIGNEE, "No candidate is a workspace member") };
+        return { error: rpcError(E.ROUTING_NO_ELIGIBLE_ASSIGNEE, "No candidate is a workspace member who is not paused") };
       }
       selected = eligible[0];
+      const alternatives: Array<{ candidate: string; reason_excluded: string }> = [];
+      let chosen = false;
+      for (const c of candidates) {
+        const m = memberOf(c);
+        if (!m) continue;
+        if (m.paused) alternatives.push({ candidate: c, reason_excluded: "paused" });
+        else if (!chosen) chosen = true;
+        else alternatives.push({ candidate: c, reason_excluded: "not first eligible" });
+      }
       rationale = {
         policy_id: "default",
         hints_used: Object.keys(task.routing_hints ?? {}),
         summary: "default policy: first eligible candidate",
-        alternatives_considered: eligible.slice(1).map(c => ({
-          candidate: c, reason_excluded: "not first eligible",
-        })),
+        alternatives_considered: alternatives,
       };
     }
     if (!ws.members.has(selected)) {
       return { error: rpcError(E.ROUTING_NO_ELIGIBLE_ASSIGNEE,
         `Selected ${JSON.stringify(selected)} is not a member`) };
+    }
+    // An operator policy can pick a paused participant. Routing to one would
+    // assign a task to a participant whose work was stopped, so it is refused
+    // as task.create refuses a paused assignee.
+    if (ws.members.get(selected)!.paused) {
+      return { error: rpcError(E.CONTROL_WORKSPACE_PAUSED, `Assignee ${selected} is paused`) };
     }
     task.assignee = selected;
     task.updated_at = coord.now();

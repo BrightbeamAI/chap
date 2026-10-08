@@ -21,6 +21,22 @@ one where it is until the tables or the analyses change.
   redaction hook applies to a refused call's parameters as it does to an
   accepted one's.
 
+### Changed
+
+- **A successor keeps its original's review requirement.** From 0.3.0 the
+  coordinators give the successor that `escalate.raise` or
+  `control.supersede` makes the review requirement of the task it replaces,
+  and require review of a trial successor of `escalate.raise` under
+  `modes/1.0`. The replay follows, so completing such a successor opens a
+  review in the tables as it does on the coordinator. Read with server state,
+  `review_required` is the coordinator's own value, unset where the
+  coordinator left it unset, and a review pass the replay inferred on a task
+  the coordinator holds no review on is dropped. Read from envelopes alone, a
+  chain written by an earlier coordinator shows a successor that coordinator
+  completed directly, the successor of a reviewed task or a trial successor
+  of `escalate.raise` under `modes/1.0`, as requiring review, in state
+  `review_requested` with outcome `open`.
+
 ### Fixed
 
 - **The `fulfils` edge reads the field where the protocol puts it.**

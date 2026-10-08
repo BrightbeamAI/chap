@@ -259,11 +259,11 @@ def register_control(coord: "Coordinator") -> None:
         # successor_task is an object describing the new task; the Coordinator
         # creates it as part of the supersede operation (per spec).
         new_spec = p.get("successor_task") or {}
-        if not new_spec or "kind" not in new_spec:
+        if not isinstance(new_spec, dict) or "kind" not in new_spec:
             return {"error": rpc_error(E.PARAMS,
                                        "successor_task must include kind")}
         assignee = new_spec.get("assignee") or old.assignee
-        if assignee not in ws.members:
+        if not isinstance(assignee, str) or assignee not in ws.members:
             return {"error": rpc_error(E.PARAMS,
                                        "successor assignee not in workspace")}
         # The successor is a created task, so the participant-paused check
@@ -276,12 +276,19 @@ def register_control(coord: "Coordinator") -> None:
         # The successor is a created task, so it is bound by the same modes/1.0
         # invariants as task.create: it must not exceed the workspace ceiling,
         # and a trial-mode task forces review on regardless of its own setting.
+        if new_spec.get("mode") is not None and not isinstance(new_spec.get("mode"), str):
+            return {"error": rpc_error(E.PARAMS,
+                                       "successor_task.mode must be a string")}
         requested_mode = new_spec.get("mode") or old.mode
         if not mode_le(requested_mode, ws.mode_ceiling):
             return {"error": rpc_error(
                 E.MODE_CEILING_EXCEEDED,
                 f"Requested mode {requested_mode} exceeds ceiling {ws.mode_ceiling}",
             )}
+        if (new_spec.get("review_required") is not None
+                and not isinstance(new_spec.get("review_required"), bool)):
+            return {"error": rpc_error(
+                E.PARAMS, "successor_task.review_required must be a boolean")}
 
         now = coord.now_iso()
         new_id = coord.ids.task_id()
@@ -301,9 +308,13 @@ def register_control(coord: "Coordinator") -> None:
                 note=f"supersedes {old.id}: {p.get('reason') or ''}",
             )],
         )
-        # Trial forces review only when the workspace opted into modes/1.0,
-        # matching task.create -- mode is inert without the profile.
-        if ws.has_profile("modes") and new_task.mode == "trial":
+        # A successor keeps the review requirement of the task it replaces,
+        # so superseding never removes a required review. Trial forces review
+        # only when the workspace opted into modes/1.0, matching task.create,
+        # since mode is inert without the profile. Otherwise the spec's own
+        # setting applies.
+        if old.review_required or (ws.has_profile("modes")
+                                   and new_task.mode == "trial"):
             new_task.review_required = True
         elif "review_required" in new_spec:
             new_task.review_required = bool(new_spec["review_required"])

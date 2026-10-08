@@ -289,7 +289,7 @@ test("review.depth: high criticality -> full", () => {
   c.workspaces.get("wsp_p")!.tasks.get(tid)!.routing_hints = {
     criticality: "critical", confidence: "0.9",
   };
-  const r = send("review.depth", { workspace: "wsp_p", task_id: tid });
+  const r = send("review.depth", { workspace: "wsp_p", from: "human:alice", task_id: tid });
   assert.equal((r.result as { depth: string }).depth, "full");
 });
 
@@ -298,7 +298,7 @@ test("review.depth: low crit + high conf -> skip", () => {
   c.workspaces.get("wsp_p")!.tasks.get(tid)!.routing_hints = {
     criticality: "low", confidence: "0.97",
   };
-  const r = send("review.depth", { workspace: "wsp_p", task_id: tid });
+  const r = send("review.depth", { workspace: "wsp_p", from: "human:alice", task_id: tid });
   assert.equal((r.result as { depth: string }).depth, "skip");
 });
 
@@ -307,7 +307,7 @@ test("review.depth: spot_check carries sampling_probability", () => {
   c.workspaces.get("wsp_p")!.tasks.get(tid)!.routing_hints = {
     criticality: "low", confidence: "0.85",
   };
-  const r = send("review.depth", { workspace: "wsp_p", task_id: tid });
+  const r = send("review.depth", { workspace: "wsp_p", from: "human:alice", task_id: tid });
   const out = r.result as { depth: string; sampling_probability: number };
   assert.equal(out.depth, "spot_check");
   assert.ok(out.sampling_probability > 0 && out.sampling_probability <= 1);
@@ -315,7 +315,7 @@ test("review.depth: spot_check carries sampling_probability", () => {
 
 test("task.route picks an eligible candidate and updates assignee", () => {
   const { c, send, tid } = setup();
-  const r = send("task.route", { workspace: "wsp_p", task_id: tid,
+  const r = send("task.route", { workspace: "wsp_p", from: "human:alice", task_id: tid,
     candidates: ["nobody@nowhere", "human:bob"] });
   assert.equal((r.result as { selected: string }).selected, "human:bob");
   assert.equal(c.workspaces.get("wsp_p")!.tasks.get(tid)!.assignee, "human:bob");
@@ -324,7 +324,7 @@ test("task.route picks an eligible candidate and updates assignee", () => {
 
 test("task.route: empty candidates -> -32513", () => {
   const { send, tid } = setup();
-  const r = send("task.route", { workspace: "wsp_p", task_id: tid, candidates: [] });
+  const r = send("task.route", { workspace: "wsp_p", from: "human:alice", task_id: tid, candidates: [] });
   assert.equal(r.error?.code, -32513);
 });
 
@@ -333,7 +333,7 @@ test("escalate.auto: critical triggers escalation", () => {
   c.workspaces.get("wsp_p")!.tasks.get(tid)!.routing_hints = {
     criticality: "critical", confidence: "0.9",
   };
-  const r = send("escalate.auto", { workspace: "wsp_p", task_id: tid,
+  const r = send("escalate.auto", { workspace: "wsp_p", from: "human:alice", task_id: tid,
     default_escalation_target: "human:bob" });
   const out = r.result as { escalate: boolean; to: string };
   assert.equal(out.escalate, true);
@@ -432,8 +432,11 @@ test("escalate.auto refusal records no artefact", () => {
   const ws = c.workspaces.get("w")!;
   const auditBefore = ws.audit.length, rdBefore = ws.route_decisions.size;
 
-  const r = send("escalate.auto", { workspace: "w", task_id: tid, default_escalation_target: "human:ghost" });
+  const r = send("escalate.auto", { workspace: "w", from: "human:alice", task_id: tid, default_escalation_target: "human:ghost" });
   assert.equal(r.error?.code, -32516);
   assert.equal(ws.route_decisions.size, rdBefore);
-  assert.equal(ws.audit.length, auditBefore);
+  // A member's refused call is recorded as a refusal (SPECIFICATION 10.1),
+  // and nothing else reaches the log.
+  assert.equal(ws.audit.length, auditBefore + 1);
+  assert.deepEqual(ws.audit[ws.audit.length - 1].outcome, { status: "refused", code: -32516 });
 });

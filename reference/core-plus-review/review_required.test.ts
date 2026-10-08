@@ -126,3 +126,45 @@ test("a workspace with no human refuses a required review", () => {
   assert.equal(done.error?.code, -32011);
   assert.match(done.error.message, /human/);
 });
+
+test("escalating a task keeps its review", () => {
+  // The successor of a task that requires review requires it too. Without
+  // this, escalate.raise would be a way to finish reviewed work unreviewed.
+  workspace("w7", [["human:a", "human"], ["agent:bot", "agent"], ["agent:senior", "agent"]]);
+  const id = activeTask("w7", "human:a", "agent:bot", true);
+
+  const esc = call("escalate.raise", {
+    workspace: "w7", from: "agent:bot", original_task_id: id,
+    new_task: { kind: "k", assignee: "agent:senior", input: {} },
+  });
+  const successor = esc.result.new_task_id;
+  call("task.update", { workspace: "w7", from: "agent:senior", task_id: successor, state: "in_progress" });
+
+  const done = call("task.complete", {
+    workspace: "w7", from: "agent:senior", task_id: successor, output: { d: 1 },
+  });
+  assert.equal(done.result.state, "review_requested",
+    "the successor of a reviewed task must not complete directly");
+});
+
+test("a non-member cannot act on the workspace", () => {
+  // SPECIFICATION 6.3.1: every method outside the exemptions needs a member
+  // as its actor, so nothing is done or recorded under a name that never
+  // joined.
+  workspace("w8", [["human:a", "human"], ["agent:bot", "agent"]]);
+  const id = activeTask("w8", "human:a", "agent:bot");
+  const outsider = "human:outsider";
+  const calls: [string, Record<string, unknown>][] = [
+    ["task.create", { kind: "k", input: {}, assignee: "agent:bot" }],
+    ["task.update", { task_id: id, state: "in_progress" }],
+    ["task.complete", { task_id: id, output: { d: 1 } }],
+    ["escalate.raise", { original_task_id: id, new_task: { kind: "k", assignee: "human:a", input: {} } }],
+    ["participant.leave", {}],
+  ];
+  for (const [method, extra] of calls) {
+    const r = call(method, { workspace: "w8", from: outsider, ...extra });
+    assert.equal(r.error?.code, -32011, `${method} from a non-member`);
+  }
+  const done = call("task.complete", { workspace: "w8", from: "agent:bot", task_id: id, output: { d: 1 } });
+  assert.equal(done.result.state, "completed", "the task was left as it was");
+});

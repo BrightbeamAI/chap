@@ -206,7 +206,7 @@ export function registerControl(coord: Coordinator): void {
       return { error: rpcError(E.PARAMS, "successor_task must include kind") };
     }
     const assignee = (newSpec.assignee as string) || old.assignee;
-    if (!ws.members.has(assignee)) {
+    if (typeof assignee !== "string" || !ws.members.has(assignee)) {
       return { error: rpcError(E.PARAMS, "successor assignee not in workspace") };
     }
     // The successor is a created task, so the participant-paused check
@@ -218,10 +218,17 @@ export function registerControl(coord: Coordinator): void {
     // The successor is a created task, so it is bound by the same modes/1.0
     // invariants as task.create: it must not exceed the workspace ceiling, and
     // a trial-mode task forces review on regardless of its own setting.
-    const requestedMode = (newSpec.mode as Mode) ?? old.mode;
+    if (newSpec.mode !== undefined && newSpec.mode !== null && typeof newSpec.mode !== "string") {
+      return { error: rpcError(E.PARAMS, "successor_task.mode must be a string") };
+    }
+    const requestedMode = (newSpec.mode as Mode) || old.mode;
     if (!modeLE(requestedMode, ws.mode_ceiling)) {
       return { error: rpcError(E.MODE_CEILING_EXCEEDED,
         `Requested mode ${requestedMode} exceeds ceiling ${ws.mode_ceiling}`) };
+    }
+    if (newSpec.review_required !== undefined && newSpec.review_required !== null
+        && typeof newSpec.review_required !== "boolean") {
+      return { error: rpcError(E.PARAMS, "successor_task.review_required must be a boolean") };
     }
     const now = coord.now();
     const newId = coord.ids.taskId();
@@ -240,10 +247,16 @@ export function registerControl(coord: Coordinator): void {
                   note: `supersedes ${old.id}: ${(p.reason as string) || ""}` }],
       paused: false,
     };
-    // Trial forces review only when the workspace opted into modes/1.0,
-    // matching task.create -- mode is inert without the profile.
-    if (ws.profiles.some(pr => pr.startsWith("modes/")) && newTask.mode === "trial") newTask.review_required = true;
-    else if ("review_required" in newSpec) newTask.review_required = !!newSpec.review_required;
+    // A successor keeps the review requirement of the task it replaces, so
+    // superseding never removes a required review. Trial forces review only
+    // when the workspace opted into modes/1.0, matching task.create, since
+    // mode is inert without the profile. Otherwise the spec's own setting
+    // applies.
+    if (old.review_required || (ws.profiles.some(pr => pr.startsWith("modes/")) && newTask.mode === "trial")) {
+      newTask.review_required = true;
+    } else if ("review_required" in newSpec) {
+      newTask.review_required = !!newSpec.review_required;
+    }
     ws.tasks.set(newId, newTask);
     old.state = "superseded";
     old.superseded_by = newId;

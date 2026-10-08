@@ -51,6 +51,11 @@ Each method stores its decision, with the hints consulted, as a
 as `decision_artefact`. The audit log records the request only, and no
 method returns a stored decision, so consumers keep the response.
 
+The caller in `from` MUST be a workspace member, as for every method
+outside the exemptions in [SPECIFICATION.md §6.3.1](../SPECIFICATION.md#631-actor-membership-precondition).
+A call from anyone else is refused with `-32011` and leaves nothing on
+the log.
+
 ---
 
 ## 3. `task.route`
@@ -64,6 +69,7 @@ rationale.
   "method": "task.route",
   "params": {
     "workspace":   "wsp_support_triage",
+    "from":        "human:jordan-ops@example.org",
     "task_id":     "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
     "candidates": [
       "agent:fast-draft-v3@example.org",
@@ -103,14 +109,22 @@ holds the `task.route` request only (§2).
 After `task.route` succeeds, the Coordinator MUST set the task's
 `assignee` to `selected`, and it changes nothing else, in every mode.
 
+A participant paused under `control/1.0` is assigned no new tasks
+([`control.md`](./control.md) §2). The default policy, which takes the
+first candidate that is a workspace member, passes over a paused one and
+lists it in `alternatives_considered` with the reason `paused`. A
+deployment's policy that selects a paused participant is refused with
+`-32063`, and the task keeps its assignee.
+
 ### `task.route` error codes
 
 | Code      | Meaning                                          |
 |-----------|--------------------------------------------------|
-| `-32510`  | `no_eligible_assignee`: no candidate is a workspace member, or the policy chose one who is not. |
+| `-32510`  | `no_eligible_assignee`: no candidate is a workspace member who is not paused, or the policy chose one who is not a member. |
 | `-32511`  | `routing_policy_violation`. Reserved; no Coordinator returns it. |
 | `-32513`  | `candidates_empty`: `candidates` array was empty. |
 | `-32515`  | `policy_unreachable`: the deployment's policy raised an error. |
+| `-32063`  | The policy chose a participant who is paused. |
 
 ---
 
@@ -124,6 +138,7 @@ spot-check, or do a full review. Returns a depth tier with rationale.
   "method": "review.depth",
   "params": {
     "workspace":      "wsp_support_triage",
+    "from":           "human:jordan-ops@example.org",
     "task_id":        "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
     "artefact_routing_hints": {
       "confidence": "0.91",
@@ -190,6 +205,7 @@ decision keeps its id and summary.
   "method": "escalate.auto",
   "params": {
     "workspace":   "wsp_support_triage",
+    "from":        "human:jordan-ops@example.org",
     "task_id":     "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
     "default_escalation_target": "group:senior-reviewers@example.org",
     "ts":          "2026-05-17T09:15:30Z"

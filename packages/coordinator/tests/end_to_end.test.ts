@@ -58,9 +58,9 @@ test("full lifecycle exercises every profile in one sequence", () => {
   assert.equal((wAns.result as { answered: boolean }).answered, true);
 
   // routing
-  const depthR = send("review.depth", { workspace: "wsp_e2e", task_id: tid });
+  const depthR = send("review.depth", { workspace: "wsp_e2e", from: "human:alice", task_id: tid });
   assert.ok(["skip", "spot_check", "full"].includes((depthR.result as { depth: string }).depth));
-  const escR = send("escalate.auto", { workspace: "wsp_e2e", task_id: tid,
+  const escR = send("escalate.auto", { workspace: "wsp_e2e", from: "human:alice", task_id: tid,
     default_escalation_target: "human:bob" });
   assert.ok(typeof (escR.result as { escalate: boolean }).escalate === "boolean");
 

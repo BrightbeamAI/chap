@@ -117,9 +117,12 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   "chap.escalate.raise":
     "Hand a task upwards, where the current holder can act but should not decide alone. The original moves to " +
     "escalated and is linked to a new task for whoever takes it on. Use chap.handoff.propose to pass work " +
-    "sideways without that link, and chap.control.supersede to replace a task rather than raise it. The " +
-    "successor starts with an empty input unless one is supplied, so restate whatever the new assignee needs. " +
-    "A completed, cancelled or superseded task cannot be escalated.",
+    "sideways without that link, and chap.control.supersede to replace a task outright. The successor starts " +
+    "with an empty input unless one is supplied, so restate whatever the new assignee needs. A completed, " +
+    "cancelled or superseded task cannot be escalated. The successor takes the mode new_task.mode names, or " +
+    "else the original's, and requires review when the original did, or when it is a trial task under " +
+    "modes/1.0. A paused assignee is refused with -32063, and a mode above the workspace's current ceiling " +
+    "with -32040; after the ceiling is lowered, name a mode within it.",
 
   // whisper/1.0
   "chap.whisper.ask":
@@ -166,7 +169,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   "chap.handoff.accept":
     "Accept a proposed handoff. The accepted tasks are reassigned to the accepting participant, which is the " +
     "point at which responsibility actually moves. Omitting accepted_task_ids accepts all of them. Accepting " +
-    "resolves the proposal for good: a later accept or decline on the same handoff answers -32051.",
+    "resolves the proposal for good: a later accept or decline on the same handoff answers -32051. A paused " +
+    "participant cannot accept and is refused with -32063.",
 
   "chap.handoff.decline":
     "Decline a proposed handoff. The tasks stay with the proposer and nothing is reassigned, which is the " +
@@ -200,7 +204,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
 
   "chap.control.supersede":
     "Replace a task with a successor in one call. The original moves to superseded and stays linked to its " +
-    "replacement.",
+    "replacement. The successor requires review when the original did, whatever its own review_required " +
+    "says, and a paused assignee is refused with -32063.",
 
   "chap.control.set_mode_ceiling":
     "Set the highest operating mode tasks in this workspace may request. A task above the ceiling is refused.",
@@ -210,8 +215,9 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "Choose an assignee for a task from a list of candidates and reassign the task to the one selected. Use " +
     "it where the choice itself belongs on the record: it writes a route_decision artefact naming the policy, " +
     "the candidate chosen and the alternatives passed over, none of which is captured by setting assignee " +
-    "directly on chap.task.create. The default policy takes the first candidate that is a workspace member; " +
-    "an operator-supplied policy may choose on any basis.",
+    "directly on chap.task.create. The default policy takes the first candidate that is a workspace member " +
+    "and is not paused. An operator-supplied policy may choose on any basis, and the call is refused with " +
+    "-32510 when its choice is not a member, or with -32063 when its choice is paused.",
 
   "chap.review.depth":
     "Decide how much review a task warrants, skip, spot_check or full, from its routing hints. Records a " +

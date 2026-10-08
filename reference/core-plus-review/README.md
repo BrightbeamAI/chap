@@ -114,7 +114,9 @@ The 6 review-profile methods, in implementation order:
 5. **`abstain.declare`**: typed "I shouldn't decide this." Records
    a categorised abstention.
 6. **`escalate.raise`**: creates a successor task referencing the
-   original via `supersedes`.
+   original via `supersedes`. The successor keeps the original's review
+   requirement, so completing the successor of a reviewed task opens a
+   review.
 
 The non-trivial part is the JSON Patch implementation. The
 reference includes a tiny one (~30 lines) supporting `add`,

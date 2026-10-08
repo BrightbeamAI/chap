@@ -713,12 +713,21 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     },
                     "assignee": {
                         "type": "string",
-                        "description": "Who the escalation goes to. Must be a workspace member.",
+                        "description": "Who the escalation goes to. Must be a workspace member who is not paused: a paused assignee is refused with -32063.",
                     },
                     "input": {
                         "type": "object",
                         "additionalProperties": True,
                         "description": "Input payload for the successor. It defaults to an empty object rather than the original's input, so anything the new assignee needs has to be restated here.",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": [
+                            "shadow",
+                            "trial",
+                            "production",
+                        ],
+                        "description": "Mode for the successor, defaulting to the original's. A mode above the workspace's current ceiling is refused with -32040, so after the ceiling is lowered a task is escalated by naming a mode within it.",
                     },
                 },
                 "required": [
@@ -1334,12 +1343,25 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     },
                     "assignee": {
                         "type": "string",
-                        "description": "Who takes the replacement on. Defaults to the superseded task's assignee, and must be a workspace member.",
+                        "description": "Who takes the replacement on. Defaults to the superseded task's assignee, and must be a workspace member who is not paused.",
                     },
                     "input": {
                         "type": "object",
                         "additionalProperties": True,
                         "description": "Input payload for the successor. Defaults to an empty object.",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": [
+                            "shadow",
+                            "trial",
+                            "production",
+                        ],
+                        "description": "Mode for the successor, defaulting to the superseded task's. A mode above the workspace's current ceiling is refused with -32040.",
+                    },
+                    "review_required": {
+                        "type": "boolean",
+                        "description": "Whether completing the successor needs a reviewer decision. A successor of a task that requires review requires it whatever is passed here, and under modes/1.0 so does a trial-mode successor.",
                     },
                 },
                 "required": [
@@ -1412,7 +1434,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "Participant URI, e.g. 'human:alice@example.org' or 'agent:bot@local'.",
                 },
-                "description": "Candidate assignees. An empty list is refused with -32513. Candidates that are not workspace members are dropped, and if none remain the call is refused with -32510. The default policy selects the first remaining candidate; an operator-supplied routing policy may select on any basis.",
+                "description": "Candidate assignees. An empty list is refused with -32513. The default policy takes the first candidate that is a workspace member and is not paused, and refuses the call with -32510 when there is none. An operator-supplied routing policy may select on any basis; a choice that is not a member is refused with -32510, and one who is paused with -32063.",
             },
         },
         "required": [

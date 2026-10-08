@@ -86,6 +86,12 @@ export const PRIVILEGED_METHODS = new Set<string>([
   "participant.rotate_key", "participant.revoke_key",
 ]);
 
+// Methods outside the control, deliberate, handoff and whisper namespaces that
+// dispatch holds to the membership floor before the handler runs.
+const MEMBER_ONLY_METHODS = new Set<string>([
+  "task.route", "review.depth", "escalate.auto", "participant.leave",
+]);
+
 // Read-only methods return workspace state but do not mutate it, so they are not
 // recorded in the audit chain -- recording a read would grow and re-link it.
 const READ_ONLY_METHODS = new Set<string>([
@@ -411,8 +417,13 @@ export class Coordinator {
    * error-table divergence is tracked separately.)
    */
   private requireMember(ws: Workspace, sender: unknown): { error: ReturnType<typeof rpcError> } | null {
-    if (typeof sender !== "string" || !ws.members.has(sender)) {
-      return { error: rpcError(E.NOT_AUTHORISED, `Not a workspace member: ${String(sender)}`) };
+    // A `from` that is not a string names nobody. It is answered in fixed
+    // words, so both references refuse it alike whatever was sent.
+    if (typeof sender !== "string") {
+      return { error: rpcError(E.NOT_AUTHORISED, "Not a workspace member: from is not a participant URI") };
+    }
+    if (!ws.members.has(sender)) {
+      return { error: rpcError(E.NOT_AUTHORISED, `Not a workspace member: ${sender}`) };
     }
     return null;
   }
@@ -681,7 +692,10 @@ export class Coordinator {
     // deliberation to finalize an outcome early. (The per-voter eligibility
     // check in deliberate.vote is separate and still applies. A stricter role
     // gate than membership is layered on top via an identity-* profile.)
-    if (method.startsWith("control.") || method.startsWith("deliberate.") || method.startsWith("handoff.") || method.startsWith("whisper.")) {
+    // The routing methods and participant.leave sit under the same floor
+    // (SPECIFICATION 6.3.1): without it a non-member could reassign a task
+    // with task.route, or write a leave to the log under any name.
+    if (method.startsWith("control.") || method.startsWith("deliberate.") || method.startsWith("handoff.") || method.startsWith("whisper.") || MEMBER_ONLY_METHODS.has(method)) {
       const wsId = params.workspace as string | undefined;
       const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
       if (ws) {
@@ -821,14 +835,15 @@ export class Coordinator {
     }
     const kid = parts[1];
     const params = (envelope.params ?? {}) as Record<string, unknown>;
-    const sender = params.from as string | undefined;
-    const wsId = params.workspace as string | undefined;
+    const sender = params.from;
+    const wsId = params.workspace;
     const ts = (params.ts as string | undefined) ?? this.now();
     // Fail closed: a signature is present and requireSignatures is on, so it
     // must verify. If we cannot resolve the context needed to verify it,
     // reject rather than skip -- a signature we cannot check must never be
-    // treated as valid.
-    if (!sender || !wsId) {
+    // treated as valid. A `from` or `workspace` that is not a string names
+    // nothing, so it counts as missing.
+    if (typeof sender !== "string" || !sender || typeof wsId !== "string" || !wsId) {
       return rpcError(E.SIG_VERIFY_FAILED, "Cannot verify signature: missing from/workspace");
     }
     const ws = this.workspaces.get(wsId);
@@ -920,9 +935,11 @@ export class Coordinator {
   }
 
   private checkStepUp(params: Record<string, unknown>): { code: number; message: string; data?: unknown } | null {
-    const wsId = params.workspace as string | undefined;
-    const sender = params.from as string | undefined;
-    if (!wsId || !sender) return null;
+    // A `from` or `workspace` that is not a string names no member to hold to
+    // step-up; the membership check answers such a call.
+    const wsId = params.workspace;
+    const sender = params.from;
+    if (typeof wsId !== "string" || typeof sender !== "string" || !wsId || !sender) return null;
     const ws = this.workspaces.get(wsId);
     if (!ws) return null;
     const member = ws.members.get(sender);
@@ -1221,18 +1238,25 @@ export class Coordinator {
     const notMember = this.requireMember(ws, p.from);
     if (notMember) return notMember;
     const assignee = (p.assignee as string) || (p.to as string);
-    if (!assignee || !ws.members.has(assignee)) {
+    if (typeof assignee !== "string" || !ws.members.has(assignee)) {
       return { error: rpcError(E.PARAMS, "Assignee not in workspace") };
     }
     if (ws.members.get(assignee)!.paused) {
       return { error: rpcError(E.CONTROL_WORKSPACE_PAUSED, `Assignee ${assignee} is paused`) };
     }
 
-    // modes/1.0 ceiling check
+    // modes/1.0 ceiling check. A mode or review_required of the wrong type is
+    // refused, so both references read the same task from the same call.
+    if (p.mode !== undefined && p.mode !== null && typeof p.mode !== "string") {
+      return { error: rpcError(E.PARAMS, "mode must be a string") };
+    }
     const requestedMode = ((p.mode as Mode) || ws.mode);
     if (!modeLE(requestedMode, ws.mode_ceiling)) {
       return { error: rpcError(E.MODE_CEILING_EXCEEDED,
         `Requested mode ${requestedMode} exceeds ceiling ${ws.mode_ceiling}`) };
+    }
+    if (p.review_required !== undefined && p.review_required !== null && typeof p.review_required !== "boolean") {
+      return { error: rpcError(E.PARAMS, "review_required must be a boolean") };
     }
 
     const taskId = this.ids.taskId();
@@ -1666,15 +1690,36 @@ export class Coordinator {
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const notMember = this.requireMember(ws, p.from);
     if (notMember) return notMember;
-    const orig = ws.tasks.get(p.original_task_id as string);
+    const origId = p.original_task_id;
+    const orig = typeof origId === "string" ? ws.tasks.get(origId) : undefined;
     if (!orig) return { error: rpcError(E.PARAMS, "Unknown original task") };
     if (orig.state === "completed" || orig.state === "cancelled" || orig.state === "superseded") {
       return { error: rpcError(E.PARAMS, `Cannot escalate a terminal task: ${orig.state}`) };
     }
+    if (p.new_task === null || typeof p.new_task !== "object" || Array.isArray(p.new_task)) {
+      return { error: rpcError(E.PARAMS, "new_task must be an object") };
+    }
     const nt = p.new_task as Record<string, unknown>;
-    const assignee = nt.assignee as string;
-    if (!assignee || !ws.members.has(assignee)) {
+    const assignee = nt.assignee;
+    if (typeof assignee !== "string" || !ws.members.has(assignee)) {
       return { error: rpcError(E.PARAMS, "Escalation assignee not in workspace") };
+    }
+    const named = nt.mode;
+    if (named !== undefined && named !== null && typeof named !== "string") {
+      return { error: rpcError(E.PARAMS, "new_task.mode must be a string") };
+    }
+    // The successor is a created task, so it meets the checks task.create and
+    // control.supersede apply: its assignee must not be paused, and its mode,
+    // the one new_task names or else the original's, must be within the
+    // ceiling in force now. Naming a lower mode is how work is escalated
+    // after the ceiling has been lowered.
+    if (ws.members.get(assignee)!.paused) {
+      return { error: rpcError(E.CONTROL_WORKSPACE_PAUSED, `Assignee ${assignee} is paused`) };
+    }
+    const mode = ((named as Mode | null | undefined) || orig.mode) as Mode;
+    if (!modeLE(mode, ws.mode_ceiling)) {
+      return { error: rpcError(E.MODE_CEILING_EXCEEDED,
+        `Requested mode ${mode} exceeds ceiling ${ws.mode_ceiling}`) };
     }
     const now = this.now();
     const newId = this.ids.taskId();
@@ -1687,11 +1732,17 @@ export class Coordinator {
       input: (nt.input as Record<string, unknown>) ?? {},
       created_at: now,
       updated_at: now,
-      mode: orig.mode,
+      mode,
       supersedes: orig.id,
       history: [{ ts: now, from: p.from as ParticipantUri, state: "created", note: `escalated from ${orig.id}` }],
       paused: false,
     };
+    // Escalating hands the work on and keeps its review requirement. The
+    // successor requires review when the original did, and a trial task
+    // forces review under modes/1.0 as it does at task.create.
+    if (orig.review_required || (ws.profiles.some(pr => pr.startsWith("modes/")) && newTask.mode === "trial")) {
+      newTask.review_required = true;
+    }
     ws.tasks.set(newId, newTask);
     orig.state = "escalated";
     orig.updated_at = now;

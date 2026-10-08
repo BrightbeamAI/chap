@@ -14,7 +14,8 @@ HTTP so no serialisation layer masks or invents a difference.
 
 The action set covers the core and review lifecycle, control, handoff, whisper,
 deliberation and routing, including canonical control.snapshot artefacts and
-subsequent rollback.
+subsequent rollback, and participant pauses, which the calls that assign work
+then meet.
 
 Each envelope is recorded as the client sent it, taken before dispatch, and
 every seed also asserts that dispatch left it untouched. A coordinator records
@@ -83,7 +84,7 @@ class Recorder:
         for _ in range(steps):
             self._step()
 
-    def _send(self, method: str, actor: str, **params) -> dict:
+    def _send(self, method: str, actor: object, **params) -> dict:
         self._n += 1
         env = {"jsonrpc": "2.0", "id": f"e{self._n}", "method": method,
                "params": {"workspace": "w", "from": actor, **params}}
@@ -153,6 +154,10 @@ class Recorder:
         voted = {v.get("voter") for v in (d.votes or [])}
         return [p for p in (d.participants or []) if p not in voted and p in HUMANS]
 
+    def _paused_participants(self) -> list[str]:
+        members = self.coord.get_workspace("w").members
+        return [u for u in (*HUMANS, *AGENTS) if u in members and members[u].paused]
+
     def _reviewers(self, tid: str) -> list[str]:
         """Who the open review on this task is addressed to."""
         task = self.coord.get_workspace("w").tasks.get(tid)
@@ -172,7 +177,10 @@ class Recorder:
         """
         live = self._by_state("created", "in_progress")
         menu = ["create", "create", "update", "complete", "complete",
-                "whisper", "deliberate", "snapshot", "miss"]
+                "whisper", "deliberate", "snapshot", "miss", "pause_participant",
+                "ceiling", "leave_and_rejoin"]
+        if self._paused_participants():
+            menu += ["resume_participant"] * 2
         if live:
             menu += ["review"] * 4
         if self._by_state("review_requested"):
@@ -236,11 +244,7 @@ class Recorder:
         rnd = self.rnd
         a = rnd.choice(self._menu())
         if a == "create" or not self.tasks:
-            r = self._send("task.create", "human:a", kind=rnd.choice(["a", "b"]),
-                           input={"n": self._n}, assignee=rnd.choice(AGENTS))
-            tid = self._result(r, "task_id")
-            if tid:
-                self.tasks.append(tid)
+            self._create()
             return
         human = rnd.choice(HUMANS)
 
@@ -272,6 +276,30 @@ class Recorder:
         if a == "resume":
             self._send("control.resume", "human:a",
                        task_id=rnd.choice(self._by_state("paused")))
+            return
+        if a == "pause_participant":
+            # A paused participant is given no new work, so task.create,
+            # task.route, escalate.raise, control.supersede and handoff.accept
+            # meet the pause on both sides of the comparison.
+            self._send("control.pause", "human:a", scope="participant",
+                       participant_uri=rnd.choice([*HUMANS, *AGENTS]))
+            return
+        if a == "resume_participant":
+            self._send("control.resume", "human:a", scope="participant",
+                       participant_uri=rnd.choice(self._paused_participants()))
+            return
+        if a == "ceiling":
+            # Never below trial, the workspace's default mode, so task.create
+            # keeps working while a production successor meets the ceiling.
+            self._send("control.set_mode_ceiling", "human:a", reason="adjust",
+                       new_ceiling=rnd.choice(["trial", "production", "production"]))
+            return
+        if a == "leave_and_rejoin":
+            # A member leaves and joins again at once, which also lifts a pause.
+            who = rnd.choice([*HUMANS, *AGENTS])
+            self._send("participant.leave", who)
+            self._send("participant.join", who,
+                       type="human" if who.startswith("human:") else "agent")
             return
         if a == "resolve_handoff":
             hid = rnd.choice(self._open_handoffs())
@@ -328,11 +356,7 @@ class Recorder:
 
         live = self._by_state("created", "in_progress")
         if not live:
-            r = self._send("task.create", "human:a", kind=rnd.choice(["a", "b"]),
-                           input={"n": self._n}, assignee=rnd.choice(AGENTS))
-            tid = self._result(r, "task_id")
-            if tid:
-                self.tasks.append(tid)
+            self._create()
             return
         tid = rnd.choice(live)
         if a == "update":
@@ -353,15 +377,21 @@ class Recorder:
         elif a == "pause":
             self._send("control.pause", "human:a", task_id=tid, reason="hold")
         elif a == "escalate":
+            new_task = {"kind": "k", "input": {}, "assignee": AGENTS[0]}
+            if rnd.random() < 0.3:
+                new_task["mode"] = rnd.choice(["shadow", "trial", "production"])
             r = self._send("escalate.raise", "human:a", original_task_id=tid, reason="up",
-                           new_task={"kind": "k", "input": {}, "assignee": AGENTS[0]})
+                           new_task=new_task)
             nt = self._result(r, "new_task_id")
             if nt:
                 self.tasks.remove(tid)
                 self.tasks.append(nt)
         elif a == "supersede":
+            successor = {"kind": "v2", "input": {}, "assignee": AGENTS[0]}
+            if rnd.random() < 0.3:
+                successor["review_required"] = rnd.choice([True, False])
             r = self._send("control.supersede", "human:a", task_id=tid, reason="redo",
-                           successor_task={"kind": "v2", "input": {}, "assignee": AGENTS[0]})
+                           successor_task=successor)
             nt = self._result(r, "new_task_id")
             if nt:
                 self.tasks.remove(tid)
@@ -398,6 +428,17 @@ class Recorder:
             self._send("escalate.auto", "human:a", task_id=tid,
                        default_escalation_target=rnd.choice(HUMANS))
 
+    def _create(self) -> None:
+        """A new task, a share of them requiring review, so the successors
+        that escalate.raise and control.supersede make carry it too."""
+        rnd = self.rnd
+        extra = {"review_required": True} if rnd.random() < 0.25 else {}
+        r = self._send("task.create", "human:a", kind=rnd.choice(["a", "b"]),
+                       input={"n": self._n}, assignee=rnd.choice(AGENTS), **extra)
+        tid = self._result(r, "task_id")
+        if tid:
+            self.tasks.append(tid)
+
     def _miss(self) -> None:
         """One call the current state refuses, so error paths stay compared."""
         rnd = self.rnd
@@ -415,6 +456,14 @@ class Recorder:
                                handoff_id="hnd_absent"),
             lambda: self._send("whisper.answer", rnd.choice(HUMANS),
                                whisper_id="whp_absent", answer="yes"),
+            # Calls from a non-member to methods held to the membership floor,
+            # and from a caller whose `from` is not a string.
+            lambda: self._send("task.route", "human:outsider", task_id=tid,
+                               candidates=list(AGENTS)),
+            lambda: self._send("participant.leave", "human:outsider"),
+            lambda: self._send("participant.leave", None),
+            lambda: self._send("task.route", ["human:a"], task_id=tid,
+                               candidates=list(AGENTS)),
         ])()
 
     def _assignee(self, tid: str) -> str:

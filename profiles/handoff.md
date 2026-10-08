@@ -78,6 +78,10 @@ On accept, the Coordinator atomically:
 1. Updates each accepted task's `assignee` to the accepter.
 2. Records the assignee change in the audit log.
 
+Accepting makes the accepter the assignee, so an accepter paused under
+`control/1.0` is refused with `-32063` ([`control.md`](./control.md) §2).
+The handoff stays open, and the accepter can take it once resumed.
+
 The profile also specifies a notification to interested participants.
 It is not built yet, so no notification is delivered.
 
@@ -133,6 +137,7 @@ accepts.
 | `-32050`  | One or more task ids are not currently assigned to the proposer. |
 | `-32051`  | Handoff has already been accepted/declined.      |
 | `-32052`  | The recipient is not a workspace member, or the accepter is not the named recipient. |
+| `-32063`  | The accepter is a paused participant.            |
 
 ---
 

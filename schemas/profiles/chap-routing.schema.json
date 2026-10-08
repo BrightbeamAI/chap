@@ -6,11 +6,16 @@
   "$defs": {
     "TaskRouteParams": {
       "type": "object",
-      "required": ["workspace", "task_id", "candidates", "ts"],
+      "required": ["workspace", "from", "task_id", "candidates", "ts"],
       "properties": {
         "workspace": {
           "type": "string",
           "pattern": "^wsp_[A-Za-z0-9_-]+$"
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^(human|agent|service|group|workspace):[^\\s]+$",
+          "description": "The caller. It must be a workspace member (SPECIFICATION 6.3.1); a call from anyone else is refused with -32011."
         },
         "task_id": {
           "type": "string",
@@ -50,11 +55,16 @@
     },
     "ReviewDepthParams": {
       "type": "object",
-      "required": ["workspace", "task_id", "ts"],
+      "required": ["workspace", "from", "task_id", "ts"],
       "properties": {
         "workspace": {
           "type": "string",
           "pattern": "^wsp_[A-Za-z0-9_-]+$"
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^(human|agent|service|group|workspace):[^\\s]+$",
+          "description": "The caller. It must be a workspace member (SPECIFICATION 6.3.1); a call from anyone else is refused with -32011."
         },
         "artefact_id": {
           "type": "string",
@@ -103,11 +113,16 @@
     },
     "EscalateAutoParams": {
       "type": "object",
-      "required": ["workspace", "task_id", "ts"],
+      "required": ["workspace", "from", "task_id", "ts"],
       "properties": {
         "workspace": {
           "type": "string",
           "pattern": "^wsp_[A-Za-z0-9_-]+$"
+        },
+        "from": {
+          "type": "string",
+          "pattern": "^(human|agent|service|group|workspace):[^\\s]+$",
+          "description": "The caller. It must be a workspace member (SPECIFICATION 6.3.1); a call from anyone else is refused with -32011."
         },
         "artefact_id": {
           "type": "string",

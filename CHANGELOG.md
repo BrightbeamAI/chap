@@ -155,6 +155,11 @@ caller who asked, and no reference has a delivery layer to filter.
   It restored the stored records one at a time, each restore replacing the
   last, so only one workspace came back. The next call naming a lost
   workspace re-created it empty and overwrote its stored log.
+- **`reference/core-plus-review` holds every actor to membership.** It
+  checked membership on `review.request` and the review decisions alone, so a
+  non-member could create, update and complete tasks, escalate them and write
+  a leave. It now refuses those with `-32011`, as SPECIFICATION 6.3.1
+  requires, and an escalated task keeps its review requirement there too.
 - **The reference servers keep the log rules.** `reference/core` and
   `reference/core-plus-review` recorded every accepted call with a workspace,
   reads included, which core/SPEC.md 3.2 forbids. Both now leave reads off the
@@ -201,6 +206,68 @@ under an existing member's name, add a key and sign as that member. Migration:
 a deployment that binds an identity to a member after it first joined issues
 tokens carrying `chap_participant_uri`, or has its verifier add the claim. A
 member with no recorded holder cannot bind a presentation by joining again.
+
+**Behaviour change.** `task.route`, `review.depth`, `escalate.auto` and
+`participant.leave` refuse a caller who is not a workspace member with
+`-32011`, as SPECIFICATION 6.3.1 requires of every method outside its
+exemptions. A non-member's `task.route` reassigned the task, its
+`review.depth` and `escalate.auto` recorded decisions, and its
+`participant.leave` wrote a leave to the log, each under whatever name the
+caller gave. The refusal is not recorded. A second `participant.leave` from
+the same caller is now refused, where it answered `left: true`, and the
+routing parameter schemas in `chap-routing.schema.json` list `from` as
+required. A `from` that is not a string is refused by both references with
+`-32011` and the words `Not a workspace member: from is not a participant
+URI`, or with `-32070` before that where signatures are required. The Python
+coordinator raised out of `dispatch` on a list or an object `from`, and with
+signatures or step-up on, on a list or an object `workspace`. Migration: send
+these calls from a member.
+
+**Behaviour change.** `escalate.raise` applies the checks a created task
+meets. The successor requires review when the original did, or when it is a
+`trial` task on a workspace that advertises `modes/1.0`. It never required
+review before, so escalating a task let its successor complete with no
+reviewer decision. An assignee who is paused is refused with `-32063`. The
+successor takes the mode `new_task.mode` names, or else the original's, and a
+mode above the workspace's current ceiling is refused with `-32040`; before,
+an escalation carried the original's mode past a lowered ceiling. Migration:
+completing the successor of a reviewed task now opens a review addressed to
+the human members other than its assignee and completer, and is refused with
+`-32011` where there are none. Escalating a reviewed task to the only human
+member then needs another human to join, or an explicit `review.request`
+naming the reviewers. To escalate a task whose mode is above a lowered
+ceiling, name a mode within the ceiling in `new_task.mode`.
+
+**Behaviour change.** `control.supersede` keeps the review requirement of the
+task it replaces: the successor requires review when the original did,
+whatever `successor_task.review_required` says. Before, any member, the
+assignee included, could supersede a task awaiting review with a successor
+that needed none and complete it unreviewed. Migration: a successor of a
+reviewed task is reviewed, as its original would have been.
+
+**Behaviour change.** Fields of the wrong type are refused with `-32602` in
+the same words by both references. `task.create` and `control.supersede`
+refuse a `mode` that is not a string and a `review_required` that is not a
+boolean, `task.route` refuses `candidates` that are not a list, and
+`escalate.raise` refuses a `new_task` that is not an object. The two
+references read such values differently: a list or object `review_required`
+was true in TypeScript and false in Python, Python iterated a `candidates`
+object and reassigned the task where TypeScript refused it, and the same call
+left different chains. An empty `successor_task.mode` on `control.supersede`
+now falls back to the superseded task's mode in TypeScript as it did in
+Python. Migration: send `review_required` as `true` or `false`; `null` still
+counts as `false`.
+
+**Behaviour change.** A paused participant is assigned no new tasks through
+`task.route` or `handoff.accept`. The default routing policy passes over a
+paused candidate, lists it in `alternatives_considered` with the reason
+`paused`, and answers `-32510` when no candidate is a member who is not
+paused. A deployment's policy that selects a paused participant is refused
+with `-32063`, and the task keeps its assignee. `handoff.accept` from a paused
+participant is refused with `-32063`, and the handoff stays open. The pause
+still binds only a participant that cooperates: any member can lift it with
+`control.resume`. Migration: resume a participant before routing work to it
+or having it accept a handoff.
 
 **Behaviour change.** Pausing a task is `control.pause` alone. `task.update`
 reached `paused` from `created` and from `in_progress`, while `control.resume`
@@ -276,6 +343,12 @@ response and hash for each slice in both references.
   Beta, and a column names the run each claim was tested with.
 - **Editorial notes in GOVERNANCE.md and CONTRIBUTING.md** point to
   MAINTAINERS.md for how decisions are made today.
+- **The differential fuzzer pauses participants and sends calls that fail the
+  membership floor.** It pauses and resumes participants, creates a share of
+  its tasks with `review_required`, and sends `task.route` and
+  `participant.leave` from a non-member and from a `from` that is not a
+  string, so those refusals and the successors of reviewed tasks are compared
+  across the two references.
 
 ### Fixed
 

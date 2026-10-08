@@ -364,8 +364,9 @@ export const SCHEMAS: Record<string, JsonSchema> = {
         description: "The successor task to open for the escalation target.",
         properties: {
           kind:     { type: "string", description: "Task kind for the successor. Defaults to the original's kind." },
-          assignee: { ...PARTICIPANT_URI, description: "Who the escalation goes to. Must be a workspace member." },
+          assignee: { ...PARTICIPANT_URI, description: "Who the escalation goes to. Must be a workspace member who is not paused: a paused assignee is refused with -32063." },
           input:    { type: "object", additionalProperties: true, description: "Input payload for the successor. It defaults to an empty object rather than the original's input, so anything the new assignee needs has to be restated here." },
+          mode:     { type: "string", enum: ["shadow", "trial", "production"], description: "Mode for the successor, defaulting to the original's. A mode above the workspace's current ceiling is refused with -32040, so after the ceiling is lowered a task is escalated by naming a mode within it." },
         },
         required: ["assignee"],
       },
@@ -608,8 +609,10 @@ export const SCHEMAS: Record<string, JsonSchema> = {
         description: "The replacement task.",
         properties: {
           kind:     { type: "string", description: "Task kind for the successor. Required." },
-          assignee: { ...PARTICIPANT_URI, description: "Who takes the replacement on. Defaults to the superseded task's assignee, and must be a workspace member." },
+          assignee: { ...PARTICIPANT_URI, description: "Who takes the replacement on. Defaults to the superseded task's assignee, and must be a workspace member who is not paused." },
           input:    { type: "object", additionalProperties: true, description: "Input payload for the successor. Defaults to an empty object." },
+          mode:     { type: "string", enum: ["shadow", "trial", "production"], description: "Mode for the successor, defaulting to the superseded task's. A mode above the workspace's current ceiling is refused with -32040." },
+          review_required: { type: "boolean", description: "Whether completing the successor needs a reviewer decision. A successor of a task that requires review requires it whatever is passed here, and under modes/1.0 so does a trial-mode successor." },
         },
         required: ["kind"],
       },
@@ -641,7 +644,7 @@ export const SCHEMAS: Record<string, JsonSchema> = {
     properties: {
       workspace: WORKSPACE_ID, from: PARTICIPANT_URI,
       task_id: TASK_ID,
-      candidates: { type: "array", items: PARTICIPANT_URI, description: "Candidate assignees. An empty list is refused with -32513. Candidates that are not workspace members are dropped, and if none remain the call is refused with -32510. The default policy selects the first remaining candidate; an operator-supplied routing policy may select on any basis." },
+      candidates: { type: "array", items: PARTICIPANT_URI, description: "Candidate assignees. An empty list is refused with -32513. The default policy takes the first candidate that is a workspace member and is not paused, and refuses the call with -32510 when there is none. An operator-supplied routing policy may select on any basis; a choice that is not a member is refused with -32510, and one who is paused with -32063." },
     },
     required: ["workspace", "from", "task_id", "candidates"],
   },

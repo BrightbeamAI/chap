@@ -47,9 +47,10 @@ depends on Core but Core does not depend on it. Outside this profile,
 workspace: `workspace.create` takes `mode` (default `trial`) and
 `mode_ceiling` (default `production`) without checking either, and
 `task.create` refuses a mode above the ceiling, or outside the ladder,
-with `-32040`. No method changes `mode` after creation. A Coordinator
-that forced review regardless would be imposing a profile nobody opted
-into.
+with `-32040`. `control.supersede` and `escalate.raise` refuse a
+successor whose mode is above the ceiling in the same way. No method
+changes `mode` after creation. A Coordinator that forced review
+regardless would be imposing a profile nobody opted into.
 
 `mode_ceiling` is the highest mode any task in this workspace may
 use. It is a safety bound, and raising it requires elevated privilege;
@@ -92,8 +93,8 @@ primary input to promotion decisions.
 - The task runs to completion.
 - The output is delivered.
 - Review is mandatory regardless of the task's own `review_required`
-  field: `trial` mode sets it on every task that `task.create` or
-  `control.supersede` creates.
+  field: `trial` mode sets it on every task that `task.create`,
+  `control.supersede` or `escalate.raise` creates.
 - Because review is mandatory, `task.complete` opens a review rather
   than completing the task. A reviewer decision completes it.
 - The Coordinator addresses that review to the human members other than
@@ -164,9 +165,9 @@ your governance picks the thresholds.
 
 ## 7. Composition notes
 
-- **With `review`:** a trial-mode task created by `task.create` or
-  `control.supersede` has `review_required` set to true, whatever the
-  task's own setting.
+- **With `review`:** a trial-mode task created by `task.create`,
+  `control.supersede` or `escalate.raise` has `review_required` set to
+  true, whatever the task's own setting.
 - **With `control`:** `control.set_mode_ceiling`, snapshots, and
   rollbacks cover the operational side of mode changes.
 - **With `identity-oidc`:** where step-up is enforced,

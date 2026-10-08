@@ -55,7 +55,7 @@ CHAP conformance.
 
 - [ ] `workspace.describe` returns `id`, `created`, `state`, `members`, `profiles`, `audit_count`.
 - [ ] `participant.join` adds the participant to `members`; rejects with `-32602` for missing fields.
-- [ ] `participant.leave` removes the participant; idempotent.
+- [ ] `participant.leave` removes the caller, who must be a current member; a second leave is refused with `-32011` and changes nothing.
 - [ ] `task.create` validates that the assignee is a current member; returns `task_id` and `state: "created"`.
 - [ ] Every actor-action method validates that `from` (the actor) is a current member, rejecting a non-member with `-32011` (SPECIFICATION.md §6.3.1). Harness vector `rv-07` verifies this for `decide.approve`; `rv-08` tests the reviewer set.
 - [ ] `task.update` enforces the transition table in [`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1; rejects a transition the table does not list with `-32602`.
@@ -97,9 +97,10 @@ a profile it does not pass.**
 - [ ] Adds `review_requested`, `abstained`, `escalated` task states.
 - [ ] `decide.override`'s `diff` is validated as a well-formed RFC 6902 JSON Patch and applied deterministically.
 - [ ] Review decisions (`decide.*`, `abstain.declare`) require `from` to be one of the reviewers addressed in `review.request`'s `to` set; a member outside that set is rejected with `-32011` (see [`../profiles/review.md`](../profiles/review.md) §3.2). Verified by harness vector `rv-08`.
-- [ ] `task.complete` on a task whose review is required opens a review and moves the task to `review_requested`, holding the submitted output as the artefact under review, rather than completing it (see [`../profiles/review.md`](../profiles/review.md) §3.1).
+- [ ] `task.complete` on a task whose review is required opens a review and moves the task to `review_requested`, holding the submitted output as the artefact under review, and only a reviewer decision completes it (see [`../profiles/review.md`](../profiles/review.md) §3.1).
 - [ ] The implicit review addresses the **human** members who are neither the completer nor the assignee, so neither a producer nor another agent can approve agent output; with no human eligible the completion is refused with `-32011`. An explicit `review.request` keeps whatever `to` it was given. Verified by harness vector `rv-12`.
 - [ ] `review.request` is refused on a task that has been stopped (`cancelled`, `superseded`, `paused`) with `-32010`, so a review cannot revive terminated work or step around a pause (see [`../SPECIFICATION.md`](../SPECIFICATION.md#81-lifecycle) §8.1).
+- [ ] The successor `escalate.raise` creates requires review when the original did, so escalating never removes a required review (see [`../profiles/review.md`](../profiles/review.md) §3.5). The successor `control.supersede` creates does too, whatever its own `review_required` says (see [`../profiles/control.md`](../profiles/control.md) §4).
 - [ ] Override entries preserve `rationale`, `tags`, `policy_refs` as queryable audit data.
 - [ ] `audit.read` filters support `method = decide.override`.
 - [ ] Returns `-32010` … `-32014` for review-specific failures (see [`../profiles/review.md`](../profiles/review.md) §5).
@@ -121,9 +122,9 @@ a profile it does not pass.**
 ### Profile: `modes/1.0`
 
 - [ ] `workspace.describe` exposes `mode` and `mode_ceiling`.
-- [ ] `task.create` rejects tasks whose `mode` exceeds `mode_ceiling` with `-32040`.
+- [ ] `task.create` rejects tasks whose `mode` exceeds `mode_ceiling` with `-32040`, and so do `control.supersede` and `escalate.raise` for the successor they create.
 - [ ] A `shadow` task completes and stores its output like any other task.
-- [ ] `trial` tasks force review-required regardless of per-task settings, so `task.complete` on one opens a review rather than completing it.
+- [ ] `trial` tasks force review-required regardless of per-task settings, so `task.complete` on one opens a review, and only a reviewer decision completes it. This holds for a task made by `task.create`, `control.supersede` or `escalate.raise`.
 - [ ] Trial forces review only when this profile is loaded: on a workspace that has not declared `modes/1.0`, a `trial` task does not force review. The `mode_ceiling` check on `task.create` applies on every workspace, with `-32040`.
 - [ ] Privileged operations, `control.set_mode_ceiling` included, require step-up auth when the Coordinator enforces step-up, an option separate from `identity-oidc/1.0`. A human or OIDC-bound caller whose `auth_time` is missing or outside the window is refused with `-32402`.
 
@@ -139,7 +140,8 @@ a profile it does not pass.**
 - [ ] Implements `task.route`, `review.depth`, `escalate.auto`.
 - [ ] Each method produces a `route_decision` artefact, kept in the Coordinator's store. The request that produced it is what reaches the audit chain.
 - [ ] `route_decision` artefacts record `decision_type`, `outcome`, `policy_id`, `hints_observed`, and `rationale`.
-- [ ] Without an operator policy, `task.route` selects the first member in `candidates`. An operator policy may select any member, in `candidates` or outside it, and a selection that is not a member is refused with `-32510`.
+- [ ] Without an operator policy, `task.route` selects the first member in `candidates` who is not paused. An operator policy may select any participant, in `candidates` or outside it; a selection that is not a member is refused with `-32510`, and one who is paused with `-32063`.
+- [ ] `task.route`, `review.depth` and `escalate.auto` refuse a caller who is not a workspace member with `-32011`.
 - [ ] `review.depth=spot_check` is accompanied by a `sampling_probability` in [0, 1].
 - [ ] `escalate.auto=true` is accompanied by a `to` URI and a `triggered_rule` object.
 - [ ] `task.route` reassigns the task in every mode, `shadow` and `trial` included.
@@ -151,6 +153,7 @@ a profile it does not pass.**
 - [ ] Implements `control.pause`, `control.resume`, `control.cancel`, `control.supersede`, `control.snapshot`, `control.rollback`.
 - [ ] `control.rollback` appends; it never truncates the audit log.
 - [ ] Privileged operations, `control.set_mode_ceiling` included, require step-up auth when the Coordinator enforces step-up, an option separate from `identity-oidc/1.0`. A human or OIDC-bound caller whose `auth_time` is missing or outside the window is refused with `-32402`.
+- [ ] A paused participant is assigned no new tasks: `task.create`, `control.supersede` and `escalate.raise` refuse a paused assignee, and `handoff.accept` a paused acceptor, with `-32063`. The default `task.route` policy passes a paused candidate over, and an operator policy's choice of one is refused with `-32063`.
 - [ ] Returns `-32061` … `-32063` for control-specific failures, and `-32402` when a step-up check fails.
 
 ### Profile: `security-signed/1.0`

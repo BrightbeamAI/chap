@@ -361,6 +361,16 @@ original moves to `escalated`, with `superseded_by` naming the new task.
 An original in `completed`, `cancelled` or `superseded` is refused with
 `-32602`.
 
+The new task takes the mode `new_task.mode` names, or else the original's,
+and keeps the original's review requirement. It requires review when the
+original did, or when it is a `trial` task on a workspace that advertises
+`modes/1.0`, so escalating a task never removes the review its completion
+needs. The Coordinator applies the checks `task.create` applies: an assignee
+who is paused is refused with `-32063` ([`control.md`](./control.md) §2),
+and a mode above the workspace's current `mode_ceiling` with `-32040`. After
+the ceiling has been lowered, naming a mode within it in `new_task.mode` is
+how such a task is escalated.
+
 ---
 
 ## 4. Override-as-data: the unique value

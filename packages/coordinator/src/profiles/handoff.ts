@@ -92,6 +92,11 @@ export function registerHandoff(coord: Coordinator): void {
           "Acceptor is not a workspace member") };
       }
     }
+    // Accepting makes the acceptor the assignee. A paused participant is
+    // assigned no new tasks (control/1.0), so it cannot take tasks this way.
+    if (ws.members.get(acceptor)!.paused) {
+      return { error: rpcError(E.CONTROL_WORKSPACE_PAUSED, `Acceptor ${acceptor} is paused`) };
+    }
     // Omission accepts all proposed tasks; an empty selection is not a handoff.
     if (Array.isArray(p.accepted_task_ids) && p.accepted_task_ids.length === 0) {
       return { error: rpcError(E.PARAMS, "accepted_task_ids must not be empty") };

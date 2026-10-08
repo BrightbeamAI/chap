@@ -68,6 +68,8 @@ def register_routing(coord: "Coordinator") -> None:
         task = ws.tasks.get(task_id or "")
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
+        if p.get("candidates") is not None and not isinstance(p.get("candidates"), list):
+            return {"error": rpc_error(E.PARAMS, "candidates must be a list")}
         candidates = p.get("candidates") or []
         if not candidates:
             return {"error": rpc_error(E.ROUTING_CANDIDATES_EMPTY,
@@ -83,25 +85,49 @@ def register_routing(coord: "Coordinator") -> None:
             selected = decision.get("selected")
             rationale = decision.get("rationale") or {}
         else:
-            # Default: pick first eligible
-            eligible = [c for c in candidates if c in ws.members]
+            # Default: pick the first eligible candidate. A paused participant
+            # is assigned no new tasks (control/1.0), so the default policy
+            # passes over one as it passes over a non-member, and names it
+            # among the alternatives with that reason.
+            def member_of(c):
+                return ws.members.get(c) if isinstance(c, str) else None
+
+            eligible = [c for c in candidates
+                        if member_of(c) is not None and not member_of(c).paused]
             if not eligible:
-                return {"error": rpc_error(E.ROUTING_NO_ELIGIBLE_ASSIGNEE,
-                                           "No candidate is a workspace member")}
+                return {"error": rpc_error(
+                    E.ROUTING_NO_ELIGIBLE_ASSIGNEE,
+                    "No candidate is a workspace member who is not paused")}
             selected = eligible[0]
+            alternatives = []
+            chosen = False
+            for c in candidates:
+                m = member_of(c)
+                if m is None:
+                    continue
+                if m.paused:
+                    alternatives.append({"candidate": c, "reason_excluded": "paused"})
+                elif not chosen:
+                    chosen = True
+                else:
+                    alternatives.append({"candidate": c,
+                                         "reason_excluded": "not first eligible"})
             rationale = {
                 "policy_id": "default",
                 "hints_used": list((task.routing_hints or {}).keys()),
                 "summary": "default policy: first eligible candidate",
-                "alternatives_considered": [
-                    {"candidate": c, "reason_excluded": "not first eligible"}
-                    for c in eligible[1:]
-                ],
+                "alternatives_considered": alternatives,
             }
 
         if selected not in ws.members:
             return {"error": rpc_error(E.ROUTING_NO_ELIGIBLE_ASSIGNEE,
                                        f"Selected {selected!r} is not a member")}
+        # An operator policy can pick a paused participant. Routing to one
+        # would assign a task to a participant whose work was stopped, so it
+        # is refused as task.create refuses a paused assignee.
+        if ws.members[selected].paused:
+            return {"error": rpc_error(E.CONTROL_WORKSPACE_PAUSED,
+                                       f"Assignee {selected} is paused")}
 
         # Update assignee per spec S3
         task.assignee = selected

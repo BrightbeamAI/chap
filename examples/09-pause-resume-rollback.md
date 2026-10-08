@@ -83,21 +83,18 @@ The Coordinator's response:
   "result": {
     "scope": "participant",
     "participant_uri": "agent:triage-bot#v3.3",
-    "paused_at": "2026-05-17T16:19:42.110Z",
-    "in_flight_tasks": [
-      "tsk_01HZBE0Q9K3X8M2V4N6P8R0TBD",
-      "tsk_01HZBE0Q9K3X8M2V4N6P8R0TBE",
-      "tsk_01HZBE0Q9K3X8M2V4N6P8R0TBF"
-    ],
+    "paused": true,
     "in_flight_policy": "allow_to_complete"
   }
 }
 ```
 
-The agent's in-flight tasks are allowed to complete; new `task.create`
-messages for the agent are rejected with error `-32500` (`policy_denied`)
-carrying a `paused` reason. Coordinators MAY support an
-`in_flight_policy` of `cancel` for emergencies.
+The agent's in-flight tasks are allowed to complete, and no new task is
+assigned to it. `task.create`, `control.supersede` and `escalate.raise`
+refuse it as an assignee with `-32063`,
+`handoff.accept` refuses it as an acceptor, and `task.route` never
+assigns it. Coordinators MAY support an `in_flight_policy` of `cancel`
+for emergencies.
 
 ---
 

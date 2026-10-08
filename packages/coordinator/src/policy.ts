@@ -8,8 +8,11 @@
  * CoordinatorOptions.
  *
  * The defaults shipped with the Coordinator (in profiles/routing.ts)
- * implement the same logic; this factory exists so that the legacy
- * call site can keep using:
+ * apply the same review-depth and escalation rules. Routing differs: this
+ * routing policy takes the first candidate as given, so a first candidate
+ * who is not a member is refused with -32510 and one who is paused with
+ * -32063, where the built-in default passes over both. This factory exists
+ * so that the legacy call site can keep using:
  *
  *   new Coordinator({ ...makeDefaultPolicy(SENIOR_URI), ... })
  *

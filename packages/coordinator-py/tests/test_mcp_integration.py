@@ -161,13 +161,13 @@ async def test_routing_decisions_through_mcp() -> None:
         task_id = t["task_id"]
 
         depth = _unwrap(await client.call_tool("chap.review.depth", {
-            "workspace": "wsp_rt", "from": "service:coord", "task_id": task_id,
+            "workspace": "wsp_rt", "from": "human:alice", "task_id": task_id,
         }))
         assert depth["depth"] == "full"
         assert depth["decision_artefact"].startswith("art_")
 
         esc = _unwrap(await client.call_tool("chap.escalate.auto", {
-            "workspace": "wsp_rt", "from": "service:coord", "task_id": task_id,
+            "workspace": "wsp_rt", "from": "human:alice", "task_id": task_id,
             "default_escalation_target": "human:alice",
         }))
         assert esc["escalate"] is True

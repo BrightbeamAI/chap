@@ -214,7 +214,10 @@ coord = Coordinator(CoordinatorOptions(routing_policy=route))
 Every call to `task.route`, `review.depth`, and `escalate.auto`
 emits a `route_decision` artefact recording the inputs, the policy
 id, and the rationale. `task.route` also updates the task's
-`assignee` to match the selected URI.
+`assignee` to match the selected URI. The caller must be a workspace
+member. The default policy takes the first candidate that is a member
+and is not paused; a `routing_policy` selection that is not a member
+is refused with `-32510`, and one that is paused with `-32063`.
 
 ## Audit and SCITT submission (audit-scitt/1.0)
 

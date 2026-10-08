@@ -444,16 +444,15 @@ content applies the same policy to refusals (section 8).
 coordinators a caller must be a member to use `task.create`, `task.update`,
 `task.complete`, `review.request`, `decide.approve`, `decide.reject`,
 `decide.override`, `abstain.declare`, `escalate.raise`,
-`workspace.set_profiles`, and every `control.*`, `deliberate.*`, `handoff.*`
-and `whisper.*` method. A non-member is refused with `-32011`, or earlier,
-at the signature check, where signatures are required.
+`workspace.set_profiles`, `participant.leave` and the routing methods
+(`task.route`, `review.depth` and `escalate.auto`) **(0.3.0)**, and every
+`control.*`, `deliberate.*`, `handoff.*` and `whisper.*` method. A non-member
+is refused with `-32011`, or earlier, at the signature check, where
+signatures are required, and the refusal is not recorded.
 `participant.rotate_key` and `participant.revoke_key` act only on members'
 keys. `workspace.create` and `participant.join` admit anyone. The reads need
-membership only where read membership or signatures are required.
-`participant.leave`, the routing methods (`task.route`, `review.depth` and
-`escalate.auto`) and the `audit-scitt/1.0` methods do not check membership.
-Without required signatures, a non-member's call to `participant.leave` or to
-a routing method is accepted and recorded under the name it gives, and
+membership only where read membership or signatures are required, and the
+`audit-scitt/1.0` methods do not check it. Without required signatures,
 membership itself is a claim, because the caller writes the `from`.
 
 **Roles.** A role is the string a participant names when it joins, or
@@ -519,8 +518,12 @@ coordinator enforces.
 `production` unless `workspace.create` sets it. The workspace's own `mode` is
 the default for a task that names none, and a task may carry a higher mode as
 long as it is within the ceiling. Under `modes/1.0`, a `trial` task made by
-`task.create` or `control.supersede` requires review; one made by
-`escalate.raise` does not yet, a defect both coordinators share.
+`task.create`, `control.supersede` or `escalate.raise` requires review, the
+last **(0.3.0)**. The successor that `escalate.raise` makes takes the mode
+`new_task.mode` names, or else the original's, and is refused with `-32040`
+when that mode is above the current ceiling **(0.3.0)**. A successor that
+`escalate.raise` or `control.supersede` makes also requires review when the
+task it replaces did **(0.3.0)**, so neither removes a required review.
 
 Any member can move the ceiling up or down with `control.set_mode_ceiling`,
 and `control.rollback` can restore a ceiling from a snapshot. Both are
@@ -533,6 +536,19 @@ The coordinators do not filter shadow output. `shadow_observers` is a field
 of the workspace descriptor schema that lists participant URIs. Neither
 coordinator stores it, and delivering shadow output only to those
 participants is the deployment's job.
+
+**Pausing a participant.** `control.pause` with scope `participant` stops new
+tasks being assigned to a member. `task.create` and `control.supersede`
+refuse it as an assignee with `-32063`. `escalate.raise` refuses it as an
+assignee too, `handoff.accept` refuses it as an acceptor, and `task.route`
+never assigns it **(0.3.0)**. The pause holds only while the member
+cooperates. Any member can lift it with `control.resume`, the paused member
+included, and a member that leaves and joins again comes back unpaused. A
+paused member can also still act: it can complete the tasks it holds and
+decide reviews, and reviews, whispers and deliberations can still be
+addressed to it. Where signatures are required, revoking its keys stops its
+signed calls until it registers another key, which a join carrying a token or
+presentation that the verifier accepts and that binds a key can do.
 
 ---
 
@@ -585,9 +601,8 @@ These are gaps in the current design and code, stated as they stand.
   refusal entry then names a sender it cannot prove, because the `from` it
   records is the caller's claim.
 - **Authority is coarse.** Roles are chosen by the joiner, `admin` guards
-  only `workspace.set_profiles` and revoking another member's key, the
-  declared scopes are not enforced, and some methods do not check membership
-  (section 6).
+  only `workspace.set_profiles` and revoking another member's key, and the
+  declared scopes are not enforced (section 6).
 - **Reads are open by default, and the log is stored in the clear.**
   `workspace.describe` and `audit.read` answer any caller unless read
   membership or signatures are required, and since anyone can join, neither

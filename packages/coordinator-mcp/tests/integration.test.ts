@@ -233,7 +233,7 @@ test("Routing decisions surface through MCP", async () => {
     const depthBody = unwrap<{ depth: string; decision_artefact: string }>(
       await client.callTool({
         name: "chap.review.depth",
-        arguments: { workspace: "wsp_rt", from: "service:coord", task_id: taskId },
+        arguments: { workspace: "wsp_rt", from: "human:alice", task_id: taskId },
       }) as never
     );
     assert.equal(depthBody.depth, "full");
@@ -243,7 +243,7 @@ test("Routing decisions surface through MCP", async () => {
       await client.callTool({
         name: "chap.escalate.auto",
         arguments: {
-          workspace: "wsp_rt", from: "service:coord", task_id: taskId,
+          workspace: "wsp_rt", from: "human:alice", task_id: taskId,
           default_escalation_target: "human:alice",
         },
       }) as never
