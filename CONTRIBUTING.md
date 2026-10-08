@@ -8,6 +8,11 @@ bindings, and substantive proposals for the next draft.
 This document describes how to propose changes and what kinds of changes are
 in scope.
 
+> **Editorial note.** This guide mentions Editors and working groups. The
+> Editors are the maintainers listed in [MAINTAINERS.md](./MAINTAINERS.md),
+> and no working group is active yet. MAINTAINERS.md describes how
+> decisions are made today.
+
 ---
 
 ## Local development
@@ -79,8 +84,8 @@ For substantive changes, write a proposal that includes:
 
 Submit a CEP as a pull request adding `ceps/CEP-NNN.md`; the Editor assigns
 the number. [`ceps/CEP-001.md`](./ceps/CEP-001.md) is a worked example, and
-[`GOVERNANCE.md`](./GOVERNANCE.md) §3.2 defines the required sections and the
-public comment period.
+[`GOVERNANCE.md`](./GOVERNANCE.md) §3.2 defines the required sections; §3.3
+and §3.5 set the comment periods.
 
 Proposals are reviewed in a public forum and require **rough consensus**
 of the working group before they merge into a draft.
@@ -129,7 +134,8 @@ Specification prose:
 
 Reference code:
 
-- **TypeScript** for the canonical reference implementation.
+- **TypeScript and Python** for the two reference coordinators. They are
+  peers, and a change in behaviour goes into both.
 - **Pure functions where possible.** Side-effects belong in transport
   and storage adapters.
 - **No dependencies beyond a JCS, an Ed25519, and a JSON Schema
@@ -144,30 +150,53 @@ Diagrams:
 
 ---
 
-## 5. Versioning and release process
+## 5. Versioning and releases
 
-CHAP follows SemVer on the `chap` envelope field. Until 1.0, MINOR bumps
-may include breaking changes; implementers should pin exact draft
-versions. See [CHANGELOG.md](./CHANGELOG.md) for the release history
-and the planned items for upcoming drafts.
+Version numbers follow
+[ROADMAP.md, section "Version numbers"](./ROADMAP.md#version-numbers).
+Before 1.0, a minor release may break things, and a patch release only
+brings an implementation into line with the specification or corrects
+documentation.
 
-Drafts are tagged `0.1`, `0.2`, etc. The first stable release will be
-`1.0` after at least three independent interoperable implementations
-have demonstrated conformance.
+If your change breaks an existing client or a stored log, say so in
+[CHANGELOG.md](./CHANGELOG.md) under "Unreleased", with a migration. It
+ships in the next minor release, which lists it under "Breaking".
+
+Releases are tagged `vX.Y.Z`. The protocol packages share one version,
+which CI checks with `scripts/check-versions.mjs`.
+
+[ROADMAP.md](./ROADMAP.md#what-10-promises) sets out what 1.0 requires.
+Until a CEP settles the number in milestone 0.5, 1.0 needs at least three
+independent, interoperable implementations that pass the conformance tests.
 
 ---
 
 ## 6. Code of conduct
 
-This project follows a standard open-source code of conduct. Be kind,
-assume good faith, and disagree on the technical merits. Personal
-attacks, harassment, or vendor-pumping are not welcome.
+This project follows the code of conduct in
+[CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md), adapted from the Contributor
+Covenant 2.1. It also says how to report a problem. Be kind, assume good
+faith, and disagree on the technical merits. Personal attacks,
+harassment, or vendor-pumping are not welcome.
 
 ---
 
 ## 7. Licensing of contributions
 
-By contributing, you agree that your contribution will be licensed under
-the Apache License, Version 2.0 (see [LICENSE](./LICENSE)). If your
-contribution includes code or text covered by another licence, please
-note this in the pull request and ensure compatibility.
+CHAP has two licences. The specification text, listed in
+[LICENSE-SPEC.md](./LICENSE-SPEC.md), is licensed under Creative Commons
+Attribution 4.0 (CC BY 4.0). Everything else, including all code, is
+licensed under the Apache License, Version 2.0 (see [LICENSE](./LICENSE)).
+
+By contributing, you agree that your contribution is licensed under the
+licence of the file it changes. The same list decides the licence of a new
+file: a new file in `profiles/` or `ceps/`, or a new
+`conformance/*-vectors.md` file, is specification text, and any other new
+file is under Apache 2.0.
+
+If your contribution includes code or text under another licence, say so
+in the pull request, name the licence and the source, and check that it is
+compatible with the licence of the file it joins.
+
+For a substantive change, the maintainers may ask for a Developer
+Certificate of Origin sign-off ([GOVERNANCE.md](./GOVERNANCE.md) §5.3).

@@ -6,8 +6,8 @@
   <a href="https://github.com/BrightbeamAI/chap/releases/latest"><img src="https://img.shields.io/github/v/release/BrightbeamAI/chap?display_name=tag&style=flat-square" alt="Latest release"></a>
   <a href="https://pypi.org/project/chap-coordinator/"><img src="https://img.shields.io/pypi/v/chap-coordinator?style=flat-square&logo=pypi&logoColor=white&label=PyPI" alt="PyPI package"></a>
   <a href="https://www.npmjs.com/package/@brightbeamai/chap-coordinator"><img src="https://img.shields.io/npm/v/%40brightbeamai%2Fchap-coordinator?style=flat-square&logo=npm&label=npm" alt="npm package"></a>
-  <a href="https://github.com/BrightbeamAI/chap/tree/main/conformance"><img src="https://img.shields.io/badge/conformance-passing-22c55e?style=flat-square" alt="Conformance vectors passing"></a>
-  <a href="https://github.com/BrightbeamAI/chap/blob/main/LICENSE"><img src="https://img.shields.io/badge/spec-CC_BY_4.0-2563eb?style=flat-square" alt="Specification licensed CC BY 4.0"></a>
+  <a href="https://github.com/BrightbeamAI/chap/actions/workflows/ci.yml"><img src="https://github.com/BrightbeamAI/chap/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/BrightbeamAI/chap/blob/main/LICENSE-SPEC.md"><img src="https://img.shields.io/badge/spec-CC_BY_4.0-2563eb?style=flat-square" alt="Specification licensed CC BY 4.0"></a>
   <a href="https://github.com/BrightbeamAI/chap/blob/main/LICENSE"><img src="https://img.shields.io/badge/code-Apache_2.0-7c3aed?style=flat-square" alt="Code licensed Apache 2.0"></a>
 </p>
 

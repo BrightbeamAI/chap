@@ -1,5 +1,13 @@
 # Governance
 
+> **Editorial note.** This document describes the structure CHAP intends
+> for standards-track promotion. No Steering Committee or Working Group
+> exists yet. Today the maintainers listed in
+> [MAINTAINERS.md](./MAINTAINERS.md) review and merge changes and run
+> releases, and protocol decisions rest with the maintainer named there.
+> Where the two documents differ, MAINTAINERS.md describes current
+> practice.
+
 This document describes how the Collaborative Human-Agent Protocol evolves: the
 roles, the change process, the versioning policy, the intellectual-
 property terms, and the dispute-resolution path. A protocol without
@@ -26,8 +34,10 @@ engines, UI conventions, business policy.
    [`RELATIONSHIP-TO-OTHER-STANDARDS.md`](./RELATIONSHIP-TO-OTHER-STANDARDS.md).
 3. **Multi-vendor by construction.** No change that would only work
    in one vendor's stack.
-4. **Backward-compatible by default.** Wire-breaking changes
-   require a major-version bump and a documented migration period.
+4. **Breaking changes come with a migration.** Each one is listed under
+   "Breaking" in the changelog. From 1.0, a breaking change to a
+   [Stable](./ROADMAP.md#how-parts-of-chap-mature) part takes a new major
+   version.
 5. **Open by default.** Specs, schemas, reference code, conformance
    suites, meeting notes, and decision records are all public.
 
@@ -54,7 +64,7 @@ protocol decisions.
 The Steering Committee is composed of five to nine people drawn from
 organisations that ship production CHAP deployments or
 implementations. The Committee ratifies major decisions, appoints
-Editors, manages the IPR and license, and acts as the final arbiter
+Editors, manages the IPR and licence, and acts as the final arbiter
 on disputes.
 
 Seats are nominated by the existing Committee and confirmed by
@@ -170,31 +180,37 @@ A CEP author may withdraw at any time.
 
 ## 4. Versioning
 
-CHAP follows [Semantic Versioning 2.0](https://semver.org).
+[ROADMAP.md, section "Version numbers"](./ROADMAP.md#version-numbers), sets
+the rules.
 
-- **MAJOR** (`X.0`): wire-breaking changes; old clients cannot
-  talk to new servers. A documented migration period of at least
-  one calendar year between major versions is required.
-- **MINOR** (`X.Y`): additive only. New methods, new optional
-  fields, new error codes. Old clients continue to work.
-- **PATCH** (`X.Y.Z`): editorial fixes; no semantic change.
+Before 1.0:
 
-Profiles version independently from Core. A workspace declares
-both the Core version and each profile version it supports via
-`workspace.describe`'s `profiles` field.
+- A minor release may break things. The changelog lists each breaking
+  change under a "Breaking" heading, with a migration.
+- A patch release brings an implementation into line with the
+  specification, or corrects documentation. A change to what the
+  specification requires is a minor release.
+- The protocol packages take the specification's minor version.
+
+From 1.0, the specification follows
+[Semantic Versioning 2.0](https://semver.org), and profiles and packages
+carry their own version numbers.
+
+A workspace lists the profiles it serves, with their versions, in the
+`profiles` field of `workspace.describe`.
 
 ---
 
 ## 5. Intellectual property and licensing
 
-### 5.1 Specification license
+### 5.1 Specification licence
 
-The CHAP specification text is licensed under
-[Creative Commons Attribution 4.0 (CC-BY-4.0)](https://creativecommons.org/licenses/by/4.0/).
-Anyone can implement, redistribute, or extend CHAP without
-permission.
+The CHAP specification text is licensed under Creative Commons
+Attribution 4.0 (CC BY 4.0). [LICENSE-SPEC.md](./LICENSE-SPEC.md) lists
+the files that are specification text. Anyone can implement,
+redistribute, or extend CHAP without permission.
 
-### 5.2 Code license
+### 5.2 Code licence
 
 Reference implementations and conformance code are licensed under
 [Apache License 2.0](./LICENSE), which includes an explicit patent
@@ -204,14 +220,15 @@ grant.
 
 By submitting a pull request, a contributor agrees that the
 contribution is licensed under the same terms as the file being
-modified (CC-BY for spec text, Apache 2.0 for code). For
+modified (CC BY 4.0 for the specification text listed in
+LICENSE-SPEC.md, Apache 2.0 for every other file). For
 substantive changes the Editors may request a Developer Certificate
 of Origin (DCO) sign-off.
 
 ### 5.4 Patents
 
 The Steering Committee commits to CHAP being implementable royalty-
-free. Contributors implicitly grant a patent license for any
+free. Contributors implicitly grant a patent licence for any
 patents that read on their contributions, as per the Apache 2.0
 patent grant for code and a similar good-faith commitment for spec
 text. A formal IPR policy mirrors the W3C Royalty-Free Patent
@@ -234,14 +251,14 @@ When two contributors disagree on a substantive technical point:
    may request an open review by the full Steering Committee at
    the next scheduled meeting. The review is recorded publicly.
 
-Disputes about *conduct* (rather than technical content) go to the
-Code of Conduct process in [`CONTRIBUTING.md`](./CONTRIBUTING.md) §8.
+Disputes about *conduct* follow the enforcement process in
+[`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md).
 
 ---
 
 ## 7. Forks
 
-CHAP is a public standard licensed CC-BY and Apache 2.0. Anyone may
+CHAP is a public draft licensed CC BY 4.0 and Apache 2.0. Anyone may
 fork. Three constraints apply if you do:
 
 1. Use a name clearly distinct from CHAP.

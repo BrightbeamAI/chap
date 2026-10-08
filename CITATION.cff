@@ -19,11 +19,10 @@ repository-code: https://github.com/BrightbeamAI/chap
 url: https://github.com/BrightbeamAI/chap
 abstract: >-
   An open protocol for recording human decisions over AI agent work.
-  Approvals, edits, overrides and escalations become signed, hash-chained,
-  queryable records rather than fragments spread across application logs,
-  chat threads and ticket comments. Core is seven methods and one envelope
-  over JSON-RPC 2.0, with eleven optional profiles, two reference
-  implementations, and MCP and A2A transports.
+  Approvals, edits, overrides and escalations become queryable records in
+  one log per workspace, which can be signed and hash-chained. CHAP has a
+  small Core over JSON-RPC 2.0 and optional profiles, with two reference
+  implementations and MCP and A2A transports.
 keywords:
   - human-in-the-loop
   - ai-agents
@@ -35,8 +34,8 @@ keywords:
 license:
   - Apache-2.0
   - CC-BY-4.0
-version: 0.2.12
-date-released: '2026-09-06'
+version: 0.2.13
+date-released: '2026-09-07'
 preferred-citation:
   type: report
   title: >-

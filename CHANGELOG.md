@@ -1,11 +1,23 @@
 # Changelog
 
-All notable changes to the Collaborative Human-Agent Protocol (CHAP) will be recorded here.
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the protocol
-adheres to [Semantic Versioning 2.0](https://semver.org).
+All notable changes to the Collaborative Human-Agent Protocol (CHAP) are
+recorded here. The format follows
+[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/).
 
-Profiles version independently from Core. A profile version `<name>/<major>.<minor>` is
-incremented under the same rules.
+Version numbers follow
+[ROADMAP.md, section "Version numbers"](./ROADMAP.md#version-numbers).
+Before 1.0:
+
+- A minor release may break things. Its entry lists every breaking change
+  under a "Breaking" heading, each with a migration.
+- A patch release brings an implementation into line with the
+  specification, or corrects documentation. A change to what the
+  specification requires is a minor release.
+- The protocol packages take the specification's minor version: packages
+  0.3.x implement specification 0.3. `chap-analytics` implements no part
+  of the specification and has its own version numbers.
+
+Several 0.2 patch releases changed behaviour. Their entries say so.
 
 ---
 
@@ -244,6 +256,21 @@ response and hash for each slice in both references.
   by the producer and not verified by the Coordinator, so a wrong id is a
   dangling reference the chain still verifies. `chap-analytics` projects it as
   a `fulfils` column on the `tasks` table and as a `fulfils` edge in the graph.
+- **A licence file for the specification text.** `LICENSE-SPEC.md` names the
+  files licensed under CC BY 4.0; everything else, code included, stays under
+  Apache 2.0. Contributions made to those files before 0.3.0 also remain
+  available under Apache 2.0. A contribution takes the licence of the file it
+  changes (CONTRIBUTING.md §7), and the README's specification badge links to
+  the new file.
+- **Versioning rules, written down.** The header of this file, GOVERNANCE.md
+  §4 and CONTRIBUTING.md §5 follow ROADMAP.md: before 1.0 a minor release may
+  break things and lists each break with a migration, and a patch release
+  brings an implementation into line with the specification or corrects
+  documentation.
+- **IMPLEMENTATIONS.md says what backs each claim.** The packages are labelled
+  Beta, and a column names the run each claim was tested with.
+- **Editorial notes in GOVERNANCE.md and CONTRIBUTING.md** point to
+  MAINTAINERS.md for how decisions are made today.
 
 ### Fixed
 
@@ -1469,14 +1496,4 @@ experimentation, and early production pilots; not yet a stable 1.0.
 
 ## Versioning policy
 
-- **MAJOR** (`X.0`): wire-breaking changes; old clients cannot talk to new
-  servers. Migration windows of at least one calendar year between MAJOR
-  versions.
-- **MINOR** (`X.Y`): additive only at the protocol level. New methods, new
-  optional fields, new error codes. Old clients keep working.
-- **PATCH** (`X.Y.Z`): editorial fixes and implementation-side additions.
-  Wire format and schemas unchanged.
-
-Profiles version independently from Core. A workspace declares the specific
-Core version and the specific profile versions it implements via
-`workspace.describe`'s `profiles` field.
+The versioning rules are at the top of this file.

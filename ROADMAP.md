@@ -106,7 +106,7 @@ where it starts and where it closes.
 | Gap | What it means | Milestones |
 |---|---|---|
 | Version numbers and the release policy disagree | Patch releases in the 0.2 series carried behaviour changes. The next release is 0.3.0, and it writes the versioning rules down. | 0.3 |
-| The governance documents describe bodies yet to form | GOVERNANCE.md gives decisions to a steering committee and working groups that have yet to form, and lets only that committee amend the document. The licence terms differ between files: GOVERNANCE.md and the README put the specification under CC-BY 4.0, while LICENSE and CONTRIBUTING.md apply Apache 2.0 to everything. | 0.3 |
+| The governance documents describe bodies yet to form | GOVERNANCE.md gives decisions to a steering committee and working groups that have yet to form, and lets only that committee amend the document. Editorial notes in GOVERNANCE.md and CONTRIBUTING.md point to MAINTAINERS.md for current practice. | 0.3 |
 | Smaller mismatches between text and code | The documents and the coordinators differ in a number of smaller places. The 0.3 sweep corrects each one and publishes the list. | 0.3 |
 | Two descriptions of the messages | core/SPEC.md describes the JSON-RPC messages both coordinators send. Parts of SPECIFICATION.md describe a different message shape. | 0.4 |
 | No protocol version on requests | A client has no way to ask which revision a coordinator speaks, and the log has no record of which rules applied to an entry. | 0.4 |

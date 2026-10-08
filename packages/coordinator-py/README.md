@@ -261,9 +261,9 @@ and response shapes. The full audit notes are in the parent repo's
 the original Python implementation and 0.2.3 / 0.2.4 covering the
 MCP and A2A transport additions.
 
-## License
+## Licence
 
-Apache 2.0. See the parent repository's [LICENSE](./LICENSE).
+Apache 2.0. This package ships the licence in its own [LICENSE](./LICENSE) file.
 
 ## Specification
 

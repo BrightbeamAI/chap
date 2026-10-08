@@ -170,7 +170,8 @@ chap-protocol/
 ├── CHANGELOG.md                         Release notes.
 ├── MAINTAINERS.md                       Who reviews what.
 ├── IMPLEMENTATIONS.md                   Known implementations and their conformance.
-├── LICENSE                              Apache 2.0 (code) + CC-BY 4.0 (spec).
+├── LICENSE                              Apache 2.0, for every file LICENSE-SPEC.md does not list.
+├── LICENSE-SPEC.md                      CC BY 4.0, for the specification text.
 │
 ├── core/
 │   └── SPEC.md                          Core specification: seven methods.
