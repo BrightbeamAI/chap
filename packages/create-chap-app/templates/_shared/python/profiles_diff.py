@@ -186,7 +186,10 @@ def summary(o: dict) -> str:
         return f"refused {o.get('code')}"
     result = o.get("result")
     state = result.get("state") if isinstance(result, dict) else None
-    return f"accepted, {state}" if isinstance(state, str) else "accepted"
+    if isinstance(state, str):
+        return f"accepted, {state}"
+    outcome = result.get("outcome") if isinstance(result, dict) else None
+    return f"accepted, outcome {outcome}" if isinstance(outcome, str) else "accepted"
 
 
 def compare(a: list[dict], b: list[dict]) -> list[dict]:

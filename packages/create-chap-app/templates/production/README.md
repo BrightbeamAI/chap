@@ -51,10 +51,10 @@ it: `to`, `subject` and `brief`, one message per row.
 `npm run keys` generates an Ed25519 keypair and writes the private key as a
 JWK to `keys/`, in a file named after the agent's URI and readable by its
 owner only. It never overwrites a key file. The agent registers the public
-half at `participant.join`, the one call the coordinator accepts unsigned
-from a newcomer, and signs every later call. A re-join cannot change a
-member's key, so a new key means `participant.rotate_key` signed with the
-old one, or a new participant URI.
+half at `participant.join`, which the coordinator accepts unsigned, and
+signs every later call. A re-join cannot change a member's key, so a new
+key means `participant.rotate_key` signed with the old one, or a new
+participant URI.
 
 ## The browser key
 
@@ -140,8 +140,9 @@ the file the coordinator writes. The checks:
   own work (`-32011`), and an edit at the desk is recorded as an override
   with its patch and rationale.
 - `modes/1.0`: the workspace runs in trial mode, so every task requires
-  review whatever the agent asks for, and a task above the mode ceiling is
-  refused (`-32040`).
+  review whatever the agent asks for. The ceiling is `trial` as well, so a
+  task that asks for `production` is refused (`-32040`); the ceiling is
+  enforced on every workspace, and the profile adds the trial rule.
 - `identity-oidc/1.0`: a join that presents a token has it verified against
   the issuer's keys, and the token's `cnf.jwk` becomes the member's signing
   key (`-32403`, `-32404`).

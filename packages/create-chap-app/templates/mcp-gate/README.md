@@ -2,7 +2,7 @@
 
 One process runs the CHAP coordinator, the review desk and an MCP server
 over streamable HTTP. Claude Desktop, Cursor or Claude Code connects to it,
-and every tool call the assistant makes is recorded on the chain. A task the
+and every call the assistant makes that changes state is recorded on the chain. A task the
 assistant completes with `review_required` opens a review that waits for you
 in the desk, and the assistant cannot approve its own work. No API key is
 needed: the assistant you already use is the agent.
@@ -102,8 +102,12 @@ the rows as a document for `docs/profile-explorer.md`.
 This project does not notify anyone: the desk lists the open reviews
 addressed to the reviewer it is asked about, and delivering a review to the
 people named on it is the deployment's job (SPECIFICATION 15.1). The MCP
-endpoint and the desk have no authentication and listen on the loopback
-address; a deployment puts TLS and its own login in front. It runs one
+endpoint, the desk, `POST /chap` and the read API under `/api/` have no
+login, and a `human:` URI in the desk is a label that says who is deciding;
+it does not authenticate them. The server listens on the loopback address,
+refuses a request from another origin or under another host name, and
+takes JSON only on `POST /chap`, so a page open elsewhere cannot decide as
+the reviewer; a deployment puts TLS and its own login in front. It runs one
 coordinator process over one SQLite file. The chain head stays in that file,
 where the operator of this process can rewrite it; a head published
 somewhere the operator cannot change is what shows an entry existed

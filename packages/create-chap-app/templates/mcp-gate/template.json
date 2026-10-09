@@ -2,7 +2,7 @@
   "name": "mcp-gate",
   "title": "MCP gate",
   "language": "typescript",
-  "description": "Claude Desktop, Cursor or Claude Code connects to an MCP server over HTTP; every tool call is recorded and work that requires review waits for you in the desk.",
+  "description": "Claude Desktop, Cursor or Claude Code connects to an MCP server over HTTP; every call that changes state is recorded and work that requires review waits for you in the desk.",
   "shared": {
     "desk": "desk",
     "node/server.mjs": "server.mjs",

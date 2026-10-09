@@ -119,6 +119,16 @@ def submit(agent: Participant, message: dict, body: dict, poll_seconds: float = 
     started = time.monotonic()
     paused = False
     while True:
+        # A task.create while the agent is paused is refused with -32063
+        # and the refusal is recorded, so the agent waits on
+        # workspace.describe, a read that leaves nothing on the chain, and
+        # creates the task once it is resumed. The first refusal is kept so
+        # the console shows what the coordinator said.
+        if paused and agent.is_paused():
+            if timeout is not None and time.monotonic() - started >= timeout:
+                raise TimeoutError(f"Still paused after {timeout} seconds")
+            time.sleep(poll_seconds)
+            continue
         try:
             task_id = create_task(agent, message)
             break
@@ -128,9 +138,6 @@ def submit(agent: Participant, message: dict, body: dict, poll_seconds: float = 
             if not paused:
                 log(f"{message['message_id']}: {exc.message} (refused {exc.code}); waiting for resume.py")
                 paused = True
-            if timeout is not None and time.monotonic() - started >= timeout:
-                raise TimeoutError(f"Still paused after {timeout} seconds") from exc
-            time.sleep(poll_seconds)
     if paused:
         log(f"{message['message_id']}: the agent is resumed, task.create accepted")
     done = agent.call("task.complete", task_id=task_id, output=body)
@@ -199,7 +206,7 @@ def connect(config: dict, url: str) -> Participant:
         client.get("/api/health")
     except (urllib.error.URLError, OSError) as exc:
         raise SystemExit(f"The desk process at {url} is not answering ({exc}). Start it with: python desk.py")
-    signer = Signer(config["agent"]["uri"]) if config.get("require_signatures") else None
+    signer = Signer.load_or_create(config["agent"]["uri"]) if config.get("require_signatures") else None
     agent = Participant(client, config["workspace"], config["agent"]["uri"], signer=signer)
     if signer:
         agent.join("agent", "drafter", config["agent"].get("display_name"))

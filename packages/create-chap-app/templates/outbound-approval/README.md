@@ -21,10 +21,11 @@ drafts the three sample messages without asking for review, and each one
 waits in the desk anyway, because the workspace is in trial mode under
 `modes/1.0`. With `--once` it exits after the file is processed; without it,
 it keeps watching the file for new rows. The row number names the message:
-the first row is `m1`, and once decided it lands in `outbox/m1.json` with
-the task id and who decided. While the agent is paused, its console shows
-each `task.create` refused with `-32063`, and it carries on when `resume.py`
-has run. The tests run with no model and no network:
+the first row is `m1`, and once approved it lands in `outbox/m1.json` with
+the task id and who decided; a rejected message is written nowhere. While
+the agent is paused, its console shows the first `task.create` refused with
+`-32063`, it waits on `workspace.describe`, and it carries on when
+`resume.py` has run. The tests run with no model and no network:
 
 ```bash
 python -m pytest tests -q
@@ -79,8 +80,10 @@ A method a profile owns is refused with `-32601` when the profile is absent.
   refused with `-32011` and recorded; an override's patch is applied by the
   coordinator and the patched result is what reaches `outbox/`.
 - `modes/1.0`: the workspace is in trial mode, so every task the agent
-  opens requires review whatever it passes, and a task above the mode
-  ceiling is refused with `-32040`.
+  opens requires review whatever it passes. The mode ceiling is `trial` as
+  well, so a task that asks for `production` is refused with `-32040`; the
+  ceiling is enforced on every workspace, and the profile adds the trial
+  rule.
 - `control/1.0`: `pause.py` pauses the agent, its next `task.create` is
   refused with `-32063` and recorded, and `resume.py` lets it go on.
 
@@ -115,6 +118,15 @@ workspaces between them. The chain head stays in that file, where the
 operator of this process can rewrite it; a receipt from a transparency
 service, or a head published somewhere the operator cannot change, is what
 shows an entry existed independently of the coordinator (SECURITY.md).
+
+The desk, `POST /chap` and the read API under `/api/` have no login. A
+`human:` URI in the desk is a label that says who is deciding; it does not
+authenticate them. The server listens on the loopback address, refuses a
+request from another origin or under another host name, and takes JSON
+only on `POST /chap`, so a page open elsewhere cannot decide as the
+reviewer; the deployment puts TLS and its own login in front, and
+`security-signed/1.0` with a key per person is what ties a decision to its
+holder.
 
 `tests/` and `diff-profiles.py` script the decisions, because nobody is at
 the desk when they run; the project itself never does.

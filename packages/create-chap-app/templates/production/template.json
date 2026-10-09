@@ -2,7 +2,7 @@
   "name": "production",
   "title": "Production set",
   "language": "typescript",
-  "description": "The Handbook's production set: signed calls, OIDC verified at join, the chain on, SQLite on a volume. One coordinator service, one agent service with its own key, and the desk signing in the browser.",
+  "description": "The Handbook's production set: signed calls, a token presented at join verified against its issuer, the chain on, SQLite on a volume. One coordinator service, one agent service with its own key, and the desk signing in the browser.",
   "shared": {
     "desk": "desk",
     "node/server.mjs": "server.mjs",

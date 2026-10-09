@@ -44,7 +44,6 @@ except ModuleNotFoundError as exc:  # pragma: no cover - import guard
 
 HERE = Path(__file__).resolve().parent
 DESK_DIR = HERE / "desk"
-BOOTSTRAP_METHODS = ("workspace.create", "participant.join")
 
 
 # -- configuration ------------------------------------------------------------
@@ -135,6 +134,8 @@ def bootstrap(coord: Coordinator, config: dict) -> None:
         params: dict[str, Any] = {"profiles": list(config["profiles"])}
         if config.get("mode"):
             params["mode"] = config["mode"]
+        if config.get("mode_ceiling"):
+            params["mode_ceiling"] = config["mode_ceiling"]
         r = send("workspace.create", params)
         if "error" in r:
             raise RuntimeError(f"workspace.create: {r['error']['message']}")
@@ -254,7 +255,6 @@ class Handler(BaseHTTPRequestHandler):
             data = body.encode("utf-8") if isinstance(body, str) else body
         self.send_response(status)
         self.send_header("content-type", content_type)
-        self.send_header("access-control-allow-origin", "*")
         self.send_header("content-length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -263,12 +263,33 @@ class Handler(BaseHTTPRequestHandler):
         size = int(self.headers.get("content-length") or 0)
         return self.rfile.read(size).decode("utf-8") if size > 0 else ""
 
-    def do_OPTIONS(self) -> None:
-        self.send_response(204)
-        self.send_header("access-control-allow-origin", "*")
-        self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-        self.send_header("access-control-allow-headers", "content-type, mcp-session-id, mcp-protocol-version")
-        self.end_headers()
+    def _foreign_host(self) -> bool:
+        """True when the Host header is not one of this server's own names.
+
+        A page that resolves its own name to this address (DNS rebinding)
+        arrives with that name as the Host, and is refused before any route.
+        """
+        config = self.server.config
+        host = (self.headers.get("host") or "").lower()
+        port = self.server.server_address[1]
+        allowed = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}", f"{config['host']}:{port}".lower()}
+        allowed.update(h.lower() for h in (config.get("allowed_hosts") or []))
+        return host not in allowed
+
+    def _foreign_origin(self) -> bool:
+        """True for a browser request from another origin.
+
+        The desk is served from this process, so its requests carry this
+        server's own origin or none. A page on another origin gets no
+        cross-origin headers and its calls are refused here, so an open tab
+        elsewhere cannot decide as the reviewer. A non-browser client sends
+        no Origin header.
+        """
+        origin = self.headers.get("origin")
+        if not origin:
+            return False
+        host = self.headers.get("host") or ""
+        return origin.lower() != f"http://{host}".lower()
 
     def do_GET(self) -> None:
         self._route("GET")
@@ -282,11 +303,17 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         path = url.path
         try:
+            if self._foreign_host():
+                return self._reply(421, {"error": "unknown host; set allowed_hosts in chap.config.json to serve under another name"})
+            if self._foreign_origin():
+                return self._reply(403, {"error": "cross-origin requests are refused"})
             if path in ("/", "/desk", "/desk.html"):
                 return self._reply(200, srv.desk, "text/html; charset=utf-8")
             if path == "/chap-client.mjs":
                 return self._reply(200, srv.client_module, "text/javascript; charset=utf-8")
             if path == "/chap" and method == "POST":
+                if not (self.headers.get("content-type") or "").lower().startswith("application/json"):
+                    return self._reply(415, {"error": "POST /chap takes application/json"})
                 try:
                     envelope = json.loads(self._body())
                 except ValueError:

@@ -32,7 +32,7 @@
     "agent_uri": "agent:drafter"
   },
   "run": [
-    "pip install chap-coordinator",
+    "pip install -r requirements.txt",
     "python desk.py",
     "python agent.py tickets.csv",
     "open http://127.0.0.1:8788/"

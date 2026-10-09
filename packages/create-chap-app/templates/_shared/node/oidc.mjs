@@ -49,8 +49,11 @@ export async function makeOidcVerifier({ issuer, jwks_url, audience = null, cloc
         if (!res.ok) throw new Error(`JWKS at ${jwks_url} answered ${res.status}`);
         const body = await res.json();
         keys = indexKeys(body);
-        lastRefresh = Date.now();
       } finally {
+        // Counted on failure too, so an issuer that is down is asked again
+        // after the gap and a stream of unknown kids does not become a
+        // stream of fetches.
+        lastRefresh = Date.now();
         refreshing = null;
       }
     })();

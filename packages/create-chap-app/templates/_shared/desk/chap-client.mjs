@@ -50,6 +50,16 @@ function assertNoLoneSurrogate(s) {
   }
 }
 
+/**
+ * The content hash both coordinators compute: "sha256:" and the hex digest
+ * of the canonical bytes. A decision that carries it as
+ * `approved_artefact_digest` is bound to the artefact the reviewer saw.
+ */
+export async function contentHash(value) {
+  const bytes = new TextEncoder().encode(canonicalize(value));
+  return "sha256:" + hex(await crypto.subtle.digest("SHA-256", bytes));
+}
+
 // -- base64 -----------------------------------------------------------------
 
 const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));

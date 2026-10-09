@@ -307,6 +307,17 @@ npm install @brightbeamai/chap-coordinator
 pip install chap-coordinator
 ```
 
+**A project on your own agent and data:**
+
+```bash
+npx create-chap-app my-gate
+```
+
+generates a project with a review desk, one profile setting and a
+`diff-profiles` command ([`packages/create-chap-app/`](./packages/create-chap-app/));
+[`docs/profile-explorer.md`](./docs/profile-explorer.md) shows what each
+profile changes.
+
 Either package gives you Core and every profile; a new workspace advertises `core/1.0` and `review/1.0` unless you name others. The TypeScript reference is in [`reference/`](./reference/); the Python reference is in [`reference/python/`](./reference/python/). The TypeScript library lives at [`packages/coordinator/`](./packages/coordinator/); the Python library at [`packages/coordinator-py/`](./packages/coordinator-py/).
 
 New here? [`START_HERE.md`](./START_HERE.md) gets you to one real decision in about two minutes, with Python and nothing else:

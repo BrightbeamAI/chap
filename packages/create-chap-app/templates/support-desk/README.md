@@ -17,8 +17,9 @@ open http://127.0.0.1:8788/     # decide in the desk
 `chap.config.json` and keeps the SQLite store under `data/`. `agent.py`
 drafts the three sample tickets and waits for each decision; with `--once`
 it exits after the file is processed, and without it, it keeps watching the
-file for new rows. Each decision lands in `replies/<ticket id>.json` with the
-task id and who decided. The tests run with no model and no network:
+file for new rows. An approved or overridden reply lands in
+`replies/<ticket id>.json` with the task id and who decided; a rejected one
+is written nowhere. The tests run with no model and no network:
 
 ```bash
 python -m pytest tests -q
@@ -106,6 +107,15 @@ workspaces between them. The chain head stays in that file, where the
 operator of this process can rewrite it; a receipt from a transparency
 service, or a head published somewhere the operator cannot change, is what
 shows an entry existed independently of the coordinator (SECURITY.md).
+
+The desk, `POST /chap` and the read API under `/api/` have no login. A
+`human:` URI in the desk is a label that says who is deciding; it does not
+authenticate them. The server listens on the loopback address, refuses a
+request from another origin or under another host name, and takes JSON
+only on `POST /chap`, so a page open elsewhere cannot decide as the
+reviewer; the deployment puts TLS and its own login in front, and
+`security-signed/1.0` with a key per person is what ties a decision to its
+holder.
 
 `tests/` and `diff-profiles.py` script the decisions, because nobody is at
 the desk when they run; the project itself never does.

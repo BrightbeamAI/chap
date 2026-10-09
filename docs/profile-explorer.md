@@ -53,7 +53,7 @@ Several people deciding under a rule. With `core/1.0`, `review/1.0`, `deliberati
 | Step | Without | With |
 |---|---|---|
 | The reviewer opens a vote under quorum:2 | refused `-32601` | accepted, `open` |
-| The vote closes after one yea | refused `-32601` | accepted |
+| The vote closes after one yea | refused `-32601` | accepted, outcome `rejected` |
 
 ## handoff/1.0
 
@@ -104,7 +104,7 @@ The whole workload under Core alone and under every profile together.
 | The agent asks the reviewer a quick question with a default | refused `-32601` | accepted |
 | Someone the question was not put to answers it | refused `-32601` | refused `-32011` |
 | The reviewer opens a vote under quorum:2 | refused `-32601` | accepted, `open` |
-| The vote closes after one yea | refused `-32601` | accepted |
+| The vote closes after one yea | refused `-32601` | accepted, outcome `rejected` |
 | The reviewer pauses the agent | refused `-32601` | accepted |
 | A task is assigned to the paused agent | accepted, `created` | refused `-32063` |
 | The reviewer hands a task to the second reviewer | refused `-32601` | accepted, `proposed` |

@@ -34,7 +34,8 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   and prints each call's outcome under both. Four templates: an MCP gate for
   Claude Desktop, Cursor and Claude Code; a support desk and an outbound
   approval gate in Python; and the Handbook's production set with signed
-  calls, OIDC verified at join, the chain on, and a `doctor`. CI generates
+  calls, a token presented at join verified against its issuer, the chain
+  on, and a `doctor`. CI generates
   each template, installs the packages it pins from npm or PyPI, and runs
   its tests, so a template is held to what the released coordinators do.
   `packages/create-chap-app/DESIGN.md` is the design.

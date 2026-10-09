@@ -115,7 +115,9 @@ export function compare(a, b) {
 export function summary(o) {
   if (o.status !== "ok") return `refused ${o.code}`;
   const state = o.result && typeof o.result === "object" ? o.result.state : undefined;
-  return typeof state === "string" ? `accepted, ${state}` : "accepted";
+  if (typeof state === "string") return `accepted, ${state}`;
+  const outcome = o.result && typeof o.result === "object" ? o.result.outcome : undefined;
+  return typeof outcome === "string" ? `accepted, outcome ${outcome}` : "accepted";
 }
 
 export function renderTable(setA, setB, rows) {

@@ -1,0 +1,7 @@
+# Kept out of the build context: the agent's private key, the store, the
+# outbox and anything installed or generated locally.
+keys/
+data/
+outbox/
+node_modules/
+.git/

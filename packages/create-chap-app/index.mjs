@@ -10,6 +10,7 @@
 // project. It installs nothing.
 
 import { readFile, readdir, mkdir, copyFile, writeFile, stat, access } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { dirname, join, resolve, basename } from "node:path";
@@ -32,14 +33,19 @@ export function parseArgs(argv) {
   const args = { name: null, template: null, profiles: null, yes: false, help: false, list: false, dir: null, human: null, agent: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--template" || a === "-t") args.template = argv[++i];
-    else if (a === "--profiles" || a === "-p") args.profiles = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
+    const value = () => {
+      const v = argv[++i];
+      if (v === undefined || v.startsWith("-")) throw new Error(`${a} needs a value`);
+      return v;
+    };
+    if (a === "--template" || a === "-t") args.template = value();
+    else if (a === "--profiles" || a === "-p") args.profiles = value().split(",").map((s) => s.trim()).filter(Boolean);
     else if (a === "--yes" || a === "-y") args.yes = true;
     else if (a === "--help" || a === "-h") args.help = true;
     else if (a === "--list") args.list = true;
-    else if (a === "--dir") args.dir = argv[++i];
-    else if (a === "--human") args.human = argv[++i];
-    else if (a === "--agent") args.agent = argv[++i];
+    else if (a === "--dir") args.dir = value();
+    else if (a === "--human") args.human = uri(value());
+    else if (a === "--agent") args.agent = uri(value());
     else if (a.startsWith("-")) throw new Error(`Unknown option ${a}`);
     else if (!args.name) args.name = a;
     else throw new Error(`Unexpected argument ${a}`);
@@ -48,6 +54,14 @@ export function parseArgs(argv) {
 }
 
 const NAME_RE = /^[a-z][a-z0-9-]{0,63}$/;
+// A participant URI: a scheme, a colon, then printable characters with no
+// quote, backslash or whitespace, so it is safe inside the generated JSON.
+const URI_RE = /^[a-z][a-z0-9+.-]*:[\x21\x23-\x5b\x5d-\x7e]+$/;
+
+function uri(value) {
+  if (!URI_RE.test(value)) throw new Error(`Not a participant URI: ${value}. Use the form human:name@example.org or agent:name.`);
+  return value;
+}
 
 function slug(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -109,7 +123,10 @@ export async function generate(answers, { templatesDir = TEMPLATES_DIR, targetDi
   }
 
   const written = [];
-  for (const { from, to } of sources) {
+  for (const { from, to: rel } of sources) {
+    // npm leaves .gitignore files out of a published package, so a template
+    // ships its ignore list as `gitignore` and it is renamed here.
+    const to = /(^|\/)(gitignore|dockerignore)$/.test(rel) ? rel.replace(/(gitignore|dockerignore)$/, ".$1") : rel;
     const dest = join(target, to);
     await mkdir(dirname(dest), { recursive: true });
     if (TEXT.test(to)) {
@@ -199,7 +216,7 @@ export async function main(argv = process.argv.slice(2)) {
     );
     console.log(`\nCreated ${result.target} from the ${manifest.title} template with ${profiles.join(", ")}.\n`);
     console.log("Next:");
-    console.log(`  cd ${basename(result.target)}`);
+    console.log(`  cd ${args.dir ? result.target : basename(result.target)}`);
     for (const step of manifest.run ?? []) console.log(`  ${step}`);
     console.log("\nREADME.md says what each profile changes in this project and how to attach your own agent and data.");
     return 0;
@@ -208,6 +225,10 @@ export async function main(argv = process.argv.slice(2)) {
   }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+function runDirectly() {
+  try { return !!process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]); } catch { return false; }
+}
+
+if (runDirectly()) {
   main().then((code) => process.exit(code)).catch((e) => { console.error(e.message); process.exit(1); });
 }

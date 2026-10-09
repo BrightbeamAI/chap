@@ -23,10 +23,10 @@ the project. It installs nothing. Each project pins the published
 
 | Template | Language | What it does |
 |---|---|---|
-| `mcp-gate` | TypeScript | Claude Desktop, Cursor or Claude Code connects to an MCP server over HTTP. Every tool call is recorded, and work that requires review waits for you in the desk. No API key needed. |
+| `mcp-gate` | TypeScript | Claude Desktop, Cursor or Claude Code connects to an MCP server over HTTP. Every call that changes state is recorded, and work that requires review waits for you in the desk. No API key needed. |
 | `support-desk` | Python | Tickets from a CSV. The agent drafts a reply to each, the draft waits for your decision, and the reply as you decided it is written to `replies/`. |
 | `outbound-approval` | Python | Drafts are held until the named approver decides, and only an approved message reaches `outbox/`. Trial mode requires review whatever the agent says, and a pause stops the agent. |
-| `production` | TypeScript | The Handbook's production set: signed calls, OIDC verified at join, the chain on, SQLite on a volume. A coordinator service, an agent service with its own key, the desk signing in the browser, and a `doctor` that checks the setup. |
+| `production` | TypeScript | The Handbook's production set: signed calls, a token presented at join verified against its issuer, the chain on, SQLite on a volume. A coordinator service, an agent service with its own key, the desk signing in the browser, and a `doctor` that checks the setup. |
 
 `npx create-chap-app --list` prints them.
 

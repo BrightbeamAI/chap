@@ -5,9 +5,10 @@
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "create-chap-app": "index.mjs"
+    "create-chap-app": "bin/create-chap-app.mjs"
   },
   "files": [
+    "bin",
     "index.mjs",
     "templates",
     "README.md",
@@ -17,7 +18,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test \"tests/**/*.test.mjs\"",
+    "test": "node --test tests/generate.test.mjs",
     "build:explorer": "node scripts/build-explorer.mjs",
     "check:explorer": "node scripts/build-explorer.mjs --check"
   },

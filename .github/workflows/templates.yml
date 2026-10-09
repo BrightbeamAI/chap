@@ -122,7 +122,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install the published Python package
-        run: python -m pip install "chap-coordinator>=0.3.0,<0.4"
+        run: python -m pip install "chap-coordinator[crypto]>=0.3.0,<0.4"
       - name: Rebuild and compare
         env:
           CHAP_EXPLORER_INSTALL: '1'

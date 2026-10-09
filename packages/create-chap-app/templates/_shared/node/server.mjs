@@ -24,7 +24,9 @@ export async function loadConfig(path = join(here, "chap.config.json")) {
   config.host = process.env.CHAP_HOST ?? config.host ?? "127.0.0.1";
   config.store = process.env.CHAP_DB_PATH ?? config.store ?? "./data/chap.db";
   config.require_signatures = envFlag("CHAP_REQUIRE_SIGNATURES", config.require_signatures ?? false);
-  config.chain = envFlag("CHAP_CHAIN", config.chain ?? config.profiles.includes("audit-scitt/1.0"));
+  // The coordinator turns the chain on for a workspace that advertises
+  // audit-scitt/1.0 whatever the flag says, so the flag reports that too.
+  config.chain = envFlag("CHAP_CHAIN", !!config.chain) || config.profiles.includes("audit-scitt/1.0");
   config.mcp = envFlag("CHAP_MCP", config.mcp ?? false);
   config.oidc = oidcFromEnv(config.oidc);
   return config;
@@ -113,7 +115,7 @@ export async function makeCoordinator(config, extra = {}) {
 export async function bootstrap(coord, config) {
   const send = (method, params) => coord.dispatch({ jsonrpc: "2.0", id: `boot-${method}`, method, params: { workspace: config.workspace, ...params } });
   if (!coord.getWorkspace(config.workspace)) {
-    const r = send("workspace.create", { profiles: config.profiles, ...(config.mode ? { mode: config.mode } : {}) });
+    const r = send("workspace.create", { profiles: config.profiles, ...(config.mode ? { mode: config.mode } : {}), ...(config.mode_ceiling ? { mode_ceiling: config.mode_ceiling } : {}) });
     if (r.error) throw new Error(`workspace.create: ${r.error.message}`);
   }
   if (config.require_signatures) return;
@@ -176,8 +178,34 @@ export function publicConfig(config) {
 // -- HTTP ---------------------------------------------------------------------
 
 function reply(res, status, body, type = "application/json") {
-  res.writeHead(status, { "content-type": type, "access-control-allow-origin": "*" });
+  res.writeHead(status, { "content-type": type });
   res.end(type === "application/json" ? JSON.stringify(body) : body);
+}
+
+/**
+ * A browser request from another origin. The desk is served from this
+ * process, so its requests carry this server's own origin or none; a page
+ * on another origin gets no cross-origin headers and its calls are refused,
+ * so an open tab elsewhere cannot decide as the reviewer. A non-browser
+ * client sends no Origin header.
+ */
+function foreignOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  return origin.toLowerCase() !== `http://${req.headers.host ?? ""}`.toLowerCase();
+}
+
+/**
+ * A request whose Host header is not one of this server's own names. A page
+ * that resolves its own name to this address (DNS rebinding) arrives with
+ * that name as the Host, and is refused before any route.
+ */
+function foreignHost(req, config) {
+  const host = (req.headers.host ?? "").toLowerCase();
+  const port = req.socket.localPort;
+  const allowed = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`, `${config.host}:${port}`.toLowerCase()]);
+  if (config.allowed_hosts) for (const h of config.allowed_hosts) allowed.add(h.toLowerCase());
+  return !allowed.has(host);
 }
 
 async function readBody(req) {
@@ -207,13 +235,12 @@ export async function makeServer(config, coord) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
-      if (req.method === "OPTIONS") {
-        res.writeHead(204, { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, OPTIONS", "access-control-allow-headers": "content-type, mcp-session-id, mcp-protocol-version" });
-        return res.end();
-      }
+      if (foreignHost(req, config)) return reply(res, 421, { error: "unknown host; set allowed_hosts in chap.config.json to serve under another name" });
+      if (foreignOrigin(req)) return reply(res, 403, { error: "cross-origin requests are refused" });
       if (url.pathname === "/" || url.pathname === "/desk" || url.pathname === "/desk.html") return reply(res, 200, desk, "text/html; charset=utf-8");
       if (url.pathname === "/chap-client.mjs") return reply(res, 200, clientModule, "text/javascript; charset=utf-8");
       if (url.pathname === "/chap" && req.method === "POST") {
+        if (!(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return reply(res, 415, { error: "POST /chap takes application/json" });
         let envelope;
         try { envelope = JSON.parse(await readBody(req)); } catch { return reply(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
         return reply(res, 200, coord.dispatch(envelope));

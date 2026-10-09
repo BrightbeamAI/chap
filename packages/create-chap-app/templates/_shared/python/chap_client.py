@@ -17,10 +17,14 @@ Signer signs each call with the participant's own key.
 """
 from __future__ import annotations
 
+import base64
 import json
+import os
+import re
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 from uuid import uuid4
@@ -118,17 +122,48 @@ class _RemoteWorkspaces:
 class Signer:
     """One Ed25519 key for one participant, for security-signed/1.0.
 
-    The key is derived from the URI with the coordinator's demo helper, so a
-    restart signs with the same key. A deployment supplies real keys.
+    The key lives in a file the agent owns, ``keys/<uri slug>.jwk.json``,
+    generated on first use and never overwritten. The kid is the first
+    sixteen hex characters of the SHA-256 of the URI, the rule the desk's
+    client uses, so a key is recognisable in the member's key list. Nothing
+    here derives a key from the URI: a key anyone could derive would let
+    anyone sign as the agent.
     """
 
-    def __init__(self, uri: str, key: Any = None):
+    def __init__(self, uri: str, key: Any):
         from chap_coordinator import crypto
         self._crypto = crypto
         self.uri = uri
-        self.key = key or crypto.derive_private_key(uri)
-        self.public_jwk = crypto.public_jwk(uri, self.key)
+        self.key = key
+        self.public_jwk = crypto.public_jwk(uri, key)
         self.kid = self.public_jwk["kid"]
+
+    @staticmethod
+    def key_path(uri: str, directory: str | os.PathLike[str] = "keys") -> Path:
+        slug = re.sub(r"[^A-Za-z0-9._-]+", "_", uri)
+        return Path(directory) / f"{slug}.jwk.json"
+
+    @classmethod
+    def load_or_create(cls, uri: str, directory: str | os.PathLike[str] = "keys") -> "Signer":
+        """The participant's signer, from its key file, generating one on first use."""
+        from chap_coordinator import crypto
+        Ed25519PrivateKey, _ = crypto._require_cryptography()
+        path = cls.key_path(uri, directory)
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if data.get("kty") != "OKP" or data.get("crv") != "Ed25519" or "d" not in data:
+                raise ValueError(f"{path} is not an Ed25519 private JWK")
+            key = Ed25519PrivateKey.from_private_bytes(_b64url_decode(data["d"]))
+            return cls(uri, key)
+        key = Ed25519PrivateKey.generate()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        os.chmod(path.parent, 0o700)
+        jwk = crypto.public_jwk(uri, key)
+        private = {**jwk, "d": _b64url_encode(key.private_bytes_raw())}
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(private, handle, indent=2)
+        return cls(uri, key)
 
     def sign(self, envelope: dict) -> dict:
         """The envelope with its ``sig`` set. The input is not changed."""
@@ -138,8 +173,23 @@ class Signer:
         return {**unsigned, "sig": sig}
 
 
+def _b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _b64url_decode(text: str) -> bytes:
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
 class Participant:
     """One participant's calls to one workspace."""
+
+    def is_paused(self) -> bool:
+        """Whether this participant is paused, read with workspace.describe."""
+        described = self.client.describe(self.workspace) or {}
+        for member in described.get("members") or []:
+            if member.get("uri") == self.uri:
+                return bool(member.get("paused"))
+        return False
 
     def __init__(self, client: HttpCoordinator, workspace: str, uri: str, signer: Signer | None = None):
         self.client = client

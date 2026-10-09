@@ -81,7 +81,7 @@
   </section>
 </main>
 <script type="module">
-import { makeClient, generateSigner, signerFromJwk, jsonPatch, deepEqual } from "./chap-client.mjs";
+import { makeClient, generateSigner, signerFromJwk, jsonPatch, deepEqual, contentHash } from "./chap-client.mjs";
 
 const $ = (id) => document.getElementById(id);
 let config = null, client = null, reviews = [], selected = null;
@@ -107,7 +107,7 @@ async function loadConfig() {
 
 // Under security-signed/1.0 the desk signs in the browser. The key is
 // generated here, kept in localStorage, and registered at participant.join,
-// which is the one call the coordinator accepts unsigned from a newcomer.
+// which the coordinator accepts unsigned.
 async function signerFor(uri) {
   if (!config.require_signatures) return null;
   const storeKey = `chap-desk-key:${config.workspace}:${uri}`;
@@ -125,9 +125,9 @@ async function setReviewer(uri) {
   $("signing").textContent = signer ? `signing as ${uri} with key ${signer.kid}` : "signing off";
   $("signing").className = "badge " + (signer ? "good" : "off");
   if (signer) {
-    // Idempotent for a member whose key is already on record; a first join
-    // registers the key. A re-join cannot add a key, so a cleared browser
-    // storage means a new participant URI or a key rotation.
+    // A first join registers the key; a later join by the same member is
+    // accepted and adds nothing. A re-join cannot add a key, so a cleared
+    // browser storage means a new participant URI.
     const me = config.humans.find((h) => h.uri === uri);
     try {
       await client.call("participant.join", { type: "human", role: me?.role ?? "reviewer",
@@ -156,7 +156,13 @@ function renderList() {
     b.onclick = () => select(r);
     list.appendChild(b);
   }
-  if (selected && !reviews.some((r) => r.task_id === selected.task_id)) { selected = null; showDetail(); }
+  const current = selected && reviews.find((r) => r.task_id === selected.task_id);
+  if (selected && !current) { selected = null; showDetail(); }
+  else if (current && !deepEqual(current.artefact, selected.artefact)) {
+    // The artefact under review changed since it was opened here, for
+    // example after a revision. Show the new one; a decision binds to it.
+    selected = current; showDetail(); notice("The artefact under review changed; this is the current one.");
+  }
 }
 
 function select(r) {
@@ -196,8 +202,11 @@ async function decide(fn) {
   }
 }
 
+// Every decision carries approved_artefact_digest, the hash of the artefact
+// shown here, so the coordinator refuses the decision if the artefact under
+// review is no longer the one the reviewer saw (review/1.0 §3.2).
 $("approve").onclick = () => decide(async () => {
-  await client.call("decide.approve", { task_id: selected.task_id, comment: $("rationale").value || undefined, tags: tags().length ? tags() : undefined });
+  await client.call("decide.approve", { task_id: selected.task_id, approved_artefact_digest: await contentHash(selected.artefact), comment: $("rationale").value || undefined, tags: tags().length ? tags() : undefined });
 });
 
 $("override").onclick = () => decide(async () => {
@@ -206,13 +215,13 @@ $("override").onclick = () => decide(async () => {
   if (deepEqual(edited, selected.artefact)) throw new Error("Nothing changed. Approve as written, or edit the artefact.");
   const rationale = $("rationale").value.trim();
   if (!rationale) throw new Error("An override needs a rationale.");
-  await client.call("decide.override", { task_id: selected.task_id, diff: jsonPatch(selected.artefact, edited), rationale, tags: tags().length ? tags() : undefined, intent_preserved: true });
+  await client.call("decide.override", { task_id: selected.task_id, approved_artefact_digest: await contentHash(selected.artefact), diff: jsonPatch(selected.artefact, edited), rationale, tags: tags().length ? tags() : undefined, intent_preserved: true });
 });
 
 $("reject").onclick = () => decide(async () => {
   const rationale = $("rationale").value.trim();
   if (!rationale) throw new Error("A rejection needs a reason.");
-  await client.call("decide.reject", { task_id: selected.task_id, comment: rationale, tags: tags().length ? tags() : undefined, request_revision: $("revision").checked || undefined });
+  await client.call("decide.reject", { task_id: selected.task_id, approved_artefact_digest: await contentHash(selected.artefact), comment: rationale, tags: tags().length ? tags() : undefined, request_revision: $("revision").checked || undefined });
 });
 
 async function renderChain() {

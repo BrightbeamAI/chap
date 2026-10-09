@@ -27,6 +27,8 @@ test("every template generates with its placeholders filled", async () => {
     assert.ok(written.includes("README.md"), `${t.name} has a README`);
     assert.ok(written.includes("chap.config.json"), `${t.name} has chap.config.json`);
     assert.ok(written.includes("desk/desk.html") && written.includes("desk/chap-client.mjs"), `${t.name} has the desk`);
+    assert.ok(written.includes(".gitignore"), `${t.name} has a .gitignore, renamed from the shipped gitignore`);
+    assert.ok(!written.some((w) => /(^|\/)(gitignore|dockerignore)$/.test(w)), `${t.name} leaves no plain ignore file`);
     for (const rel of await walk(dir)) {
       const text = await readFile(join(dir, rel), "utf8").catch(() => "");
       assert.doesNotMatch(text, /__[A-Z_]+__/, `${t.name}/${rel} has a placeholder left`);
@@ -35,6 +37,21 @@ test("every template generates with its placeholders filled", async () => {
     assert.equal(config.workspace, fill.__WORKSPACE__);
     assert.deepEqual(config.profiles, t.default_profiles);
     await rm(dir, { recursive: true });
+  }
+});
+
+test("the package ships what a generated project needs", async () => {
+  // npm leaves .gitignore out of a tarball, so the templates ship it as
+  // `gitignore`, and the files list carries the bin, the templates and the
+  // generator. This reads the files list the way npm pack does.
+  const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  assert.deepEqual(pkg.files, ["bin", "index.mjs", "templates", "README.md", "DESIGN.md"]);
+  assert.equal(pkg.bin["create-chap-app"], "bin/create-chap-app.mjs");
+  const templates = await listTemplates();
+  for (const t of templates) {
+    const files = await walk(new URL(`../templates/${t.name}/`, import.meta.url).pathname);
+    assert.ok(files.includes("gitignore"), `${t.name} ships gitignore without the dot`);
+    assert.ok(!files.includes(".gitignore"), `${t.name} ships no .gitignore, which npm pack would drop`);
   }
 });
 

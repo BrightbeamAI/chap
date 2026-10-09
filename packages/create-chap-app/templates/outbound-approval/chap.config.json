@@ -2,6 +2,7 @@
   "workspace": "__WORKSPACE__",
   "profiles": __PROFILES_JSON__,
   "mode": "trial",
+  "mode_ceiling": "trial",
   "store": "./data/chap.db",
   "port": 8789,
   "humans": [

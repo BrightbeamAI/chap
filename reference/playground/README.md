@@ -174,8 +174,8 @@ Environment variables:
   image sets `0.0.0.0` because the container's published port is mapped to
   `127.0.0.1` on the host by `docker-compose.yml`. Only expose it on a trusted
   network.
-- The model variables listed under Requirements. `CHAP_NO_LLM=1` still
-  selects the scripted agent, as it did before the providers were added.
+- The model variables listed under Requirements. `CHAP_NO_LLM=1` selects
+  the scripted agent.
 
 ---
 

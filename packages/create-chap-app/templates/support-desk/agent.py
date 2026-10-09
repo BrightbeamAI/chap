@@ -162,7 +162,7 @@ def connect(config: dict, url: str) -> Participant:
         client.get("/api/health")
     except (urllib.error.URLError, OSError) as exc:
         raise SystemExit(f"The desk process at {url} is not answering ({exc}). Start it with: python desk.py")
-    signer = Signer(config["agent"]["uri"]) if config.get("require_signatures") else None
+    signer = Signer.load_or_create(config["agent"]["uri"]) if config.get("require_signatures") else None
     agent = Participant(client, config["workspace"], config["agent"]["uri"], signer=signer)
     if signer:
         agent.join("agent", "drafter", config["agent"].get("display_name"))

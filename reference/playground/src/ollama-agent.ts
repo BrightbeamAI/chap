@@ -13,7 +13,7 @@ import type { Coordinator, Envelope, ArtefactRoutingHints } from "@brightbeamai/
 import type { Ticket } from "./tickets.js";
 import { makeProvider, type Provider } from "./providers.js";
 
-// CHAP_NO_LLM=1 is the older switch for the scripted drafter and still works.
+// CHAP_NO_LLM=1 selects the scripted drafter.
 if (process.env.CHAP_NO_LLM === "1" && !process.env.CHAP_MODEL_PROVIDER) {
   process.env.CHAP_MODEL_PROVIDER = "scripted";
 }

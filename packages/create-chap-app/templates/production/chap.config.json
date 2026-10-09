@@ -4,6 +4,7 @@
   "store": "./data/chap.db",
   "port": 8790,
   "mode": "trial",
+  "mode_ceiling": "trial",
   "humans": [
     { "uri": "__HUMAN_URI__", "display_name": "__HUMAN_NAME__", "role": "reviewer" }
   ],

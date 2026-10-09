@@ -175,6 +175,12 @@ export async function run({ once = false, dir = here, url = chapUrl(), log = con
   }
 }
 
+/** Whether a human other than the agent is a member who is not paused. */
+async function reviewerPresent(client) {
+  const ws = await client.call("workspace.describe", {});
+  return (ws.members ?? []).some((m) => m.uri !== client.from && m.type === "human" && !m.paused);
+}
+
 /** One step for one task. Returns true when the task is decided or closed. */
 async function advance({ client, base, provider, outbox, taskId, item, log }) {
   const view = await fetchTask(base, taskId);
@@ -188,20 +194,20 @@ async function advance({ client, base, provider, outbox, taskId, item, log }) {
         item.draft = await draft(provider, row, revision);
         log(`task ${taskId} drafted${revision ? " again, after the reviewer's note" : ""} with ${provider.model_id}`);
       }
-      try {
-        const r = await client.call("task.complete", { task_id: taskId, output: item.draft });
-        item.draft = null;
-        item.waiting = true;
-        item.noReviewer = false;
-        log(`task ${taskId} ${r.state}: waiting for a decision at the desk`);
-      } catch (e) {
-        if (e.code !== -32011) throw e;
-        // The review is addressed to a human other than the agent, and none
-        // has joined yet. Said once; the draft is kept and submitted on a
-        // later pass.
+      // The review opens addressed to the human members other than the
+      // agent, so until one has joined, task.complete would be refused and
+      // each refusal recorded. workspace.describe is a read, so waiting on
+      // it leaves nothing on the chain. Said once per task.
+      if (!(await reviewerPresent(client))) {
         if (!item.noReviewer) log(`task ${taskId} cannot open its review yet: no reviewer has joined. Open the desk at ${base}/ and the draft is submitted on a later pass.`);
         item.noReviewer = true;
+        return false;
       }
+      const r = await client.call("task.complete", { task_id: taskId, output: item.draft });
+      item.draft = null;
+      item.waiting = true;
+      item.noReviewer = false;
+      log(`task ${taskId} ${r.state}: waiting for a decision at the desk`);
       return false;
     }
     case "review_requested":

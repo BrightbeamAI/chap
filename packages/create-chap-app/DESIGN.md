@@ -68,9 +68,16 @@ the deployment's decision, as SPECIFICATION §15.1 says.
 Under `security-signed/1.0` the desk signs each call in the browser with an
 Ed25519 key it generates and keeps in the browser's storage. The public key
 is registered at `participant.join`. The private key never leaves the
-browser.
+browser. Every decision carries `approved_artefact_digest`, the hash of the
+artefact the desk showed, so the coordinator refuses a decision on an
+artefact the reviewer did not see.
 
-## The four templates
+A `human:` URI in the desk is a label: it says who is deciding and does not
+authenticate them. The desk and its read API have no login of their own;
+the deployment puts its login in front, and under `security-signed/1.0`
+the signing key is what ties a decision to its holder.
+
+## The templates
 
 **MCP gate** (TypeScript). One process serves the desk, `POST /chap`, and an
 MCP server over streamable HTTP at `/mcp`. Claude Desktop, Cursor or Claude
@@ -79,8 +86,8 @@ task the assistant completes with `review_required` opens a review, and the
 assistant cannot approve its own work. The developer decides in the desk. No
 API key is needed.
 
-**Support desk** (Python). Tickets come from a CSV, with three sample rows
-and a column to point at the developer's own export. The agent drafts a reply
+**Support desk** (Python). Tickets come from a CSV, with three sample rows,
+and the developer points the agent at their own export. The agent drafts a reply
 to each, the draft waits for a decision, and the approved reply is written to
 `replies/`. A rejected draft is written nowhere.
 
@@ -104,7 +111,7 @@ enforces.
 
 A template that drafts text reads `CHAP_MODEL_PROVIDER`, or chooses from the
 keys present: `ANTHROPIC_API_KEY` for the Anthropic Messages API,
-`OPENAI_API_KEY` for the OpenAI chat completions API, and `OLLAMA_URL` for a
+`OPENAI_API_KEY` for the OpenAI Responses API, and `OLLAMA_URL` for a
 local model. With none of these set, a scripted agent drafts from the
 input, and the project says so on its console. The playground uses the same
 rule. No vendor SDK is installed; each provider is one HTTP call.
@@ -126,7 +133,8 @@ its outcome under both. The rows that differ are the ones a profile changes:
   the state it held.
 - `whisper/1.0`: a question nobody answers applies its default at the
   deadline.
-- `deliberation/1.0`: a decision needs the quorum before the task completes.
+- `deliberation/1.0`: a vote closes with an outcome under its rule, and
+  one yea under `quorum:2` closes as rejected.
 - `security-signed/1.0`: an unsigned call is refused (`-32070`).
 - `audit-scitt/1.0`: the chain is on and `audit.verify_chain` can check it.
 
