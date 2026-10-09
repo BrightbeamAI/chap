@@ -216,11 +216,29 @@ def open_reviews(coord: Coordinator, workspace: str, reviewer: str | None = None
     return sorted(out, key=lambda r: r["requested_at"])
 
 
-def _view_of(task: Any) -> dict:
+def _view_of(ws: Any, task: Any) -> dict:
+    """A task as the read API shows it. ``artefact`` is what is or was under
+    review, whatever was decided. An override's rationale lives on the
+    override artefact, and is put on the decision here as ``rationale``."""
+    artefact = task.pending_artefact if task.pending_artefact is not None else task.output
+    review = _as_dict(task.review)
+    if review:
+        decisions = []
+        for d in review.get("decisions") or []:
+            d = dict(d)
+            override_id = d.get("override_artefact_id")
+            if override_id:
+                override = _as_dict(ws.overrides.get(override_id))
+                d["rationale"] = (override or {}).get("rationale")
+                d.setdefault("comment", d["rationale"])
+                if d.get("comment") is None:
+                    d["comment"] = d["rationale"]
+            decisions.append(d)
+        review = {**review, "decisions": decisions}
     return {
         "task_id": task.id, "kind": task.kind, "state": task.state, "assignee": task.assignee,
         "mode": task.mode, "created_at": task.created_at, "updated_at": task.updated_at,
-        "input": task.input, "output": task.output, "review": _as_dict(task.review),
+        "input": task.input, "output": task.output, "artefact": artefact, "review": review,
         "history": [_as_dict(h) for h in task.history],
     }
 
@@ -229,7 +247,7 @@ def task_view(coord: Coordinator, workspace: str, task_id: str) -> dict | None:
     """One task, for an agent waiting on a decision and for the desk's lists."""
     ws = coord.get_workspace(workspace)
     task = ws.tasks.get(task_id) if ws is not None else None
-    return _view_of(task) if task is not None else None
+    return _view_of(ws, task) if task is not None else None
 
 
 def list_tasks(coord: Coordinator, workspace: str, kind: str | None = None, state: str | None = None,
@@ -238,37 +256,43 @@ def list_tasks(coord: Coordinator, workspace: str, kind: str | None = None, stat
     ws = coord.get_workspace(workspace)
     if ws is None:
         return []
-    out = [_view_of(t) for t in ws.tasks.values()
+    out = [_view_of(ws, t) for t in ws.tasks.values()
            if (not kind or t.kind == kind) and (not state or t.state == state)]
     out.sort(key=lambda v: v.get("created_at") or "", reverse=True)
     return out[:limit] if limit else out
 
 
 def task_evidence(coord: Coordinator, workspace: str, task_id: str) -> dict | None:
-    """The evidence behind a task's decisions: the task, the accepted decide.*
-    entries from the chain for it (signed envelopes under security-signed/1.0),
-    the keys on record for the reviewers who decided, and the chain head. A
-    committer writes this beside what it commits, and a verifier reads it."""
+    """The evidence behind a task's decisions: the task, the accepted
+    task.complete entries from the chain for it (each carries the artefact as
+    submitted), the accepted decide.* entries (signed envelopes under
+    security-signed/1.0), the keys on record for the reviewers who decided,
+    and the chain head. A committer writes this beside what it commits, and a
+    verifier reads it."""
     ws = coord.get_workspace(workspace)
     task = ws.tasks.get(task_id) if ws is not None else None
     if task is None:
         return None
-    decisions = []
+    decisions: list[dict] = []
+    submissions: list[dict] = []
     for entry in ws.audit:
         call = getattr(entry, "envelope", None)
-        if not isinstance(call, dict) or not str(call.get("method", "")).startswith("decide."):
+        if not isinstance(call, dict) or (call.get("params") or {}).get("task_id") != task_id:
             continue
-        if (call.get("params") or {}).get("task_id") != task_id:
-            continue
-        decisions.append({"seq": entry.seq, "arrived": entry.arrived, "prev_hash": entry.prev_hash, "envelope": call})
+        row = {"seq": entry.seq, "arrived": entry.arrived, "prev_hash": entry.prev_hash, "envelope": call}
+        method = str(call.get("method", ""))
+        if method.startswith("decide."):
+            decisions.append(row)
+        elif method == "task.complete":
+            submissions.append(row)
     keys: dict[str, list] = {}
     for d in decisions:
         uri = (d["envelope"].get("params") or {}).get("from")
         member = ws.members.get(uri) if isinstance(uri, str) else None
         if member is not None and uri not in keys:
             keys[uri] = [(k.jwk if hasattr(k, "jwk") else k.get("jwk")) for k in (member.keys or [])]
-    return {"workspace": workspace, "task": _view_of(task), "decisions": decisions, "keys": keys,
-            "chain_head": ws.chain_head, "chain_enabled": bool(getattr(ws, "chain_enabled", False))}
+    return {"workspace": workspace, "task": _view_of(ws, task), "submissions": submissions, "decisions": decisions,
+            "keys": keys, "chain_head": ws.chain_head, "chain_enabled": bool(getattr(ws, "chain_enabled", False))}
 
 
 def public_config(config: dict) -> dict:

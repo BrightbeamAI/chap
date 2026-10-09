@@ -1,0 +1,32 @@
+# Every commit a pull request brings must have been approved through the
+# CHAP code gate. The check needs no coordinator: the evidence travels with
+# the repository as a note under refs/notes/chap, which the gate writes at
+# commit time and `git push origin refs/notes/chap` sends along.
+#
+# Copy this file into the governed repository's .github/workflows/, and set
+# CHAP_GATE_DIR to where the gate project lives relative to the repository,
+# or install the gate's package there. A commit made by a person with git's
+# own signature passes with --allow-git-signed once the verifying keys are
+# configured on the runner; drop the flag to require an approval for every
+# commit on the branch.
+name: CHAP code gate
+
+on:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      CHAP_GATE_DIR: tools/chap-gate
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch the evidence notes
+        run: git fetch origin refs/notes/chap:refs/notes/chap || echo "no notes pushed yet"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify every commit of the pull request
+        run: node "$CHAP_GATE_DIR/verify.mjs" "origin/${{ github.base_ref }}..HEAD" --allow-git-signed

@@ -1,0 +1,28 @@
+{
+  "name": "__PROJECT_NAME__",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A CHAP code gate: every change a coding agent makes is reviewed as a diff, signed, and committed only once approved, with the evidence beside the commit",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "keys": "node keys.mjs",
+    "demo-repo": "node demo-repo.mjs",
+    "agent": "node agent.mjs",
+    "propose": "node propose.mjs",
+    "install-hooks": "node install-hooks.mjs",
+    "verify": "node verify.mjs",
+    "report": "node report.mjs",
+    "analytics": "python3 analytics.py",
+    "test": "node --test",
+    "diff-profiles": "node diff-profiles.mjs"
+  },
+  "dependencies": {
+    "@brightbeamai/chap-coordinator": "^0.3.0",
+    "@brightbeamai/chap-coordinator-mcp": "^0.3.0",
+    "@modelcontextprotocol/sdk": "^1.30.0"
+  }
+}

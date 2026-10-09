@@ -194,16 +194,31 @@ export function openReviews(coord, workspace, reviewer) {
 
 /** One task, for an agent waiting on a decision and for the desk's lists. */
 export function taskView(coord, workspace, taskId) {
-  const task = coord.getWorkspace(workspace)?.tasks.get(taskId);
+  const ws = coord.getWorkspace(workspace);
+  const task = ws?.tasks.get(taskId);
   if (!task) return null;
-  return viewOf(task);
+  return viewOf(ws, task);
 }
 
-function viewOf(task) {
+/**
+ * A task as the read API shows it. `artefact` is what is or was under
+ * review, whatever was decided. An override's rationale lives on the
+ * override artefact, and is put on the decision here as `rationale`.
+ */
+function viewOf(ws, task) {
+  let review = task.review ?? null;
+  if (review) {
+    review = { ...review, decisions: review.decisions.map((d) => {
+      if (!d.override_artefact_id) return d;
+      const override = ws.overrides.get(d.override_artefact_id);
+      return { ...d, rationale: override?.rationale ?? null, comment: d.comment ?? override?.rationale ?? undefined };
+    }) };
+  }
   return {
     task_id: task.id, kind: task.kind, state: task.state, assignee: task.assignee, mode: task.mode,
     created_at: task.created_at, updated_at: task.updated_at, input: task.input,
-    output: task.output ?? null, review: task.review ?? null, history: task.history,
+    output: task.output ?? null, artefact: task.pending_artefact ?? task.output ?? null,
+    review, history: task.history,
   };
 }
 
@@ -218,28 +233,32 @@ export function listTasks(coord, workspace, { kind, state, limit } = {}) {
   for (const task of ws.tasks.values()) {
     if (kind && task.kind !== kind) continue;
     if (state && task.state !== state) continue;
-    out.push(viewOf(task));
+    out.push(viewOf(ws, task));
   }
   out.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
   return limit ? out.slice(0, limit) : out;
 }
 
 /**
- * The evidence behind a task's decisions: the task, the accepted decide.*
- * entries from the chain for it (signed envelopes under security-signed/1.0),
- * the keys on record for the reviewers who decided, and the chain head. A
- * committer writes this beside what it commits, and a verifier reads it.
+ * The evidence behind a task's decisions: the task, the accepted
+ * task.complete entries from the chain for it (each carries the artefact
+ * as submitted), the accepted decide.* entries (signed envelopes under
+ * security-signed/1.0), the keys on record for the reviewers who decided,
+ * and the chain head. A committer writes this beside what it commits, and
+ * a verifier reads it.
  */
 export function taskEvidence(coord, workspace, taskId) {
   const ws = coord.getWorkspace(workspace);
   const task = ws?.tasks.get(taskId);
   if (!task) return null;
   const decisions = [];
+  const submissions = [];
   for (const entry of ws.audit) {
     const call = entry.envelope;
-    if (!call || typeof call.method !== "string" || !call.method.startsWith("decide.")) continue;
-    if (call.params?.task_id !== taskId) continue;
-    decisions.push({ seq: entry.seq, arrived: entry.arrived, prev_hash: entry.prev_hash, envelope: call });
+    if (!call || typeof call.method !== "string" || call.params?.task_id !== taskId) continue;
+    const row = { seq: entry.seq, arrived: entry.arrived, prev_hash: entry.prev_hash, envelope: call };
+    if (call.method.startsWith("decide.")) decisions.push(row);
+    else if (call.method === "task.complete") submissions.push(row);
   }
   const keys = {};
   for (const d of decisions) {
@@ -247,7 +266,7 @@ export function taskEvidence(coord, workspace, taskId) {
     const member = typeof uri === "string" ? ws.members.get(uri) : undefined;
     if (member && !(uri in keys)) keys[uri] = (member.keys ?? []).map((k) => k.jwk);
   }
-  return { workspace, task: viewOf(task), decisions, keys, chain_head: ws.chain_head ?? null, chain_enabled: !!ws.chain_enabled };
+  return { workspace, task: viewOf(ws, task), submissions, decisions, keys, chain_head: ws.chain_head ?? null, chain_enabled: !!ws.chain_enabled };
 }
 
 export function publicConfig(config) {

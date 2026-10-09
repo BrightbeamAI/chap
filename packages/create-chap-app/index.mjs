@@ -95,9 +95,9 @@ export function dotted(rel) {
  * Generate a project. Returns the list of files written.
  *
  * `answers`: { name, template, profiles, human_uri, human_name, agent_uri }.
- * Placeholders replaced in text files: __PROJECT_NAME__, __WORKSPACE__,
- * __PROFILES_JSON__, __PROFILES_CSV__, __HUMAN_URI__, __HUMAN_NAME__,
- * __AGENT_URI__.
+ * Placeholders replaced in text files: __PROJECT_NAME__, __PROJECT_DIR__
+ * (the absolute path written to), __WORKSPACE__, __PROFILES_JSON__,
+ * __PROFILES_CSV__, __HUMAN_URI__, __HUMAN_NAME__, __AGENT_URI__.
  */
 export async function generate(answers, { templatesDir = TEMPLATES_DIR, targetDir } = {}) {
   const manifest = JSON.parse(await readFile(join(templatesDir, answers.template, "template.json"), "utf8"));
@@ -109,6 +109,7 @@ export async function generate(answers, { templatesDir = TEMPLATES_DIR, targetDi
   const defaults = manifest.defaults ?? {};
   const fill = {
     __PROJECT_NAME__: answers.name,
+    __PROJECT_DIR__: target,
     __WORKSPACE__: (answers.workspace ?? defaults.workspace ?? "wsp_{name}").replace("{name}", slug(answers.name)),
     __PROFILES_JSON__: JSON.stringify(answers.profiles),
     __PROFILES_CSV__: answers.profiles.join(","),

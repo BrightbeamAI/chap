@@ -1,0 +1,286 @@
+// The gate's CHAP side: the configuration, a signing client for the agent,
+// a proposal as a task under review, the decision on it, and the evidence
+// a commit carries. propose.mjs, agent.mjs, the hooks and verify.mjs all
+// run on these.
+
+import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { canonicalize, contentHash, makeClient, signerFromJwk } from "../desk/chap-client.mjs";
+import { keyPathFor, readKeyFile } from "../keys.mjs";
+import { currentBranch, head, patchStats, workingTreePatch } from "./git.mjs";
+
+export const TASK_KIND = "code_change";
+export const NOTE_VERSION = 1;
+const here = dirname(fileURLToPath(import.meta.url));
+
+/** The gate directory, its configuration, and where the coordinator answers. */
+export async function loadGate(dir = dirname(here)) {
+  const config = JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8"));
+  const host = process.env.CHAP_HOST ?? config.host ?? "127.0.0.1";
+  const port = process.env.PORT ?? config.port ?? 8791;
+  const url = process.env.CHAP_URL ?? `http://${host}:${port}/chap`;
+  return { dir, config, url, base: url.replace(/\/chap\/?$/, "") };
+}
+
+/** GET from the gate's read API. A 404 gives null. */
+export async function api(gate, path) {
+  const res = await fetch(`${gate.base}${path}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET ${path} answered ${res.status}`);
+  return res.json();
+}
+
+/** What the running coordinator says it serves, or a clear error when it is not running. */
+export async function served(gate) {
+  let cfg;
+  try { cfg = await api(gate, "/api/config"); } catch (e) {
+    throw new Error(`The gate at ${gate.base} is not answering (${e.cause?.code ?? e.message}). Start it with: npm start`);
+  }
+  if (cfg.workspace !== gate.config.workspace) {
+    throw new Error(`${gate.base} serves ${cfg.workspace}, and chap.config.json here names ${gate.config.workspace}`);
+  }
+  return cfg;
+}
+
+/**
+ * A client for the agent named in the configuration, signing with the key
+ * in keys/ when the coordinator requires signatures, joined to the workspace.
+ */
+export async function agentClient(gate, { keyPath } = {}) {
+  const cfg = await served(gate);
+  const uri = gate.config.agent?.uri;
+  if (!uri) throw new Error("chap.config.json names no agent");
+  let signer = null;
+  if (cfg.require_signatures) {
+    const path = keyPath ?? process.env.CHAP_AGENT_KEY ?? keyPathFor(uri, join(gate.dir, "keys"));
+    signer = await signerFromJwk(uri, await readKeyFile(uri, path));
+  }
+  const client = makeClient({ url: gate.url, workspace: gate.config.workspace, from: uri, signer });
+  const join_ = { type: "agent", role: gate.config.agent.role ?? "drafter", display_name: gate.config.agent.display_name };
+  if (signer) join_.jwks = { keys: [signer.publicJwk] };
+  await client.call("participant.join", join_);
+  return client;
+}
+
+/** A client for a human reviewer, signing with a key when one is given. */
+export function reviewerClient(gate, uri, signer = null) {
+  return makeClient({ url: gate.url, workspace: gate.config.workspace, from: uri, signer });
+}
+
+export const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+
+/** The idempotency key of a change: the same patch on the same base is the same task. */
+export function changeKey(base, patch) {
+  return "change-" + sha256(`${base ?? "none"}\n${patch}`).slice(0, 24);
+}
+
+/**
+ * The artefact under review for a change in a repository: the patch of the
+ * working tree against HEAD, with the files it touches and where it came
+ * from. Null when the working tree matches HEAD.
+ */
+export async function describeChange(repo, { summary, drafted_by = "working tree", requested_by } = {}) {
+  const patch = await workingTreePatch(repo);
+  if (!patch.trim()) return null;
+  const base = await head(repo);
+  return {
+    summary,
+    repo: basename(repo),
+    branch: await currentBranch(repo),
+    base,
+    files: await patchStats(repo, patch),
+    patch,
+    drafted_by,
+    ...(requested_by ? { requested_by } : {}),
+  };
+}
+
+/**
+ * The task a revision belongs to: one of this agent's code changes that a
+ * rejection sent back to in_progress, for the same repository, branch and
+ * summary. Null when there is none.
+ */
+export async function revisionTarget(gate, client, artefact) {
+  const r = await api(gate, `/api/tasks?kind=${TASK_KIND}&state=in_progress`);
+  const same = (t) => t.assignee === client.from && t.input?.repo === artefact.repo && t.input?.branch === artefact.branch && t.input?.summary === artefact.summary;
+  return (r?.tasks ?? []).find((t) => same(t) && lastDecision(t)?.kind === "reject") ?? null;
+}
+
+/**
+ * Open the task for a change and submit the patch for review. A change
+ * proposed before, on the same base, answers with the task it has; a
+ * revision of a change the reviewer sent back goes to that task, named by
+ * `taskId` or found by `revisionTarget`. Returns the task id, its state
+ * after this call, whether it was a revision, and the digest the
+ * reviewer's decision will carry.
+ */
+export async function propose(client, artefact, { gate = null, taskId = null } = {}) {
+  let target = taskId;
+  if (!target && gate) target = (await revisionTarget(gate, client, artefact))?.task_id ?? null;
+  const digest = await contentHash(artefact);
+  if (target) {
+    const state = (await client.call("task.complete", { task_id: target, output: artefact })).state;
+    return { task_id: target, state, revised: true, digest };
+  }
+  const input = { summary: artefact.summary, repo: artefact.repo, branch: artefact.branch, base: artefact.base, files: artefact.files.map((f) => f.path) };
+  if (artefact.requested_by) input.requested_by = artefact.requested_by;
+  const created = await client.call("task.create", {
+    kind: TASK_KIND, assignee: client.from, input, review_required: true, idempotency_key: changeKey(artefact.base, artefact.patch),
+  });
+  let state = created.state;
+  if (state === "created" || state === "in_progress") {
+    state = (await client.call("task.complete", { task_id: created.task_id, output: artefact })).state;
+  }
+  return { task_id: created.task_id, state, revised: false, digest };
+}
+
+/**
+ * Whether a human other than the agent is a member. A review opened on
+ * task.complete is addressed to the human members other than the completer,
+ * and the completion is refused and recorded when there are none; the desk
+ * joins a reviewer the first time it is opened.
+ */
+export async function reviewerPresent(client) {
+  const ws = await client.call("workspace.describe", {});
+  return (ws.members ?? []).some((m) => m.uri !== client.from && m.type === "human");
+}
+
+/** The task's view from the read API, or null. */
+export const task = (gate, id) => api(gate, `/api/tasks/${encodeURIComponent(id)}`);
+
+/** The last decision on a task's review, or null. */
+export const lastDecision = (view) => view?.review?.decisions?.at(-1) ?? null;
+
+/**
+ * Poll a task until it leaves review. Returns the view. `onState` hears each
+ * state seen. Throws after `timeoutMs` when one is given.
+ */
+export async function waitForDecision(gate, id, { pollMs = 2000, timeoutMs = null, onState = () => {} } = {}) {
+  const started = Date.now();
+  let last = null;
+  for (;;) {
+    const view = await task(gate, id);
+    if (!view) throw new Error(`The gate does not know task ${id}`);
+    if (view.state !== last) { onState(view.state, view); last = view.state; }
+    if (view.state !== "review_requested") return view;
+    if (timeoutMs !== null && Date.now() - started > timeoutMs) throw new Error(`No decision on ${id} after ${timeoutMs} ms`);
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+}
+
+/** The approved code changes the gate holds, newest first. */
+export async function approvedChanges(gate, limit = 50) {
+  const r = await api(gate, `/api/tasks?kind=${TASK_KIND}&state=completed&limit=${limit}`);
+  return r?.tasks ?? [];
+}
+
+/** The evidence behind a task's decisions, from the read API. */
+export const evidence = (gate, id) => api(gate, `/api/tasks/${encodeURIComponent(id)}/evidence`);
+
+// -- RFC 6902, the part decide.override uses -----------------------------------
+
+/** Apply add, remove and replace operations to a JSON value. Other operations are refused. */
+export function applyJsonPatch(doc, ops) {
+  let out = structuredClone(doc);
+  for (const op of ops) {
+    if (!["add", "remove", "replace"].includes(op.op)) throw new Error(`Unsupported patch operation: ${op.op}`);
+    const tokens = op.path === "" ? [] : op.path.split("/").slice(1).map((t) => t.replace(/~1/g, "/").replace(/~0/g, "~"));
+    if (tokens.length === 0) {
+      if (op.op === "remove") throw new Error("Cannot remove the root");
+      out = structuredClone(op.value);
+      continue;
+    }
+    let parent = out;
+    for (const t of tokens.slice(0, -1)) {
+      parent = Array.isArray(parent) ? parent[Number(t)] : parent?.[t];
+      if (parent === undefined) throw new Error(`Path not found: ${op.path}`);
+    }
+    const last = tokens.at(-1);
+    if (Array.isArray(parent)) {
+      const i = last === "-" ? parent.length : Number(last);
+      if (op.op === "add") parent.splice(i, 0, structuredClone(op.value));
+      else if (op.op === "remove") parent.splice(i, 1);
+      else parent[i] = structuredClone(op.value);
+    } else {
+      if (op.op === "remove") { if (!(last in parent)) throw new Error(`Path not found: ${op.path}`); delete parent[last]; }
+      else if (op.op === "replace" && !(last in parent)) throw new Error(`Path not found: ${op.path}`);
+      else parent[last] = structuredClone(op.value);
+    }
+  }
+  return out;
+}
+
+// -- the evidence a commit carries -----------------------------------------------
+
+/**
+ * The note written beside a commit: the task, the artefact as proposed and
+ * as approved, the decision envelope as the chain holds it, the reviewer's
+ * keys, and the chain head. The approved artefact of an override is the
+ * proposed one with the reviewer's operations applied.
+ */
+export function buildNote(ev, gateUrl) {
+  const decision = ev.decisions.filter((d) => ["decide.approve", "decide.override"].includes(d.envelope.method)).at(-1);
+  if (!decision) throw new Error(`Task ${ev.task.task_id} has no approval on the chain`);
+  const approved = ev.task.output;
+  const params = decision.envelope.params;
+  // The artefact the reviewer saw is the last submission before the decision;
+  // its digest is what the decision signs. For an approval it is the approved
+  // artefact; for an override, the reviewer's operations applied to it are.
+  const submission = ev.submissions.filter((s) => s.seq < decision.seq).at(-1);
+  const proposed = submission?.envelope.params?.output ?? approved;
+  return {
+    chap_note: NOTE_VERSION,
+    workspace: ev.workspace,
+    coordinator: gateUrl,
+    task_id: ev.task.task_id,
+    kind: ev.task.kind,
+    agent: ev.task.assignee,
+    summary: approved?.summary ?? ev.task.input?.summary ?? "",
+    decision: { method: decision.envelope.method, reviewer: params.from, seq: decision.seq, arrived: decision.arrived, comment: params.comment ?? params.rationale ?? null, tags: params.tags ?? null },
+    approved_artefact: approved,
+    proposed_artefact: proposed,
+    decision_envelope: decision.envelope,
+    reviewer_keys: ev.keys[params.from] ?? [],
+    chain_head: ev.chain_head,
+    chain_enabled: ev.chain_enabled,
+  };
+}
+
+/** The trailers a governed commit carries, from its note. */
+export async function trailersFor(note) {
+  const pairs = [
+    ["CHAP-Workspace", note.workspace],
+    ["CHAP-Task", note.task_id],
+    ["CHAP-Agent", note.agent],
+    ["CHAP-Reviewer", note.decision.reviewer],
+    ["CHAP-Decision", note.decision.method === "decide.override" ? "override" : "approve"],
+    ["CHAP-Artefact", await contentHash(note.approved_artefact)],
+    ["CHAP-Coordinator", note.coordinator],
+  ];
+  if (note.chain_head) pairs.push(["CHAP-Chain-Head", note.chain_head]);
+  return pairs;
+}
+
+/** Whether `sig` on an envelope verifies against one of the JWKs given. */
+export function envelopeVerifies(envelope, jwks) {
+  const sig = envelope?.sig;
+  if (typeof sig !== "string") return { ok: false, reason: "the envelope carries no signature" };
+  const parts = sig.split(":");
+  if (parts.length !== 3 || parts[0] !== "ed25519") return { ok: false, reason: "the signature is not ed25519:<kid>:<base64>" };
+  const [, kid, b64] = parts;
+  const { sig: _omit, ...rest } = envelope;
+  const bytes = Buffer.from(canonicalize(rest), "utf8");
+  const candidates = jwks.filter((k) => k && (k.kid === kid || !k.kid));
+  if (!candidates.length) return { ok: false, reason: `no key on record with kid ${kid}` };
+  for (const jwk of candidates) {
+    try {
+      const key = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: jwk.x }, format: "jwk" });
+      if (cryptoVerify(null, bytes, key, Buffer.from(b64, "base64"))) return { ok: true, kid };
+    } catch { /* the next key */ }
+  }
+  return { ok: false, reason: `the signature does not verify against the key ${kid}` };
+}
+
+export { canonicalize, contentHash };

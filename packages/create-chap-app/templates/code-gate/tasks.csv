@@ -1,0 +1,4 @@
+title,brief,files
+Validate the inputs of add,"add() accepts any value. Make it throw a TypeError when either argument is not a finite number, with a message that names the argument, and add a test for it.",lib/calc.mjs;test/calc.test.mjs
+Add a subtract function,"Add subtract(a, b) to lib/calc.mjs with the same validation as add, export it, list it in README.md, and test it.",lib/calc.mjs;test/calc.test.mjs;README.md
+Document the library,"README.md should say how to install and run the tests, and show how to use every exported function with one example each.",README.md;lib/calc.mjs
