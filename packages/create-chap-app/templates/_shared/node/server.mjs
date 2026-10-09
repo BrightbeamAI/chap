@@ -1,10 +1,11 @@
 // The process that owns the store.
 //
-// It runs the CHAP coordinator on SQLite and serves four things:
+// It runs the CHAP coordinator on SQLite and serves five things:
 //
-//   GET  /              the review desk
+//   GET  /              the review desk, with the files beside it in desk/
 //   POST /chap          CHAP calls as JSON-RPC, for any agent or client
 //   GET  /api/...       what the desk needs that the protocol does not carry
+//   GET  /analytics/    the pages chap-analytics wrote, when analytics/ exists
 //   POST /mcp           an MCP server over streamable HTTP, when enabled
 //
 // Everything comes from chap.config.json next to this file, with a few
@@ -15,8 +16,8 @@
 // (415) and reads no body over MAX_BODY_BYTES (413).
 
 import { createServer } from "node:http";
-import { readFile, mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile, readdir, mkdir, stat } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Coordinator, MemoryStore } from "@brightbeamai/chap-coordinator";
 
@@ -191,14 +192,62 @@ export function openReviews(coord, workspace, reviewer) {
   return out.sort((a, b) => a.requested_at.localeCompare(b.requested_at));
 }
 
-/** One task, for an agent waiting on a decision. */
+/** One task, for an agent waiting on a decision and for the desk's lists. */
 export function taskView(coord, workspace, taskId) {
   const task = coord.getWorkspace(workspace)?.tasks.get(taskId);
   if (!task) return null;
+  return viewOf(task);
+}
+
+function viewOf(task) {
   return {
-    task_id: task.id, kind: task.kind, state: task.state, assignee: task.assignee,
+    task_id: task.id, kind: task.kind, state: task.state, assignee: task.assignee, mode: task.mode,
+    created_at: task.created_at, updated_at: task.updated_at, input: task.input,
     output: task.output ?? null, review: task.review ?? null, history: task.history,
   };
+}
+
+/**
+ * The workspace's tasks, newest first, narrowed by kind and state when
+ * given. `limit` caps the list; the default is every task.
+ */
+export function listTasks(coord, workspace, { kind, state, limit } = {}) {
+  const ws = coord.getWorkspace(workspace);
+  if (!ws) return [];
+  const out = [];
+  for (const task of ws.tasks.values()) {
+    if (kind && task.kind !== kind) continue;
+    if (state && task.state !== state) continue;
+    out.push(viewOf(task));
+  }
+  out.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+  return limit ? out.slice(0, limit) : out;
+}
+
+/**
+ * The evidence behind a task's decisions: the task, the accepted decide.*
+ * entries from the chain for it (signed envelopes under security-signed/1.0),
+ * the keys on record for the reviewers who decided, and the chain head. A
+ * committer writes this beside what it commits, and a verifier reads it.
+ */
+export function taskEvidence(coord, workspace, taskId) {
+  const ws = coord.getWorkspace(workspace);
+  const task = ws?.tasks.get(taskId);
+  if (!task) return null;
+  const decisions = [];
+  for (const entry of ws.audit) {
+    const call = entry.envelope;
+    if (!call || typeof call.method !== "string" || !call.method.startsWith("decide.")) continue;
+    if (call.params?.task_id !== taskId) continue;
+    decisions.push({ seq: entry.seq, arrived: entry.arrived, prev_hash: entry.prev_hash, envelope: call });
+  }
+  const keys = {};
+  for (const d of decisions) {
+    const uri = d.envelope.params?.from;
+    const member = typeof uri === "string" ? ws.members.get(uri) : undefined;
+    if (member && !(uri in keys)) keys[uri] = (member.keys ?? []).map((k) => k.jwk);
+  }
+  return { workspace, task: viewOf(task), decisions, keys, chain_head: ws.chain_head ?? null, chain_enabled: !!ws.chain_enabled };
 }
 
 export function publicConfig(config) {
@@ -219,7 +268,7 @@ export function publicConfig(config) {
 
 function reply(res, status, body, type = "application/json") {
   res.writeHead(status, { "content-type": type });
-  res.end(type === "application/json" ? JSON.stringify(body) : body);
+  res.end(type === "application/json" && !Buffer.isBuffer(body) ? JSON.stringify(body) : body);
 }
 
 /** Largest request body read, a little above the coordinator's envelope limit. */
@@ -277,9 +326,33 @@ async function readBody(req) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+const TYPES = {
+  ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png",
+  ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8", ".md": "text/markdown; charset=utf-8", ".jsonl": "application/x-ndjson",
+};
+
+/** The files of a directory, read into memory once, keyed by name. Subdirectories are left out. */
+async function readDirectory(dir) {
+  const files = new Map();
+  let names = [];
+  try { names = await readdir(dir); } catch { return files; }
+  for (const name of names) {
+    const type = TYPES[extname(name)];
+    if (!type || name.startsWith(".")) continue;
+    const path = join(dir, name);
+    if (!(await stat(path)).isFile()) continue;
+    files.set(name, { body: await readFile(path), type });
+  }
+  return files;
+}
+
 export async function makeServer(config, coord) {
-  const desk = await readFile(join(here, "desk", "desk.html"), "utf8");
-  const clientModule = await readFile(join(here, "desk", "chap-client.mjs"), "utf8");
+  const desk = await readDirectory(join(here, "desk"));
+  if (!desk.has("index.html")) throw new Error(`The desk is missing: ${join(here, "desk", "index.html")}`);
+  // The pages chap-analytics writes are read on each request, so a report
+  // regenerated while the server runs is served as it is now.
+  const analyticsDir = join(here, "analytics");
   let mcp = null;
   if (config.mcp) {
     const { makeChapMcpServer } = await import("@brightbeamai/chap-coordinator-mcp");
@@ -300,8 +373,24 @@ export async function makeServer(config, coord) {
     try {
       if (foreignHost(req, config)) return reply(res, 421, { error: "unknown host; set allowed_hosts in chap.config.json, or CHAP_ALLOWED_HOSTS, to serve under another name" });
       if (foreignOrigin(req, config)) return reply(res, 403, { error: "cross-origin requests are refused" });
-      if (url.pathname === "/" || url.pathname === "/desk" || url.pathname === "/desk.html") return reply(res, 200, desk, "text/html; charset=utf-8");
-      if (url.pathname === "/chap-client.mjs") return reply(res, 200, clientModule, "text/javascript; charset=utf-8");
+      if (url.pathname === "/" || url.pathname === "/desk" || url.pathname === "/index.html") {
+        const page = desk.get("index.html");
+        return reply(res, 200, page.body, page.type);
+      }
+      if (req.method === "GET" && desk.has(url.pathname.slice(1))) {
+        const file = desk.get(url.pathname.slice(1));
+        return reply(res, 200, file.body, file.type);
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/analytics/")) {
+        const name = decodeURIComponent(url.pathname.slice("/analytics/".length)) || "index.html";
+        const type = TYPES[extname(name)];
+        if (!type || name.includes("/") || name.includes("\\") || name.startsWith(".")) return reply(res, 404, { error: "not found" });
+        try {
+          return reply(res, 200, await readFile(join(analyticsDir, name)), type);
+        } catch {
+          return reply(res, 404, { error: "no analytics page by that name; run the analytics script to write them" });
+        }
+      }
       if (url.pathname === "/chap" && req.method === "POST") {
         if (!(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return reply(res, 415, { error: "POST /chap takes application/json" });
         let envelope;
@@ -313,8 +402,19 @@ export async function makeServer(config, coord) {
       }
       if (url.pathname === "/api/config") return reply(res, 200, publicConfig(config));
       if (url.pathname === "/api/reviews") return reply(res, 200, { reviews: openReviews(coord, config.workspace, url.searchParams.get("reviewer") || undefined) });
+      if (url.pathname === "/api/tasks") {
+        const limit = Number(url.searchParams.get("limit") ?? 0) || undefined;
+        return reply(res, 200, { tasks: listTasks(coord, config.workspace, { kind: url.searchParams.get("kind") || undefined, state: url.searchParams.get("state") || undefined, limit }) });
+      }
       if (url.pathname.startsWith("/api/tasks/")) {
-        const view = taskView(coord, config.workspace, decodeURIComponent(url.pathname.slice("/api/tasks/".length)));
+        const rest = url.pathname.slice("/api/tasks/".length);
+        const [id, part] = rest.split("/").map(decodeURIComponent);
+        if (part === "evidence") {
+          const evidence = taskEvidence(coord, config.workspace, id);
+          return evidence ? reply(res, 200, evidence) : reply(res, 404, { error: "unknown task" });
+        }
+        if (part !== undefined) return reply(res, 404, { error: "not found" });
+        const view = taskView(coord, config.workspace, id);
         return view ? reply(res, 200, view) : reply(res, 404, { error: "unknown task" });
       }
       if (url.pathname === "/api/health") {

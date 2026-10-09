@@ -8,7 +8,9 @@
     "node/server.mjs": "server.mjs",
     "node/profiles-diff.mjs": "lib/profiles-diff.mjs",
     "node/oidc.mjs": "lib/oidc.mjs",
-    "node/dev-issuer.mjs": "lib/dev-issuer.mjs"
+    "node/dev-issuer.mjs": "lib/dev-issuer.mjs",
+    "node/keys.mjs": "keys.mjs",
+    "node/providers.mjs": "lib/providers.mjs"
   },
   "default_profiles": [
     "core/1.0",

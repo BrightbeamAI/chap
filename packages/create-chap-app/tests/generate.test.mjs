@@ -26,7 +26,7 @@ test("every template generates with its placeholders filled", async () => {
     const { written, fill } = await generate({ name: `my-${t.name}`, template: t.name, profiles: t.default_profiles }, { targetDir: dir });
     assert.ok(written.includes("README.md"), `${t.name} has a README`);
     assert.ok(written.includes("chap.config.json"), `${t.name} has chap.config.json`);
-    assert.ok(written.includes("desk/desk.html") && written.includes("desk/chap-client.mjs"), `${t.name} has the desk`);
+    assert.ok(written.includes("desk/index.html") && written.includes("desk/chap-client.mjs"), `${t.name} has the desk`);
     assert.ok(written.includes(".gitignore"), `${t.name} has a .gitignore, renamed from the shipped gitignore`);
     assert.ok(!written.some((w) => /(^|\/)(gitignore|dockerignore)$/.test(w)), `${t.name} leaves no plain ignore file`);
     for (const rel of await walk(dir)) {

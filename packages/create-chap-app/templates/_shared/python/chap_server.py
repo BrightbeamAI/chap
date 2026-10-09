@@ -1,10 +1,11 @@
 """The process that owns the store.
 
-It runs the CHAP coordinator on SQLite and serves three things:
+It runs the CHAP coordinator on SQLite and serves four things:
 
-    GET  /              the review desk
+    GET  /              the review desk, with the files beside it in desk/
     POST /chap          CHAP calls as JSON-RPC, for any agent or client
     GET  /api/...       what the desk needs that the protocol does not carry
+    GET  /analytics/    the pages chap-analytics wrote, when analytics/ exists
 
 Everything comes from chap.config.json next to this file, with a few
 environment overrides noted in load_config. The project's desk.py imports
@@ -48,7 +49,14 @@ except ModuleNotFoundError as exc:  # pragma: no cover - import guard
 
 HERE = Path(__file__).resolve().parent
 DESK_DIR = HERE / "desk"
+ANALYTICS_DIR = HERE / "analytics"
 MAX_BODY_BYTES = 1_100_000  # a little above the coordinator's envelope limit
+TYPES = {
+    ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png",
+    ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8", ".md": "text/markdown; charset=utf-8",
+    ".jsonl": "application/x-ndjson",
+}
 
 
 # -- configuration ------------------------------------------------------------
@@ -208,17 +216,59 @@ def open_reviews(coord: Coordinator, workspace: str, reviewer: str | None = None
     return sorted(out, key=lambda r: r["requested_at"])
 
 
+def _view_of(task: Any) -> dict:
+    return {
+        "task_id": task.id, "kind": task.kind, "state": task.state, "assignee": task.assignee,
+        "mode": task.mode, "created_at": task.created_at, "updated_at": task.updated_at,
+        "input": task.input, "output": task.output, "review": _as_dict(task.review),
+        "history": [_as_dict(h) for h in task.history],
+    }
+
+
 def task_view(coord: Coordinator, workspace: str, task_id: str) -> dict | None:
-    """One task, for an agent waiting on a decision."""
+    """One task, for an agent waiting on a decision and for the desk's lists."""
+    ws = coord.get_workspace(workspace)
+    task = ws.tasks.get(task_id) if ws is not None else None
+    return _view_of(task) if task is not None else None
+
+
+def list_tasks(coord: Coordinator, workspace: str, kind: str | None = None, state: str | None = None,
+               limit: int | None = None) -> list[dict]:
+    """The workspace's tasks, newest first, narrowed by kind and state when given."""
+    ws = coord.get_workspace(workspace)
+    if ws is None:
+        return []
+    out = [_view_of(t) for t in ws.tasks.values()
+           if (not kind or t.kind == kind) and (not state or t.state == state)]
+    out.sort(key=lambda v: v.get("created_at") or "", reverse=True)
+    return out[:limit] if limit else out
+
+
+def task_evidence(coord: Coordinator, workspace: str, task_id: str) -> dict | None:
+    """The evidence behind a task's decisions: the task, the accepted decide.*
+    entries from the chain for it (signed envelopes under security-signed/1.0),
+    the keys on record for the reviewers who decided, and the chain head. A
+    committer writes this beside what it commits, and a verifier reads it."""
     ws = coord.get_workspace(workspace)
     task = ws.tasks.get(task_id) if ws is not None else None
     if task is None:
         return None
-    return {
-        "task_id": task.id, "kind": task.kind, "state": task.state, "assignee": task.assignee,
-        "output": task.output, "review": _as_dict(task.review),
-        "history": [_as_dict(h) for h in task.history],
-    }
+    decisions = []
+    for entry in ws.audit:
+        call = getattr(entry, "envelope", None)
+        if not isinstance(call, dict) or not str(call.get("method", "")).startswith("decide."):
+            continue
+        if (call.get("params") or {}).get("task_id") != task_id:
+            continue
+        decisions.append({"seq": entry.seq, "arrived": entry.arrived, "prev_hash": entry.prev_hash, "envelope": call})
+    keys: dict[str, list] = {}
+    for d in decisions:
+        uri = (d["envelope"].get("params") or {}).get("from")
+        member = ws.members.get(uri) if isinstance(uri, str) else None
+        if member is not None and uri not in keys:
+            keys[uri] = [(k.jwk if hasattr(k, "jwk") else k.get("jwk")) for k in (member.keys or [])]
+    return {"workspace": workspace, "task": _view_of(task), "decisions": decisions, "keys": keys,
+            "chain_head": ws.chain_head, "chain_enabled": bool(getattr(ws, "chain_enabled", False))}
 
 
 def public_config(config: dict) -> dict:
@@ -248,11 +298,10 @@ class ChapServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, address, config: dict, coord: Coordinator, desk: str, client_module: str):
+    def __init__(self, address, config: dict, coord: Coordinator, desk: dict[str, tuple[bytes, str]]):
         self.config = config
         self.coord = coord
-        self.desk = desk
-        self.client_module = client_module
+        self.desk = desk  # file name -> (bytes, content type), read once at start
         self.lock = threading.Lock()
         super().__init__(address, Handler)
 
@@ -269,10 +318,12 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _reply(self, status: int, body: Any, content_type: str = "application/json") -> None:
-        if content_type == "application/json":
+        if isinstance(body, bytes):
+            data = body
+        elif content_type == "application/json":
             data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         else:
-            data = body.encode("utf-8") if isinstance(body, str) else body
+            data = body.encode("utf-8")
         self.send_response(status)
         self.send_header("content-type", content_type)
         self.send_header("content-length", str(len(data)))
@@ -339,10 +390,23 @@ class Handler(BaseHTTPRequestHandler):
                                                   "or CHAP_ALLOWED_HOSTS, to serve under another name"})
             if self._foreign_origin():
                 return self._reply(403, {"error": "cross-origin requests are refused"})
-            if path in ("/", "/desk", "/desk.html"):
-                return self._reply(200, srv.desk, "text/html; charset=utf-8")
-            if path == "/chap-client.mjs":
-                return self._reply(200, srv.client_module, "text/javascript; charset=utf-8")
+            if path in ("/", "/desk", "/index.html"):
+                body, content_type = srv.desk["index.html"]
+                return self._reply(200, body, content_type)
+            if method == "GET" and path[1:] in srv.desk:
+                body, content_type = srv.desk[path[1:]]
+                return self._reply(200, body, content_type)
+            if method == "GET" and path.startswith("/analytics/"):
+                # The pages chap-analytics writes are read on each request, so a
+                # report regenerated while the server runs is served as it is now.
+                name = unquote(path[len("/analytics/"):]) or "index.html"
+                content_type = TYPES.get(Path(name).suffix)
+                if not content_type or "/" in name or "\\" in name or name.startswith("."):
+                    return self._reply(404, {"error": "not found"})
+                try:
+                    return self._reply(200, (ANALYTICS_DIR / name).read_bytes(), content_type)
+                except FileNotFoundError:
+                    return self._reply(404, {"error": "no analytics page by that name; run the analytics script to write them"})
             if path == "/chap" and method == "POST":
                 if not (self.headers.get("content-type") or "").lower().startswith("application/json"):
                     return self._reply(415, {"error": "POST /chap takes application/json"})
@@ -359,8 +423,22 @@ class Handler(BaseHTTPRequestHandler):
                 reviewer = (parse_qs(url.query).get("reviewer") or [None])[0] or None
                 with srv.lock:
                     return self._reply(200, {"reviews": open_reviews(coord, config["workspace"], reviewer)})
+            if path == "/api/tasks":
+                query = parse_qs(url.query)
+                first = lambda name: (query.get(name) or [None])[0] or None  # noqa: E731
+                limit = int(first("limit") or 0) or None
+                with srv.lock:
+                    tasks = list_tasks(coord, config["workspace"], first("kind"), first("state"), limit)
+                return self._reply(200, {"tasks": tasks})
             if path.startswith("/api/tasks/"):
-                task_id = unquote(path[len("/api/tasks/"):])
+                parts = [unquote(p) for p in path[len("/api/tasks/"):].split("/")]
+                task_id, rest = parts[0], parts[1:]
+                if rest == ["evidence"]:
+                    with srv.lock:
+                        evidence = task_evidence(coord, config["workspace"], task_id)
+                    return self._reply(200, evidence) if evidence else self._reply(404, {"error": "unknown task"})
+                if rest:
+                    return self._reply(404, {"error": "not found"})
                 with srv.lock:
                     view = task_view(coord, config["workspace"], task_id)
                 return self._reply(200, view) if view else self._reply(404, {"error": "unknown task"})
@@ -382,14 +460,21 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(500, {"error": str(exc)})
 
 
+def read_desk(directory: Path = DESK_DIR) -> dict[str, tuple[bytes, str]]:
+    """The desk's files, read once: name -> (bytes, content type). Subdirectories are left out."""
+    files: dict[str, tuple[bytes, str]] = {}
+    for path in sorted(directory.glob("*")) if directory.is_dir() else []:
+        content_type = TYPES.get(path.suffix)
+        if path.is_file() and content_type and not path.name.startswith("."):
+            files[path.name] = (path.read_bytes(), content_type)
+    if "index.html" not in files:
+        raise SystemExit(f"The desk is missing: {directory / 'index.html'}. It belongs in {directory}.")
+    return files
+
+
 def make_server(config: dict, coord: Coordinator) -> ChapServer:
     """Bind the server. Port 0 picks a free port; read it from server.server_port."""
-    try:
-        desk = (DESK_DIR / "desk.html").read_text(encoding="utf-8")
-        client_module = (DESK_DIR / "chap-client.mjs").read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise SystemExit(f"The desk is missing: {exc.filename}. It belongs in {DESK_DIR}.") from exc
-    return ChapServer((config["host"], int(config["port"])), config, coord, desk, client_module)
+    return ChapServer((config["host"], int(config["port"])), config, coord, read_desk())
 
 
 def serve(config: dict | None = None) -> None:

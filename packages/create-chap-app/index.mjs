@@ -9,7 +9,7 @@
 // copies the template, fills in the placeholders and prints how to run the
 // project. It installs nothing.
 
-import { readFile, readdir, mkdir, copyFile, writeFile, stat, access } from "node:fs/promises";
+import { readFile, readdir, mkdir, copyFile, writeFile, stat, access, chmod } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -78,7 +78,18 @@ async function walk(dir, prefix = "") {
   return out;
 }
 
-const TEXT = /\.(mjs|js|json|py|md|html|txt|csv|yml|yaml|toml|cfg|gitignore)$|^\.gitignore$/;
+const TEXT = /\.(mjs|js|json|py|md|html|css|txt|csv|yml|yaml|toml|cfg|sh|gitignore)$|^\.gitignore$|(^|\/)(pre-commit|commit-msg|post-commit)$/;
+
+/**
+ * npm leaves .gitignore files out of a published package, so a template
+ * ships its ignore list as `gitignore`, its Docker one as `dockerignore` and
+ * its workflows under `github/`, and they are renamed here.
+ */
+export function dotted(rel) {
+  if (/(^|\/)(gitignore|dockerignore)$/.test(rel)) return rel.replace(/(gitignore|dockerignore)$/, ".$1");
+  if (rel.startsWith("github/")) return "." + rel;
+  return rel;
+}
 
 /**
  * Generate a project. Returns the list of files written.
@@ -124,9 +135,7 @@ export async function generate(answers, { templatesDir = TEMPLATES_DIR, targetDi
 
   const written = [];
   for (const { from, to: rel } of sources) {
-    // npm leaves .gitignore files out of a published package, so a template
-    // ships its ignore list as `gitignore` and it is renamed here.
-    const to = /(^|\/)(gitignore|dockerignore)$/.test(rel) ? rel.replace(/(gitignore|dockerignore)$/, ".$1") : rel;
+    const to = dotted(rel);
     const dest = join(target, to);
     await mkdir(dirname(dest), { recursive: true });
     if (TEXT.test(to)) {
@@ -136,6 +145,9 @@ export async function generate(answers, { templatesDir = TEMPLATES_DIR, targetDi
     } else {
       await copyFile(from, dest);
     }
+    // A git hook has to stay executable, so the template file's mode is kept.
+    const mode = (await stat(from)).mode & 0o777;
+    if (mode & 0o111) await chmod(dest, mode);
     written.push(to);
   }
   return { target, written, manifest, fill };
