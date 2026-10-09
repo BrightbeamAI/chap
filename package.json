@@ -8,6 +8,7 @@
     "packages/coordinator",
     "packages/coordinator-mcp",
     "packages/coordinator-a2a",
+    "packages/create-chap-app",
     "reference/core",
     "reference/core-plus-review",
     "reference/playground",
@@ -24,7 +25,9 @@
     "check:mcp-schemas": "tsx scripts/sync-mcp-schemas.mjs --check",
     "check:versions": "node scripts/check-versions.mjs",
     "check:catalogue": "node scripts/sync-method-catalogue.mjs --check",
-    "check:error-codes": "node scripts/check-error-codes.mjs"
+    "check:error-codes": "node scripts/check-error-codes.mjs",
+    "build:explorer": "npm run build:explorer --workspace=create-chap-app",
+    "check:explorer": "npm run check:explorer --workspace=create-chap-app"
   },
   "engines": {
     "node": ">=20"

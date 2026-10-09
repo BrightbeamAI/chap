@@ -18,7 +18,8 @@
   },
   "scripts": {
     "test": "node --test \"tests/**/*.test.mjs\"",
-    "check": "node scripts/check-templates.mjs"
+    "build:explorer": "node scripts/build-explorer.mjs",
+    "check:explorer": "node scripts/build-explorer.mjs --check"
   },
   "repository": {
     "type": "git",
