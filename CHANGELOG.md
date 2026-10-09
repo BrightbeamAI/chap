@@ -23,6 +23,29 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
 
 ## Unreleased
 
+### Added
+
+- **`create-chap-app`.** `npx create-chap-app` generates a project that
+  runs against the developer's own agent and data: one process owns the
+  SQLite store and serves a review desk and `POST /chap`, the agent is a
+  separate process attached through an MCP client, a framework bridge or
+  the HTTP endpoint, the profiles are one setting in `chap.config.json`,
+  and `diff-profiles` runs the project's workload under two profile sets
+  and prints each call's outcome under both. Four templates: an MCP gate for
+  Claude Desktop, Cursor and Claude Code; a support desk and an outbound
+  approval gate in Python; and the Handbook's production set with signed
+  calls, OIDC verified at join, the chain on, and a `doctor`. CI generates
+  each template, installs the packages it pins from npm or PyPI, and runs
+  its tests, so a template is held to what the released coordinators do.
+  `packages/create-chap-app/DESIGN.md` is the design.
+- **The profile explorer.** `docs/profile-explorer.md` shows, for each
+  profile, the calls whose outcome changes when the profile is added, built
+  from the templates' workload in both languages and checked in CI.
+- **The playground drafts with any model, or none.** It reads
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OLLAMA_URL` and drafts with a
+  scripted agent when none is set, so it runs on a fresh machine without a
+  model download. `CHAP_NO_LLM=1` still selects the scripted agent.
+
 ## 0.3.0: documents that match the code, refused calls on the record, and review that holds
 
 Read the Breaking section before upgrading. The packages implement

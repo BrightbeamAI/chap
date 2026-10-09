@@ -17,7 +17,7 @@ shape.
 
 ## How this differs from `examples/` and adapter demos
 
-Four distinct, bounded homes, so the set never explodes into a
+Five distinct, bounded homes, so the set never explodes into a
 scenario × framework × language cross-product:
 
 | Home | Contents | Axis |
@@ -26,6 +26,7 @@ scenario × framework × language cross-product:
 | [`examples/*.md`](../examples/) | Curated capability walkthroughs, one per CHAP verb, written as docs. | one per **capability** |
 | `packages/chap-*/examples/` | Adapter demos: the same handshake shown once per framework (LangGraph, Pydantic AI, AG2, LlamaIndex). | one per **adapter** |
 | `scenarios/NN-slug/` (here) | Domain narratives on CHAP **core**: what CHAP records in situation X. One canonical implementation each. | one per **scenario** |
+| [`packages/create-chap-app/templates/`](../packages/create-chap-app/templates/) | Generated projects a developer runs against their own agent and data: a desk, one profile setting, tests and `diff-profiles`. | one per **use case** |
 
 The rule that keeps it bounded: a scenario is implemented once, on CHAP
 core, in one language (Python, matching the adapters). Framework coverage
@@ -108,6 +109,22 @@ on the audit chain. The bar to copy:
 
 Put a system implementation under its scenario's folder (e.g.
 `scenarios/NN-slug/system/`) and note it in your row.
+
+### Templates (a scenario a developer can run on their own data)
+
+A scenario can also become a template in
+[`packages/create-chap-app`](../packages/create-chap-app/), which
+`npx create-chap-app` generates into a project. A template is a scenario
+with the developer's own agent and data in place of the story's: one
+process owns the store and serves the review desk, the agent is a
+separate process attached through an MCP client, a framework bridge or
+`POST /chap`, the decision is made in the desk, and `diff-profiles` shows
+what each profile changes. The contract is in
+[`DESIGN.md`](../packages/create-chap-app/DESIGN.md); copy
+`support-desk` for a Python template or `mcp-gate` for a TypeScript one.
+CI generates every template, installs the published packages it pins and
+runs its tests, so a template is held to what the released coordinators do.
+Scenarios 4, 5, 7 and 9 are the ones most ready to become templates.
 
 ### Definition of done
 
