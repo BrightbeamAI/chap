@@ -66,12 +66,12 @@
   },
   "dependencies": {
     "@brightbeamai/chap-coordinator": "^0.3.0",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "zod": "^3.25 || ^4.0"
   },
   "devDependencies": {
     "@brightbeamai/chap-coordinator": "file:../coordinator",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "zod": "^3.25 || ^4.0",
     "@types/node": "^20.11.0",
     "tsup": "^8.5.1",
