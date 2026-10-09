@@ -1,7 +1,7 @@
 # CHAP Playground
 
-A runnable demo: two humans (Maya and Sam) and one local LLM agent
-(Gemma3 via Ollama) collaborating on a customer-support queue, with
+A runnable demo: two humans (Maya and Sam) and one agent collaborating on
+a customer-support queue, with
 every message a real CHAP envelope, every override a real RFC 6902
 JSON Patch, and every routing decision a real `route_decision`
 artefact in the evidence chain.
@@ -39,17 +39,23 @@ wire format is the same one a production CHAP deployment would use.
 ## Requirements
 
 - **Node 20 or later.**
-- **Ollama** installed locally. Get it from <https://ollama.com>.
-- The **gemma3:4b** model pulled. Run once:
-  ```bash
-  ollama pull gemma3:4b
-  ```
-  This is ~3 GB. If you have more RAM and want better drafts, try
-  `gemma3:12b` and set `OLLAMA_MODEL=gemma3:12b` when starting.
+- A model is optional. With nothing configured, a scripted agent drafts
+  every ticket, so the playground runs on a fresh machine. To draft with a
+  model, set one of these before `npm start`:
 
-If Ollama is not running, the playground still serves the UI and
-exposes the JSON-RPC wire, you just won't get bot drafts. Start
-Ollama and hit **Reset** in the UI to re-draft.
+  | Variable | Provider | Model |
+  |---|---|---|
+  | `ANTHROPIC_API_KEY` | Anthropic Messages API | `ANTHROPIC_MODEL`, default `claude-haiku-5-5` |
+  | `OPENAI_API_KEY` | OpenAI Responses API | `OPENAI_MODEL`, default `gpt-5.5` |
+  | `OLLAMA_URL` | A local Ollama server | `OLLAMA_MODEL`, default `gemma3:4b` |
+
+  `CHAP_MODEL_PROVIDER` (`anthropic`, `openai`, `ollama` or `scripted`)
+  picks one when more than one is set. No vendor SDK is installed; each
+  provider is one HTTP call in `src/providers.ts`.
+
+If the model cannot be reached, the playground still serves the UI and
+exposes the JSON-RPC wire, you just won't get bot drafts. Fix the provider,
+or unset it to use the scripted agent, and hit **Reset** in the UI.
 
 ---
 
@@ -114,7 +120,7 @@ the record:
 | Envelope wire format on `/rpc`                | Routing policy is in-process, production: `routing/1.0` profile |
 | RFC 6902 JSON Patch on overrides              | State persisted to a local JSON file, production: database |
 | Evidence chain, persisted across restarts     | No signing, production: `security-signed/1.0`   |
-| Real LLM (Gemma3 via Ollama)                  | A single workspace, three participants           |
+| A real model where one is configured          | A single workspace, three participants           |
 | SSE-based live updates                        |                                                  |
 
 ---
@@ -129,7 +135,8 @@ reference/playground/
 ├── data/state.json              ← created on first run; survives restarts
 ├── src/
 │   ├── server.ts                ← HTTP + JSON-RPC + SSE
-│   ├── ollama-agent.ts          ← bot participant; calls Ollama
+│   ├── ollama-agent.ts          ← bot participant; drafts through a provider
+│   ├── providers.ts             ← Anthropic, OpenAI, Ollama or scripted
 │   ├── state-store.ts           ← persistent JSON backend
 │   ├── tickets.ts               ← six hand-crafted tickets
 │   └── public/
@@ -137,15 +144,15 @@ reference/playground/
 │       ├── playground.js
 │       └── playground.css
 └── tests/
-    └── smoke.test.ts            ← end-to-end tests with mocked Ollama
+    └── smoke.test.ts            ← end-to-end tests with a scripted drafter
 ```
 
 ---
 
 ## Running the tests
 
-The smoke tests don't need Ollama, they mock the drafter and
-exercise the coordinator + routing policy end-to-end:
+The smoke tests need no model; they script the drafter and exercise the
+coordinator + routing policy end-to-end:
 
 ```bash
 npm test
@@ -167,8 +174,8 @@ Environment variables:
   image sets `0.0.0.0` because the container's published port is mapped to
   `127.0.0.1` on the host by `docker-compose.yml`. Only expose it on a trusted
   network.
-- `OLLAMA_URL`: Ollama base URL (default `http://localhost:11434`)
-- `OLLAMA_MODEL`: model name (default `gemma3:4b`)
+- The model variables listed under Requirements. `CHAP_NO_LLM=1` still
+  selects the scripted agent, as it did before the providers were added.
 
 ---
 

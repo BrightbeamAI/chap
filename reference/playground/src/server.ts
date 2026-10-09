@@ -13,7 +13,7 @@
  *   GET  /api/audit?from_seq → convenience: audit entries
  *   GET  /api/tickets        → the ticket catalogue (for demo display)
  *   POST /api/reset          → wipe state, restart bot processing
- *   GET  /api/health         → Ollama probe + workspace counts
+ *   GET  /api/health         → model provider probe + workspace counts
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -32,7 +32,7 @@ import { makePlaygroundPolicies } from "./policies.js";
 import { makeFileStateStore } from "./state-store.js";
 import {
   BOT_URI,
-  probeOllama,
+  probeProvider,
   processAllTickets,
   draftResponse,
 } from "./ollama-agent.js";
@@ -149,13 +149,13 @@ async function bootstrap(): Promise<void> {
 }
 
 async function runBotProcessing(): Promise<void> {
-  const probe = await probeOllama();
+  const probe = await probeProvider();
   if (!probe.ok) {
-    console.warn(`[bot] Ollama not available: ${probe.detail}`);
-    console.warn(`[bot] Tickets will not be drafted. Install Ollama and pull the model, then POST /api/reset.`);
+    console.warn(`[bot] model not available: ${probe.detail}`);
+    console.warn(`[bot] Tickets will not be drafted. Fix the provider, or unset it to use the scripted agent, then POST /api/reset.`);
     return;
   }
-  console.log(`[bot] ${probe.detail}; drafting ${TICKETS.length} tickets`);
+  console.log(`[bot] drafting ${TICKETS.length} tickets with ${probe.detail}`);
   try {
     await processAllTickets(coord, WORKSPACE_ID, TICKETS, MAYA_URI, {
       drafter: draftResponse,
@@ -309,10 +309,12 @@ const server = createServer(async (req, res) => {
 
   // Health
   if (req.method === "GET" && pathname === "/api/health") {
-    const probe = await probeOllama();
+    const probe = await probeProvider();
     const ws = coord.getWorkspace(WORKSPACE_ID);
     return jsonReply(res, 200, {
-      ollama: probe,
+      model: probe,
+      // Kept for readers of the older field name.
+      ollama: { ok: probe.ok, detail: probe.detail },
       workspace: ws ? { id: ws.id, members: ws.members.size, tasks: ws.tasks.size, audit_head: ws.audit.length } : null,
     });
   }

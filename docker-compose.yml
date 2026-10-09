@@ -4,15 +4,15 @@
 #   docker compose up
 #   open http://localhost:8080
 #
-# The playground runs in CHAP_NO_LLM mode by default: it serves
-# deterministic mock drafts that exercise the full review/override/audit
-# flow without requiring a model download. Two browser tabs at the URL
-# above demonstrate two humans collaborating on the same workspace.
+# The playground drafts with a scripted agent by default, so the full
+# review, override and audit flow runs with no model download. Two browser
+# tabs at the URL above demonstrate two humans on the same workspace.
 #
-# Optional: real LLM drafts via local Ollama.
-#   1. Install Ollama on the host: https://ollama.com
-#   2. ollama pull gemma3:4b
-#   3. CHAP_NO_LLM=0 OLLAMA_URL=http://host.docker.internal:11434 docker compose up
+# Optional: drafts from a model. Set CHAP_NO_LLM=0 and one of:
+#   ANTHROPIC_API_KEY=... docker compose up
+#   OPENAI_API_KEY=... docker compose up
+#   OLLAMA_URL=http://host.docker.internal:11434 docker compose up
+#     (install Ollama on the host and run: ollama pull gemma3:4b)
 
 services:
   playground:
@@ -27,8 +27,12 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       CHAP_NO_LLM: "${CHAP_NO_LLM:-1}"
-      OLLAMA_URL:  "${OLLAMA_URL:-http://localhost:11434}"
-      OLLAMA_MODEL: "${OLLAMA_MODEL:-gemma3:4b}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      ANTHROPIC_MODEL: "${ANTHROPIC_MODEL:-}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-}"
+      OLLAMA_URL:  "${OLLAMA_URL:-}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-}"
     # On Linux hosts, uncomment to reach the host's Ollama at host.docker.internal:
     # extra_hosts:
     #   - "host.docker.internal:host-gateway"

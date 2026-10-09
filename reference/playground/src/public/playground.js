@@ -65,7 +65,7 @@ function setRole(role) {
       ? "Maya · CHAP Playground"
       : "Sam · CHAP Playground";
     refreshWorkspace();
-    pollHealth();   // kick off the Ollama dot
+    pollHealth();   // kick off the model dot
   }
 }
 
@@ -701,7 +701,7 @@ function renderAllWireEntries() {
 }
 
 // ============================================================
-//   Status bar, mode pill, chain length, queue size, Ollama dot
+//   Status bar, mode pill, chain length, queue size, model dot
 // ============================================================
 function updateStatusBar() {
   const ws = state.workspace;
@@ -740,26 +740,31 @@ function updateStatusBar() {
 }
 
 async function pollHealth() {
+  const dot = $("status-ollama-dot");
+  const txt = $("status-ollama");
   try {
     const r = await fetch("/api/health");
     const data = await r.json();
-    state.ollamaOk = !!data.ollama?.ok;
-    const dot = $("status-ollama-dot");
-    const txt = $("status-ollama");
+    const model = data.model || data.ollama || {};
+    state.ollamaOk = !!model.ok;
     dot.classList.remove("status-dot-amber", "status-dot-green", "status-dot-red");
-    if (state.ollamaOk) {
+    if (model.ok) {
       dot.classList.add("status-dot-green");
-      txt.textContent = "connected";
+      const label = model.provider === "scripted"
+        ? "scripted agent"
+        : `${model.provider || "model"} ${model.model || ""}`.trim();
+      txt.textContent = label;
+      const footer = $("model-label");
+      if (footer) footer.textContent = label;
     } else {
       dot.classList.add("status-dot-red");
       txt.textContent = "not reachable";
     }
   } catch {
     state.ollamaOk = false;
-    const dot = $("status-ollama-dot");
     dot.classList.remove("status-dot-amber", "status-dot-green", "status-dot-red");
     dot.classList.add("status-dot-red");
-    $("status-ollama").textContent = "unreachable";
+    txt.textContent = "unreachable";
   }
 }
 setInterval(() => { if (state.role) pollHealth(); }, 10000);
@@ -937,7 +942,7 @@ const WALKTHROUGH_STEPS = [
       <p>The bar at the top is the protocol's heartbeat. <em>Mode</em>
       tells you the workspace is in production. <em>Chain</em> counts
       every envelope that has been hash-linked into the evidence log.
-      <em>Ollama</em> tells you whether the local model is reachable.</p>
+      <em>Model</em> tells you which model is drafting, or that the scripted agent is.</p>
       <p>Three participants are already in this workspace: a triage bot,
       Maya (front-line), and Sam (senior reviewer). Watch what happens
       when a ticket arrives.</p>`,
@@ -1243,7 +1248,7 @@ async function walkthroughFireDemoTicket(ticketId, criticality) {
 
 /**
  * Have "the bot" complete the most recent walkthrough task. This is
- * a stand-in for the Ollama agent, the walkthrough can't depend on a
+ * a stand-in for the agent, since the walkthrough cannot depend on a
  * model being installed, so we simulate the bot's task.complete with a
  * canned response. The protocol surface is identical to what the real
  * agent would emit.

@@ -34,7 +34,6 @@ ENV CHAP_HOST=0.0.0.0
 
 WORKDIR /chap/reference/playground
 
-# The mock-drafter mode means no model download, no Ollama, no GPU.
-# Override CHAP_NO_LLM=0 + OLLAMA_URL=http://host.docker.internal:11434
-# to point at a real local Ollama instance.
+# The scripted agent means no model download and no GPU. Set CHAP_NO_LLM=0
+# and ANTHROPIC_API_KEY, OPENAI_API_KEY or OLLAMA_URL to draft with a model.
 CMD ["npx", "tsx", "src/server.ts"]

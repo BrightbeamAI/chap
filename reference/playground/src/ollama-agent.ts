@@ -1,7 +1,8 @@
 /**
- * Ollama agent. participates in the CHAP workspace as
- * `agent:triage-bot@local`. Drafts responses to support tickets
- * using a local Gemma3 model via Ollama's HTTP API.
+ * The triage agent. It participates in the CHAP workspace as
+ * `agent:triage-bot@local` and drafts responses to support tickets with
+ * the model the environment names (see providers.ts), or with a scripted
+ * drafter when none is named.
  *
  * The agent calls the Coordinator the same way any other participant
  * would: by constructing JSON-RPC envelopes and submitting them.
@@ -10,10 +11,12 @@
 
 import type { Coordinator, Envelope, ArtefactRoutingHints } from "@brightbeamai/chap-coordinator";
 import type { Ticket } from "./tickets.js";
+import { makeProvider, type Provider } from "./providers.js";
 
-const OLLAMA_URL   = process.env.OLLAMA_URL   ?? "http://localhost:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "gemma3:4b";
-const CHAP_NO_LLM  = process.env.CHAP_NO_LLM === "1";
+// CHAP_NO_LLM=1 is the older switch for the scripted drafter and still works.
+if (process.env.CHAP_NO_LLM === "1" && !process.env.CHAP_MODEL_PROVIDER) {
+  process.env.CHAP_MODEL_PROVIDER = "scripted";
+}
 
 export const BOT_URI = "agent:triage-bot@local";
 
@@ -45,32 +48,9 @@ export interface DraftResult {
 }
 
 /**
- * Call Ollama. Returns the raw text response.
- */
-async function callOllama(prompt: string): Promise<{ text: string; latency_ms: number }> {
-  const t0 = Date.now();
-  const res = await fetch(`${OLLAMA_URL}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model:  OLLAMA_MODEL,
-      prompt,
-      stream: false,
-      options: { temperature: 0.6, num_predict: 200 },
-    }),
-  });
-  const latency_ms = Date.now() - t0;
-  if (!res.ok) {
-    throw new Error(`Ollama returned ${res.status}: ${await res.text()}`);
-  }
-  const data = await res.json() as { response: string };
-  return { text: data.response, latency_ms };
-}
-
-/**
- * Parse Gemma3's output. We expect a JSON object on a single line,
- * but the model sometimes adds markdown fences or commentary. We try
- * to recover gracefully.
+ * Parse the model's output. We expect a JSON object on a single line,
+ * but a model sometimes adds markdown fences or commentary, so the
+ * first object in the text is taken.
  */
 function parseDraft(text: string): Omit<DraftResult, "raw_response" | "latency_ms"> | null {
   // Strip code fences
@@ -96,15 +76,20 @@ function parseDraft(text: string): Omit<DraftResult, "raw_response" | "latency_m
   }
 }
 
+let provider: Provider | undefined;
+
+/** The provider chosen from the environment, built once. */
+export function getProvider(): Provider {
+  if (!provider) provider = makeProvider(scriptedDraft);
+  return provider;
+}
+
 export async function draftResponse(ticket: Ticket): Promise<DraftResult> {
-  if (CHAP_NO_LLM) {
-    return mockDraft(ticket);
-  }
   const prompt = DRAFT_PROMPT
     .replace("__SUBJECT__", ticket.subject)
     .replace("__BODY__",    ticket.body);
 
-  const { text, latency_ms } = await callOllama(prompt);
+  const { text, latency_ms } = await getProvider().complete(prompt);
   const parsed = parseDraft(text);
   if (parsed) {
     return { ...parsed, raw_response: text, latency_ms };
@@ -121,56 +106,31 @@ export async function draftResponse(ticket: Ticket): Promise<DraftResult> {
 }
 
 /**
- * Deterministic mock drafter. Used when CHAP_NO_LLM=1. Produces a
- * plausible-looking draft based on the ticket subject, so the
- * playground can demonstrate the review/override flow without
- * requiring Ollama or a model download. Tone, severity, and
- * self_confidence vary by ticket so the routing policy still has
- * something interesting to do.
+ * The scripted drafter. It reads the ticket subject out of the prompt and
+ * answers in the shape the prompt asks for, so the playground runs with no
+ * model installed and the routing policy still sees varied signals.
  */
-function mockDraft(ticket: Ticket): DraftResult {
-  const s = ticket.subject.toLowerCase();
-  const t0 = Date.now();
-  // Pseudo-deterministic latency derived from subject length so the
-  // routing policy sees a stable signal across reruns.
-  const latency_ms = 120 + (ticket.subject.length % 40);
-
-  let body:     string;
-  let tone:     string;
-  let severity: string;
-  let self_confidence: number;
-
+function scriptedDraft(prompt: string): string {
+  const m = /Ticket subject: (.*)\n/.exec(prompt);
+  const s = (m?.[1] ?? "").toLowerCase();
+  let body: string, tone: string, severity: string, self_confidence: number;
   if (s.includes("refund") || s.includes("money back")) {
     body = "Sorry to hear that. We'll review the order and process a refund within 3 business days.";
-    tone = "apologetic";
-    severity = "medium";
-    self_confidence = 0.8;
+    tone = "apologetic"; severity = "medium"; self_confidence = 0.8;
   } else if (s.includes("broken") || s.includes("damaged") || s.includes("not working")) {
     body = "Apologies for the trouble. Could you share a photo and your order number? We'll arrange a replacement at no charge.";
-    tone = "apologetic";
-    severity = "high";
-    self_confidence = 0.7;
+    tone = "apologetic"; severity = "high"; self_confidence = 0.7;
   } else if (s.includes("cancel") || s.includes("urgent")) {
     body = "We've put the request on the queue. Confirming details shortly.";
-    tone = "formal";
-    severity = "critical";
-    self_confidence = 0.4;
+    tone = "formal"; severity = "critical"; self_confidence = 0.4;
   } else if (s.includes("track") || s.includes("where")) {
     body = "Your order is on the way. Tracking links go out the day after dispatch; let us know if you don't see one.";
-    tone = "warm_professional";
-    severity = "low";
-    self_confidence = 0.9;
+    tone = "warm_professional"; severity = "low"; self_confidence = 0.9;
   } else {
     body = "Thanks for reaching out. We've recorded your message and a human will follow up.";
-    tone = "warm_professional";
-    severity = "low";
-    self_confidence = 0.5;
+    tone = "warm_professional"; severity = "low"; self_confidence = 0.5;
   }
-  return {
-    body, tone, severity, self_confidence,
-    raw_response: `(CHAP_NO_LLM=1 mock for: ${ticket.subject})`,
-    latency_ms:   Date.now() - t0 + latency_ms,
-  };
+  return JSON.stringify({ body, tone, severity, self_confidence });
 }
 
 /**
@@ -217,7 +177,7 @@ export async function processTicket(
     params: { workspace: workspaceId, task_id: taskId, from: BOT_URI, state: "in_progress" },
   });
 
-  // 3. Draft via Ollama.
+  // 3. Draft with the provider.
   const draft = await drafter(ticket);
 
   // 4. Submit completion with routing_hints (the measurement signals).
@@ -227,8 +187,8 @@ export async function processTicket(
   const confidenceStr = String(draft.self_confidence);
   const artefactHints: ArtefactRoutingHints = {
     confidence:       confidenceStr,
-    model_id:         OLLAMA_MODEL,
-    cost_consumed_usd: 0,           // local model. no API cost
+    model_id:         getProvider().model_id,
+    cost_consumed_usd: 0,           // the providers do not report cost
     latency_ms:       draft.latency_ms,
   };
 
@@ -312,8 +272,8 @@ export async function processTicket(
 }
 
 /**
- * Process every ticket through the bot in parallel-ish (serially to
- * avoid hammering the local Ollama). Used at workspace bootstrap.
+ * Process every ticket through the bot, one at a time so a local model is
+ * given one request at a time. Used at workspace bootstrap.
  */
 export async function processAllTickets(
   coord: Coordinator,
@@ -333,24 +293,14 @@ export async function processAllTickets(
 }
 
 /**
- * Probe whether Ollama is reachable. Used at server startup to warn
- * the user if their environment isn't set up.
+ * Probe the provider. Used at server startup and by /api/health, so the
+ * status bar can say which model is drafting, or that none is.
  */
-export async function probeOllama(): Promise<{ ok: boolean; detail: string }> {
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`);
-    if (!res.ok) return { ok: false, detail: `Ollama at ${OLLAMA_URL} returned ${res.status}` };
-    const data = await res.json() as { models?: { name: string }[] };
-    const hasModel = data.models?.some((m) => m.name.startsWith(OLLAMA_MODEL.split(":")[0]));
-    if (!hasModel) {
-      return {
-        ok: false,
-        detail: `Ollama is reachable but model "${OLLAMA_MODEL}" is not pulled. Run: ollama pull ${OLLAMA_MODEL}`,
-      };
-    }
-    return { ok: true, detail: `Ollama OK with model ${OLLAMA_MODEL}` };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, detail: `Cannot reach Ollama at ${OLLAMA_URL}: ${msg}` };
-  }
+export async function probeProvider(): Promise<{ ok: boolean; detail: string; provider: string; model: string }> {
+  const p = getProvider();
+  const probe = await p.probe();
+  return { ...probe, provider: p.name, model: p.model_id };
 }
+
+/** Kept for callers of the older name. */
+export const probeOllama = probeProvider;

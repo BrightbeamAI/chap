@@ -40,8 +40,8 @@
     <span class="status-label">In queue</span>
     <span class="status-value" id="status-queue">0</span>
   </div>
-  <div class="status-item" title="Local Ollama server status">
-    <span class="status-label">Ollama</span>
+  <div class="status-item" title="Which model is drafting">
+    <span class="status-label">Model</span>
     <span class="status-dot status-dot-amber" id="status-ollama-dot"></span>
     <span class="status-value status-value-small" id="status-ollama">checking…</span>
   </div>
@@ -62,7 +62,7 @@
       <h1>Two humans. One agent. CHAP in the middle.</h1>
       <p>
         TechCorp's support queue is staffed by Maya (front-line) and Sam (senior).
-        A local <span class="kbd">gemma3:4b</span> agent drafts every response.
+        An agent drafts every response: a model named in the environment, or the scripted agent.
         Maya reviews and overrides; high-criticality items auto-escalate to Sam.
         Every message on the wire is a real CHAP envelope you can inspect.
       </p>
@@ -123,7 +123,7 @@
         <div class="footer-label">What's real</div>
         <ul>
           <li>Real CHAP coordinator on localhost, protocol code is <span class="kbd">@brightbeamai/chap-coordinator</span></li>
-          <li>Real Ollama-backed agent (<span class="kbd" id="model-label">gemma3:4b</span>)</li>
+          <li>Real agent, drafting with <span class="kbd" id="model-label">the model the environment names</span></li>
           <li>Real RFC 6902 JSON Patch on overrides</li>
           <li>Real evidence chain, persisted to disk</li>
         </ul>
@@ -156,7 +156,7 @@
       <section class="work-pane" id="maya-work">
         <div id="maya-empty" class="empty-state">
           <h2>Pick a ticket from your queue.</h2>
-          <p>Bot drafts will appear here as <span class="kbd">gemma3:4b</span> finishes them.</p>
+          <p>Bot drafts will appear here as the agent finishes them.</p>
         </div>
         <div id="maya-editor" hidden>
           <!-- Guided tour bar, auto-dismisses after first override -->
