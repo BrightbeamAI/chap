@@ -173,6 +173,13 @@ export function escapePointer(token) {
   return token.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
+/** Structural equality of two JSON values. Never throws, unlike canonicalize. */
 export function deepEqual(a, b) {
-  return canonicalize(a) === canonicalize(b);
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) return a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+  const ka = Object.keys(a).filter((k) => a[k] !== undefined);
+  const kb = Object.keys(b).filter((k) => b[k] !== undefined);
+  return ka.length === kb.length && ka.every((k) => kb.includes(k) && deepEqual(a[k], b[k]));
 }

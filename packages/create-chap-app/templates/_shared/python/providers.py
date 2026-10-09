@@ -179,9 +179,7 @@ class Scripted(Provider):
         self.draft = draft
 
     def complete(self, prompt: str) -> tuple[str, int, str]:
-        # A stable, small latency derived from the input, so a reader of the
-        # chain sees a signal where a model would give one.
-        return self.draft(prompt), 120 + (len(prompt) % 40), self.model_id
+        return self.draft(prompt), 0, self.model_id
 
     def probe(self) -> tuple[bool, str]:
         return True, "scripted agent"

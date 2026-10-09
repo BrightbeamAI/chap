@@ -84,7 +84,10 @@
 import { makeClient, generateSigner, signerFromJwk, jsonPatch, deepEqual, contentHash } from "./chap-client.mjs";
 
 const $ = (id) => document.getElementById(id);
+const CHAIN_ROWS = 200;
 let config = null, client = null, reviews = [], selected = null;
+let chainShown = -1;        // the length of the log the chain view last rendered
+const chainOpen = new Set(); // the entries left open, by seq, kept across renders
 
 function reviewerFromHash() {
   return new URLSearchParams(location.hash.slice(1)).get("reviewer") || "";
@@ -138,11 +141,19 @@ async function setReviewer(uri) {
 }
 
 async function refresh() {
-  const res = await fetch(`/api/reviews?reviewer=${encodeURIComponent(client.from)}`);
-  reviews = (await res.json()).reviews;
+  const [reviewsRes, healthRes] = await Promise.all([
+    fetch(`/api/reviews?reviewer=${encodeURIComponent(client.from)}`),
+    fetch("/api/health"),
+  ]);
+  reviews = (await reviewsRes.json()).reviews;
   renderList();
-  await renderChain();
-  await renderVerification();
+  // The chain is read again only when the log has grown; a read that failed
+  // is tried again on the next refresh.
+  const { audit } = await healthRes.json();
+  if (audit !== chainShown) {
+    await renderChain(audit);
+    await renderVerification();
+  }
 }
 
 function renderList() {
@@ -190,6 +201,7 @@ function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&am
 async function decide(fn) {
   const buttons = ["approve", "override", "reject"].map($);
   buttons.forEach((b) => (b.disabled = true));
+  notice("");
   try {
     await fn();
     selected = null;
@@ -224,18 +236,30 @@ $("reject").onclick = () => decide(async () => {
   await client.call("decide.reject", { task_id: selected.task_id, approved_artefact_digest: await contentHash(selected.artefact), comment: rationale, tags: tags().length ? tags() : undefined, request_revision: $("revision").checked || undefined });
 });
 
-async function renderChain() {
+// The last CHAIN_ROWS entries, newest first, read with audit.read over a
+// range so a long-running desk does not fetch the whole log each time.
+async function renderChain(total) {
   const box = $("chain");
   try {
-    const { entries } = await client.call("audit.read", {});
+    const from = Math.max(0, total - CHAIN_ROWS);
+    const { entries } = await client.call("audit.read", { range: { from_seq: from } });
     box.innerHTML = "";
+    if (from > 0) {
+      const p = document.createElement("p");
+      p.className = "muted";
+      p.textContent = `The last ${entries.length} of ${total} entries.`;
+      box.appendChild(p);
+    }
     for (const e of entries.slice().reverse()) {
       const call = e.envelope ?? e.request;
       const d = document.createElement("details");
+      d.open = chainOpen.has(e.seq);
+      d.ontoggle = () => { if (d.open) chainOpen.add(e.seq); else chainOpen.delete(e.seq); };
       const refused = e.outcome ? ` <span class="refused">refused ${e.outcome.code}</span>` : "";
       d.innerHTML = `<summary>#${e.seq} ${escapeHtml(call.method)} <span class="muted">${escapeHtml(call.params?.from ?? "")}</span>${refused}</summary><pre>${escapeHtml(JSON.stringify(e, null, 2))}</pre>`;
       box.appendChild(d);
     }
+    chainShown = total;
   } catch (e) {
     box.innerHTML = `<span class="refused">${escapeHtml(e.message)}</span>`;
   }

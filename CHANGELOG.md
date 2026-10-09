@@ -35,9 +35,11 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   Claude Desktop, Cursor and Claude Code; a support desk and an outbound
   approval gate in Python; and the Handbook's production set with signed
   calls, a token presented at join verified against its issuer, the chain
-  on, and a `doctor`. CI generates
-  each template, installs the packages it pins from npm or PyPI, and runs
-  its tests, so a template is held to what the released coordinators do.
+  on, and a `doctor`. Each template's agent waits for a reviewer on a read,
+  drafts again after a rejection that asks for a revision, and finds its
+  tasks again on a restart. CI generates each template, installs the
+  packages it pins from npm or PyPI, and runs its tests, so a template is
+  held to what the released coordinators do.
   `packages/create-chap-app/DESIGN.md` is the design.
 - **The profile explorer.** `docs/profile-explorer.md` shows, for each
   profile, the calls whose outcome changes when the profile is added, built

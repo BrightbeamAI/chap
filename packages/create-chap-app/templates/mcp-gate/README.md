@@ -105,10 +105,12 @@ people named on it is the deployment's job (SPECIFICATION 15.1). The MCP
 endpoint, the desk, `POST /chap` and the read API under `/api/` have no
 login, and a `human:` URI in the desk is a label that says who is deciding;
 it does not authenticate them. The server listens on the loopback address,
-refuses a request from another origin or under another host name, and
-takes JSON only on `POST /chap`, so a page open elsewhere cannot decide as
-the reviewer; a deployment puts TLS and its own login in front. It runs one
-coordinator process over one SQLite file. The chain head stays in that file,
+refuses a request from another origin or under a host name it was not
+given, and takes JSON only on `POST /chap`, so a page open elsewhere cannot
+decide as the reviewer; a deployment puts TLS and its own login in front,
+and names the host the proxy passes in `allowed_hosts` in `chap.config.json`
+or in `CHAP_ALLOWED_HOSTS`. It runs one coordinator process over one SQLite
+file. The chain head stays in that file,
 where the operator of this process can rewrite it; a head published
 somewhere the operator cannot change is what shows an entry existed
 independently of the coordinator (SECURITY.md).

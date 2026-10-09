@@ -12,11 +12,14 @@
 //   describe   workspace.describe, signed as the agent, advertises the profiles the
 //              coordinator enforces and publishes a chain head
 //   chain      audit.verify_chain answers status verified with ok true
-//   store      the store file exists and changes after a call (skipped for :memory:)
+//   store      the coordinator reports a persistent store, and the store file
+//              exists and changes after a call (skipped when CHAP_DB_PATH is :memory:)
 //   oidc       with an issuer configured, a join with a garbage token is refused with -32403
 //
 // The signed checks join the agent first with its public key, which is
-// accepted unsigned and changes nothing for a member already on record.
+// accepted unsigned and changes nothing for a member already on record. The
+// unsigned probe and the garbage token are refused calls, and a refused call
+// is recorded on the chain, so each run leaves those refusals on it.
 // runChecks is exported, so the tests run the same checks in-process.
 
 import { readFile, stat } from "node:fs/promises";
@@ -119,8 +122,10 @@ export async function runChecks({ url = process.env.CHAP_URL ?? "http://127.0.0.
   // store
   if (!storeFile) {
     record("store", "skip", "CHAP_DB_PATH is :memory:, so nothing persists; set a path to check the store");
+  } else if (cfg.persistent === false) {
+    record("store", "FAIL", "the coordinator reports an in-memory store, so nothing persists; start it with CHAP_DB_PATH set to a file");
   } else if (!before) {
-    record("store", "FAIL", `${storeFile} does not exist. Is the coordinator writing to this path?`);
+    record("store", "FAIL", `${storeFile} does not exist. Is the coordinator writing to this path, and is this run reading the same one?`);
   } else if (!joined) {
     record("store", "FAIL", "no call was made, so the store could not be watched; see the describe check");
   } else {

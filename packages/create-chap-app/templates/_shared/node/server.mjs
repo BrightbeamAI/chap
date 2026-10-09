@@ -8,7 +8,11 @@
 //   POST /mcp           an MCP server over streamable HTTP, when enabled
 //
 // Everything comes from chap.config.json next to this file, with a few
-// environment overrides noted below. Run it with `node server.mjs`.
+// environment overrides noted in loadConfig. Run it with `node server.mjs`.
+//
+// The server answers under its own host names only (421 otherwise), refuses
+// a browser request from another origin (403), takes JSON only on POST /chap
+// (415) and reads no body over MAX_BODY_BYTES (413).
 
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -18,24 +22,44 @@ import { Coordinator, MemoryStore } from "@brightbeamai/chap-coordinator";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * chap.config.json with the environment applied: PORT, CHAP_HOST and
+ * CHAP_DB_PATH replace the port, host and store; CHAP_REQUIRE_SIGNATURES,
+ * CHAP_CHAIN and CHAP_MCP (1 or true) replace the flags; CHAP_ALLOWED_HOSTS
+ * adds host names, comma separated; OIDC_ISSUER, OIDC_JWKS_URL and
+ * OIDC_AUDIENCE set the token verifier.
+ */
 export async function loadConfig(path = join(here, "chap.config.json")) {
   const config = JSON.parse(await readFile(path, "utf8"));
   config.port = Number(process.env.PORT ?? config.port ?? 8787);
   config.host = process.env.CHAP_HOST ?? config.host ?? "127.0.0.1";
   config.store = process.env.CHAP_DB_PATH ?? config.store ?? "./data/chap.db";
-  config.require_signatures = envFlag("CHAP_REQUIRE_SIGNATURES", config.require_signatures ?? false);
-  // The coordinator turns the chain on for a workspace that advertises
-  // audit-scitt/1.0 whatever the flag says, so the flag reports that too.
-  config.chain = envFlag("CHAP_CHAIN", !!config.chain) || config.profiles.includes("audit-scitt/1.0");
+  // A profile in the list is enforced. security-signed/1.0 requires
+  // signatures, and the coordinator turns the chain on for a workspace that
+  // advertises audit-scitt/1.0 whatever the flag says, so each flag reports
+  // the profile as well as its own setting.
+  config.require_signatures = envFlag("CHAP_REQUIRE_SIGNATURES", !!config.require_signatures) || hasProfile(config.profiles, "security-signed");
+  config.chain = envFlag("CHAP_CHAIN", !!config.chain) || hasProfile(config.profiles, "audit-scitt");
   config.mcp = envFlag("CHAP_MCP", config.mcp ?? false);
   config.oidc = oidcFromEnv(config.oidc);
+  config.allowed_hosts = [...(config.allowed_hosts ?? []), ...envList("CHAP_ALLOWED_HOSTS")];
   return config;
+}
+
+/** Whether a profile list names `name` at any version. */
+export function hasProfile(profiles, name) {
+  return (profiles ?? []).some((p) => p === name || p.startsWith(name + "/"));
 }
 
 function envFlag(name, fallback) {
   const v = process.env[name];
   if (v === undefined || v === "") return fallback;
   return v === "1" || v.toLowerCase() === "true";
+}
+
+/** A comma-separated environment variable as a list, empty when unset. */
+function envList(name) {
+  return (process.env[name] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
 function oidcFromEnv(configured) {
@@ -85,8 +109,23 @@ export function reconcileOidcProfile(config, enforced) {
   }
 }
 
+/**
+ * security-signed/1.0 is enforced by requireSignatures, and the coordinator
+ * adds the profile where signatures are required (SPECIFICATION 15.1, item
+ * 3). loadConfig already requires signatures where the profile is listed;
+ * this adds the profile where the flag alone asked for them, so the console,
+ * /api/config and the descriptor say the same thing.
+ */
+export function reconcileSignedProfile(config) {
+  if (config.require_signatures && !hasProfile(config.profiles, "security-signed")) {
+    config.profiles = [...config.profiles, "security-signed/1.0"];
+    console.log("security-signed/1.0 added to the profiles: signatures are required.");
+  }
+}
+
 /** Build the coordinator from a config. Exported so tests can run in-process. */
 export async function makeCoordinator(config, extra = {}) {
+  reconcileSignedProfile(config);
   reconcileOidcProfile(config, !!(config.oidc || extra.verifyOidcToken));
   const options = {
     store: await openStore(config.store),
@@ -170,6 +209,7 @@ export function publicConfig(config) {
     agent: config.agent ?? null,
     require_signatures: !!config.require_signatures,
     chain_enabled: !!config.chain,
+    persistent: config.store !== ":memory:",
     oidc: config.oidc ? { issuer: config.oidc.issuer } : null,
     mcp: !!config.mcp,
   };
@@ -182,17 +222,19 @@ function reply(res, status, body, type = "application/json") {
   res.end(type === "application/json" ? JSON.stringify(body) : body);
 }
 
+/** Largest request body read, a little above the coordinator's envelope limit. */
+const MAX_BODY_BYTES = 1_100_000;
+
 /**
- * A browser request from another origin. The desk is served from this
- * process, so its requests carry this server's own origin or none; a page
- * on another origin gets no cross-origin headers and its calls are refused,
- * so an open tab elsewhere cannot decide as the reviewer. A non-browser
- * client sends no Origin header.
+ * The host names this server answers to: its loopback names on its own
+ * port, the configured host, and `allowed_hosts` from chap.config.json or
+ * CHAP_ALLOWED_HOSTS, for a name a proxy or a Compose service reaches it by.
  */
-function foreignOrigin(req) {
-  const origin = req.headers.origin;
-  if (!origin) return false;
-  return origin.toLowerCase() !== `http://${req.headers.host ?? ""}`.toLowerCase();
+function allowedHosts(req, config) {
+  const port = req.socket.localPort;
+  const allowed = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`, `${config.host}:${port}`.toLowerCase()]);
+  for (const h of config.allowed_hosts ?? []) allowed.add(h.toLowerCase());
+  return allowed;
 }
 
 /**
@@ -201,16 +243,37 @@ function foreignOrigin(req) {
  * that name as the Host, and is refused before any route.
  */
 function foreignHost(req, config) {
-  const host = (req.headers.host ?? "").toLowerCase();
-  const port = req.socket.localPort;
-  const allowed = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`, `${config.host}:${port}`.toLowerCase()]);
-  if (config.allowed_hosts) for (const h of config.allowed_hosts) allowed.add(h.toLowerCase());
+  return !allowedHosts(req, config).has((req.headers.host ?? "").toLowerCase());
+}
+
+/**
+ * A browser request from another origin. The desk is served from this
+ * process, so its requests carry one of this server's names as the origin's
+ * host, under http or under the https a proxy in front terminates. A page
+ * on another origin gets no cross-origin headers and its calls are refused,
+ * so an open tab elsewhere cannot decide as the reviewer. A non-browser
+ * client sends no Origin header.
+ */
+function foreignOrigin(req, config) {
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  let host;
+  try { host = new URL(origin).host.toLowerCase(); } catch { return true; }
+  const allowed = allowedHosts(req, config);
+  allowed.add((req.headers.host ?? "").toLowerCase());
   return !allowed.has(host);
 }
 
+class BodyTooLarge extends Error {}
+
 async function readBody(req) {
   const chunks = [];
-  for await (const c of req) chunks.push(c);
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > MAX_BODY_BYTES) throw new BodyTooLarge(`the request body is over ${MAX_BODY_BYTES} bytes`);
+    chunks.push(c);
+  }
   return Buffer.concat(chunks).toString("utf8");
 }
 
@@ -235,14 +298,17 @@ export async function makeServer(config, coord) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
-      if (foreignHost(req, config)) return reply(res, 421, { error: "unknown host; set allowed_hosts in chap.config.json to serve under another name" });
-      if (foreignOrigin(req)) return reply(res, 403, { error: "cross-origin requests are refused" });
+      if (foreignHost(req, config)) return reply(res, 421, { error: "unknown host; set allowed_hosts in chap.config.json, or CHAP_ALLOWED_HOSTS, to serve under another name" });
+      if (foreignOrigin(req, config)) return reply(res, 403, { error: "cross-origin requests are refused" });
       if (url.pathname === "/" || url.pathname === "/desk" || url.pathname === "/desk.html") return reply(res, 200, desk, "text/html; charset=utf-8");
       if (url.pathname === "/chap-client.mjs") return reply(res, 200, clientModule, "text/javascript; charset=utf-8");
       if (url.pathname === "/chap" && req.method === "POST") {
         if (!(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return reply(res, 415, { error: "POST /chap takes application/json" });
         let envelope;
-        try { envelope = JSON.parse(await readBody(req)); } catch { return reply(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
+        try { envelope = JSON.parse(await readBody(req)); } catch (e) {
+          if (e instanceof BodyTooLarge) throw e;
+          return reply(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+        }
         return reply(res, 200, coord.dispatch(envelope));
       }
       if (url.pathname === "/api/config") return reply(res, 200, publicConfig(config));
@@ -256,12 +322,20 @@ export async function makeServer(config, coord) {
         return reply(res, 200, { ok: true, workspace: config.workspace, members: ws?.members.size ?? 0, tasks: ws?.tasks.size ?? 0, audit: ws?.audit.length ?? 0 });
       }
       if (url.pathname === "/mcp" && mcp) {
-        const body = req.method === "POST" ? JSON.parse(await readBody(req)) : undefined;
+        let body;
+        if (req.method === "POST") {
+          try { body = JSON.parse(await readBody(req)); } catch (e) {
+            if (e instanceof BodyTooLarge) throw e;
+            return reply(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+          }
+        }
         return await mcp(req, res, body);
       }
       reply(res, 404, { error: "not found" });
     } catch (e) {
-      if (!res.headersSent) reply(res, 500, { error: e instanceof Error ? e.message : String(e) });
+      if (res.headersSent) return;
+      if (e instanceof BodyTooLarge) return reply(res, 413, { error: e.message });
+      reply(res, 500, { error: e instanceof Error ? e.message : String(e) });
     }
   });
   return server;

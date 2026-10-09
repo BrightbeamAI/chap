@@ -75,7 +75,26 @@ artefact the reviewer did not see.
 A `human:` URI in the desk is a label: it says who is deciding and does not
 authenticate them. The desk and its read API have no login of their own;
 the deployment puts its login in front, and under `security-signed/1.0`
-the signing key is what ties a decision to its holder.
+the signing key is what ties a decision to its holder. The process answers
+under its own host names only, refuses a browser request from another
+origin, takes JSON only on `POST /chap` and caps the request body, so a
+page open elsewhere cannot decide as the reviewer.
+
+## The agents
+
+The agents a template ships share one shape, in TypeScript and in Python.
+Each row of the template's CSV becomes one task, created with an
+idempotency key made from the row, so a restarted agent finds the tasks it
+opened before and opens no duplicates. On each pass the agent reads the
+file again and moves every open task one step: it drafts, waits on
+`workspace.describe` until a reviewer is a member, since a review with
+nobody to address it to is refused and the refusal recorded, submits with
+`task.complete`, and reads `GET /api/tasks/<id>` until the task is decided.
+A rejection that asks for a revision returns the task to `in_progress` with
+the reviewer's comment on record, and the agent drafts again with that note.
+Only an approved or overridden artefact, as decided, is written out. Under
+`control/1.0` a paused agent sees one refused `task.create`, then waits on
+a read until it is resumed.
 
 ## The templates
 

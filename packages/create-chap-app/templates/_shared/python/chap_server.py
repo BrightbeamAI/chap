@@ -10,6 +10,10 @@ Everything comes from chap.config.json next to this file, with a few
 environment overrides noted in load_config. The project's desk.py imports
 serve() from here.
 
+The server answers under its own host names only (421 otherwise), refuses
+a browser request from another origin (403), takes JSON only on POST /chap
+(415) and reads no body over MAX_BODY_BYTES (413).
+
 One process owns one SQLite database: every call is answered under one lock,
 because the coordinator is a single writer and the store contract is single
 writer. A ``human:`` URI labels a participant; it does not authenticate a
@@ -44,6 +48,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - import guard
 
 HERE = Path(__file__).resolve().parent
 DESK_DIR = HERE / "desk"
+MAX_BODY_BYTES = 1_100_000  # a little above the coordinator's envelope limit
 
 
 # -- configuration ------------------------------------------------------------
@@ -55,43 +60,53 @@ def env_flag(name: str, fallback: bool) -> bool:
     return value == "1" or value.lower() == "true"
 
 
+def env_list(name: str) -> list[str]:
+    """A comma-separated environment variable as a list, empty when unset."""
+    return [part.strip() for part in (os.environ.get(name) or "").split(",") if part.strip()]
+
+
+def has_profile(profiles: list[str], name: str) -> bool:
+    """Whether a profile list names ``name`` at any version."""
+    return any(p == name or p.startswith(name + "/") for p in profiles or [])
+
+
 def load_config(path: str | os.PathLike | None = None) -> dict:
     """Read chap.config.json and apply the environment overrides.
 
     PORT, CHAP_HOST and CHAP_DB_PATH replace the port, host and store;
     CHAP_REQUIRE_SIGNATURES and CHAP_CHAIN (``1`` or ``true``) replace the
-    two flags. The chain defaults to on when audit-scitt/1.0 is advertised.
+    two flags; CHAP_ALLOWED_HOSTS adds host names, comma separated.
+
+    A profile in the list is enforced: security-signed/1.0 requires
+    signatures, and the coordinator turns the chain on for a workspace that
+    advertises audit-scitt/1.0 whatever the flag says, so each flag reports
+    the profile as well as its own setting.
     """
     config_path = Path(path) if path is not None else HERE / "chap.config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     config["port"] = int(os.environ.get("PORT") or config.get("port") or 8787)
     config["host"] = os.environ.get("CHAP_HOST") or config.get("host") or "127.0.0.1"
     config["store"] = os.environ.get("CHAP_DB_PATH") or config.get("store") or "./data/chap.db"
-    config["require_signatures"] = env_flag(
-        "CHAP_REQUIRE_SIGNATURES", bool(config.get("require_signatures", False)))
-    # The coordinator turns the chain on for a workspace that advertises
-    # audit-scitt/1.0 whatever the flag says, so the flag reports that too.
+    config["require_signatures"] = (
+        env_flag("CHAP_REQUIRE_SIGNATURES", bool(config.get("require_signatures", False)))
+        or has_profile(config["profiles"], "security-signed"))
     config["chain"] = (env_flag("CHAP_CHAIN", bool(config.get("chain", False)))
-                       or "audit-scitt/1.0" in config["profiles"])
+                       or has_profile(config["profiles"], "audit-scitt"))
+    config["allowed_hosts"] = [*(config.get("allowed_hosts") or []), *env_list("CHAP_ALLOWED_HOSTS")]
     config.setdefault("humans", [])
     config.setdefault("agent", None)
     return config
 
 
 def reconcile_signed_profile(config: dict) -> None:
-    """security-signed/1.0 is enforced by require_signatures. The coordinator adds
-    the profile where signatures are required and refuses a workspace that
-    advertises it without them (SPECIFICATION 15.1, item 3). The list here is
-    made to agree before the workspace is created, so the console, /api/config
-    and the descriptor say the same thing."""
-    advertised = any(p == "security-signed" or p.startswith("security-signed/") for p in config["profiles"])
-    if config.get("require_signatures") and not advertised:
+    """security-signed/1.0 is enforced by require_signatures, and the coordinator
+    adds the profile where signatures are required (SPECIFICATION 15.1, item
+    3). load_config already requires signatures where the profile is listed;
+    this adds the profile where the flag alone asked for them, so the console,
+    /api/config and the descriptor say the same thing."""
+    if config.get("require_signatures") and not has_profile(config["profiles"], "security-signed"):
         config["profiles"] = [*config["profiles"], "security-signed/1.0"]
         print("security-signed/1.0 added to the profiles: signatures are required.")
-    elif advertised and not config.get("require_signatures"):
-        config["profiles"] = [p for p in config["profiles"] if not (p == "security-signed" or p.startswith("security-signed/"))]
-        print("security-signed/1.0 left out of the profiles: signatures are not required. "
-              "Set require_signatures in chap.config.json, or CHAP_REQUIRE_SIGNATURES=1, to refuse unsigned calls.")
 
 
 # -- the coordinator ----------------------------------------------------------
@@ -215,12 +230,17 @@ def public_config(config: dict) -> dict:
         "agent": config.get("agent"),
         "require_signatures": bool(config.get("require_signatures")),
         "chain_enabled": bool(config.get("chain")),
+        "persistent": config["store"] != ":memory:",
         "oidc": None,
         "mcp": False,
     }
 
 
 # -- HTTP ---------------------------------------------------------------------
+
+class BodyTooLarge(Exception):
+    """A request body over MAX_BODY_BYTES, answered 413 before it is read."""
+
 
 class ChapServer(ThreadingHTTPServer):
     """The HTTP server, holding the coordinator and the lock that serialises it."""
@@ -242,7 +262,7 @@ class ChapServer(ThreadingHTTPServer):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "CHAPDesk/0.3"
+    server_version = "CHAPDesk"
     server: ChapServer
 
     def log_message(self, *_: Any) -> None:
@@ -261,7 +281,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def _body(self) -> str:
         size = int(self.headers.get("content-length") or 0)
+        if size > MAX_BODY_BYTES:
+            raise BodyTooLarge(f"the request body is over {MAX_BODY_BYTES} bytes")
         return self.rfile.read(size).decode("utf-8") if size > 0 else ""
+
+    def _allowed_hosts(self) -> set[str]:
+        """The host names this server answers to: its loopback names on its
+        own port, the configured host, and ``allowed_hosts`` from
+        chap.config.json or CHAP_ALLOWED_HOSTS, for a name a proxy or a
+        Compose service reaches it by."""
+        config = self.server.config
+        port = self.server.server_address[1]
+        allowed = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}", f"{config['host']}:{port}".lower()}
+        allowed.update(h.lower() for h in (config.get("allowed_hosts") or []))
+        return allowed
 
     def _foreign_host(self) -> bool:
         """True when the Host header is not one of this server's own names.
@@ -269,18 +302,14 @@ class Handler(BaseHTTPRequestHandler):
         A page that resolves its own name to this address (DNS rebinding)
         arrives with that name as the Host, and is refused before any route.
         """
-        config = self.server.config
-        host = (self.headers.get("host") or "").lower()
-        port = self.server.server_address[1]
-        allowed = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}", f"{config['host']}:{port}".lower()}
-        allowed.update(h.lower() for h in (config.get("allowed_hosts") or []))
-        return host not in allowed
+        return (self.headers.get("host") or "").lower() not in self._allowed_hosts()
 
     def _foreign_origin(self) -> bool:
         """True for a browser request from another origin.
 
-        The desk is served from this process, so its requests carry this
-        server's own origin or none. A page on another origin gets no
+        The desk is served from this process, so its requests carry one of
+        this server's names as the origin's host, under http or under the
+        https a proxy in front terminates. A page on another origin gets no
         cross-origin headers and its calls are refused here, so an open tab
         elsewhere cannot decide as the reviewer. A non-browser client sends
         no Origin header.
@@ -288,8 +317,10 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("origin")
         if not origin:
             return False
-        host = self.headers.get("host") or ""
-        return origin.lower() != f"http://{host}".lower()
+        host = urlsplit(origin).netloc.lower()
+        if not host:
+            return True
+        return host not in self._allowed_hosts() | {(self.headers.get("host") or "").lower()}
 
     def do_GET(self) -> None:
         self._route("GET")
@@ -304,7 +335,8 @@ class Handler(BaseHTTPRequestHandler):
         path = url.path
         try:
             if self._foreign_host():
-                return self._reply(421, {"error": "unknown host; set allowed_hosts in chap.config.json to serve under another name"})
+                return self._reply(421, {"error": "unknown host; set allowed_hosts in chap.config.json, "
+                                                  "or CHAP_ALLOWED_HOSTS, to serve under another name"})
             if self._foreign_origin():
                 return self._reply(403, {"error": "cross-origin requests are refused"})
             if path in ("/", "/desk", "/desk.html"):
@@ -344,6 +376,8 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(404, {"error": "not found"})
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except BodyTooLarge as exc:
+            self._reply(413, {"error": str(exc)})
         except Exception as exc:  # the desk shows the message; the traceback stays here
             self._reply(500, {"error": str(exc)})
 

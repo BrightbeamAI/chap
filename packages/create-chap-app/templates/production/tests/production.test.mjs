@@ -4,7 +4,7 @@
 // decision is made at the desk.
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,7 @@ import { generateKeyFile, readKeyFile, kidFor } from "../keys.mjs";
 import { startDevIssuer, signJwt } from "../lib/dev-issuer.mjs";
 import { makeOidcVerifier } from "../lib/oidc.mjs";
 import { runChecks } from "../doctor.mjs";
-import { parseCsv, rowKey, scriptedDraft, buildPrompt } from "../agent.mjs";
+import { parseCsv, rowKey, scriptedDraft, buildPrompt, run as runAgent } from "../agent.mjs";
 
 const projectDir = fileURLToPath(new URL("..", import.meta.url));
 
@@ -247,6 +247,95 @@ describe("with an OIDC issuer", () => {
     for (const name of ["health", "config", "unsigned", "describe", "chain", "oidc"]) assert.equal(byName[name].status, "ok", `${name}: ${byName[name].detail}`);
     assert.equal(byName.store.status, "skip");
     assert.equal(results.filter((r) => r.status === "FAIL").length, 0);
+  });
+});
+
+/** Poll until `read` gives something true, and give that back. */
+async function until(read, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await read();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error("timed out waiting");
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+describe("the agent's loop", () => {
+  let lconfig, lserver, lbase, lhuman, probe, outbox;
+  const reviews = async () => (await (await fetch(`${lbase}/api/reviews?reviewer=${encodeURIComponent(lhuman.from)}`)).json()).reviews;
+  const reviewOf = async (taskId, holding) => (await reviews()).find((r) => r.task_id === taskId && (!holding || r.artefact.body.includes(holding)));
+
+  before(async () => {
+    // A coordinator of its own, so the loop's tasks stand alone.
+    lconfig = await loadConfig();
+    lconfig.store = ":memory:";
+    ({ server: lserver, base: lbase } = await startServer(lconfig));
+    lhuman = makeClient({ url: `${lbase}/chap`, workspace: lconfig.workspace, from: lconfig.humans[0].uri, signer: await generateSigner(lconfig.humans[0].uri) });
+    // A signed reader with the agent's key, for the chain checks.
+    probe = makeClient({ url: `${lbase}/chap`, workspace: lconfig.workspace, from: lconfig.agent.uri, signer: agent.signer });
+    outbox = await mkdtemp(join(tmpdir(), "chap-outbox-"));
+  });
+
+  after(async () => {
+    await new Promise((r) => lserver.close(r));
+  });
+
+  test("waits for a reviewer on a read, submits once one has joined, drafts again after a revision, and writes only what was approved", async () => {
+    const lines = [];
+    const running = runAgent({ once: true, dir: projectDir, url: `${lbase}/chap`, keyPath, outbox, log: (l) => lines.push(l), pollMs: 50 });
+
+    // No human has joined, so the review cannot open: the agent says so once
+    // and waits on workspace.describe, which records nothing.
+    await until(() => lines.some((l) => l.includes("no reviewer has joined")));
+    await new Promise((r) => setTimeout(r, 200));
+    const refused = await probe.call("audit.read", { filter: { outcome: "refused" } });
+    assert.deepEqual(refused.entries, []);
+    assert.equal(lines.filter((l) => l.includes("no reviewer has joined")).length, 3, "said once per task, not once per pass");
+
+    await lhuman.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [lhuman.signer.publicJwk] } });
+    const open = await until(async () => { const r = await reviews(); return r.length === 3 ? r : null; });
+    const rows = parseCsv(await readFile(join(projectDir, "messages.csv"), "utf8"));
+    const [first, second, third] = rows.map((row) => open.find((r) => r.input.subject === row.subject));
+    assert.ok(first && second && third);
+    assert.equal(first.artefact.body, scriptedDraft(buildPrompt(rows[0])));
+
+    // Approve one as written.
+    assert.equal((await lhuman.call("decide.approve", { task_id: first.task_id, comment: "send it" })).state, "completed");
+
+    // Reject one asking for a revision: the agent drafts again with the
+    // note, the review opens again on the new draft, and that one is overridden.
+    const rejected = await lhuman.call("decide.reject", { task_id: second.task_id, comment: "add the price", request_revision: true });
+    assert.equal(rejected.state, "in_progress");
+    const revised = await until(() => reviewOf(second.task_id, "add the price"));
+    assert.equal(revised.decisions.at(-1).kind, "reject");
+    const overridden = await lhuman.call("decide.override", { task_id: second.task_id, rationale: "shorter", diff: [{ op: "replace", path: "/body", value: "Edited body" }], intent_preserved: true });
+    assert.equal(overridden.state, "completed");
+
+    // Reject one outright.
+    assert.equal((await lhuman.call("decide.reject", { task_id: third.task_id, comment: "not this week" })).state, "declined");
+
+    const outcomes = await running;
+    assert.deepEqual(outcomes, { [first.task_id]: "approve", [second.task_id]: "override", [third.task_id]: "reject" });
+    assert.ok(lines.some((l) => l.includes("drafted again, after the reviewer's note")));
+
+    const files = (await readdir(outbox)).sort();
+    assert.deepEqual(files, [`${first.task_id}.json`, `${second.task_id}.json`].sort());
+    const sent = JSON.parse(await readFile(join(outbox, `${first.task_id}.json`), "utf8"));
+    assert.deepEqual(sent.message, first.artefact);
+    assert.equal(sent.decision.reviewer, lhuman.from);
+    const edited = JSON.parse(await readFile(join(outbox, `${second.task_id}.json`), "utf8"));
+    assert.deepEqual(edited.message, { ...revised.artefact, body: "Edited body" });
+    assert.equal(edited.decision.kind, "override");
+  });
+
+  test("a restarted agent finds its tasks by their idempotency keys and opens no duplicates", async () => {
+    const before = (await (await fetch(`${lbase}/api/health`)).json()).tasks;
+    const lines = [];
+    const outcomes = await runAgent({ once: true, dir: projectDir, url: `${lbase}/chap`, keyPath, outbox, log: (l) => lines.push(l), pollMs: 50 });
+    assert.deepEqual(Object.values(outcomes).sort(), ["approve", "override", "reject"]);
+    assert.equal(lines.filter((l) => l.includes("decided earlier")).length, 2);
+    assert.equal((await (await fetch(`${lbase}/api/health`)).json()).tasks, before);
   });
 });
 

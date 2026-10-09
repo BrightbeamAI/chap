@@ -164,9 +164,7 @@ function scriptedProvider(draft) {
     name: "scripted", model_id,
     detail: "scripted agent, no model. Set ANTHROPIC_API_KEY, OPENAI_API_KEY or OLLAMA_URL to draft with a model",
     async complete(prompt) {
-      const text = draft(prompt);
-      // A stable, small latency derived from the input so routing sees a signal.
-      return { text, latency_ms: 120 + (prompt.length % 40), model_id };
+      return { text: draft(prompt), latency_ms: 0, model_id };
     },
     async probe() {
       return { ok: true, detail: "scripted agent" };

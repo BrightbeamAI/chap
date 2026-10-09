@@ -3,13 +3,22 @@
 Run it beside desk.py:
 
     python agent.py messages.csv           draft each new row as it appears
-    python agent.py messages.csv --once    draft the rows in the file, then exit
+    python agent.py messages.csv --once    draft the rows in the file, wait for
+                                           their decisions, then exit
 
 Each row becomes one task. The agent does not ask for review: the workspace
 runs in trial mode under modes/1.0, so the coordinator requires it anyway,
 and the draft waits in the desk. The message as decided, including an
 override's patched result, is written to outbox/<message id>.json. A
-rejected draft is written nowhere.
+rejected draft is written nowhere. A rejection that asks for a revision has
+the agent draft again with the approver's note and submit the new draft.
+
+A message's id is a hash of its row, and the task's idempotency key, so a
+restarted agent finds the tasks it opened before and opens no duplicates,
+and a row whose text changed is a new message. Before it submits a draft
+the agent checks on workspace.describe, a read, that an approver has joined:
+a completion with nobody to address the review to is refused and the refusal
+recorded, so the agent waits instead and says so once.
 
 Under control/1.0 the approver can pause the agent with pause.py. While it
 is paused, task.create is refused with -32063; the agent says so and waits
@@ -22,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import sys
@@ -36,6 +46,7 @@ from providers import Provider, make_provider
 HERE = Path(__file__).resolve().parent
 TASK_KIND = "outbound_message"
 COLUMNS = ("to", "subject", "brief")
+REVISION_LINE = "The approver asked for a revision"
 PAUSED = -32063
 Log = Callable[[str], None]
 
@@ -53,12 +64,17 @@ def desk_url(config: dict) -> str:
 
 # -- messages -----------------------------------------------------------------
 
+def message_id(row: dict) -> str:
+    """The id of a message: a hash of its row, so the same row is the same message on every run."""
+    digest = hashlib.sha256(json.dumps([row.get(c, "") for c in COLUMNS]).encode("utf-8")).hexdigest()
+    return f"m-{digest[:12]}"
+
+
 def read_messages(path: str | os.PathLike) -> list[dict]:
     """The rows of a CSV with the columns to, subject and brief.
 
-    The row number names the message: the first row is m1, and its approved
-    message lands in outbox/m1.json. Point this at your own export: keep
-    those three column names, and every other column is ignored.
+    Point this at your own export: keep those three column names, and every
+    other column is ignored.
     """
     with open(path, newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
@@ -66,110 +82,67 @@ def read_messages(path: str | os.PathLike) -> list[dict]:
         missing = [c for c in COLUMNS if c not in (reader.fieldnames or [])]
     if missing:
         raise SystemExit(f"{path} needs the columns {', '.join(COLUMNS)}; missing: {', '.join(missing)}")
-    return [{"message_id": f"m{n}", **{c: (row.get(c) or "").strip() for c in COLUMNS}}
-            for n, row in enumerate(rows, start=1) if (row.get("to") or "").strip()]
+    messages = []
+    for row in rows:
+        fields = {c: (row.get(c) or "").strip() for c in COLUMNS}
+        if fields["to"]:
+            messages.append({"message_id": message_id(fields), **fields})
+    return messages
 
 
 # -- drafting -----------------------------------------------------------------
 
-def prompt_for(message: dict) -> str:
-    return ("Write the body of a short, courteous business email from the brief below. Plain text, "
-            "no subject line, no placeholders.\n\n"
-            f"To: {message['to']}\nSubject: {message['subject']}\nBrief: {message['brief']}\n")
+def prompt_for(message: dict, revision: str | None = None) -> str:
+    lines = [
+        "Write the body of a short, courteous business email from the brief below. Plain text, "
+        "no subject line, no placeholders.",
+        "",
+        f"To: {message['to']}",
+        f"Subject: {message['subject']}",
+        f"Brief: {message['brief']}",
+    ]
+    if revision:
+        lines += ["", f"{REVISION_LINE}: {revision}"]
+    return "\n".join(lines) + "\n"
 
 
 def scripted_body(prompt: str) -> str:
     """The drafter used when no model is named: a body built from the brief."""
     fields = {}
     for line in prompt.splitlines():
-        for key in ("To", "Subject", "Brief"):
+        for key in ("To", "Subject", "Brief", REVISION_LINE):
             if line.startswith(key + ":"):
                 fields[key] = line.split(":", 1)[1].strip()
     name = fields.get("To", "").split("@")[0].split(".")[0].capitalize() or "there"
     brief = fields.get("Brief") or fields.get("Subject") or "the matter below"
-    return (f"Hello {name},\n\n{brief}\n\nIf anything here is unclear, reply to this message "
-            "and I will sort it out.\n\nBest regards")
+    paragraphs = [f"Hello {name},", brief,
+                  "If anything here is unclear, reply to this message and I will sort it out."]
+    if fields.get(REVISION_LINE):
+        paragraphs.append(f"Following your note: {fields[REVISION_LINE]}")
+    paragraphs.append("Best regards")
+    return "\n\n".join(paragraphs)
 
 
-def draft(provider: Provider, message: dict) -> dict:
+def draft(provider: Provider, message: dict, revision: str | None = None) -> dict:
     """The message the provider drafts, as the artefact the approver will see."""
-    text, _latency_ms, model_id = provider.complete(prompt_for(message))
+    text, _latency_ms, model_id = provider.complete(prompt_for(message, revision))
     return {"message_id": message["message_id"], "to": message["to"], "subject": message["subject"],
             "body": text.strip(), "drafted_by": model_id}
 
 
-# -- the CHAP calls, then the wait --------------------------------------------
+# -- the agent ----------------------------------------------------------------
 
-def create_task(agent: Participant, message: dict) -> str:
-    """task.create with the brief as input and no review_required.
+def open_task(agent: Participant, message: dict) -> dict:
+    """task.create with the brief as input, the message id as the idempotency key, and no review_required.
 
     The workspace runs in trial mode, and under modes/1.0 a trial task
-    requires review whatever the agent passes. While the agent is paused the
-    call is refused with -32063, raised here as ChapError.
+    requires review whatever the agent passes. A repeat with the same key
+    answers with the task opened before and its current state, so a restart
+    carries on where it stopped. While the agent is paused the call is
+    refused with -32063, raised here as ChapError.
     """
-    return agent.call("task.create", kind=TASK_KIND, input=message, assignee=agent.uri)["task_id"]
-
-
-def submit(agent: Participant, message: dict, body: dict, poll_seconds: float = 2.0,
-           timeout: float | None = None, log: Log = print) -> str:
-    """Create the task, waiting while the agent is paused, then submit the draft.
-
-    Returns the task id. Raises TimeoutError when the pause outlasts ``timeout``.
-    """
-    started = time.monotonic()
-    paused = False
-    while True:
-        # A task.create while the agent is paused is refused with -32063
-        # and the refusal is recorded, so the agent waits on
-        # workspace.describe, a read that leaves nothing on the chain, and
-        # creates the task once it is resumed. The first refusal is kept so
-        # the console shows what the coordinator said.
-        if paused and agent.is_paused():
-            if timeout is not None and time.monotonic() - started >= timeout:
-                raise TimeoutError(f"Still paused after {timeout} seconds")
-            time.sleep(poll_seconds)
-            continue
-        try:
-            task_id = create_task(agent, message)
-            break
-        except ChapError as exc:
-            if exc.code != PAUSED:
-                raise
-            if not paused:
-                log(f"{message['message_id']}: {exc.message} (refused {exc.code}); waiting for resume.py")
-                paused = True
-    if paused:
-        log(f"{message['message_id']}: the agent is resumed, task.create accepted")
-    done = agent.call("task.complete", task_id=task_id, output=body)
-    if done.get("state") == "review_requested":
-        log(f"{message['message_id']}: drafted by {body['drafted_by']}, waiting in the desk as {task_id} "
-            "(review opened without review_required: the workspace is in trial mode under modes/1.0)")
-    else:
-        log(f"{message['message_id']}: task {task_id} is {done.get('state')} with nobody asked")
-    return task_id
-
-
-def settle(agent: Participant, task_id: str, message_id: str, outbox: Path,
-           poll_seconds: float = 2.0, timeout: float | None = None, log: Log = print) -> str:
-    """Wait for the decision, then write the message as decided, or nothing.
-
-    Returns the decision: approve, override, reject, or the task's state when
-    the review ended another way (a rejection that asked for a revision
-    leaves the task in_progress).
-    """
-    view = agent.wait_for_decision(task_id, poll_seconds=poll_seconds, timeout=timeout)
-    decisions = (view.get("review") or {}).get("decisions") or []
-    last = decisions[-1] if decisions else {}
-    kind = last.get("kind") or view["state"]
-    if view["state"] == "completed":
-        path = write_message(outbox, message_id, task_id, view["output"], last)
-        log(f"{message_id}: {kind} by {last.get('reviewer')}, written to {path}")
-        return kind
-    if view["state"] == "declined":
-        log(f"{message_id}: rejected by {last.get('reviewer')}, nothing written")
-        return "reject"
-    log(f"{message_id}: review ended with the task {view['state']}, nothing written")
-    return view["state"]
+    return agent.call("task.create", kind=TASK_KIND, input=message, assignee=agent.uri,
+                      idempotency_key=message["message_id"])
 
 
 def write_message(outbox: Path, message_id: str, task_id: str, message: dict, decision: dict) -> Path:
@@ -181,22 +154,118 @@ def write_message(outbox: Path, message_id: str, task_id: str, message: dict, de
     return path
 
 
-def process(agent: Participant, provider: Provider, messages: list[dict], outbox: Path,
-            poll_seconds: float = 2.0, log: Log = print) -> dict[str, str]:
-    """Draft and submit every message, then wait for each decision in turn."""
-    submitted = []
-    for message in messages:
-        body = draft(provider, message)
+def advance(agent: Participant, provider: Provider, item: dict, outbox: Path, log: Log = print) -> str | None:
+    """One step for one message's task.
+
+    Returns None while the task is open, and once it is settled the outcome:
+    approve, override or reject, or the state the task reached another way.
+    """
+    message, task_id = item["message"], item["task_id"]
+    mid = message["message_id"]
+    view = agent.task(task_id)
+    if view is None:
+        raise KeyError(f"The desk process does not know task {task_id}")
+    state = view["state"]
+    decisions = (view.get("review") or {}).get("decisions") or []
+    last = decisions[-1] if decisions else {}
+
+    if state in ("created", "in_progress"):
+        # in_progress after a review means a rejection asked for a revision;
+        # the approver's comment goes into the next draft.
+        revision = None
+        if state == "in_progress" and last.get("kind") == "reject":
+            revision = last.get("comment") or "no comment"
+        if item["draft"] is None:
+            item["draft"] = draft(provider, message, revision)
+            log(f"{mid}: drafted{' again, with the note from the approver' if revision else ''} "
+                f"by {item['draft']['drafted_by']}")
+        if not agent.reviewer_present():
+            if not item["told"]:
+                log(f"{mid}: no approver has joined, so the review cannot open yet; "
+                    "open the desk, and the draft is submitted on a later pass")
+            item["told"] = True
+            return None
+        done = agent.call("task.complete", task_id=task_id, output=item["draft"])
+        item["draft"], item["told"] = None, False
+        if done.get("state") == "review_requested":
+            log(f"{mid}: waiting in the desk as {task_id} (review opened without review_required: "
+                "the workspace is in trial mode under modes/1.0)")
+        else:
+            log(f"{mid}: task {task_id} is {done.get('state')} with nobody asked")
+        return None
+
+    if state == "review_requested":
+        return None
+
+    if state == "completed":
+        path = outbox / f"{mid}.json"
+        if path.exists():
+            log(f"{mid}: decided earlier; {path} is already written")
+        else:
+            write_message(outbox, mid, task_id, view["output"], last)
+            log(f"{mid}: {last.get('kind')} by {last.get('reviewer')}, written to {path}")
+        return last.get("kind") or "approve"
+
+    if state == "declined":
+        comment = f": {last['comment']}" if last.get("comment") else ""
+        log(f"{mid}: rejected by {last.get('reviewer')}{comment}, nothing written")
+        return "reject"
+
+    log(f"{mid}: the task is {state}, nothing more to do")
+    return state
+
+
+def run(agent: Participant, provider: Provider, source: str | os.PathLike, outbox: Path,
+        once: bool = False, poll_seconds: float = 2.0, log: Log = print) -> dict[str, str]:
+    """Open a task for each new row in the file and advance every open task one step per pass.
+
+    Returns each settled message's outcome. With ``once`` it returns when
+    every row in the file is settled; otherwise it keeps reading the file.
+    """
+    pending: dict[str, dict] = {}
+    seen: set[str] = set()
+    outcomes: dict[str, str] = {}
+    paused = False
+    rows: list[dict] = []
+    while True:
         try:
-            task_id = submit(agent, message, body, poll_seconds, log=log)
-        except ChapError as exc:
-            log(f"{message['message_id']}: not submitted, {exc}")
-            continue
-        submitted.append((message["message_id"], task_id))
-    outcomes = {}
-    for message_id, task_id in submitted:
-        outcomes[message_id] = settle(agent, task_id, message_id, outbox, poll_seconds, log=log)
-    return outcomes
+            rows = read_messages(source)
+            for message in rows:
+                mid = message["message_id"]
+                if mid in seen:
+                    continue
+                # A task.create while the agent is paused is refused with
+                # -32063 and the refusal recorded. The first refusal is kept,
+                # so the console shows what the coordinator said; after it
+                # the agent waits on workspace.describe, a read, until
+                # resume.py has run.
+                if paused and agent.is_paused():
+                    break
+                try:
+                    created = open_task(agent, message)
+                except ChapError as exc:
+                    if exc.code != PAUSED:
+                        raise
+                    log(f"{mid}: {exc.message} (refused {exc.code}); waiting for resume.py")
+                    paused = True
+                    break
+                if paused:
+                    log(f"{mid}: the agent is resumed, task.create accepted")
+                    paused = False
+                seen.add(mid)
+                log(f"{mid}: task {created['task_id']} {created['state']}")
+                pending[created["task_id"]] = {"message": message, "task_id": created["task_id"],
+                                               "draft": None, "told": False}
+            for task_id, item in list(pending.items()):
+                outcome = advance(agent, provider, item, outbox, log)
+                if outcome is not None:
+                    outcomes[item["message"]["message_id"]] = outcome
+                    del pending[task_id]
+        except (ChapError, urllib.error.URLError, OSError) as exc:
+            log(f"error: {exc}")
+        if once and not pending and all(m["message_id"] in seen for m in rows):
+            return outcomes
+        time.sleep(poll_seconds)
 
 
 def connect(config: dict, url: str) -> Participant:
@@ -206,7 +275,13 @@ def connect(config: dict, url: str) -> Participant:
         client.get("/api/health")
     except (urllib.error.URLError, OSError) as exc:
         raise SystemExit(f"The desk process at {url} is not answering ({exc}). Start it with: python desk.py")
-    signer = Signer.load_or_create(config["agent"]["uri"]) if config.get("require_signatures") else None
+    public = client.get("/api/config") or {}
+    # A join names a workspace, and the coordinator creates one it does not
+    # have, so a mismatch with the desk's configuration would leave the
+    # agent's tasks in a workspace the desk never shows.
+    if public.get("workspace") != config["workspace"]:
+        raise SystemExit(f"{url} serves {public.get('workspace')}, and chap.config.json here names {config['workspace']}")
+    signer = Signer.load_or_create(config["agent"]["uri"]) if public.get("require_signatures") else None
     agent = Participant(client, config["workspace"], config["agent"]["uri"], signer=signer)
     if signer:
         agent.join("agent", "drafter", config["agent"].get("display_name"))
@@ -221,10 +296,10 @@ def approver(config: dict, url: str | None = None) -> Participant:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Draft each outbound message and wait for the approver.")
     parser.add_argument("csv", nargs="?", default="messages.csv", help="a CSV with to, subject, brief")
-    parser.add_argument("--once", action="store_true", help="draft the rows in the file, then exit")
+    parser.add_argument("--once", action="store_true", help="draft the rows in the file, wait for their decisions, then exit")
     parser.add_argument("--url", help="the desk process, default from chap.config.json")
     parser.add_argument("--outbox", default="outbox", help="where approved messages are written")
-    parser.add_argument("--poll", type=float, default=2.0, help="seconds between checks for a decision")
+    parser.add_argument("--poll", type=float, default=2.0, help="seconds between passes")
     args = parser.parse_args(argv)
     sys.stdout.reconfigure(line_buffering=True)  # each line shows at once, even into a file
 
@@ -236,24 +311,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Drafting with {detail}")
     agent = connect(config, args.url or desk_url(config))
     print(f"Agent {agent.uri} on {config['workspace']} at {agent.client.url}")
-
-    outbox = Path(args.outbox)
-    seen: set[str] = set()
-    while True:
-        batch = []
-        for message in read_messages(args.csv):
-            if message["message_id"] in seen:
-                continue
-            seen.add(message["message_id"])
-            if (outbox / f"{message['message_id']}.json").exists():
-                print(f"{message['message_id']}: {outbox / (message['message_id'] + '.json')} exists, skipping")
-                continue
-            batch.append(message)
-        if batch:
-            process(agent, provider, batch, outbox, args.poll)
-        if args.once:
-            break
-        time.sleep(args.poll)
+    run(agent, provider, args.csv, Path(args.outbox), once=args.once, poll_seconds=args.poll)
 
 
 if __name__ == "__main__":

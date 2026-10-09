@@ -15,7 +15,11 @@
 // Without --once the agent keeps running and reads messages.csv again on
 // every pass, so a row added to the file becomes a task. Each row carries an
 // idempotency key made from its content, so a restarted agent finds the
-// tasks it opened before and opens no duplicates.
+// tasks it opened before and opens no duplicates. A rejection that asks for
+// a revision has the agent draft again with the reviewer's note. Before it
+// submits a draft the agent checks on workspace.describe, a read, that a
+// reviewer has joined, since a completion with nobody to address the review
+// to is refused and the refusal recorded.
 
 import { createHash } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -104,11 +108,11 @@ export async function draft(provider, row, revision) {
 // -- the agent ----------------------------------------------------------------
 
 /** The config, the key and a signing client for the agent. */
-export async function loadAgent({ dir = here, url = chapUrl() } = {}) {
+export async function loadAgent({ dir = here, url = chapUrl(), keyPath } = {}) {
   const config = JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8"));
   const uri = config.agent?.uri;
   if (!uri) throw new Error("chap.config.json names no agent");
-  const keyPath = process.env.CHAP_AGENT_KEY ?? keyPathFor(uri, join(dir, "keys"));
+  keyPath ??= process.env.CHAP_AGENT_KEY ?? keyPathFor(uri, join(dir, "keys"));
   const signer = await signerFromJwk(uri, await readKeyFile(uri, keyPath));
   const client = makeClient({ url, workspace: config.workspace, from: uri, signer });
   return { config, uri, signer, client, keyPath };
@@ -136,19 +140,26 @@ const lastDecision = (view) => view.review?.decisions?.at(-1) ?? null;
  * Run the workload. Returns when `once` is set and every task opened from
  * messages.csv has been decided; otherwise keeps reading the file.
  */
-export async function run({ once = false, dir = here, url = chapUrl(), log = console.log, pollMs = POLL_MS } = {}) {
-  const { config, uri, client } = await loadAgent({ dir, url });
+export async function run({ once = false, dir = here, url = chapUrl(), keyPath, outbox = join(dir, "outbox"), log = console.log, pollMs = POLL_MS } = {}) {
+  const { config, uri, client } = await loadAgent({ dir, url, keyPath });
   const base = apiBase(url);
   const provider = makeProvider(scriptedDraft);
-  const outbox = join(dir, "outbox");
   await mkdir(outbox, { recursive: true });
   log(`agent ${uri} calling ${url}, drafting with ${provider.detail}`);
 
+  // A join names a workspace, and the coordinator creates one it does not
+  // have, so a mismatch with the desk's configuration would leave the
+  // agent's tasks in a workspace the desk never shows.
+  const served = await (await fetch(`${base}/api/config`)).json();
+  if (served.workspace !== config.workspace) {
+    throw new Error(`${base} serves ${served.workspace}, and chap.config.json here names ${config.workspace}`);
+  }
   await joinWorkspace(client, config);
   log(`joined ${config.workspace} with key ${client.signer.kid}; every call from here on is signed`);
 
   const seen = new Set();
   const pending = new Map();
+  const outcomes = {};
   for (;;) {
     try {
       const rows = parseCsv(await readFile(join(dir, "messages.csv"), "utf8"));
@@ -164,24 +175,32 @@ export async function run({ once = false, dir = here, url = chapUrl(), log = con
         pending.set(created.task_id, { row, waiting: false, noReviewer: false, draft: null });
       }
       for (const [taskId, item] of pending) {
-        const done = await advance({ client, base, provider, outbox, taskId, item, log });
-        if (done) pending.delete(taskId);
+        const outcome = await advance({ client, base, provider, outbox, taskId, item, log });
+        if (outcome) { outcomes[taskId] = outcome; pending.delete(taskId); }
       }
     } catch (e) {
       log(`error: ${e instanceof Error ? e.message : String(e)}`);
     }
-    if (once && pending.size === 0) return;
+    if (once && pending.size === 0) return outcomes;
     await new Promise((r) => setTimeout(r, pollMs));
   }
 }
 
-/** Whether a human other than the agent is a member who is not paused. */
+/**
+ * Whether a human other than the agent is a member. A review opened on
+ * task.complete is addressed to the human members other than the completer,
+ * and the completion is refused when there are none.
+ */
 async function reviewerPresent(client) {
   const ws = await client.call("workspace.describe", {});
-  return (ws.members ?? []).some((m) => m.uri !== client.from && m.type === "human" && !m.paused);
+  return (ws.members ?? []).some((m) => m.uri !== client.from && m.type === "human");
 }
 
-/** One step for one task. Returns true when the task is decided or closed. */
+/**
+ * One step for one task. Returns nothing while the task is open, and once it
+ * is settled the outcome: approve, override or reject, or the state the task
+ * reached another way.
+ */
 async function advance({ client, base, provider, outbox, taskId, item, log }) {
   const view = await fetchTask(base, taskId);
   const { row } = item;
@@ -201,37 +220,37 @@ async function advance({ client, base, provider, outbox, taskId, item, log }) {
       if (!(await reviewerPresent(client))) {
         if (!item.noReviewer) log(`task ${taskId} cannot open its review yet: no reviewer has joined. Open the desk at ${base}/ and the draft is submitted on a later pass.`);
         item.noReviewer = true;
-        return false;
+        return null;
       }
       const r = await client.call("task.complete", { task_id: taskId, output: item.draft });
       item.draft = null;
       item.waiting = true;
       item.noReviewer = false;
       log(`task ${taskId} ${r.state}: waiting for a decision at the desk`);
-      return false;
+      return null;
     }
     case "review_requested":
       if (!item.waiting) { item.waiting = true; log(`task ${taskId} is under review: waiting for a decision at the desk`); }
-      return false;
+      return null;
     case "completed": {
       const file = join(outbox, `${taskId}.json`);
       const decision = lastDecision(view);
       if (await exists(file)) {
         log(`task ${taskId} was decided earlier; ${file} is already written`);
-        return true;
+      } else {
+        await writeFile(file, JSON.stringify({ task_id: taskId, message: view.output, decision }, null, 2) + "\n");
+        log(`task ${taskId} ${decision?.kind === "override" ? "approved with an edit" : "approved"} by ${decision?.reviewer ?? "a reviewer"}; written to ${file}`);
       }
-      await writeFile(file, JSON.stringify({ task_id: taskId, message: view.output, decision }, null, 2) + "\n");
-      log(`task ${taskId} ${decision?.kind === "override" ? "approved with an edit" : "approved"} by ${decision?.reviewer ?? "a reviewer"}; written to ${file}`);
-      return true;
+      return decision?.kind ?? "approve";
     }
     case "declined": {
       const decision = lastDecision(view);
       log(`task ${taskId} rejected by ${decision?.reviewer ?? "a reviewer"}${decision?.comment ? `: ${decision.comment}` : ""}; nothing written`);
-      return true;
+      return "reject";
     }
     default:
       log(`task ${taskId} is ${view.state}; nothing more to do`);
-      return true;
+      return view.state;
   }
 }
 

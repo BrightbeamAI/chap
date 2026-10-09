@@ -183,19 +183,30 @@ def _b64url_decode(text: str) -> bytes:
 class Participant:
     """One participant's calls to one workspace."""
 
-    def is_paused(self) -> bool:
-        """Whether this participant is paused, read with workspace.describe."""
-        described = self.client.describe(self.workspace) or {}
-        for member in described.get("members") or []:
-            if member.get("uri") == self.uri:
-                return bool(member.get("paused"))
-        return False
-
     def __init__(self, client: HttpCoordinator, workspace: str, uri: str, signer: Signer | None = None):
         self.client = client
         self.workspace = workspace
         self.uri = uri
         self.signer = signer
+
+    def members(self) -> list[dict]:
+        """The workspace's members, read with workspace.describe."""
+        described = self.client.describe(self.workspace) or {}
+        return list(described.get("members") or [])
+
+    def is_paused(self) -> bool:
+        """Whether this participant is paused."""
+        return any(m.get("uri") == self.uri and bool(m.get("paused")) for m in self.members())
+
+    def reviewer_present(self) -> bool:
+        """Whether a human other than this participant is a member.
+
+        A review opened on task.complete is addressed to the human members
+        other than the completer, and the completion is refused, and the
+        refusal recorded, when there are none. An agent that checks this
+        first waits on a read instead.
+        """
+        return any(m.get("type") == "human" and m.get("uri") != self.uri for m in self.members())
 
     def envelope(self, method: str, params: dict) -> dict:
         env = {"jsonrpc": "2.0", "id": f"{self.uri}-{uuid4().hex}", "method": method,

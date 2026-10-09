@@ -15,11 +15,18 @@ open http://127.0.0.1:8788/     # decide in the desk
 
 `desk.py` creates the workspace, joins the participants named in
 `chap.config.json` and keeps the SQLite store under `data/`. `agent.py`
-drafts the three sample tickets and waits for each decision; with `--once`
-it exits after the file is processed, and without it, it keeps watching the
-file for new rows. An approved or overridden reply lands in
-`replies/<ticket id>.json` with the task id and who decided; a rejected one
-is written nowhere. The tests run with no model and no network:
+opens a task for each of the three sample tickets, drafts a reply, submits
+it and waits for your decision; with `--once` it exits once every ticket in
+the file is decided, and without it, it keeps watching the file for new
+rows. An approved or overridden reply lands in `replies/<ticket id>.json`
+with the task id and who decided; a rejected one is written nowhere. Reject
+with "ask for a revision" ticked and the agent drafts again with your note
+and submits the new draft. The ticket id is the task's idempotency key, so a
+restarted agent finds the tasks it opened before and opens no duplicates; a
+ticket whose text changed keeps its task, and a new id gets a new one. Until
+a reviewer has joined the workspace the agent holds each draft and says so
+once, since a review with nobody to address it to is refused. The tests run
+with no model and no network:
 
 ```bash
 python -m pytest tests -q
@@ -111,11 +118,12 @@ shows an entry existed independently of the coordinator (SECURITY.md).
 The desk, `POST /chap` and the read API under `/api/` have no login. A
 `human:` URI in the desk is a label that says who is deciding; it does not
 authenticate them. The server listens on the loopback address, refuses a
-request from another origin or under another host name, and takes JSON
-only on `POST /chap`, so a page open elsewhere cannot decide as the
-reviewer; the deployment puts TLS and its own login in front, and
-`security-signed/1.0` with a key per person is what ties a decision to its
-holder.
+request from another origin or under a host name it was not given, and
+takes JSON only on `POST /chap`, so a page open elsewhere cannot decide as
+the reviewer; the deployment puts TLS and its own login in front, names the
+host the proxy passes in `allowed_hosts` in `chap.config.json` or in
+`CHAP_ALLOWED_HOSTS`, and `security-signed/1.0` with a key per person is
+what ties a decision to its holder.
 
 `tests/` and `diff-profiles.py` script the decisions, because nobody is at
 the desk when they run; the project itself never does.

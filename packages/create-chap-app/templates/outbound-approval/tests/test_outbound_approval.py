@@ -1,7 +1,7 @@
 """Outbound approval, end to end, with no model and no network.
 
 The desk process runs in this process on a free port with the store in
-memory. The scripted agent drafts the sample messages, the approver decides
+memory. The scripted agent runs its loop in a thread, the approver decides
 through POST /chap as the desk would, and outbox/ holds only what was
 approved. The decisions here are scripted because this is a test; in the
 project the decision is made in the desk.
@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -23,7 +24,7 @@ sys.path.insert(0, str(ROOT))
 os.environ["CHAP_MODEL_PROVIDER"] = "scripted"
 
 import agent as drafter  # noqa: E402
-from chap_client import ChapError, HttpCoordinator, Participant  # noqa: E402
+from chap_client import HttpCoordinator, Participant  # noqa: E402
 from chap_server import load_config, make_coordinator, make_server  # noqa: E402
 from providers import make_provider  # noqa: E402
 
@@ -48,6 +49,49 @@ def fetch(url: str):
     return json.loads(body) if response.headers.get("content-type", "").startswith("application/json") else body
 
 
+def open_reviews(base: str, reviewer: str) -> list[dict]:
+    return fetch(f"{base}/api/reviews?reviewer={reviewer}")["reviews"]
+
+
+def review_of(base: str, reviewer: str, message_id: str, holding: str | None = None):
+    """The open review of one message, with ``holding`` in its body when given, else None."""
+    for review in open_reviews(base, reviewer):
+        if review["input"]["message_id"] == message_id and (holding is None or holding in review["artefact"]["body"]):
+            return review
+    return None
+
+
+def wait_for(read, timeout: float = 5.0):
+    """Poll ``read`` until it returns something true, and return that."""
+    deadline = time.monotonic() + timeout
+    while True:
+        value = read()
+        if value:
+            return value
+        if time.monotonic() > deadline:
+            raise AssertionError("timed out waiting")
+        time.sleep(0.05)
+
+
+class AgentRun:
+    """The agent's loop with --once in a thread, with its console lines and its outcomes."""
+
+    def __init__(self, agent, provider, source, outbox):
+        self.lines: list[str] = []
+        self.outcomes = None
+        self.thread = threading.Thread(target=self._run, args=(agent, provider, source, outbox), daemon=True)
+        self.thread.start()
+
+    def _run(self, agent, provider, source, outbox):
+        self.outcomes = drafter.run(agent, provider, source, outbox, once=True, poll_seconds=0.05,
+                                    log=self.lines.append)
+
+    def result(self, timeout: float = 10.0):
+        self.thread.join(timeout)
+        assert not self.thread.is_alive(), f"the agent did not finish: {self.lines}"
+        return self.outcomes
+
+
 def participants(desk):
     config = desk["config"]
     client = HttpCoordinator(desk["base"] + "/chap")
@@ -56,78 +100,94 @@ def participants(desk):
 
 
 def test_only_an_approved_message_reaches_the_outbox(desk, tmp_path):
-    config, base = desk["config"], desk["base"]
+    base = desk["base"]
     agent, approver = participants(desk)
     provider = make_provider(drafter.scripted_body)
     assert provider.name == "scripted"
-    quiet = lambda _line: None
+    outbox = tmp_path / "outbox"
+    run = AgentRun(agent, provider, ROOT / "messages.csv", outbox)
 
     messages = drafter.read_messages(ROOT / "messages.csv")
-    assert [m["message_id"] for m in messages] == ["m1", "m2", "m3"]
-    drafts = {m["message_id"]: drafter.draft(provider, m) for m in messages}
-    tasks = {m["message_id"]: drafter.submit(agent, m, drafts[m["message_id"]], log=quiet) for m in messages}
+    ids = [m["message_id"] for m in messages]
+    assert len(set(ids)) == 3 and all(i.startswith("m-") for i in ids)
+    assert drafter.message_id(messages[0]) == ids[0], "the same row keeps the same id"
+    first = wait_for(lambda: review_of(base, approver.uri, ids[0]))
 
     # A trial-mode task opens a review although the agent never asked for one.
-    view = agent.task(tasks["m1"])
-    assert view["state"] == "review_requested"
-    assert view["review"]["requested_to"] == [approver.uri]
-    reviews = fetch(f"{base}/api/reviews?reviewer={approver.uri}")["reviews"]
-    assert {r["task_id"] for r in reviews} == set(tasks.values())
-    assert next(r for r in reviews if r["task_id"] == tasks["m1"])["artefact"] == drafts["m1"]
+    view = agent.task(first["task_id"])
+    assert view["state"] == "review_requested" and view["review"]["requested_to"] == [approver.uri]
+    assert first["artefact"] == drafter.draft(provider, messages[0])
 
     # The agent cannot approve its own work.
-    assert agent.send("decide.approve", task_id=tasks["m1"])["error"]["code"] == -32011
+    assert agent.send("decide.approve", task_id=first["task_id"])["error"]["code"] == -32011
 
-    # The approver approves one, overrides one with an RFC 6902 patch, rejects one.
-    assert approver.call("decide.approve", task_id=tasks["m1"], comment="send it")["state"] == "completed"
-    overridden = approver.call("decide.override", task_id=tasks["m2"], rationale="shorter",
+    # The approver approves one as written.
+    assert approver.call("decide.approve", task_id=first["task_id"], comment="send it")["state"] == "completed"
+
+    # Rejects one asking for a revision: the agent drafts again with the
+    # note, the review opens again on the new draft, and the approver
+    # overrides that draft with an RFC 6902 patch.
+    second = wait_for(lambda: review_of(base, approver.uri, ids[1]))
+    rejected = approver.call("decide.reject", task_id=second["task_id"], comment="name the new price",
+                             request_revision=True)
+    assert rejected["state"] == "in_progress"
+    revised = wait_for(lambda: review_of(base, approver.uri, ids[1], holding="name the new price"))
+    assert revised["decisions"][-1]["kind"] == "reject"
+    overridden = approver.call("decide.override", task_id=second["task_id"], rationale="shorter",
                                diff=[{"op": "replace", "path": "/body", "value": "Edited body"}],
                                intent_preserved=True)
     assert overridden["applied"]["body"] == "Edited body"
-    assert approver.call("decide.reject", task_id=tasks["m3"], comment="not this week")["state"] == "declined"
 
-    outbox = tmp_path / "outbox"
-    outcomes = {mid: drafter.settle(agent, task_id, mid, outbox, poll_seconds=0.05, timeout=5, log=quiet)
-                for mid, task_id in tasks.items()}
-    assert outcomes == {"m1": "approve", "m2": "override", "m3": "reject"}
-    assert sorted(p.name for p in outbox.iterdir()) == ["m1.json", "m2.json"]
-    sent = json.loads((outbox / "m1.json").read_text(encoding="utf-8"))
-    assert sent["message"] == drafts["m1"] and sent["decided_by"] == approver.uri
-    edited = json.loads((outbox / "m2.json").read_text(encoding="utf-8"))
-    assert edited["message"] == {**drafts["m2"], "body": "Edited body"} and edited["decision"] == "override"
+    # And rejects one outright.
+    third = wait_for(lambda: review_of(base, approver.uri, ids[2]))
+    assert approver.call("decide.reject", task_id=third["task_id"], comment="not this week")["state"] == "declined"
+
+    assert run.result() == {ids[0]: "approve", ids[1]: "override", ids[2]: "reject"}
+    assert any("drafted again, with the note from the approver" in line for line in run.lines)
+    assert sorted(p.name for p in outbox.iterdir()) == sorted([f"{ids[0]}.json", f"{ids[1]}.json"])
+    sent = json.loads((outbox / f"{ids[0]}.json").read_text(encoding="utf-8"))
+    assert sent["message"] == first["artefact"] and sent["decided_by"] == approver.uri
+    edited = json.loads((outbox / f"{ids[1]}.json").read_text(encoding="utf-8"))
+    assert edited["message"] == {**revised["artefact"], "body": "Edited body"} and edited["decision"] == "override"
 
     # The refused approval is on the chain as a refusal; the decisions as calls.
-    entries = approver.call("audit.read", filter={"task_id": tasks["m1"]})["entries"]
+    entries = approver.call("audit.read", filter={"task_id": first["task_id"]})["entries"]
     assert any(e.get("outcome") == {"status": "refused", "code": -32011}
                and e["request"]["method"] == "decide.approve" and e["request"]["params"]["from"] == agent.uri
                for e in entries)
     assert any(e.get("envelope", {}).get("method") == "decide.approve" for e in entries)
 
 
-def test_a_paused_agent_is_assigned_nothing_until_resumed(desk):
+def test_a_paused_agent_opens_nothing_until_resumed(desk, tmp_path):
+    base = desk["base"]
     agent, approver = participants(desk)
-    message = drafter.read_messages(ROOT / "messages.csv")[0]
-    body = drafter.draft(make_provider(drafter.scripted_body), message)
+    provider = make_provider(drafter.scripted_body)
+    source = tmp_path / "one.csv"
+    source.write_text("to,subject,brief\nkim.lau@example.com,Invoice 77 is paid,Confirm that invoice 77 was received and is paid.\n",
+                      encoding="utf-8")
+    [mid] = [m["message_id"] for m in drafter.read_messages(source)]
+    outbox = tmp_path / "outbox"
 
     paused = approver.call("control.pause", scope="participant", participant_uri=agent.uri, reason="hold")
     assert paused["paused"] is True
-    with pytest.raises(ChapError) as refused:
-        drafter.create_task(agent, message)
-    assert refused.value.code == -32063
 
-    # The refusal is on the chain, with the agent as the sender.
-    refusals = approver.call("audit.read", filter={"outcome": "refused"})["entries"]
-    assert any(e["request"]["method"] == "task.create" and e["outcome"]["code"] == -32063
-               and e["request"]["params"]["from"] == agent.uri for e in refusals)
+    # The first task.create is refused with -32063 and recorded; after that
+    # the agent waits on workspace.describe, so the refusal stays the only one.
+    run = AgentRun(agent, provider, source, outbox)
+    wait_for(lambda: any("refused -32063" in line and "waiting for resume.py" in line for line in run.lines))
+    time.sleep(0.3)
+    refusals = [e for e in approver.call("audit.read", filter={"outcome": "refused"})["entries"]
+                if e["request"]["method"] == "task.create" and e["request"]["params"]["from"] == agent.uri]
+    assert len(refusals) == 1 and refusals[0]["outcome"]["code"] == -32063
+    assert review_of(base, approver.uri, mid) is None
 
-    # The agent reports the pause and waits; once resumed, the task goes through.
-    lines: list[str] = []
-    threading.Timer(0.3, lambda: approver.call("control.resume", scope="participant",
-                                               participant_uri=agent.uri)).start()
-    task_id = drafter.submit(agent, message, body, poll_seconds=0.05, timeout=5, log=lines.append)
-    assert any("refused -32063" in line and "waiting" in line for line in lines)
-    assert agent.task(task_id)["state"] == "review_requested"
-    assert drafter.create_task(agent, message)  # accepted again after the resume
+    # Resumed, the task goes through on the next pass and waits in the desk.
+    approver.call("control.resume", scope="participant", participant_uri=agent.uri)
+    review = wait_for(lambda: review_of(base, approver.uri, mid))
+    assert any("the agent is resumed, task.create accepted" in line for line in run.lines)
+    approver.call("decide.approve", task_id=review["task_id"])
+    assert run.result() == {mid: "approve"}
+    assert (outbox / f"{mid}.json").exists()
 
 
 def test_the_desk_is_served(desk):

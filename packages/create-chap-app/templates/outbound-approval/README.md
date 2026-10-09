@@ -17,15 +17,21 @@ python pause.py                  # hold the agent; python resume.py lets it go o
 
 `desk.py` creates the workspace in trial mode, joins the participants named
 in `chap.config.json` and keeps the SQLite store under `data/`. `agent.py`
-drafts the three sample messages without asking for review, and each one
-waits in the desk anyway, because the workspace is in trial mode under
-`modes/1.0`. With `--once` it exits after the file is processed; without it,
-it keeps watching the file for new rows. The row number names the message:
-the first row is `m1`, and once approved it lands in `outbox/m1.json` with
-the task id and who decided; a rejected message is written nowhere. While
-the agent is paused, its console shows the first `task.create` refused with
-`-32063`, it waits on `workspace.describe`, and it carries on when
-`resume.py` has run. The tests run with no model and no network:
+opens a task for each of the three sample messages and drafts each without
+asking for review, and each one waits in the desk anyway, because the
+workspace is in trial mode under `modes/1.0`. With `--once` it exits once
+every row in the file is decided; without it, it keeps watching the file
+for new rows. A message's id is a hash of its row, `m-` and twelve hex
+characters, and once approved the message lands in `outbox/<id>.json` with
+the task id and who decided; a rejected message is written nowhere. Reject
+with "ask for a revision" ticked and the agent drafts again with your note
+and submits the new draft. The id is the task's idempotency key, so a
+restarted agent finds the tasks it opened before and opens no duplicates,
+and a row whose text changed is a new message. Until an approver has joined
+the workspace the agent holds each draft and says so once. While the agent
+is paused, its console shows the first `task.create` refused with `-32063`,
+it waits on `workspace.describe`, and it carries on when `resume.py` has
+run. The tests run with no model and no network:
 
 ```bash
 python -m pytest tests -q
@@ -36,7 +42,8 @@ python -m pytest tests -q
 **Your data.** Point `agent.py` at your own export: `python agent.py
 export.csv`. The file needs the columns `to`, `subject` and `brief`; other
 columns are ignored, and `read_messages` in `agent.py` is the one place to
-change if yours are named differently.
+change if yours are named differently. A message's id comes from those
+three fields, so the same row is the same message on every run.
 
 **Your model.** Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OLLAMA_URL`
 and `agent.py` drafts with that model; `CHAP_MODEL_PROVIDER` chooses when
@@ -122,11 +129,12 @@ shows an entry existed independently of the coordinator (SECURITY.md).
 The desk, `POST /chap` and the read API under `/api/` have no login. A
 `human:` URI in the desk is a label that says who is deciding; it does not
 authenticate them. The server listens on the loopback address, refuses a
-request from another origin or under another host name, and takes JSON
-only on `POST /chap`, so a page open elsewhere cannot decide as the
-reviewer; the deployment puts TLS and its own login in front, and
-`security-signed/1.0` with a key per person is what ties a decision to its
-holder.
+request from another origin or under a host name it was not given, and
+takes JSON only on `POST /chap`, so a page open elsewhere cannot decide as
+the reviewer; the deployment puts TLS and its own login in front, names the
+host the proxy passes in `allowed_hosts` in `chap.config.json` or in
+`CHAP_ALLOWED_HOSTS`, and `security-signed/1.0` with a key per person is
+what ties a decision to its holder.
 
 `tests/` and `diff-profiles.py` script the decisions, because nobody is at
 the desk when they run; the project itself never does.

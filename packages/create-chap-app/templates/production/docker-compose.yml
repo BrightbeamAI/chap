@@ -3,7 +3,8 @@
 #   coordinator  owns the SQLite store on ./data, refuses unsigned calls,
 #                keeps the chain, and verifies OIDC tokens at participant.join
 #                when OIDC_ISSUER is set. The desk is at http://127.0.0.1:8790/
-#                and signs in the browser.
+#                and signs in the browser. The agent reaches it by the service
+#                name, which CHAP_ALLOWED_HOSTS tells it to answer to.
 #   agent        a second process with its own key, read from ./keys (run
 #                `npm run keys` first). Approved messages land in ./outbox.
 #
@@ -25,6 +26,7 @@ services:
       - CHAP_HOST=0.0.0.0
       - PORT=8790
       - CHAP_DB_PATH=/app/data/chap.db
+      - CHAP_ALLOWED_HOSTS=coordinator:8790
       - OIDC_ISSUER
       - OIDC_JWKS_URL
       - OIDC_AUDIENCE

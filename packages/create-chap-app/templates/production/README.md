@@ -22,7 +22,12 @@ npm run agent       # in a second terminal: drafts, submits, waits
 Open <http://127.0.0.1:8790/>. The desk joins you with a key it generates in
 the browser and lists the drafts waiting for you. Approve one as written,
 edit it and override, or reject it. The agent sees the decision and writes
-the approved message to `outbox/<task_id>.json`.
+the approved message to `outbox/<task_id>.json`. Reject with "ask for a
+revision" ticked and the agent drafts again with your note and submits the
+new draft. Until you have opened the desk the agent holds each draft and
+says so once, since a review with nobody to address it to is refused. Each
+row of `messages.csv` carries an idempotency key made from its content, so
+a restarted agent finds the tasks it opened before and opens no duplicates.
 
 With Docker Compose:
 
@@ -33,11 +38,13 @@ docker compose up --build
 ```
 
 The coordinator keeps its store in `./data`, the agent reads its key from
-`./keys` and writes to `./outbox`, and the desk is at the same address. Both
-containers run as the `node` user, so the directories you create are yours
-and the containers can write to them. `docker compose run --rm agent node
-agent.mjs --once` runs the agent for the rows in `messages.csv` and exits
-once each is decided.
+`./keys` and writes to `./outbox`, and the desk is at the same address. The
+agent reaches the coordinator by its service name, which
+`CHAP_ALLOWED_HOSTS` in the Compose file tells the coordinator to answer to.
+Both containers run as the `node` user, so the directories you create are
+yours and the containers can write to them. `docker compose run --rm agent
+node agent.mjs --once` runs the agent for the rows in `messages.csv` and
+exits once each is decided.
 
 The agent drafts with the model named by the environment: `ANTHROPIC_API_KEY`
 for the Anthropic Messages API, `OPENAI_API_KEY` for the OpenAI Responses
@@ -128,8 +135,9 @@ the file the coordinator writes. The checks:
 - `workspace.describe`, signed as the agent with the key file, advertises the
   profiles the coordinator enforces and publishes a chain head;
 - `audit.verify_chain` answers `verified` with `ok: true`;
-- the store file exists and changes after a call (skipped with a note when
-  `CHAP_DB_PATH` is `:memory:`);
+- the coordinator reports a persistent store, and the store file exists and
+  changes after a call (skipped with a note when `CHAP_DB_PATH` is
+  `:memory:`);
 - with an issuer set, a join with a garbage token is refused with `-32403`.
 
 ## What each profile changes here
@@ -171,7 +179,10 @@ because it is a comparison and nobody is at the desk.
 ## What the deployment supplies
 
 - TLS in front of the coordinator, on every production transport
-  (SPECIFICATION.md section 15.1).
+  (SPECIFICATION.md section 15.1). The coordinator answers under its own
+  host names only, so the name the proxy passes goes in `allowed_hosts` in
+  `chap.config.json` or in `CHAP_ALLOWED_HOSTS`; a browser request from
+  another origin is refused.
 - Its own login, which authenticates each person, obtains the OIDC token
   with the browser key in `cnf.jwk`, and checks that each caller sends only
   its own `from`.
