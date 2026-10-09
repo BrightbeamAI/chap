@@ -1,0 +1,20 @@
+{
+  "name": "__PROJECT_NAME__",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A CHAP review gate in front of an MCP client",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test",
+    "diff-profiles": "node diff-profiles.mjs"
+  },
+  "dependencies": {
+    "@brightbeamai/chap-coordinator": "^0.3.0",
+    "@brightbeamai/chap-coordinator-mcp": "^0.3.0",
+    "@modelcontextprotocol/sdk": "^1.30.0"
+  }
+}

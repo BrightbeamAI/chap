@@ -1,0 +1,37 @@
+{
+  "name": "mcp-gate",
+  "title": "MCP gate",
+  "language": "typescript",
+  "description": "Claude Desktop, Cursor or Claude Code connects to an MCP server over HTTP; every tool call is recorded and work that requires review waits for you in the desk.",
+  "shared": {
+    "desk": "desk",
+    "node/server.mjs": "server.mjs",
+    "node/profiles-diff.mjs": "lib/profiles-diff.mjs"
+  },
+  "default_profiles": [
+    "core/1.0",
+    "review/1.0"
+  ],
+  "profile_choices": [
+    "core/1.0",
+    "review/1.0",
+    "modes/1.0",
+    "control/1.0",
+    "whisper/1.0",
+    "deliberation/1.0",
+    "handoff/1.0",
+    "routing/1.0",
+    "audit-scitt/1.0"
+  ],
+  "defaults": {
+    "workspace": "wsp_{name}",
+    "human_uri": "human:you@local",
+    "human_name": "You",
+    "agent_uri": "agent:assistant"
+  },
+  "run": [
+    "npm install",
+    "npm start",
+    "open http://127.0.0.1:8787/"
+  ]
+}
