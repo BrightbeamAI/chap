@@ -1,0 +1,64 @@
+# The production set as two services.
+#
+#   coordinator  owns the SQLite store on ./data, refuses unsigned calls,
+#                keeps the chain, and verifies OIDC tokens at participant.join
+#                when OIDC_ISSUER is set. The desk is at http://127.0.0.1:8790/
+#                and signs in the browser.
+#   agent        a second process with its own key, read from ./keys (run
+#                `npm run keys` first). Approved messages land in ./outbox.
+#
+# The port is published on 127.0.0.1 only. A production deployment puts TLS
+# and its own login in front of the coordinator, and delivers notifications
+# to the people named on a review (SPECIFICATION.md section 15.1, items 9
+# and 10). None of that is in this file.
+#
+# Both containers run as the node user, uid 1000. Create ./data and ./outbox
+# before the first `docker compose up` so they belong to you and not to root.
+# A variable listed without a value is passed through from your shell when
+# it is set there, and left unset in the container otherwise.
+
+services:
+  coordinator:
+    build: .
+    command: ["node", "server.mjs"]
+    environment:
+      - CHAP_HOST=0.0.0.0
+      - PORT=8790
+      - CHAP_DB_PATH=/app/data/chap.db
+      - OIDC_ISSUER
+      - OIDC_JWKS_URL
+      - OIDC_AUDIENCE
+    ports:
+      - "127.0.0.1:8790:8790"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8790/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  agent:
+    build: .
+    command: ["node", "agent.mjs"]
+    environment:
+      - CHAP_URL=http://coordinator:8790/chap
+      - CHAP_MODEL_PROVIDER
+      - ANTHROPIC_API_KEY
+      - ANTHROPIC_MODEL
+      - ANTHROPIC_BASE_URL
+      - OPENAI_API_KEY
+      - OPENAI_MODEL
+      - OPENAI_BASE_URL
+      - OLLAMA_URL
+      - OLLAMA_MODEL
+    volumes:
+      - ./keys:/app/keys:ro
+      - ./outbox:/app/outbox
+      - ./messages.csv:/app/messages.csv:ro
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    restart: unless-stopped

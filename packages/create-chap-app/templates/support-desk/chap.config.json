@@ -1,0 +1,12 @@
+{
+  "workspace": "__WORKSPACE__",
+  "profiles": __PROFILES_JSON__,
+  "store": "./data/chap.db",
+  "port": 8788,
+  "humans": [
+    { "uri": "__HUMAN_URI__", "display_name": "__HUMAN_NAME__", "role": "reviewer" }
+  ],
+  "agent": { "uri": "__AGENT_URI__", "display_name": "The drafter" },
+  "require_signatures": false,
+  "chain": false
+}

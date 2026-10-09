@@ -1,0 +1,15 @@
+{
+  "workspace": "__WORKSPACE__",
+  "profiles": __PROFILES_JSON__,
+  "store": "./data/chap.db",
+  "port": 8790,
+  "mode": "trial",
+  "humans": [
+    { "uri": "__HUMAN_URI__", "display_name": "__HUMAN_NAME__", "role": "reviewer" }
+  ],
+  "agent": { "uri": "__AGENT_URI__", "display_name": "The drafter", "role": "drafter" },
+  "mcp": false,
+  "require_signatures": true,
+  "chain": true,
+  "oidc": null
+}

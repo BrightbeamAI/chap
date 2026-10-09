@@ -1,0 +1,21 @@
+{
+  "name": "__PROJECT_NAME__",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A CHAP coordinator with the production profile set: signed calls, OIDC at join, the chain on, SQLite on a volume",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "agent": "node agent.mjs",
+    "keys": "node keys.mjs",
+    "doctor": "node doctor.mjs",
+    "test": "node --test",
+    "diff-profiles": "node diff-profiles.mjs"
+  },
+  "dependencies": {
+    "@brightbeamai/chap-coordinator": "^0.3.0"
+  }
+}

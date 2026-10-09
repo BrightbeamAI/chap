@@ -64,8 +64,28 @@ export async function openStore(storePath) {
   }
 }
 
+/**
+ * identity-oidc/1.0 is enforced by a token verifier, and the coordinator
+ * adds the profile where a verifier is set and refuses a workspace that
+ * advertises it without one (SPECIFICATION 15.1, item 3). The list here is
+ * made to agree before the workspace is created, so the console, /api/config
+ * and the descriptor say the same thing, and the console says what changed.
+ */
+export function reconcileOidcProfile(config, enforced) {
+  const isOidc = (p) => p === "identity-oidc" || p.startsWith("identity-oidc/");
+  const advertised = config.profiles.some(isOidc);
+  if (enforced && !advertised) {
+    config.profiles = [...config.profiles, "identity-oidc/1.0"];
+    console.log("identity-oidc/1.0 added to the profiles: an OIDC issuer is configured, so tokens are verified at participant.join.");
+  } else if (advertised && !enforced) {
+    config.profiles = config.profiles.filter((p) => !isOidc(p));
+    console.log("identity-oidc/1.0 left out of the profiles: no OIDC issuer is configured. Set OIDC_ISSUER to verify tokens at participant.join.");
+  }
+}
+
 /** Build the coordinator from a config. Exported so tests can run in-process. */
 export async function makeCoordinator(config, extra = {}) {
+  reconcileOidcProfile(config, !!(config.oidc || extra.verifyOidcToken));
   const options = {
     store: await openStore(config.store),
     defaultProfiles: config.profiles,
@@ -73,8 +93,8 @@ export async function makeCoordinator(config, extra = {}) {
     requireSignatures: !!config.require_signatures,
     ...extra,
   };
-  if (config.oidc) {
-    const { makeOidcVerifier } = await import("./oidc.mjs");
+  if (config.oidc && !options.verifyOidcToken) {
+    const { makeOidcVerifier } = await import("./lib/oidc.mjs");
     options.verifyOidcToken = await makeOidcVerifier(config.oidc);
   }
   const coord = new Coordinator(options);

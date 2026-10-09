@@ -1,0 +1,45 @@
+{
+  "name": "production",
+  "title": "Production set",
+  "language": "typescript",
+  "description": "The Handbook's production set: signed calls, OIDC verified at join, the chain on, SQLite on a volume. One coordinator service, one agent service with its own key, and the desk signing in the browser.",
+  "shared": {
+    "desk": "desk",
+    "node/server.mjs": "server.mjs",
+    "node/profiles-diff.mjs": "lib/profiles-diff.mjs",
+    "node/oidc.mjs": "lib/oidc.mjs",
+    "node/dev-issuer.mjs": "lib/dev-issuer.mjs"
+  },
+  "default_profiles": [
+    "core/1.0",
+    "review/1.0",
+    "modes/1.0",
+    "identity-oidc/1.0",
+    "security-signed/1.0"
+  ],
+  "profile_choices": [
+    "core/1.0",
+    "review/1.0",
+    "modes/1.0",
+    "control/1.0",
+    "whisper/1.0",
+    "deliberation/1.0",
+    "handoff/1.0",
+    "routing/1.0",
+    "audit-scitt/1.0",
+    "identity-oidc/1.0",
+    "security-signed/1.0"
+  ],
+  "defaults": {
+    "workspace": "wsp_{name}",
+    "human_uri": "human:you@local",
+    "human_name": "You",
+    "agent_uri": "agent:drafter"
+  },
+  "run": [
+    "npm run keys",
+    "mkdir -p data outbox",
+    "docker compose up --build",
+    "open http://127.0.0.1:8790/"
+  ]
+}

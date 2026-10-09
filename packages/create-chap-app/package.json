@@ -1,0 +1,39 @@
+{
+  "name": "create-chap-app",
+  "version": "0.3.0",
+  "description": "Generate a CHAP project that runs against your own agent and data, with a review desk, one profile setting and a diff-profiles command.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "create-chap-app": "index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "templates",
+    "README.md",
+    "DESIGN.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "check": "node scripts/check-templates.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BrightbeamAI/chap.git",
+    "directory": "packages/create-chap-app"
+  },
+  "homepage": "https://github.com/BrightbeamAI/chap/tree/main/packages/create-chap-app",
+  "bugs": "https://github.com/BrightbeamAI/chap/issues",
+  "keywords": [
+    "chap",
+    "human-in-the-loop",
+    "mcp",
+    "audit",
+    "review",
+    "template",
+    "generator"
+  ]
+}
