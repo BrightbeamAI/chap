@@ -65,7 +65,7 @@ export async function startGate({ suffix = "", humans = null, review = null, ext
 
 /** The hooks read the gate from the environment; point them at this one. */
 export function hookEnv(g) {
-  return { ...process.env, CHAP_URL: g.gate.url, CHAP_AGENT_KEY: g.keyPath, CHAP_CONFIG: g.configPath };
+  return { ...process.env, CHAP_URL: g.gate.url, CHAP_AGENT_KEY: g.keyPath, CHAP_CONFIG: g.configPath, CHAP_NO_BROWSER: "1", CHAP_AUTOSTART: "0" };
 }
 
 export async function demoRepo({ hooks = true } = {}) {

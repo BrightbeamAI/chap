@@ -5,7 +5,7 @@
 // RFC 6902 patch for decide.override. A branch is decided as its commits
 // stand, so it has no edit.
 
-import { applyFile, fileStats, parsePatch, rewritePatch } from "./diff.js";
+import { applyFile, fileStats, parsePatch, rewritePatch, splitLines } from "./diff.js";
 
 export const el = (tag, attrs = {}, ...children) => {
   const node = document.createElement(tag);
@@ -70,22 +70,82 @@ function showText(text) {
   return parts;
 }
 
-function diffTable(file) {
+/** One row of the diff: the two line numbers, the sign and the text. */
+function lineRow(cls, oldNo, newNo, sign, text, noNewline = false) {
+  return el("tr", { class: cls },
+    el("td", { class: "ln", text: oldNo === null ? "" : String(oldNo) }),
+    el("td", { class: "ln", text: newNo === null ? "" : String(newNo) }),
+    el("td", { class: "sign", text: sign }),
+    el("td", {}, showText(text), noNewline ? el("span", { class: "nonl", text: "  (no newline at end of file)" }) : null));
+}
+
+/** A saved comment, as a row under the line it is about. */
+function commentRow(c, onRemove) {
+  const row = el("tr", { class: "comment-row" }, el("td", { colspan: "4" },
+    el("div", { class: "comment" },
+      el("div", { class: "comment-text", text: c.text }),
+      onRemove ? el("button", { class: "link small", text: "Remove", onclick: () => { onRemove(c.id); row.remove(); } }) : null)));
+  return row;
+}
+
+/**
+ * The rows of one file's diff. With the file's whole text (`after`), the
+ * unchanged lines between and around the hunks can be opened. With
+ * `commenting`, each line takes a comment: { comments, onAdd, onRemove, path }.
+ */
+function diffTable(file, { after = null, commenting = null } = {}) {
   const table = el("table", { class: "diff-table" });
+  const whole = typeof after === "string" ? splitLines(after).lines : null;
+  // Unchanged lines from..to (new numbering), shown as a row that opens them; old = new + delta.
+  const gap = (from, to, delta) => {
+    if (!whole || from > to) return;
+    const count = to - from + 1;
+    const row = el("tr", { class: "gap" }, el("td", { class: "ln" }), el("td", { class: "ln" }), el("td", { class: "sign" }),
+      el("td", {}, el("button", { class: "link gap-open", text: `Show ${count} unchanged line${count === 1 ? "" : "s"}`, onclick: () => {
+        const rows = [];
+        for (let n = from; n <= to; n++) rows.push(withComments(lineRow("ctx context", n + delta, n, "", whole[n - 1] ?? ""), { line: n, side: "new", code: whole[n - 1] ?? "" }));
+        row.replaceWith(...rows.flat());
+      } })));
+    table.append(row);
+  };
+  // A line row, with its comment control and the comments already on it.
+  const withComments = (row, at) => {
+    if (!commenting) return row;
+    const mine = (commenting.comments ?? []).filter((c) => c.path === commenting.path && c.line === at.line && c.side === at.side);
+    const button = el("button", { class: "add-comment", title: "Comment on this line", "aria-label": `Comment on line ${at.line}`, text: "+", onclick: () => {
+      if (row.nextElementSibling?.classList.contains("comment-editor")) return;
+      const area = el("textarea", { class: "comment-input", "aria-label": "Your comment", placeholder: "What should change here, and why" });
+      const editor = el("tr", { class: "comment-editor" }, el("td", { colspan: "4" }, el("div", { class: "comment edit" }, area,
+        el("div", { class: "row" },
+          el("button", { class: "btn small primary", text: "Add comment", onclick: () => {
+            const text = area.value.trim();
+            if (!text) { area.focus(); return; }
+            const c = commenting.onAdd({ path: commenting.path, line: at.line, side: at.side, code: at.code, text });
+            editor.replaceWith(commentRow(c, commenting.onRemove));
+          } }),
+          el("button", { class: "btn small", text: "Cancel", onclick: () => editor.remove() })))));
+      row.after(editor);
+      area.focus();
+    } });
+    row.firstElementChild.prepend(button);
+    return [row, ...mine.map((c) => commentRow(c, commenting.onRemove))];
+  };
+  let newEnd = 0, delta = 0;
   for (const h of file.hunks) {
+    gap(newEnd + 1, h.newStart - 1, h.oldStart - h.newStart);
     table.append(el("tr", { class: "hunk" }, el("td", { class: "ln" }), el("td", { class: "ln" }), el("td", { class: "sign" }), el("td", { text: `${h.header}` })));
     let o = h.oldStart, n = h.newStart;
     for (const l of h.lines) {
       const cls = l.type === "+" ? "add" : l.type === "-" ? "del" : "ctx";
-      table.append(el("tr", { class: cls },
-        el("td", { class: "ln", text: l.type === "+" ? "" : String(o) }),
-        el("td", { class: "ln", text: l.type === "-" ? "" : String(n) }),
-        el("td", { class: "sign", text: l.type === " " ? "" : l.type }),
-        el("td", {}, showText(l.text), l.noNewline ? el("span", { class: "nonl", text: "  (no newline at end of file)" }) : null)));
+      const at = l.type === "-" ? { line: o, side: "old", code: l.text } : { line: n, side: "new", code: l.text };
+      table.append(...[withComments(lineRow(cls, l.type === "+" ? null : o, l.type === "-" ? null : n, l.type === " " ? "" : l.type, l.text, l.noNewline), at)].flat());
       if (l.type !== "+") o++;
       if (l.type !== "-") n++;
     }
+    newEnd = h.newStart + h.newLines - 1;
+    delta = (h.oldStart + h.oldLines) - (h.newStart + h.newLines);
   }
+  if (whole) gap(newEnd + 1, whole.length, delta);
   return table;
 }
 
@@ -116,7 +176,7 @@ function modeBadge(file) {
 /** A file whose diff has more lines than this opens closed, and is drawn when opened. */
 const BIG_FILE_LINES = 600;
 
-export function renderDiff(patch, { files = [], editable = false, onEdit = null, editing = Object.create(null) } = {}) {
+export function renderDiff(patch, { files = [], editable = false, onEdit = null, editing = Object.create(null), commenting = null } = {}) {
   const root = el("div", { class: "diff" });
   const meta = new Map(files.map((f) => [f.path, f]));
   const parsed = parsePatch(patch);
@@ -143,11 +203,16 @@ export function renderDiff(patch, { files = [], editable = false, onEdit = null,
       details.append(el("div", { class: "editor" }, el("div", { class: "editor-bar" }, "The whole file as it should be after the change. The patch is written again from it, and you see the result before it is sent."), area));
     } else if (file.binary) {
       details.append(el("div", { class: "diff-binary", text: "A binary file: the desk cannot show its content. Approve it only if you know what it is." }));
-    } else if (big) {
-      // Drawn when opened, so a large change does not slow the page.
-      details.addEventListener("toggle", () => { if (details.open && !details.querySelector(".diff-table")) details.append(diffTable(file)); });
     } else {
-      details.append(diffTable(file));
+      // The code around the change opens only where the file's own text
+      // agrees with its patch.
+      const opts = { after: contentsAgree(info, file) ? info.after : null, commenting: commenting ? { ...commenting, path: file.path } : null };
+      if (big) {
+        // Drawn when opened, so a large change does not slow the page.
+        details.addEventListener("toggle", () => { if (details.open && !details.querySelector(".diff-table")) details.append(diffTable(file, opts)); });
+      } else {
+        details.append(diffTable(file, opts));
+      }
     }
     root.append(details);
   }
@@ -213,7 +278,7 @@ export function gitDate(raw) {
  * selected with its message, author, files and diff. `index` is the commit
  * shown, `read` the commits opened so far, `onSelect(i)` opens another.
  */
-function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null } = {}) {
+function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null, commenting = null } = {}) {
   const commits = artefact.commits;
   const at = Math.min(Math.max(0, index), commits.length - 1);
   const head = el("div", { class: "stack", style: "margin-bottom:12px" });
@@ -262,7 +327,13 @@ function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null 
       const st = fileStats(f);
       chips.append(el("span", { class: "file-chip", onclick: () => document.getElementById(`file-${f.path}`)?.scrollIntoView({ block: "start", behavior: "smooth" }) }, f.path, el("span", { class: "add", text: f.binary ? "bin" : `+${st.added}` }), el("span", { class: "del", text: f.binary ? "" : `-${st.removed}` })));
     }
-    detail.append(chips, c.patch.trim() ? renderDiff(c.patch, { files: [] }) : el("div", { class: "muted small", text: "This commit changes no file." }));
+    // Comments on this commit's lines carry the commit, so the prompt can say which one.
+    const onThis = commenting ? {
+      comments: (commenting.comments ?? []).filter((x) => x.commit === c.sha),
+      onAdd: (x) => commenting.onAdd({ ...x, commit: c.sha, commit_index: at + 1, commit_of: commits.length }),
+      onRemove: commenting.onRemove,
+    } : null;
+    detail.append(chips, c.patch.trim() ? renderDiff(c.patch, { files: c.files ?? [], commenting: onThis }) : el("div", { class: "muted small", text: "This commit changes no file." }));
   } else {
     detail.append(el("div", { class: "muted small", text: "Loading this commit's change." }));
   }
@@ -285,9 +356,9 @@ function renderMessage(a) {
  * artefact is shown in its editable form and `editing.value()` gives the
  * edited artefact; `editing.state` is kept between renders.
  */
-export function renderArtefact(artefact, { editing = null, range = null } = {}) {
+export function renderArtefact(artefact, { editing = null, range = null, commenting = null } = {}) {
   const shape = shapeOf(artefact);
-  if (shape === "commits") return renderCommits(artefact, range ?? {});
+  if (shape === "commits") return renderCommits(artefact, { ...(range ?? {}), commenting });
   if (shape === "code") {
     const head = el("div", { class: "stack", style: "margin-bottom:12px" });
     const banner = anomalyBanner(artefact);
@@ -332,7 +403,7 @@ export function renderArtefact(artefact, { editing = null, range = null } = {}) 
       };
       return el("div", {}, head, el("div", { class: "small muted", style: "margin-bottom:8px", text: "Press Edit on a file to change it whole; the patch is written again from your version, and you see the result before it is sent." }), box);
     }
-    return el("div", {}, head, renderDiff(artefact.patch, { files: artefact.files ?? [] }));
+    return el("div", {}, head, renderDiff(artefact.patch, { files: artefact.files ?? [], commenting }));
   }
   if (shape === "message") {
     if (!editing) return renderMessage(artefact);

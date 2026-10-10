@@ -3,14 +3,14 @@
 // that says whose approvals count, and the evidence a commit carries.
 // propose.mjs, agent.mjs, the hooks, trust.mjs and verify.mjs run on these.
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
-import { access, readFile } from "node:fs/promises";
+import { access, mkdir, open, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalize, contentHash, deepEqual, makeClient, signerFromJwk } from "../desk/chap-client.mjs";
 import { keyPathFor, readKeyFile, sshKeyFiles } from "../keys.mjs";
-import { blobAt, currentBranch, faithfulCheck, git, head, numstat, signsOwnCommits, workingTreeChange } from "./git.mjs";
+import { blobAt, currentBranch, faithfulCheck, git, head, numstat, signsOwnCommits, treeDiff, treeOf, workingTreeChange } from "./git.mjs";
 
 /** The most text a change carries as file contents beside its patch, so the desk can edit files whole. */
 export const MAX_CONTENT_BYTES = 200_000;
@@ -63,6 +63,71 @@ export async function served(gate) {
     throw new Error(`${gate.base} serves ${cfg.workspace}, and chap.config.json here names ${gate.config.workspace}`);
   }
   return cfg;
+}
+
+/** Whether the gate's address is on this machine, where a command may start it. */
+export function isLocalGate(gate) {
+  try { return ["127.0.0.1", "localhost", "[::1]", "::1"].includes(new URL(gate.base).hostname); } catch { return false; }
+}
+
+/**
+ * The gate, answering. When nothing answers at its address on this
+ * machine, it is started in the background from this project, with its
+ * output in data/gate.log and its process id in data/gate.pid, and waited
+ * for; `npm run stop` stops it. A gate elsewhere is never started here, and
+ * CHAP_AUTOSTART=0 turns this off.
+ */
+export async function ensureGate(gate, { log = () => {}, timeoutMs = 20000 } = {}) {
+  try { return await served(gate); } catch (e) {
+    if (!e?.unreachable || !isLocalGate(gate) || process.env.CHAP_AUTOSTART === "0") throw e;
+  }
+  const dataDir = join(gate.dir, "data");
+  await mkdir(dataDir, { recursive: true });
+  const logPath = join(dataDir, "gate.log");
+  const out = await open(logPath, "a");
+  const url = new URL(gate.base);
+  const env = { ...process.env, PORT: url.port || "80", CHAP_HOST: url.hostname.replace(/^\[|\]$/g, ""), ...(gate.configPath ? { CHAP_CONFIG: gate.configPath } : {}) };
+  const child = spawn(process.execPath, [join(gate.dir, "server.mjs")], { cwd: gate.dir, detached: true, stdio: ["ignore", out.fd, out.fd], env });
+  child.unref();
+  await out.close();
+  await writeFile(join(dataDir, "gate.pid"), `${child.pid}\n`);
+  log(`Started the gate at ${gate.base} in the background; its log is ${logPath}, and npm run stop stops it.`);
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 300));
+    try { return await served(gate); } catch (err) {
+      if (!err?.unreachable) throw err;
+      if (Date.now() > until) throw new Error(`The gate did not start within ${timeoutMs / 1000} s; its log is ${logPath}`);
+    }
+  }
+}
+
+/** Whether a desk is open on this gate: one asked for the gate's health in the last few seconds. */
+export async function deskIsOpen(gate) {
+  try { const h = await api(gate, "/api/health"); return typeof h?.desk_seen_ms === "number" && h.desk_seen_ms < 12000; } catch { return false; }
+}
+
+/** Open a page in the default browser. False when it cannot, or CHAP_NO_BROWSER=1 says not to. */
+export function openBrowser(url) {
+  if (process.env.CHAP_NO_BROWSER === "1") return false;
+  const [cmd, args] = process.platform === "darwin" ? ["open", [url]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["xdg-open", [url]];
+  try {
+    const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * Bring the reviewer to a review: an open desk shows it by itself; with no
+ * desk open, the browser opens at it. Returns what was done, to say so.
+ */
+export async function showReview(gate, taskId, { open: allowed = true } = {}) {
+  const url = `${gate.base}/#task=${encodeURIComponent(taskId)}`;
+  if (await deskIsOpen(gate)) return { url, how: "desk" };
+  if (allowed && openBrowser(url)) return { url, how: "browser" };
+  return { url, how: "none" };
 }
 
 /**
@@ -155,7 +220,7 @@ export function changeKey(base, patch) {
  * size, so a reviewer can edit a file whole. Null when the working tree
  * matches HEAD.
  */
-export async function describeChange(repo, { summary, drafted_by = "working tree", model = null, requested_by } = {}) {
+export async function describeChange(repo, { summary, drafted_by = "working tree", model = null, requested_by, context = null } = {}) {
   const { baseTree, tree, patch } = await workingTreeChange(repo);
   if (!patch.trim()) return null;
   // The patch travels as text. It must give the working tree back, and read
@@ -186,7 +251,23 @@ export async function describeChange(repo, { summary, drafted_by = "working tree
     drafted_by,
     ...(model ? { model: modelLabel(model) } : {}),
     ...(requested_by ? { requested_by } : {}),
+    ...(context ? { context } : {}),
   };
+}
+
+/**
+ * What changed since the reviewers last saw a change sent back to its
+ * author: the canonical diff from the tree the earlier patch gave to the
+ * tree this one gives. Null when either cannot be rebuilt here.
+ */
+export async function changeSince(repo, previous, current) {
+  if (!previous?.patch || !previous.base || !current?.patch || !current.base) return null;
+  try {
+    const before = await faithfulCheck(repo, await treeOf(repo, previous.base), previous.patch);
+    const after = await faithfulCheck(repo, await treeOf(repo, current.base), current.patch);
+    if (!before.ok || !after.ok || before.tree === after.tree) return null;
+    return { base: previous.base, patch: await treeDiff(repo, before.tree, after.tree) };
+  } catch { return null; }
 }
 
 /**

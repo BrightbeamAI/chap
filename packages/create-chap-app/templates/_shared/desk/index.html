@@ -39,6 +39,9 @@
             <div class="facts" id="r-facts"></div>
           </div>
           <div class="stack">
+            <div class="card" id="r-prompt-card" hidden><div class="card-head"><h3>The review, as a prompt for the agent</h3><span class="spacer"></span><button class="btn small" id="r-prompt-copy">Copy prompt</button></div><div class="card-body"><details class="prompt-details"><summary class="small muted">The prompt your decision made, to give to the agent that wrote this. A command waiting on the review prints it by itself.</summary><pre class="prompt-text" id="r-prompt"></pre></details></div></div>
+            <div class="card" id="r-context-card" hidden><div class="card-head"><h3 id="r-context-title">Context from the agent</h3></div><div class="card-body markdown" id="r-context"></div></div>
+            <div class="card" id="r-since-card" hidden><div class="card-head"><h3>Since your last review</h3></div><div class="card-body" id="r-since"></div></div>
             <div class="card" id="r-input-card"><div class="card-head"><h3>What the agent was given</h3></div><div class="card-body" id="r-input"></div></div>
             <div class="card"><div class="card-head"><h3 id="r-artefact-title">The artefact under review</h3><span class="spacer"></span><span class="small muted" id="r-edit-hint" hidden></span><button class="btn small" id="r-edit">Edit</button></div><div class="card-body" id="r-artefact"></div></div>
             <div class="card" id="r-history-card"><div class="card-head"><h3>History</h3></div><div class="card-body history" id="r-history"></div></div>
@@ -47,7 +50,7 @@
       </section>
       <div class="decision-bar" id="decision-bar" hidden>
         <div class="inputs">
-          <input id="comment" placeholder="A note for the agent, or the rationale for your edit (required to request changes, reject or edit)" aria-label="Note">
+          <input id="comment" placeholder="A note for the agent. To request changes, write one here or comment on lines with +; an edit needs a reason" aria-label="Note">
           <input id="tags" placeholder="tags, comma separated" aria-label="Tags">
         </div>
         <div class="actions">
@@ -55,6 +58,7 @@
           <button class="btn warn" id="changes">Request changes <kbd>r</kbd></button>
           <button class="btn danger" id="reject">Reject <kbd>x</kbd></button>
           <div class="right">
+            <span class="small muted" id="comment-count" aria-live="polite"></span>
             <span class="notice" id="notice" aria-live="polite"></span>
             <button class="btn primary" id="override" hidden>Approve my edit</button>
             <button class="btn" id="cancel-edit" hidden>Discard edit</button>
@@ -87,6 +91,7 @@
       <dt><kbd>x</kbd></dt><dd>reject</dd>
       <dt><kbd>e</kbd></dt><dd>edit the artefact</dd>
       <dt><kbd>n</kbd> <kbd>p</kbd></dt><dd>next and previous commit of a branch</dd>
+      <dt><kbd>+</kbd> on a line</dt><dd>comment on that line; comments go with your decision and into the agent's prompt</dd>
       <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Review, Activity, Insights</dd>
       <dt><kbd>/</kbd></dt><dd>filter the queue</dd>
       <dt><kbd>?</kbd></dt><dd>this list</dd>
@@ -97,6 +102,12 @@
   <div class="card wide">
     <div class="card-head"><h3 id="confirm-title">The change you are approving</h3><span class="spacer"></span><button class="btn small" id="confirm-cancel">Back to the edit</button><button class="btn primary small" id="confirm-send">Approve this version</button></div>
     <div class="card-body" id="confirm-body"></div>
+  </div>
+</div>
+<div class="help" id="prompt" hidden>
+  <div class="card wide">
+    <div class="card-head"><h3>Your review, as a prompt for the agent</h3><span class="spacer"></span><button class="btn small" id="prompt-close">Close</button><button class="btn primary small" id="prompt-copy">Copy prompt</button></div>
+    <div class="card-body"><p class="small muted">An agent waiting on the review receives this by itself. For any other, copy it into its session.</p><pre class="prompt-text" id="prompt-text"></pre></div>
   </div>
 </div>
 <script type="module" src="/desk.js"></script>

@@ -63,7 +63,11 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   commits on its own has its branch reviewed before it is pushed:
   `propose-branch.mjs` proposes the commits as one review, read commit by
   commit in the desk, seals them on approval with the same trailers, and a
-  pre-push hook lets only approved commits leave the machine.
+  pre-push hook lets only approved commits leave the machine. One command
+  runs the review loop: it starts the gate when none runs, opens the review
+  in the browser, waits, and hands the agent the reviewer's decision as a
+  prompt, with their comments on lines; the revision shows what changed
+  since the last look.
 - **The desk, rebuilt.** Every template's desk shows the artefact by its
   shape (a diff for code, editable a file at a time; a letter for a
   message), lets a reviewer request changes as well as approve, edit or

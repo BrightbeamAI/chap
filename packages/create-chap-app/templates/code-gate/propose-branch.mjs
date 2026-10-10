@@ -7,11 +7,17 @@
 //   --model <name>     the model that wrote them, as each commit will name it,
 //                      for example "Claude Opus 5.5" (default: CHAP_MODEL)
 //   --summary <text>   one line for the review (default: from the commits)
+//   --context <file>   a note for the reviewer, in Markdown ("-" reads it from standard
+//                      input): what was asked, what changed and why, how it was tested,
+//                      what to look at closely. The desk shows it above the commits.
 //   --task <id>        submit to this task, a revision of a branch sent back
 //   --wait             stay until the decision is made, then seal an approved branch
 //   --push <remote>    with --wait: push the sealed branch to <remote> through the
 //                      pre-push hook, then the evidence notes
 //   --to <branch>      the branch to push to (default: the branch's own name)
+//   --timeout <min>    with --wait: stop waiting after this many minutes with exit code 4,
+//                      so an agent whose tool calls have a time limit runs it again
+//   --no-open          leave the browser alone (CHAP_NO_BROWSER=1 does the same)
 //   --poll <ms>        how often to look while waiting (default 2000)
 //
 // For agents that commit on their own. The commits are proposed as one
@@ -25,21 +31,31 @@
 // the sealed commits, which are the ones the pre-push hook and verify.mjs
 // accept.
 //
+// The gate is started in the background when it is not running on this
+// machine, and the review is brought to the reviewer: an open desk shows it,
+// and with none open the browser opens at it. When the reviewers ask for
+// changes or reject the branch, the command prints their decision as a
+// prompt for the agent: their note, their comments on lines with the code
+// each is about, and the command to run again.
+//
 // The same command, run again, carries on: it waits while the review is
 // open, seals the commits once they are approved, sends amended commits to
-// a review sent back for a revision, and pushes a branch sealed already.
-// Commits at the start of the range that are approved already are left as
-// they are, and the review covers the ones after them.
+// a review sent back for a revision (with what changed since the reviewers
+// last looked), and pushes a branch sealed already. Commits at the start of
+// the range that are approved already are left as they are, and the review
+// covers the ones after them.
 //
 // Exit codes with --wait: 0 approved and sealed (and pushed with --push),
-// 2 rejected, 3 revision requested, 1 anything that went wrong.
+// 2 rejected, 3 revision requested, 4 still waiting when --timeout ran out,
+// 1 anything that went wrong.
 
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentClient, api, approvalOf, buildNote, checkApproval, commitSigning, contentHash, evidence, gateEnv, lastDecision, loadGate, onlinePolicy, reviewersReady, reviewRule, served, strictestRule, trustAtRef, waitForDecision } from "./lib/gate.mjs";
+import { agentClient, api, approvalOf, buildNote, checkApproval, commitSigning, contentHash, ensureGate, evidence, gateEnv, lastDecision, loadGate, onlinePolicy, reviewersReady, reviewRule, strictestRule, trustAtRef } from "./lib/gate.mjs";
 import { git, parseTrailers, rawCommit, repoRoot } from "./lib/git.mjs";
-import { describeRange, proposeRange, sealRange } from "./lib/range.mjs";
+import { announce, commandAgain, printPrompt, promptAfter, readContext, reviewerName, waitWithin, withNote } from "./lib/loop.mjs";
+import { branchReviews, describeRange, proposeRange, sealRange, sinceLastReview } from "./lib/range.mjs";
 import { pushNotes } from "./push-notes.mjs";
 import { verifyCommit } from "./verify.mjs";
 
@@ -48,7 +64,7 @@ const short = (sha) => (sha ? String(sha).slice(0, 12) : "none");
 const quoted = (path) => (/[\s"'$`\\]/.test(path) ? JSON.stringify(path) : path);
 
 export function parseArgs(argv) {
-  const out = { range: null, repo: process.cwd(), by: null, model: process.env.CHAP_MODEL || null, summary: null, task: null, wait: false, push: null, to: null, poll: 2000, help: false };
+  const out = { range: null, repo: process.cwd(), by: null, model: process.env.CHAP_MODEL || null, summary: null, context: null, task: null, wait: false, push: null, to: null, poll: 2000, timeout: null, open: true, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const value = () => { const v = argv[++i]; if (v === undefined || v.startsWith("--")) throw new Error(`${a} needs a value`); return v; };
@@ -56,6 +72,9 @@ export function parseArgs(argv) {
     else if (a === "--by") out.by = value();
     else if (a === "--model") out.model = value() || null;
     else if (a === "--summary") out.summary = value();
+    else if (a === "--context") out.context = value();
+    else if (a === "--timeout") { out.timeout = Number(value()); if (!(out.timeout > 0)) throw new Error("--timeout takes a number of minutes"); }
+    else if (a === "--no-open") out.open = false;
     else if (a === "--task") out.task = value();
     else if (a === "--wait") out.wait = true;
     else if (a === "--poll") out.poll = Number(value());
@@ -150,7 +169,9 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   const repo = await repoRoot(args.repo);
   if (!repo) throw new Error(`${args.repo} is not inside a git repository`);
   const gate = await loadGate(gateDir);
-  const cfg = await served(gate);
+  const cfg = await ensureGate(gate, { log });
+  const context = await readContext(args.context);
+  const again = commandAgain(join(here, "propose-branch.mjs"), argv);
   const { base, head } = await resolveRange(repo, args.range);
   const branch = await branchOf(repo, head);
   const dest = args.to ?? branch;
@@ -165,7 +186,18 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   if (prefix.kept) log(`${prefix.kept === 1 ? "The first commit is" : `The first ${prefix.kept} commits are`} approved already and ${prefix.kept === 1 ? "stays as it is" : "stay as they are"}; the review covers the commits after ${short(prefix.start)}.`);
 
   const client = await agentClient(gate);
-  const artefact = await describeRange(repo, { base: prefix.start ?? base, head, summary: args.summary, drafted_by: args.by ?? gate.config.agent?.display_name ?? client.from, model: args.model, branch });
+  const headSha = await commitOf(repo, head);
+  const { open: underway, headOf } = await branchReviews(gate, client, { repo: basename(repo), branch });
+  // Sent back, and these are still the commits the reviewers saw: the
+  // review is what the agent needs, so it is given again.
+  if (underway?.state === "in_progress" && headOf(underway) === headSha) {
+    log(`Changes were requested on ${underway.task_id}, and the branch still holds the commits reviewed. Amend them as the review asks, then run the same command again.`);
+    printPrompt(await promptAfter(gate, underway.task_id, again), log);
+    return 3;
+  }
+  // A revision shows the reviewers what changed since they last looked.
+  const since = underway?.state === "in_progress" ? await sinceLastReview(repo, headOf(underway), headSha) : null;
+  const artefact = await describeRange(repo, { base: prefix.start ?? base, head, summary: args.summary, drafted_by: args.by ?? gate.config.agent?.display_name ?? client.from, model: args.model, branch, context, since });
   if (!artefact.model) log("No --model was given, so the commits will not name the model that wrote them.");
   const size = Buffer.byteLength(JSON.stringify(artefact));
   const limit = cfg.max_envelope_bytes ?? 1_048_576;
@@ -198,22 +230,29 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   log(`${revised ? "Revised" : state === "completed" ? "Approved already as" : "Proposed as"} ${task_id} (${state}): ${held.summary}`);
   log(`  ${held.commits.length} commit${held.commits.length === 1 ? "" : "s"}${branch ? ` on ${branch}` : ""} since ${short(held.base)}, +${added} -${removed}${held.model ? `, written by ${held.model}` : ""}`);
   for (const c of held.commits) log(`    ${short(c.sha)}  ${c.message.split("\n")[0]}`);
-  log(`  review at ${gate.base}/#task=${encodeURIComponent(task_id)}`);
+  if (state === "review_requested") await announce(gate, task_id, { open: args.open, log });
+  else log(`  review at ${gate.base}/#task=${encodeURIComponent(task_id)}`);
   if (!args.wait) {
     log(`${state === "completed" ? "Run the same command with --wait to seal it." : "Run the same command with --wait to seal the branch once it is approved."}`);
     return 0;
   }
 
-  if (state === "review_requested") log("Waiting for the decision at the desk.");
-  const view = state === "completed" ? await api(gate, `/api/tasks/${encodeURIComponent(task_id)}`) : await waitForDecision(gate, task_id, { pollMs: args.poll });
+  if (state === "review_requested") log(`Waiting for the decision at the desk${args.timeout ? `, for up to ${args.timeout} min` : ""}.`);
+  const view = state === "completed" ? await api(gate, `/api/tasks/${encodeURIComponent(task_id)}`) : await waitWithin(gate, task_id, { pollMs: args.poll, timeoutMinutes: args.timeout });
+  if (!view) {
+    log(`Still waiting for the review of ${task_id}. Run the same command again to keep waiting:`);
+    log(`  ${again}`);
+    return 4;
+  }
   const decision = lastDecision(view);
   if (view.state === "declined") {
-    log(`Rejected by ${decision?.reviewer ?? "a reviewer"}${decision?.comment ? `: ${decision.comment}` : ""}. Nothing is sealed or pushed.`);
+    log(`${withNote(`Rejected by ${reviewerName(gate, decision?.reviewer)}`, decision?.comment)} Nothing is sealed or pushed.`);
+    printPrompt(await promptAfter(gate, task_id, again), log);
     return 2;
   }
   if (view.state === "in_progress") {
-    log(`Revision requested by ${decision?.reviewer ?? "a reviewer"}: ${decision?.comment ?? "no note"}`);
-    log("Amend the commits, then run this again; the same review carries on.");
+    log(`Changes requested by ${reviewerName(gate, decision?.reviewer)}. Amend the commits, then run the same command again; the same review carries on.`);
+    printPrompt(await promptAfter(gate, task_id, again), log);
     return 3;
   }
   if (view.state !== "completed") { log(`The review is ${view.state}; nothing is sealed.`); return 1; }
@@ -233,7 +272,7 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
     return 1;
   }
   const approvers = [...new Set(note.decisions.filter((d) => d.method === "decide.approve").map((d) => d.reviewer))];
-  log(`Approved by ${approvers.join(" and ")}${decision?.comment ? `: ${decision.comment}` : ""}.`);
+  log(withNote(`Approved by ${approvers.map((uri) => reviewerName(gate, uri)).join(" and ")}`, decision?.comment));
 
   const signing = await commitSigning(gate, repo);
   const sealed = await sealRange(repo, { note, policy, signingKey: signing.key, signOwn: signing.signOwn, env: gateEnv(gate) });

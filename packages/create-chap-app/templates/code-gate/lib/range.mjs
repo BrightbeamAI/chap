@@ -8,10 +8,16 @@
 
 import { basename } from "node:path";
 import { api, approvalOf, contentHash, lastDecision, modelLabel, noteArtefacts, RANGE_KIND, sha256, submitForReview, trailersFor } from "./gate.mjs";
-import { committerIdent, commitTree, emptyTree, faithfulCheck, git, GATE_TRAILER, numstat, parseTrailers, rawCommit, treeDiff, treeOf, writeNote } from "./git.mjs";
+import { blobAt, committerIdent, commitTree, emptyTree, faithfulCheck, git, GATE_TRAILER, numstat, parseTrailers, rawCommit, treeDiff, treeOf, writeNote } from "./git.mjs";
 
 /** The most commits one branch review takes. */
 export const MAX_RANGE_COMMITS = 100;
+
+/** The most text a branch carries as whole files beside its patches, so the desk can show the code around a change. */
+export const MAX_RANGE_CONTENT_BYTES = 4_000_000;
+
+/** The largest file that travels whole. */
+const MAX_FILE_BYTES = 200_000;
 
 const short = (sha) => (sha ? String(sha).slice(0, 12) : "none");
 
@@ -45,7 +51,7 @@ export function proposedMessage(message) {
  * form: a commit sealed before and amended since is proposed again as it
  * now is.
  */
-export async function describeRange(repo, { base, head = "HEAD", summary = null, drafted_by = null, model = null, branch = null } = {}) {
+export async function describeRange(repo, { base, head = "HEAD", summary = null, drafted_by = null, model = null, branch = null, context = null, since = null } = {}) {
   const headSha = await commitOf(repo, head).catch(() => "");
   if (!headSha) throw new Error(`${head} is not a commit in ${repo}`);
   let fork = null;
@@ -65,6 +71,7 @@ export async function describeRange(repo, { base, head = "HEAD", summary = null,
     raws.push(raw);
   }
   const commits = [];
+  let contentBytes = 0;
   let parent = fork;
   let parentTree = fork ? await treeOf(repo, fork) : await emptyTree(repo);
   for (const raw of raws) {
@@ -77,6 +84,18 @@ export async function describeRange(repo, { base, head = "HEAD", summary = null,
     if (!check.ok) throw new Error(`${short(sha)} cannot be shown to a reviewer as it stands: ${check.reason.replace(/^what a reviewer sees of the patch is not what git applies: /, "")}`);
     if (check.tree !== raw.tree) throw new Error(`${short(sha)} cannot be shown as text: a file in it is not UTF-8, so its patch would not give its tree back`);
     const files = await numstat(repo, parentTree, raw.tree);
+    // Whole text files travel beside the patch while the budget lasts, so
+    // the reviewer can read the code around each change.
+    for (const f of files) {
+      if (f.added === null || contentBytes >= MAX_RANGE_CONTENT_BYTES) continue;
+      const before = await blobAt(repo, parentTree, f.path);
+      const after = await blobAt(repo, raw.tree, f.path);
+      const size = (before?.length ?? 0) + (after?.length ?? 0);
+      if ((before?.length ?? 0) > MAX_FILE_BYTES || (after?.length ?? 0) > MAX_FILE_BYTES || contentBytes + size > MAX_RANGE_CONTENT_BYTES) continue;
+      contentBytes += size;
+      if (before !== null) f.before = before;
+      if (after !== null) f.after = after;
+    }
     commits.push({ sha, parent, tree: raw.tree, author: raw.author, message, files, patch });
     parent = sha;
     parentTree = raw.tree;
@@ -91,7 +110,22 @@ export async function describeRange(repo, { base, head = "HEAD", summary = null,
     commits,
     ...(drafted_by ? { drafted_by } : {}),
     ...(model ? { model: modelLabel(model) } : {}),
+    ...(context ? { context } : {}),
+    ...(since ? { since } : {}),
   };
+}
+
+/**
+ * What changed since the reviewers last saw a branch: the canonical diff
+ * from the head they reviewed to the head proposed now, when this
+ * repository still holds the commit they reviewed. Null otherwise.
+ */
+export async function sinceLastReview(repo, previousHead, head) {
+  if (!previousHead) return null;
+  const before = await rawCommit(repo, previousHead);
+  const after = await rawCommit(repo, head);
+  if (!before || !after || before.tree === after.tree) return null;
+  return { head: previousHead, patch: await treeDiff(repo, before.tree, after.tree) };
 }
 
 /**
@@ -228,6 +262,14 @@ export async function checkRangeCommit(repo, commit, { series, note }) {
   const check = await faithfulCheck(repo, parentTree, c.patch);
   if (!check.ok) problems.push(`${short(c.sha)}: ${check.reason}`);
   else if (check.tree !== c.tree) problems.push(`the patch the reviewers saw for ${short(c.sha)} does not give its tree`);
+  // The whole files the desk showed around the change are the repository's.
+  const seen = new Set();
+  for (const f of c.files ?? []) {
+    if (seen.has(f.path)) { problems.push(`${short(c.sha)} lists ${f.path} twice`); continue; }
+    seen.add(f.path);
+    if (typeof f.before === "string" && f.before !== (await blobAt(repo, parentTree, f.path))) problems.push(`the content of ${f.path} the desk showed before ${short(c.sha)} is not the file at its parent`);
+    if (typeof f.after === "string" && f.after !== (await blobAt(repo, c.tree, f.path))) problems.push(`the content of ${f.path} the desk showed after ${short(c.sha)} is not the file it gives`);
+  }
   return problems;
 }
 

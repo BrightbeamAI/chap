@@ -100,10 +100,11 @@ reported and left alone unless `--force` is given.
 
 **Claude Code.** Copy `AGENT_INSTRUCTIONS.md` into the repository as
 `CLAUDE.md`, or into the project's instructions. It tells the assistant
-never to commit itself, and to run `propose.mjs` with `--wait --commit` and
-`--model` naming the model it runs as when a change is ready, which
-proposes, waits for the decision and commits an approved change through the
-hooks in one step. For the `chap.*` tools, which
+never to commit itself, to write a short context note for the reviewer,
+and to run `propose.mjs` with `--wait --commit` and `--model` naming the
+model it runs as when a change is ready, which proposes, waits for the
+decision and commits an approved change through the hooks in one step: the
+review loop below. For the `chap.*` tools, which
 let it read its tasks and the chain:
 
 ```
@@ -134,6 +135,37 @@ configuration, and `CHAP_AGENT_KEY` the path of its key (by default under
 `keys/`). `CHAP_MODEL` names the model when `--model` is not given. A commit made by `propose.mjs` or the built-in agent passes
 `CHAP_URL` and `CHAP_CONFIG` to its hooks, so they ask the gate the command
 asked.
+
+## The review loop
+
+With the hooks in and `AGENT_INSTRUCTIONS.md` in the repository's
+`CLAUDE.md`, the loop runs with no terminal of yours:
+
+1. Claude writes its context note and runs one command: `propose.mjs`, or
+   `propose-branch.mjs` under `review_at: push`, with `--wait`. The command
+   starts the gate in the background when it is not running on this
+   machine, and brings the review to you: a desk already open shows it at
+   once, and with none open the browser opens at it.
+2. Claude waits. With `--timeout 9` the wait hands back exit code 4 within
+   the ten minutes a command may run, and Claude runs the same command
+   again; the review stays open in the desk all the while.
+3. You review. The context note says what was asked, what changed and how
+   it was tested. `+` on a line comments on it, and "Show N unchanged
+   lines" opens the code around a change.
+4. **Approve**, and the change is committed, or the branch sealed and, with
+   `--push`, pushed. **Request changes**, and the command hands Claude your
+   review as a prompt: your note, your comments with the code each is
+   about, and the command to run again. Claude fixes it and runs the
+   command; the same review shows the revision, with what changed since you
+   looked. **Reject**, and Claude gets your reasons and stops. An **edit**
+   of yours is committed as yours, and Claude gets a prompt showing what
+   you changed and why, to make the same correction elsewhere.
+
+The desk shows each decision's prompt with a Copy button too, for an agent
+that is not waiting on a command. `npm run stop` stops a gate started in
+the background; its log is `data/gate.log`. `--no-open` (or
+`CHAP_NO_BROWSER=1`) leaves the browser alone, and `CHAP_AUTOSTART=0` keeps
+a command from starting the gate.
 
 ## Agents that commit on their own
 
@@ -397,23 +429,27 @@ decided. A code change opens as a diff, file by file, with its mode changes,
 the task, the agent, the model, the branch and the base commit beside it.
 Approve as written, request changes with a note, reject, or press Edit on a
 file, change it whole, look at the patch your edit makes, and approve that
-version with a rationale. A branch opens as its commits in order, each with
-its message, author, files and diff, and `n` and `p` move between them;
-approving it with commits unopened asks first. A file is offered for editing
-only when the contents that came with it agree with its patch. A patch the
-desk cannot show as git would apply it (text before the first file, names
-that differ between its header lines, a binary section for a text file), or
-a change that lists a file twice, is marked, and the desk offers to reject
-it or request changes. Characters a reader cannot see in a changed line
-(bidirectional controls, zero-width characters, a carriage return inside a
-line) are shown as markers, with a warning above the diff. Every decision
-carries the digest of the artefact you saw and of the submission that opened
-the round, so a decision on a draft that changed under you is refused, and
-the verifier counts it in its own round only. Under a multi-approval rule
-the queue shows the approvals so far, and a change you have approved leaves
-your queue until the next round. Activity reads the chain, with what each
-call did. `j` and `k` move through the queue, `a`, `r` and `x` decide, `e`
-edits, and `?` lists the keys.
+version with a rationale. Press `+` on a line to comment on it: the comments
+go with your decision and into the prompt for the agent. Where a file's
+whole text travelled with the change, "Show N unchanged lines" opens the
+code around it. The agent's context note sits above the change, and on a
+revision, what changed since you looked. A branch opens as its commits in
+order, each with its message, author, files and diff, and `n` and `p` move
+between them; approving it with commits unopened asks first. A file is
+offered for editing only when the contents that came with it agree with its
+patch. A patch the desk cannot show as git would apply it (text before the
+first file, names that differ between its header lines, a binary section for
+a text file), or a change that lists a file twice, is marked, and the desk
+offers to reject it or request changes. Characters a reader cannot see in a
+changed line (bidirectional controls, zero-width characters, a carriage
+return inside a line) are shown as markers, with a warning above the diff.
+Every decision carries the digest of the artefact you saw and of the
+submission that opened the round, so a decision on a draft that changed
+under you is refused, and the verifier counts it in its own round only.
+Under a multi-approval rule the queue shows the approvals so far, and a
+change you have approved leaves your queue until the next round. Activity
+reads the chain, with what each call did. `j` and `k` move through the
+queue, `a`, `r` and `x` decide, `e` edits, and `?` lists the keys.
 
 ## Insights and analytics
 

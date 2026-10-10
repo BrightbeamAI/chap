@@ -10,6 +10,7 @@
   "scripts": {
     "demo": "node demo.mjs",
     "start": "node server.mjs",
+    "stop": "node stop.mjs",
     "keys": "node keys.mjs",
     "demo-repo": "node demo-repo.mjs",
     "agent": "node agent.mjs",

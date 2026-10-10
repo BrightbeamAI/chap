@@ -25,13 +25,14 @@ import { Coordinator, MemoryStore } from "@brightbeamai/chap-coordinator";
 const here = dirname(fileURLToPath(import.meta.url));
 
 /**
- * chap.config.json with the environment applied: PORT, CHAP_HOST and
+ * chap.config.json, or the file CHAP_CONFIG names, with the environment
+ * applied: PORT, CHAP_HOST and
  * CHAP_DB_PATH replace the port, host and store; CHAP_REQUIRE_SIGNATURES,
  * CHAP_CHAIN and CHAP_MCP (1 or true) replace the flags; CHAP_ALLOWED_HOSTS
  * adds host names, comma separated; OIDC_ISSUER, OIDC_JWKS_URL and
  * OIDC_AUDIENCE set the token verifier.
  */
-export async function loadConfig(path = join(here, "chap.config.json")) {
+export async function loadConfig(path = process.env.CHAP_CONFIG ?? join(here, "chap.config.json")) {
   const config = JSON.parse(await readFile(path, "utf8"));
   config.port = Number(process.env.PORT ?? config.port ?? 8787);
   config.host = process.env.CHAP_HOST ?? config.host ?? "127.0.0.1";
@@ -230,6 +231,7 @@ function decisionLog(ws) {
       seq: entry.seq, ts: entry.arrived, reviewer: p.from, kind: call.method.slice("decide.".length),
       comment: p.comment ?? null, rationale: p.rationale ?? null, tags: Array.isArray(p.tags) ? p.tags : [],
       request_revision: p.request_revision === true, round: p.round ?? null,
+      comments: Array.isArray(p.comments) ? p.comments : [],
     };
     if (!byTask.has(p.task_id)) byTask.set(p.task_id, []);
     byTask.get(p.task_id).push(row);
@@ -245,9 +247,12 @@ function decisionLog(ws) {
  */
 function slim(artefact) {
   if (!artefact || typeof artefact !== "object" || Array.isArray(artefact)) return artefact;
+  const lean = (files) => (Array.isArray(files) ? files.map((f) => (f && typeof f === "object" ? Object.fromEntries(Object.entries(f).filter(([k]) => k !== "before" && k !== "after")) : f)) : files);
   const out = { ...artefact };
-  if (Array.isArray(out.files)) out.files = out.files.map((f) => (f && typeof f === "object" ? Object.fromEntries(Object.entries(f).filter(([k]) => k !== "before" && k !== "after")) : f));
-  if (Array.isArray(out.commits)) out.commits = out.commits.map((c) => (c && typeof c === "object" ? Object.fromEntries(Object.entries(c).filter(([k]) => k !== "patch")) : c));
+  if (Array.isArray(out.files)) out.files = lean(out.files);
+  if (Array.isArray(out.commits)) out.commits = out.commits.map((c) => (c && typeof c === "object" ? { ...Object.fromEntries(Object.entries(c).filter(([k]) => k !== "patch")), files: lean(c.files) } : c));
+  if (out.since && typeof out.since === "object") out.since = { head: out.since.head };
+  delete out.context;
   return out;
 }
 
@@ -345,6 +350,8 @@ export function publicConfig(config) {
     require_signatures: !!config.require_signatures,
     chain_enabled: !!config.chain,
     persistent: config.store !== ":memory:",
+    // Where this project lives, so a prompt the desk writes can name its commands.
+    gate_dir: here,
     oidc: config.oidc ? { issuer: config.oidc.issuer } : null,
     mcp: !!config.mcp,
   };
@@ -434,6 +441,9 @@ async function readDirectory(dir) {
 }
 
 export async function makeServer(config, coord) {
+  // When a desk last asked for the health of the gate: a command that opens
+  // a review leaves an open desk to show it, and opens one otherwise.
+  let deskSeenAt = 0;
   const desk = await readDirectory(join(here, "desk"));
   if (!desk.has("index.html")) throw new Error(`The desk is missing: ${join(here, "desk", "index.html")}`);
   // The pages chap-analytics writes are read on each request, so a report
@@ -511,7 +521,8 @@ export async function makeServer(config, coord) {
       }
       if (url.pathname === "/api/health") {
         const ws = coord.getWorkspace(config.workspace);
-        return reply(res, 200, { ok: true, workspace: config.workspace, members: ws?.members.size ?? 0, tasks: ws?.tasks.size ?? 0, audit: ws?.audit.length ?? 0 });
+        if (url.searchParams.get("desk") === "1") deskSeenAt = Date.now();
+        return reply(res, 200, { ok: true, workspace: config.workspace, members: ws?.members.size ?? 0, tasks: ws?.tasks.size ?? 0, audit: ws?.audit.length ?? 0, desk_seen_ms: deskSeenAt ? Date.now() - deskSeenAt : null });
       }
       if (url.pathname === "/mcp" && mcp) {
         let body;

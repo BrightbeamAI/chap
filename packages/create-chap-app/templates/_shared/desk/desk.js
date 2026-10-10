@@ -12,6 +12,7 @@ import { contentHash, deepEqual, generateSigner, jsonPatch, makeClient, signerFr
 import { ago, artefactAnomalies, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
 import { parsePatch } from "./diff.js";
 import { decisionsOf, outcomeOf, renderInsights, renderMarkdown } from "./insights.js";
+import { followUpPrompt } from "./followup.js";
 
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 4000;
@@ -24,6 +25,9 @@ const state = {
   // The lists are brief; the task on show is read whole. A branch remembers
   // the commit on show and the commits opened.
   detail: null, range: { taskId: null, index: 0, read: new Set() }, reads: new Map(),
+  // Comments on lines, by task, until they go with a decision; the reviews
+  // already seen waiting, so a new one is brought forward.
+  comments: new Map(), waitingSeen: null,
 };
 
 // -- helpers --------------------------------------------------------------------
@@ -105,6 +109,9 @@ async function boot() {
   $("override").onclick = () => decide("override");
   $("r-edit").onclick = toggleEdit;
   $("cancel-edit").onclick = () => { state.editing = null; renderReview(); };
+  $("prompt-copy").onclick = () => copyText($("prompt-text").textContent);
+  $("prompt-close").onclick = () => { $("prompt").hidden = true; };
+  $("r-prompt-copy").onclick = () => copyText($("r-prompt").textContent);
   document.addEventListener("keydown", onKey);
 
   state.config = await getJson("/api/config");
@@ -172,7 +179,7 @@ function lost(e) {
 
 async function refresh() {
   // Every open task, and the most recent ones for the decided list.
-  const [health, open, recent] = await Promise.all([getJson("/api/health"), getJson("/api/tasks?state=created,in_progress,review_requested&brief=1"), getJson("/api/tasks?limit=200&brief=1")]);
+  const [health, open, recent] = await Promise.all([getJson("/api/health?desk=1"), getJson("/api/tasks?state=created,in_progress,review_requested&brief=1"), getJson("/api/tasks?limit=200&brief=1")]);
   if (state.lost) { state.lost = false; toast("Connected again", "ok"); }
   chip("connection", "live", "good");
   $("connection").title = `${health.members} members, ${health.tasks} tasks, ${health.audit} chain entries`;
@@ -182,6 +189,7 @@ async function refresh() {
   for (const t of [...open.tasks, ...recent.tasks]) byId.set(t.task_id, t);
   state.tasks = [...byId.values()].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
   renderQueue();
+  bringForward();
   const now = selected();
   if (before && !now) { state.selectedId = null; state.detail = null; state.editing = null; renderReview(); }
   else if (now && detailKey(now) !== state.detail?.key) {
@@ -201,6 +209,30 @@ async function refresh() {
     state.chainShown = health.audit;
   }
   if (state.view === "insights") renderInsightsView();
+}
+
+/**
+ * A review that has just arrived for this reviewer is brought forward: it
+ * opens when nothing waiting is open, and is announced otherwise. The tab's
+ * title counts what waits.
+ */
+function bringForward() {
+  const waiting = state.tasks.filter((t) => mine(t));
+  document.title = waiting.length ? `(${waiting.length}) CHAP review desk` : "CHAP review desk";
+  const ids = new Set(waiting.map((t) => t.task_id));
+  const first = state.waitingSeen === null;
+  const arrived = first ? [] : waiting.filter((t) => !state.waitingSeen.has(t.task_id));
+  state.waitingSeen = ids;
+  const current = selected();
+  const busy = current && mine(current);
+  if (first) {
+    if (!state.selectedId && waiting.length) select_(waiting.at(-1).task_id);
+    return;
+  }
+  if (!arrived.length) return;
+  const next = arrived.at(-1);
+  if (!busy) { select_(next.task_id); toast(`Waiting for your review: ${titleOf(next)}`, "ok"); }
+  else if (next.task_id !== state.selectedId) toast(`Also waiting for your review: ${titleOf(next)}. It is in the queue.`);
 }
 
 async function loadChain({ earlier = false } = {}) {
@@ -348,9 +380,12 @@ function renderReview() {
     state.range.read.add(commits[state.range.index].sha);
   }
   const body = $("r-artefact");
+  const commenting = mine(t) && !loading && !state.editing ? commentingFor(t.task_id) : null;
   body.replaceChildren(artefact === null ? el("span", { class: "muted small", text: "Nothing submitted yet." })
     : loading ? el("span", { class: "muted small", text: "Reading the artefact." })
-    : renderArtefact(artefact, { editing: state.editing, range: branch ? { index: state.range.index, read: state.range.read, onSelect: selectCommit } : null }));
+    : renderArtefact(artefact, { editing: state.editing, commenting, range: branch ? { index: state.range.index, read: state.range.read, onSelect: selectCommit } : null }));
+  renderContext(t, artefact, loading);
+  countComments();
   const history = $("r-history");
   const events = [];
   for (const h of t.history ?? []) events.push({ ts: h.ts, who: h.from, what: h.state.replace(/_/g, " "), note: h.note });
@@ -358,6 +393,82 @@ function renderReview() {
   events.sort((a, b) => a.ts.localeCompare(b.ts));
   history.replaceChildren(...events.map((e) => el("div", { class: "event" }, el("span", { class: "when", title: e.ts, text: `${ago(e.ts)} ago` }), el("span", {}, el("b", { text: e.what }), e.who ? el("span", { class: "muted", text: ` by ${e.who}` }) : null, e.note ? el("div", { class: "note", text: e.note }) : null, e.tags?.length ? el("div", { class: "small muted", text: e.tags.join(", ") }) : null))));
   $("r-history-card").hidden = !events.length;
+}
+
+/** The comments on lines of a task, kept until they go with a decision. */
+function commentsOf(id) {
+  if (!state.comments.has(id)) state.comments.set(id, []);
+  return state.comments.get(id);
+}
+
+/** What the diff needs to take comments on its lines for a task. */
+function commentingFor(id) {
+  return {
+    comments: commentsOf(id),
+    onAdd: (c) => { const saved = { ...c, id: `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}` }; commentsOf(id).push(saved); countComments(); return saved; },
+    onRemove: (cid) => { const list = commentsOf(id); const i = list.findIndex((x) => x.id === cid); if (i >= 0) list.splice(i, 1); countComments(); },
+  };
+}
+
+/** Say how many comments go with the decision. */
+function countComments() {
+  const t = current();
+  const n = t ? commentsOf(t.task_id).length : 0;
+  $("comment-count").textContent = n ? `${n} comment${n === 1 ? "" : "s"} on lines go with your decision` : "";
+}
+
+/** The command that proposes a task's work again, as the agent would run it. */
+function commandFor(t) {
+  const a = t.output ?? t.artefact ?? {};
+  const dir = state.config?.gate_dir;
+  if (!dir) return null;
+  const q = (s) => (/^[A-Za-z0-9_./:=@%+,-]+$/.test(s) ? s : `"${String(s).replace(/(["\\$`])/g, "\\$1")}"`);
+  const flags = [a.drafted_by ? `--by ${q(a.drafted_by)}` : null, a.model ? `--model ${q(a.model)}` : `--model "the model you run as"`].filter(Boolean).join(" ");
+  if (Array.isArray(a.commits)) return `node ${q(`${dir}/propose-branch.mjs`)} ${String(a.base ?? "").slice(0, 12)}..${a.branch ?? "HEAD"} ${flags} --wait`;
+  return `node ${q(`${dir}/propose.mjs`)} ${q(a.summary ?? "what the change does")} ${flags} --wait --commit`;
+}
+
+/** The prompt the last decision on a task makes for the agent, or null. */
+function promptFor(t) {
+  const decision = (t.decision_log ?? []).at(-1);
+  if (!decision) return null;
+  const name = state.config?.humans?.find((h) => h.uri === decision.reviewer)?.display_name ?? decision.reviewer;
+  return followUpPrompt({ task: t, decision, reviewer: name, command: commandFor(t) });
+}
+
+/** The agent's own note, what changed since the last look, and the decision as a prompt. */
+function renderContext(t, artefact, loading) {
+  const note = !loading && typeof artefact?.context === "string" ? artefact.context : null;
+  $("r-context-card").hidden = !note;
+  if (note) {
+    $("r-context-title").textContent = `Context from ${artefact.drafted_by ?? t.assignee ?? "the agent"}`;
+    const box = $("r-context");
+    box.innerHTML = renderMarkdown(note);
+  }
+  const since = !loading && typeof artefact?.since?.patch === "string" && artefact.since.patch.trim() ? artefact.since : null;
+  $("r-since-card").hidden = !since;
+  if (since) $("r-since").replaceChildren(el("div", { class: "small muted", style: "margin-bottom:10px", text: `What changed since the version you reviewed${since.head ? ` (up to ${String(since.head).slice(0, 7)})` : ""}.` }), renderDiff(since.patch, {}));
+  // The prompt of a decision that closed the round; a new round waiting has none yet.
+  const prompt = !loading && t.state !== "review_requested" ? promptFor(t) : null;
+  $("r-prompt-card").hidden = !prompt;
+  if (prompt) $("r-prompt").textContent = prompt;
+}
+
+/** Show the prompt a decision makes, to copy and give to the agent. */
+function showPrompt(prompt) {
+  $("prompt-text").textContent = prompt;
+  $("prompt").hidden = false;
+  $("prompt-copy").focus();
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast("Copied the prompt", "ok"); }
+  catch {
+    const range = document.createRange();
+    range.selectNodeContents($("prompt-text"));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    toast("Selected the prompt: copy it with the keyboard");
+  }
 }
 
 /** Whether a task's review needs more than one approval, so an edit would settle it alone. */
@@ -388,7 +499,8 @@ async function decide(kind) {
   // Every decision names the artefact it was made on and the submission that
   // opened this review round, so it counts in this round and no other.
   const round = t.submission?.envelope ? { round: await contentHash(t.submission.envelope) } : {};
-  const base = { task_id: t.task_id, approved_artefact_digest: await contentHash(artefact), ...round, ...(tags().length ? { tags: tags() } : {}) };
+  const lineComments = commentsOf(t.task_id).map(({ id, ...c }) => c);
+  const base = { task_id: t.task_id, approved_artefact_digest: await contentHash(artefact), ...round, ...(tags().length ? { tags: tags() } : {}), ...(lineComments.length ? { comments: lineComments } : {}) };
   if ((kind === "approve" || kind === "override") && anomaliesOf(t).length) { notice("This patch cannot be shown faithfully. Reject it, or request changes.", "bad"); return; }
   if (kind === "override" && shapeOf(artefact) === "commits") { notice("A branch is approved as its commits stand. Request changes, and the agent amends them.", "bad"); return; }
   // An approval of a branch covers every commit in it: one not opened yet is
@@ -397,7 +509,10 @@ async function decide(kind) {
   if (kind === "override" && multiRule(t)) { notice(`Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.`, "bad"); return; }
   let call;
   if (kind === "approve") call = ["decide.approve", { ...base, ...(comment ? { comment } : {}) }];
-  else if (kind === "changes") { if (!comment) { notice("Say what to change; the agent reads the note.", "bad"); $("comment").focus(); return; } call = ["decide.reject", { ...base, comment, request_revision: true }]; }
+  else if (kind === "changes") {
+    if (!comment && !lineComments.length) { notice("Say what to change, in the note or on the lines; the agent reads both.", "bad"); $("comment").focus(); return; }
+    call = ["decide.reject", { ...base, ...(comment ? { comment } : {}), request_revision: true }];
+  }
   else if (kind === "reject") { if (!comment) { notice("A rejection needs a reason.", "bad"); $("comment").focus(); return; } call = ["decide.reject", { ...base, comment }]; }
   else if (kind === "override") {
     if (!comment) { notice("An edit needs a rationale.", "bad"); $("comment").focus(); return; }
@@ -418,7 +533,14 @@ async function decide(kind) {
     const said = { approve: "Approved", changes: "Sent back for a revision", reject: "Rejected", override: "Approved with your edit" }[kind];
     toast(`${said}: ${titleOf(t)}${r.state ? ` (${r.state.replace(/_/g, " ")})` : ""}`, kind === "reject" ? "" : "ok");
     $("comment").value = ""; $("tags").value = "";
+    state.comments.delete(t.task_id);
     state.editing = null;
+    // The decision as a prompt for the agent, when it asks something of it.
+    try {
+      const decided = await getJson(`/api/tasks/${encodeURIComponent(t.task_id)}`);
+      const prompt = promptFor(decided);
+      if (prompt) showPrompt(prompt);
+    } catch { /* the review shows it once it is read again */ }
     await refresh();
     // Move on to the next task waiting, if there is one.
     const next = state.tasks.find((x) => mine(x));
@@ -563,9 +685,9 @@ function showView(name) {
 function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName);
-  if (e.key === "Escape") { if (!$("help").hidden) $("help").hidden = true; else if (!$("confirm").hidden) $("confirm-cancel").click(); else if (typing) e.target.blur(); return; }
+  if (e.key === "Escape") { if (!$("help").hidden) $("help").hidden = true; else if (!$("confirm").hidden) $("confirm-cancel").click(); else if (!$("prompt").hidden) $("prompt").hidden = true; else if (typing) e.target.blur(); return; }
   // While a dialog is open, the page under it does not move.
-  if (!$("confirm").hidden || (!$("help").hidden && e.key !== "?")) return;
+  if (!$("confirm").hidden || !$("prompt").hidden || (!$("help").hidden && e.key !== "?")) return;
   if (typing) return;
   const ordered = [...document.querySelectorAll("#queue .item")].map((b) => b.dataset.id);
   const at = ordered.indexOf(state.selectedId);

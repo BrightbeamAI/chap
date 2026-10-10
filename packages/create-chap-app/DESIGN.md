@@ -55,7 +55,7 @@ those run.
 
 One page, the same in every template, served by the process that owns the
 store, with no build step and no dependency: `desk/index.html`, a stylesheet
-and four modules. It has three views.
+and its modules. It has three views.
 
 - **Review.** The queue lists what waits for the reviewer, what is in
   progress and what was decided. The artefact is shown by its shape: a code
@@ -155,7 +155,15 @@ review, which the desk shows commit by commit, and on approval seals them,
 writing each again with the same tree, author and message and the gate's
 trailers. A pre-push hook lets only approved commits leave the machine. A
 branch is decided as its commits stand, with no edit, and the evidence keeps
-its artefact once, in the agent's signed submission.
+its artefact once, in the agent's signed submission. One command runs the
+review loop for an agent: it starts the gate in the background when none
+runs on the machine, brings the review to the reviewer (an open desk shows
+it, and the browser opens otherwise), waits within the time an agent's tool
+call may take, and turns each decision into a prompt the agent acts on: the
+reviewer's note, their comments on lines with the code each is about, an
+edit as a diff, and the command to run again. A revision carries what
+changed since the reviewers last looked, and the agent's own context note
+travels with every proposal.
 
 **MCP gate** (TypeScript). One process serves the desk, `POST /chap`, and an
 MCP server over streamable HTTP at `/mcp`. Claude Desktop, Cursor or Claude
