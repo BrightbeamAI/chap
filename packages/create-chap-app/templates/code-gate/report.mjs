@@ -12,7 +12,7 @@
 
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { api, loadGate, TASK_KIND } from "./lib/gate.mjs";
+import { api, loadGate, RANGE_KIND, TASK_KIND } from "./lib/gate.mjs";
 import { minutes, pct, summarise } from "./desk/insights.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -62,7 +62,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     const at = argv.indexOf("--since");
     const since = at >= 0 ? argv[at + 1] : null;
     const gate = await loadGate(here);
-    const r = await api(gate, `/api/tasks?kind=${TASK_KIND}`);
+    // Single changes and branches alike, as Insights counts them.
+    const r = { tasks: [...((await api(gate, `/api/tasks?kind=${TASK_KIND}&brief=1`))?.tasks ?? []), ...((await api(gate, `/api/tasks?kind=${RANGE_KIND}&brief=1`))?.tasks ?? [])] };
     const tasks = (r?.tasks ?? []).filter((t) => !since || (t.created_at ?? "") >= since);
     const s = summarise(tasks);
     console.log(argv.includes("--json") ? JSON.stringify(plain(s), null, 2) : render(s, gate.config.workspace));

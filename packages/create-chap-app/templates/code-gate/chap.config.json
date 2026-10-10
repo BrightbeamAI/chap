@@ -6,8 +6,10 @@
   "mode": "trial",
   "mode_ceiling": "trial",
   "humans": [
-    { "uri": "__HUMAN_URI__", "display_name": "__HUMAN_NAME__", "role": "reviewer" }
+    { "uri": "__HUMAN_URI__", "display_name": "__HUMAN_NAME__", "email": "__HUMAN_EMAIL__", "role": "reviewer" }
   ],
+  "review_at": "__REVIEW_AT__",
+  "max_envelope_bytes": 16777216,
   "agent": { "uri": "__AGENT_URI__", "display_name": "The coding agent", "role": "drafter" },
   "mcp": true,
   "require_signatures": true,

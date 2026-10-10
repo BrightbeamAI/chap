@@ -29,6 +29,22 @@ const env = (name) => {
   return v && v.trim() ? v.trim() : undefined;
 };
 
+/**
+ * A model's name as people say it, from the id a provider takes:
+ * claude-opus-5-5 is "Claude Opus 5.5", gpt-5.5 is "GPT-5.5"; any other id
+ * is kept as it is. The scripted drafter is named as what it is.
+ * @param {string} id
+ */
+export function modelName(id) {
+  if (!id) return id;
+  if (id === "scripted") return "scripted drafter (no model)";
+  const claude = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
+  if (claude) return `Claude ${claude[1][0].toUpperCase()}${claude[1].slice(1)} ${claude[2]}${claude[3] ? `.${claude[3]}` : ""}`;
+  const gpt = /^gpt-(.+)$/i.exec(id);
+  if (gpt) return `GPT-${gpt[1]}`;
+  return id;
+}
+
 /** @returns {ProviderName} */
 export function providerName() {
   const chosen = env("CHAP_MODEL_PROVIDER")?.toLowerCase();

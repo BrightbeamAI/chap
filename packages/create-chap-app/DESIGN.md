@@ -77,7 +77,9 @@ and four modules. It has three views.
 Keyboard shortcuts, light and dark, and a layout that folds on a narrow
 screen. The task lists come from the owning process, which reads its own
 workspace state at `GET /api/reviews` and `GET /api/tasks`, with each task's
-decisions across review rounds read from the chain. The chain records the
+decisions across review rounds read from the chain. The lists the desk polls
+are brief, without whole-file contents or a branch's patches, and the task
+on show is read whole from `GET /api/tasks/<id>`. The chain records the
 calls, and the coordinator answers the caller who asked; which reviews a
 person is shown is the deployment's decision, as SPECIFICATION §15.1 says.
 
@@ -124,10 +126,12 @@ and signed by a person, and committed only then. The repository's hooks
 refuse a commit unless the staged tree is an approved change: approved
 against the commit's parent, read by the desk as the change git makes with
 it, unused by any earlier commit, and approved by reviewers a trust policy
-names. The commit carries `CHAP-*` trailers and is signed with the agent's
-key through git's SSH signing; a note under `refs/notes/chap` carries the
-agent's signed proposal, each reviewer's signed decision, the artefact as
-proposed and as approved, and the chain head. The trust policy,
+names. The commit carries trailers that name each approving reviewer by name
+and email (`Reviewed-by`, from the trust policy) and the model that wrote
+the change (`CHAP-Model`), with the `CHAP-*` record, and is signed with the
+agent's key through git's SSH signing; a note under `refs/notes/chap`
+carries the agent's signed proposal, each reviewer's signed decision, the
+artefact as proposed and as approved, and the chain head. The trust policy,
 `chap-trust.json` in the governed repository, pins the reviewers' and
 agents' keys and the rule; `verify.mjs` checks a range of commits against it
 from the repository alone, and a workflow runs the base branch's verifier
@@ -142,7 +146,15 @@ the repository's attributes and configuration set aside, so a
 the contents the desk shows beside a patch are checked against the
 repository's blobs. Claude Code, Cursor or any agent that can run a command
 proposes with `propose.mjs`; a built-in agent and `npm run demo` show the
-whole path with nothing else installed.
+whole path with nothing else installed. An agent that commits on its own, in
+a sandbox or a loop, has its branch reviewed before it is pushed
+(`review_at: push`): `propose-branch.mjs` proposes the commits as one
+review, which the desk shows commit by commit, and on approval seals them,
+writing each again with the same tree, author and message and the gate's
+trailers, signed with the agent's key. A pre-push hook lets only approved
+commits leave the machine. A branch is decided as its commits stand, with no
+edit, and the evidence keeps its artefact once, in the agent's signed
+submission.
 
 **MCP gate** (TypeScript). One process serves the desk, `POST /chap`, and an
 MCP server over streamable HTTP at `/mcp`. Claude Desktop, Cursor or Claude

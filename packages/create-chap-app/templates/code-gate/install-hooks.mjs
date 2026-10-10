@@ -2,7 +2,8 @@
 //
 // Sets core.hooksPath in the repository to this project's hooks/ directory,
 // so every commit there runs the gate's pre-commit, commit-msg and
-// post-commit hooks. A repository that already has a hooks path, or hooks
+// post-commit hooks, and every push its pre-push hook. A repository that
+// already has a hooks path, or hooks
 // of its own in .git/hooks, is reported and left as it is unless --force
 // is given. --remove takes the setting away again.
 //
@@ -14,10 +15,16 @@
 import { access, chmod, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadGate } from "./lib/gate.mjs";
 import { git, repoRoot } from "./lib/git.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const HOOKS_DIR = join(here, "hooks");
+
+/** review_at from the configuration the hooks will read. */
+async function reviewAtHere() {
+  try { return (await loadGate(here)).config.review_at ?? "commit"; } catch { return "commit"; }
+}
 
 export async function installHooks(repoPath, { force = false, remove = false, log = console.log } = {}) {
   const repo = await repoRoot(repoPath);
@@ -27,7 +34,7 @@ export async function installHooks(repoPath, { force = false, remove = false, lo
     log(`core.hooksPath removed from ${repo}; commits there are no longer gated`);
     return { repo, installed: false };
   }
-  for (const name of ["pre-commit", "commit-msg", "post-commit"]) await chmod(join(HOOKS_DIR, name), 0o755);
+  for (const name of ["pre-commit", "commit-msg", "post-commit", "pre-push"]) await chmod(join(HOOKS_DIR, name), 0o755);
   let current = "";
   try { current = (await git(repo, ["config", "--get", "core.hooksPath"])).trim(); } catch { /* not set */ }
   if (current && resolve(repo, current) !== HOOKS_DIR && !force) {
@@ -41,7 +48,7 @@ export async function installHooks(repoPath, { force = false, remove = false, lo
   }
   await git(repo, ["config", "core.hooksPath", HOOKS_DIR]);
   await access(join(HOOKS_DIR, "pre-commit"));
-  log(`core.hooksPath in ${repo} now points at ${HOOKS_DIR}; every commit there needs an approved change`);
+  log(`core.hooksPath in ${repo} now points at ${HOOKS_DIR}; ${(await reviewAtHere()) === "push" ? "a branch is reviewed before it is pushed, and every push is checked" : "every commit there needs an approved change, and every push is checked"}`);
   const signers = join(here, "keys", "allowed_signers");
   let current_ = "";
   try { current_ = (await git(repo, ["config", "--get", "gpg.ssh.allowedSignersFile"])).trim(); } catch { /* not set */ }

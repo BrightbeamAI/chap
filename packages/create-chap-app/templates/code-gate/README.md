@@ -13,6 +13,12 @@ it on every pull request from the base branch, so a pull request cannot
 change its own check. Insights and `chap-analytics` turn what reviewers
 corrected into what to change in the agent's instructions.
 
+An agent that makes its own commits, in a sandbox or a loop, proposes its
+branch: the desk shows it commit by commit, and once it is approved each
+commit is sealed with the names and emails of the people who reviewed it
+and the model that wrote it, and a pre-push hook lets only approved commits
+leave the machine.
+
 It works with Claude Code, Cursor and any agent that can run a command,
 through `propose.mjs`; with anything that can POST JSON, through
 `POST /chap`; and with the built-in agent, which drafts with the model the
@@ -64,7 +70,8 @@ node install-hooks.mjs --repo /path/to/repo      the hooks
 ```
 
 `install-hooks.mjs` sets `core.hooksPath` in that repository to this
-project's `hooks/`, so every `git commit` there runs the gate's three hooks:
+project's `hooks/`, so every `git commit` and `git push` there runs the
+gate's hooks:
 
 - `pre-commit` refuses the commit unless the staged change is exactly an
   approved change: approved against the commit's parent, read in the desk as
@@ -72,23 +79,29 @@ project's `hooks/`, so every `git commit` there runs the gate's three hooks:
   committed before. It then checks the approval as the verifier will, under
   the trust policy (below): the approvers, their signatures, the agent's
   signed proposal and the review rule.
-- `commit-msg` sets the `CHAP-*` trailers for that approval.
+- `commit-msg` sets the trailers for that approval: `Reviewed-by` with each
+  approver's name and email, `CHAP-Model` with the model that wrote the
+  change, and the `CHAP-*` record.
 - `post-commit` writes the evidence note under `refs/notes/chap`, when the
   commit made is the one approved.
+- `pre-push` refuses a push that would send a commit with no approval that
+  holds, each checked as the verifier checks it.
 
 It also points the repository's `gpg.ssh.allowedSignersFile` at
 `keys/allowed_signers` when nothing is set there, so `git log
 --show-signature` names the agent. `CHAP_GATE=off git commit` commits
 without an approval and says so; the commit carries no trailers, and the
-verifier fails it. `--remove` takes the hooks away; a repository that runs
+verifier fails it. `CHAP_GATE=off git push` pushes without the check, as
+the first push of a repository's existing history needs to. `--remove` takes the hooks away; a repository that runs
 hooks from somewhere else already is reported and left alone unless
 `--force` is given.
 
 **Claude Code.** Copy `AGENT_INSTRUCTIONS.md` into the repository as
 `CLAUDE.md`, or into the project's instructions. It tells the assistant
-never to commit itself, and to run `propose.mjs` with `--wait --commit` when
-a change is ready, which proposes, waits for the decision and commits an
-approved change through the hooks in one step. For the `chap.*` tools, which
+never to commit itself, and to run `propose.mjs` with `--wait --commit` and
+`--model` naming the model it runs as when a change is ready, which
+proposes, waits for the decision and commits an approved change through the
+hooks in one step. For the `chap.*` tools, which
 let it read its tasks and the chain:
 
 ```
@@ -116,9 +129,64 @@ beside them, or the file `CHAP_CONFIG` names. `CHAP_URL` is the gate's
 `POST /chap` address (by default `http://127.0.0.1:8791/chap`, from
 `CHAP_HOST` and `PORT`); `CHAP_AGENT_URI` replaces the agent's URI from the
 configuration, and `CHAP_AGENT_KEY` the path of its key (by default under
-`keys/`). A commit made by `propose.mjs` or the built-in agent passes
+`keys/`). `CHAP_MODEL` names the model when `--model` is not given. A commit made by `propose.mjs` or the built-in agent passes
 `CHAP_URL` and `CHAP_CONFIG` to its hooks, so they ask the gate the command
 asked.
+
+## Agents that commit on their own
+
+Some agents commit as they go: Claude working in a sandbox, an agent
+running in a loop, an assistant told to commit after each step. Their work
+arrives as a branch, and the gate reviews the branch before it is pushed.
+With `"review_at": "push"` in `chap.config.json` (`create-chap-app
+--review-at push` writes it) and the hooks installed, the agent commits
+freely: `pre-commit` lets an unapproved commit through and says so, and
+`pre-push` refuses every commit that would leave without an approval.
+
+When the branch is ready:
+
+```
+node propose-branch.mjs origin/main..agent/work --by "Claude (Cowork)" --model "Claude Opus 5.5" --wait --push origin
+```
+
+(`--to <branch>` pushes it under another name, and `--help` lists the
+options.)
+
+proposes the commits the branch adds as one review. The desk lists them in
+order and shows each with its message, author, files and diff; `n` and `p`
+move between them, and the desk marks the ones you have opened. The
+approval covers every commit as it stands, so approving with commits unread
+asks first, and a branch has no edit: request changes, the agent amends its
+commits, and the same command proposes them again to the same review.
+
+Once the branch is approved, it is sealed: each commit is written again
+with the same tree, author and message, followed by the gate's trailers,
+which name who reviewed it, the model that wrote it, its place in the branch
+and the commit the reviewers saw. Each sealed commit is signed with the
+agent's key and has the evidence beside it as a note. The branch then points
+at the sealed commits, and `--push` pushes them through the pre-push hook
+and pushes the notes after them. Without `--push`, push the branch
+yourself, then `node push-notes.mjs`. The same command, run again, carries
+on: it waits while the review is open, seals the commits once they are
+approved, sends amended commits to a review sent back for a revision, and
+pushes a branch that is sealed already. Commits at the start of the range
+that are approved already stay as they are, and a new review covers the
+ones after them. A branch has one open review at a time: commits made while
+one waits go to it once its reviewers have decided.
+
+A branch is one line of commits from where it leaves its base: a merge in
+it is refused, with what to do. A line in a commit message that only the
+gate writes (`Reviewed-by`, `CHAP-*`) is dropped from the proposal, so a
+commit cannot name a reviewer the approval does not. The verifier holds
+each sealed commit to the commit the reviewers saw (its tree, author and
+message), to its place in the branch, and to the patch the desk showed for
+it, and an approved branch is pushed whole: the pre-push hook and the pull
+request check refuse part of one. The hook asks the remote which commits it
+has, so a local remote-tracking ref cannot hide a commit from it. Commits
+people make themselves pass the hook when they are signed with a key that
+chap-trust.json, as the remote holds it, lists under `people`, and
+`chap.config.json` sets `"allow_people": true`; otherwise they go through
+review like any other.
 
 ## The trust policy
 
@@ -130,8 +198,25 @@ npm run trust -- --out /path/to/repo/chap-trust.json
 ```
 
 reads the workspace from the running gate and writes, for each reviewer
-`chap.config.json` names and each agent that has joined, the public keys the
-workspace records, with the review rule. It prints each key's fingerprint;
+`chap.config.json` names, their name and email and the public keys the
+workspace records, for each agent that has joined its keys, and the review
+rule:
+
+```
+{
+  "chap_trust": 1,
+  "workspace": "__WORKSPACE__",
+  "rule": "any_one_approves",
+  "reviewers": {
+    "__HUMAN_URI__": { "name": "__HUMAN_NAME__", "email": "__HUMAN_EMAIL__", "keys": [{ "kty": "OKP", "crv": "Ed25519", "x": "...", "kid": "..." }] }
+  },
+  "agents": { "__AGENT_URI__": [{ "kty": "OKP", "crv": "Ed25519", "x": "...", "kid": "..." }] },
+  "people": []
+}
+```
+
+A reviewed commit names each reviewer by that name and email, and the
+verifier holds it to them. It prints each key's fingerprint;
 confirm them with their holders, then commit the file through a change
 people review. The desk shows a reviewer their own fingerprint on the
 signing badge.
@@ -226,10 +311,12 @@ leave it off.
 The message ends with trailers:
 
 ```
+Reviewed-by: __HUMAN_NAME__ <__HUMAN_EMAIL__>
+CHAP-Model: Claude Opus 5.5
 CHAP-Workspace: __WORKSPACE__
 CHAP-Task: tsk_...
 CHAP-Agent: __AGENT_URI__
-CHAP-Reviewer: __HUMAN_URI__
+CHAP-Reviewer: __HUMAN_URI__ SHA256:...
 CHAP-Decision: approve
 CHAP-Rule: any_one_approves
 CHAP-Artefact: sha256:...
@@ -237,13 +324,23 @@ CHAP-Coordinator: http://127.0.0.1:8791/chap
 CHAP-Chain-Head: sha256:...
 ```
 
-with one `CHAP-Reviewer` line per approving reviewer. The commit is signed
+`Reviewed-by` names each approving reviewer by the name and email the trust
+policy gives, or `chap.config.json` where there is no policy, and
+`CHAP-Reviewer` gives the same reviewer's URI with the fingerprint of the
+key their approval verified against. `CHAP-Model` names the model that wrote
+the change: `--model` (or `CHAP_MODEL`) for `propose.mjs` and
+`propose-branch.mjs`, and the model the built-in agent drafted with (or its
+scripted drafter); a change proposed with no model named carries no
+`CHAP-Model`. A sealed commit of a branch adds
+`CHAP-Series`, its place in the branch, and `CHAP-Proposed-Commit`, the
+commit the reviewers saw. The commit is signed
 with the agent's key in git's SSH format, the same Ed25519 key it signs its
 CHAP calls with. The note under `refs/notes/chap` holds the agent's signed
 submission of the change, every decision of the final review round with its
 signature, the artefact as proposed and as approved, the rule and who the
 round was addressed to, the keys the workspace recorded, and the chain head.
-`git log --show-notes=chap` prints it.
+A branch's commits share one note, which holds the branch once, in the
+agent's signed submission. `git log --show-notes=chap` prints it.
 
 ## Verify
 
@@ -260,8 +357,12 @@ approval names the round it was made in and the workspace the policy covers;
 an override's operations lead from the proposed artefact to the approved one;
 the commit's parent is the commit the change was approved against; the desk
 reads the approved patch as the change git makes, and it gives the commit's
-tree; no other commit in the range uses the same approval; and the commit's
-signature verifies against the agent's pinned key. `--base <commit>` checks
+tree; no other commit in the range uses the same approval; the trailers say
+what the evidence says, reviewers' names and emails and the model included;
+and the commit's signature verifies against the agent's pinned key. A sealed
+commit of a branch is held to the commit the reviewers saw, to its place in
+the branch and the sealed commit before it, and to the patch the desk
+showed for it, and each place in an approved branch is used once. `--base <commit>` checks
 the range as a pull request into that commit, as the workflow does: one line
 of commits from where it leaves the base's history, and no approval used in
 that history already. `--trust-ref <ref>` reads the policy as the repository
@@ -286,12 +387,14 @@ decided. A code change opens as a diff, file by file, with its mode changes,
 the task, the agent, the model, the branch and the base commit beside it.
 Approve as written, request changes with a note, reject, or press Edit on a
 file, change it whole, look at the patch your edit makes, and approve that
-version with a rationale. A file is offered for editing only when the
-contents that came with it agree with its patch. A patch the desk cannot
-show as git would apply it (text before the first file, names that differ
-between its header lines, a binary section for a text file), or a change
-that lists a file twice, is marked, and the desk offers to reject it or
-request changes. Characters a reader cannot see in a changed line
+version with a rationale. A branch opens as its commits in order, each with
+its message, author, files and diff, and `n` and `p` move between them;
+approving it with commits unopened asks first. A file is offered for editing
+only when the contents that came with it agree with its patch. A patch the
+desk cannot show as git would apply it (text before the first file, names
+that differ between its header lines, a binary section for a text file), or
+a change that lists a file twice, is marked, and the desk offers to reject
+it or request changes. Characters a reader cannot see in a changed line
 (bidirectional controls, zero-width characters, a carriage return inside a
 line) are shown as markers, with a warning above the diff. Every decision
 carries the digest of the artefact you saw and of the submission that opened
@@ -379,6 +482,9 @@ its outcome under both.
   again.
 - A binary file is shown as binary, without its content. A submodule change,
   or a text file that is not UTF-8, cannot be proposed.
+- A branch review takes up to 100 commits, and the branch's patches must fit
+  in one envelope (`max_envelope_bytes`, 16 MiB here): review a longer branch
+  in parts.
 - Each approval covers one commit on the commit it was approved against;
   if the branch moves on first, the change is proposed again.
 

@@ -46,19 +46,24 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   coding agent makes behind a person's decision. The agent's change is
   proposed as a patch and reviewed as a diff; the repository's hooks commit
   only an approved change, on the commit it was approved against, with
-  `CHAP-*` trailers, a signature by the agent's key in git's SSH format, and
-  a note under `refs/notes/chap` holding the agent's signed proposal, each
-  reviewer's signed decision and the chain head. A trust policy the team
-  keeps in the repository pins whose approvals count and the rule;
-  `verify.mjs` checks a range of commits against it from the repository
-  alone, and a workflow runs the base branch's verifier and policy on every
-  pull request: its commits must be one line from where they leave the base
-  branch, each approved on the commit it sits on, and no approval may be
-  used twice in the base branch's history. Each approval names the review
-  round it was made in, so approvals from before and after a revision never
-  add up to a quorum. `npm run demo` runs the whole path with a built-in
-  agent, and Claude Code, Cursor or any agent that can run a command
-  proposes through `propose.mjs`.
+  trailers that name each approving reviewer by name and email and the model
+  that wrote the change, the `CHAP-*` record, a signature by the agent's key
+  in git's SSH format, and a note under `refs/notes/chap` holding the
+  agent's signed proposal, each reviewer's signed decision and the chain
+  head. A trust policy the team keeps in the repository pins whose approvals
+  count and the rule; `verify.mjs` checks a range of commits against it from
+  the repository alone, and a workflow runs the base branch's verifier and
+  policy on every pull request: its commits must be one line from where they
+  leave the base branch, each approved on the commit it sits on, and no
+  approval may be used twice in the base branch's history. Each approval
+  names the review round it was made in, so approvals from before and after
+  a revision never add up to a quorum. `npm run demo` runs the whole path
+  with a built-in agent, and Claude Code, Cursor or any agent that can run a
+  command proposes through `propose.mjs`. An agent that commits on its own
+  has its branch reviewed before it is pushed: `propose-branch.mjs` proposes
+  the commits as one review, read commit by commit in the desk, seals them
+  on approval with the same trailers, and a pre-push hook lets only approved
+  commits leave the machine.
 - **The desk, rebuilt.** Every template's desk shows the artefact by its
   shape (a diff for code, editable a file at a time; a letter for a
   message), lets a reviewer request changes as well as approve, edit or

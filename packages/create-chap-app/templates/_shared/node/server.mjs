@@ -13,7 +13,8 @@
 //
 // The server answers under its own host names only (421 otherwise), refuses
 // a browser request from another origin (403), takes JSON only on POST /chap
-// (415) and reads no body over MAX_BODY_BYTES (413).
+// (415) and reads no body over the envelope limit, max_envelope_bytes in
+// chap.config.json (1 MiB when unset), with a little room (413).
 
 import { createServer } from "node:http";
 import { readFile, readdir, mkdir, stat } from "node:fs/promises";
@@ -133,6 +134,7 @@ export async function makeCoordinator(config, extra = {}) {
     defaultProfiles: config.profiles,
     enableChain: !!config.chain,
     requireSignatures: !!config.require_signatures,
+    ...(config.max_envelope_bytes ? { maxEnvelopeBytes: config.max_envelope_bytes } : {}),
     ...extra,
   };
   if (config.oidc && !options.verifyOidcToken) {
@@ -237,12 +239,27 @@ function decisionLog(ws) {
 }
 
 /**
+ * An artefact without its bulk: a code change without the whole-file
+ * contents beside its patch, a branch without each commit's patch. The
+ * lists the desk polls carry this; one task's view carries everything.
+ */
+function slim(artefact) {
+  if (!artefact || typeof artefact !== "object" || Array.isArray(artefact)) return artefact;
+  const out = { ...artefact };
+  if (Array.isArray(out.files)) out.files = out.files.map((f) => (f && typeof f === "object" ? Object.fromEntries(Object.entries(f).filter(([k]) => k !== "before" && k !== "after")) : f));
+  if (Array.isArray(out.commits)) out.commits = out.commits.map((c) => (c && typeof c === "object" ? Object.fromEntries(Object.entries(c).filter(([k]) => k !== "patch")) : c));
+  return out;
+}
+
+/**
  * A task as the read API shows it. `artefact` is what is or was under
  * review, whatever was decided. An override's rationale lives on the
  * override artefact, and is put on the decision here as `rationale`.
  * `decision_log` is every decision on the task, across review rounds.
+ * With `brief`, the artefact is slimmed and the submission is named by its
+ * place on the chain only; the desk reads the full view of the task it shows.
  */
-function viewOf(ws, task, log = null) {
+function viewOf(ws, task, log = null, { brief = false } = {}) {
   let review = task.review ?? null;
   if (review) {
     review = { ...review, decisions: review.decisions.map((d) => {
@@ -251,12 +268,15 @@ function viewOf(ws, task, log = null) {
       return { ...d, rationale: override?.rationale ?? null, comment: d.comment ?? override?.rationale ?? undefined };
     }) };
   }
+  const submission = log?.submissions?.get(task.id) ?? null;
+  const artefact = task.pending_artefact ?? task.output ?? null;
   return {
     task_id: task.id, kind: task.kind, state: task.state, assignee: task.assignee, mode: task.mode,
     created_at: task.created_at, updated_at: task.updated_at, input: task.input,
-    output: task.output ?? null, artefact: task.pending_artefact ?? task.output ?? null,
+    output: brief ? slim(task.output ?? null) : (task.output ?? null), artefact: brief ? slim(artefact) : artefact,
     review, decision_log: log ? (log.get(task.id) ?? []) : undefined,
-    submission: log?.submissions?.get(task.id) ?? null, history: task.history,
+    submission: brief && submission ? { seq: submission.seq, arrived: submission.arrived } : submission, history: task.history,
+    ...(brief ? { brief: true } : {}),
   };
 }
 
@@ -265,7 +285,7 @@ function viewOf(ws, task, log = null) {
  * given (several states comma separated). `limit` caps the list; the
  * default is every task.
  */
-export function listTasks(coord, workspace, { kind, state, limit } = {}) {
+export function listTasks(coord, workspace, { kind, state, limit, brief = false } = {}) {
   const ws = coord.getWorkspace(workspace);
   if (!ws) return [];
   const states = state ? new Set(String(state).split(",").map((x) => x.trim()).filter(Boolean)) : null;
@@ -274,7 +294,7 @@ export function listTasks(coord, workspace, { kind, state, limit } = {}) {
   for (const task of ws.tasks.values()) {
     if (kind && task.kind !== kind) continue;
     if (states && !states.has(task.state)) continue;
-    out.push(viewOf(ws, task, log));
+    out.push(viewOf(ws, task, log, { brief }));
   }
   out.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
   return limit ? out.slice(0, limit) : out;
@@ -318,7 +338,9 @@ export function publicConfig(config) {
   return {
     workspace: config.workspace,
     profiles: config.profiles,
-    humans: (config.humans ?? []).map(({ uri, display_name, role }) => ({ uri, display_name, role })),
+    humans: (config.humans ?? []).map(({ uri, display_name, email, role }) => ({ uri, display_name, ...(email ? { email } : {}), role })),
+    ...(config.review_at ? { review_at: config.review_at } : {}),
+    max_envelope_bytes: config.max_envelope_bytes ?? 1_048_576,
     agent: config.agent ?? null,
     require_signatures: !!config.require_signatures,
     chain_enabled: !!config.chain,
@@ -335,8 +357,8 @@ function reply(res, status, body, type = "application/json") {
   res.end(type === "application/json" && !Buffer.isBuffer(body) ? JSON.stringify(body) : body);
 }
 
-/** Largest request body read, a little above the coordinator's envelope limit. */
-const MAX_BODY_BYTES = 1_100_000;
+/** Largest request body read: a little above the coordinator's envelope limit. */
+const bodyLimit = (config) => (config.max_envelope_bytes ?? 1_048_576) + 64 * 1024;
 
 /**
  * The host names this server answers to: its loopback names on its own
@@ -379,12 +401,12 @@ function foreignOrigin(req, config) {
 
 class BodyTooLarge extends Error {}
 
-async function readBody(req) {
+async function readBody(req, limit) {
   const chunks = [];
   let size = 0;
   for await (const c of req) {
     size += c.length;
-    if (size > MAX_BODY_BYTES) throw new BodyTooLarge(`the request body is over ${MAX_BODY_BYTES} bytes`);
+    if (size > limit) throw new BodyTooLarge(`the request body is over ${limit} bytes`);
     chunks.push(c);
   }
   return Buffer.concat(chunks).toString("utf8");
@@ -460,7 +482,7 @@ export async function makeServer(config, coord) {
       if (url.pathname === "/chap" && req.method === "POST") {
         if (!(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return reply(res, 415, { error: "POST /chap takes application/json" });
         let envelope;
-        try { envelope = JSON.parse(await readBody(req)); } catch (e) {
+        try { envelope = JSON.parse(await readBody(req, bodyLimit(config))); } catch (e) {
           if (e instanceof BodyTooLarge) throw e;
           return reply(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
         }
@@ -472,7 +494,8 @@ export async function makeServer(config, coord) {
         const rawLimit = url.searchParams.get("limit");
         if (rawLimit !== null && !/^\d+$/.test(rawLimit)) return reply(res, 400, { error: "limit is a whole number" });
         const limit = Number(rawLimit ?? 0) || undefined;
-        return reply(res, 200, { tasks: listTasks(coord, config.workspace, { kind: url.searchParams.get("kind") || undefined, state: url.searchParams.get("state") || undefined, limit }) });
+        const brief = url.searchParams.get("brief") === "1";
+        return reply(res, 200, { tasks: listTasks(coord, config.workspace, { kind: url.searchParams.get("kind") || undefined, state: url.searchParams.get("state") || undefined, limit, brief }) });
       }
       if (url.pathname.startsWith("/api/tasks/")) {
         let parts;
@@ -493,7 +516,7 @@ export async function makeServer(config, coord) {
       if (url.pathname === "/mcp" && mcp) {
         let body;
         if (req.method === "POST") {
-          try { body = JSON.parse(await readBody(req)); } catch (e) {
+          try { body = JSON.parse(await readBody(req, bodyLimit(config))); } catch (e) {
             if (e instanceof BodyTooLarge) throw e;
             return reply(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
           }

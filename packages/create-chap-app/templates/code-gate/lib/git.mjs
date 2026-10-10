@@ -323,15 +323,19 @@ export async function parseTrailers(repo, message) {
   });
 }
 
+/** A line the gate writes in a commit's trailers: its own CHAP-* lines and Reviewed-by. */
+export const GATE_TRAILER = /^(CHAP-[A-Za-z-]+|Reviewed-by):/;
+
 /**
- * Set the CHAP trailers of a commit message file: every existing CHAP-*
- * line is removed, then each pair is added, so a token given twice (two
+ * Set the gate's trailers in a commit message file: every existing CHAP-*
+ * and Reviewed-by line is removed, so a message cannot name a reviewer the
+ * approval does not, then each pair is added, so a token given twice (two
  * reviewers) appears twice.
  */
 export async function setTrailers(repo, file, pairs) {
   const { readFile, writeFile } = await import("node:fs/promises");
   const text = await readFile(file, "utf8");
-  await writeFile(file, text.split("\n").filter((l) => !/^CHAP-[A-Za-z-]+:/.test(l)).join("\n"));
+  await writeFile(file, text.split("\n").filter((l) => !GATE_TRAILER.test(l)).join("\n"));
   const args = ["interpret-trailers", "--in-place", "--if-exists", "add", "--if-missing", "add"];
   for (const [token, value] of pairs) args.push("--trailer", `${token}: ${value}`);
   await git(repo, [...args, file]);
@@ -360,6 +364,57 @@ export async function commitInfo(repo, sha) {
   const out = await git(repo, ["show", "-s", "--format=%H%n%P%n%T%n%an <%ae>%n%ci%n%B", sha]);
   const [hash, parents, tree, author, date, ...rest] = out.split("\n");
   return { hash, parents: parents.split(" ").filter(Boolean), tree, author, date, message: rest.join("\n").trim() };
+}
+
+/** A person line of a commit header, "Name <email> 1700000000 +0100", as its parts. */
+export function parsePerson(line) {
+  const m = /^(.*) <([^<>]*)> (\d+ [+-]\d{4})$/.exec(line ?? "");
+  return m ? { name: m[1], email: m[2], date: m[3] } : null;
+}
+
+/**
+ * A commit as git stores it: its tree, parents, author and committer with
+ * their raw dates, and the message exactly as written. Null for anything
+ * that is not a commit.
+ */
+export async function rawCommit(repo, sha) {
+  let raw;
+  try { raw = await git(repo, ["cat-file", "commit", sha]); } catch { return null; }
+  const at = raw.indexOf("\n\n");
+  const header = at < 0 ? raw : raw.slice(0, at);
+  const message = at < 0 ? "" : raw.slice(at + 2);
+  const out = { sha, tree: null, parents: [], author: null, committer: null, encoding: null, signed: false, message };
+  for (const line of header.split("\n")) {
+    if (line.startsWith(" ")) continue;
+    const sp = line.indexOf(" ");
+    const key = line.slice(0, sp);
+    const value = line.slice(sp + 1);
+    if (key === "tree") out.tree = value;
+    else if (key === "parent") out.parents.push(value);
+    else if (key === "author") out.author = parsePerson(value);
+    else if (key === "committer") out.committer = parsePerson(value);
+    else if (key === "encoding") out.encoding = value;
+    else if (key === "gpgsig" || key === "gpgsig-sha256") out.signed = true;
+  }
+  return out;
+}
+
+/** Whether an object is in the repository. */
+export async function objectExists(repo, sha) {
+  try { await git(repo, ["cat-file", "-e", `${sha}^{object}`]); return true; } catch { return false; }
+}
+
+/**
+ * Write a commit object for a tree with git commit-tree: the parent given,
+ * the author given with their date, the message as it is, and with
+ * `signingKey`, signed with that OpenSSH key. The committer is whoever runs
+ * it, as git config says. Returns the new commit. No hook runs.
+ */
+export async function commitTree(repo, { tree, parent = null, author, message, signingKey = null, env = {} }) {
+  const signing = signingKey ? ["-c", "gpg.format=ssh", "-c", `user.signingkey=${signingKey}`] : [];
+  const who = author ? { GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email, GIT_AUTHOR_DATE: author.date } : {};
+  const out = await git(repo, [...signing, "commit-tree", tree, ...(parent ? ["-p", parent] : []), ...(signingKey ? ["-S"] : []), "-F", "-"], { input: message, env: { ...env, ...who } });
+  return out.trim();
 }
 
 /** The commits on any ref whose message carries the trailer given, newest first. */

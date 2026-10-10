@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { jsonPatch } from "../desk/chap-client.mjs";
 import { readKeyFile } from "../keys.mjs";
-import { applyJsonPatch, buildNote, checkApproval, contentHash, describeChange, envelopeVerifies, onlinePolicy, propose } from "../lib/gate.mjs";
+import { applyJsonPatch, buildNote, checkApproval, contentHash, describeChange, envelopeVerifies, fingerprint, onlinePolicy, propose } from "../lib/gate.mjs";
 import { commitInfo, git, head, parseTrailers, readNote } from "../lib/git.mjs";
 import { syncOverride } from "../propose.mjs";
 import { verifyRange } from "../verify.mjs";
@@ -68,7 +68,10 @@ test("the hooks refuse a commit with no approval, then commit the approved chang
   const info = await commitInfo(repo, sha);
   const trailers = Object.fromEntries((await parseTrailers(repo, info.message)).map((t) => [t.token, t.value]));
   assert.equal(trailers["CHAP-Task"], review.task_id);
-  assert.equal(trailers["CHAP-Reviewer"], human.from);
+  // The reviewer by name and email, and by URI with the fingerprint of the key their approval verified against.
+  const me = g.config.humans.find((h) => h.uri === human.from);
+  assert.equal(trailers["Reviewed-by"], `${me.display_name} <${me.email}>`);
+  assert.equal(trailers["CHAP-Reviewer"], `${human.from} ${fingerprint(human.signer.publicJwk)}`);
   assert.equal(trailers["CHAP-Rule"], "any_one_approves");
   assert.equal(trailers["CHAP-Artefact"], await contentHash(review.artefact));
   const note = JSON.parse(await readNote(repo, sha));
@@ -178,7 +181,7 @@ test("the report counts what the gate recorded, by model and by file, and lists 
   assert.equal(s.revisions, 1);
   assert.ok(s.override_rationales.some((o) => o.text === "say which is which"));
   assert.ok(s.rejection_notes.some((r) => r.text === "name the parameters minuend and subtrahend" && r.revision));
-  const scripted = s.models.find((m) => m.model === "scripted");
+  const scripted = s.models.find((m) => m.model === "scripted drafter (no model)");
   assert.deepEqual([scripted.changes, scripted.approve, scripted.override, scripted.reject, scripted.sent_back], [3, 1, 1, 1, 1]);
   assert.ok(s.files.find((f) => f.path === "lib/calc.mjs").edited >= 2);
 });

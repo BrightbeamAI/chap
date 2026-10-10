@@ -16,6 +16,8 @@ import { blobAt, currentBranch, faithfulCheck, git, head, numstat, workingTreeCh
 export const MAX_CONTENT_BYTES = 200_000;
 
 export const TASK_KIND = "code_change";
+/** The task kind of a branch under review: a line of commits an agent made, reviewed before it is pushed. */
+export const RANGE_KIND = "commit_range";
 export const NOTE_VERSION = 1;
 export const TRUST_FILE = "chap-trust.json";
 const here = dirname(fileURLToPath(import.meta.url));
@@ -131,7 +133,7 @@ export function changeKey(base, patch) {
  * size, so a reviewer can edit a file whole. Null when the working tree
  * matches HEAD.
  */
-export async function describeChange(repo, { summary, drafted_by = "working tree", requested_by } = {}) {
+export async function describeChange(repo, { summary, drafted_by = "working tree", model = null, requested_by } = {}) {
   const { baseTree, tree, patch } = await workingTreeChange(repo);
   if (!patch.trim()) return null;
   // The patch travels as text. It must give the working tree back, and read
@@ -160,8 +162,19 @@ export async function describeChange(repo, { summary, drafted_by = "working tree
     files,
     patch,
     drafted_by,
+    ...(model ? { model: modelLabel(model) } : {}),
     ...(requested_by ? { requested_by } : {}),
   };
+}
+
+/**
+ * A model's name as a commit names it: one line of printable text, such as
+ * "Claude Opus 5.5". Refused when it would not sit in a trailer.
+ */
+export function modelLabel(name) {
+  const value = String(name ?? "").trim();
+  if (!value || value.length > 120 || /[\u0000-\u001f\u007f<>]/.test(value)) throw new Error(`Not a model name a commit can carry: ${JSON.stringify(name)}`);
+  return value;
 }
 
 /**
@@ -243,13 +256,7 @@ export async function propose(client, artefact, { gate = null, taskId = null, re
   let target = taskId;
   if (!target && gate) target = (await revisionTarget(gate, client, artefact))?.task_id ?? null;
   const digest = await contentHash(artefact);
-  const submit = async (id) => {
-    if (review.rule !== "any_one_approves") {
-      const to = review.to ?? (await humanReviewers(client));
-      return (await client.call("review.request", { task_id: id, artefact, to, rule: review.rule })).state;
-    }
-    return (await client.call("task.complete", { task_id: id, output: artefact })).state;
-  };
+  const submit = (id) => submitForReview(client, id, artefact, review);
   if (target) return { task_id: target, state: await submit(target), revised: true, digest };
   const input = { summary: artefact.summary, repo: artefact.repo, branch: artefact.branch, base: artefact.base, files: artefact.files.map((f) => f.path) };
   if (artefact.requested_by) input.requested_by = artefact.requested_by;
@@ -259,6 +266,19 @@ export async function propose(client, artefact, { gate = null, taskId = null, re
   let state = created.state;
   if (state === "created" || state === "in_progress") state = await submit(created.task_id);
   return { task_id: created.task_id, state, revised: false, digest };
+}
+
+/**
+ * Submit an artefact to a task for review: with task.complete under the
+ * default rule, or opening a round with review.request under a rule that
+ * needs more than one approval. Returns the task's state after the call.
+ */
+export async function submitForReview(client, taskId, artefact, review = { rule: "any_one_approves", to: null }) {
+  if (review.rule !== "any_one_approves") {
+    const to = review.to ?? (await humanReviewers(client));
+    return (await client.call("review.request", { task_id: taskId, artefact, to, rule: review.rule })).state;
+  }
+  return (await client.call("task.complete", { task_id: taskId, output: artefact })).state;
 }
 
 /** The task's view from the read API, or null. */
@@ -353,14 +373,37 @@ const PROTOTYPE_NAMES = new Set(["__proto__", "constructor", "prototype", "toStr
 /** Whether a value is a public Ed25519 JWK. */
 const isKey = (k) => !!k && typeof k === "object" && k.kty === "OKP" && k.crv === "Ed25519" && typeof k.x === "string" && /^[A-Za-z0-9_-]{43}$/.test(k.x);
 
-/** A map from participant URI to keys, with no prototype, checked key by key. */
-function keyMap(value, what, source) {
+/** A key's fingerprint, as the desk, trust.mjs and ssh-keygen print it: SHA256 of the raw public key, base64. */
+export function fingerprint(jwk) {
+  return "SHA256:" + createHash("sha256").update(Buffer.from(jwk.x.replace(/-/g, "+").replace(/_/g, "/"), "base64")).digest("base64").replace(/=+$/, "");
+}
+
+const NAME_OK = (v) => typeof v === "string" && v.trim().length > 0 && v.length <= 120 && !/[\u0000-\u001f\u007f<>]/.test(v);
+const EMAIL_OK = (v) => typeof v === "string" && /^[^\s<>@"\\]+@[^\s<>@"\\]+$/.test(v) && v.length <= 254;
+
+/** A person's name and email as a policy or a configuration gives them, checked; null fields where none is given. */
+export function identityOf(entry, where) {
+  const name = entry?.name ?? entry?.display_name ?? null;
+  const email = entry?.email ?? null;
+  if (name !== null && !NAME_OK(name)) throw new Error(`${where}: the name ${JSON.stringify(name)} cannot go in a commit trailer`);
+  if (email !== null && !EMAIL_OK(email)) throw new Error(`${where}: ${JSON.stringify(email)} is not an email address`);
+  return { name: name?.trim() ?? null, email };
+}
+
+/**
+ * A map from participant URI to keys, with no prototype, checked key by
+ * key. An entry is a list of keys, or { name, email, keys }; the names and
+ * emails go into `identities`.
+ */
+function keyMap(value, what, source, identities = Object.create(null)) {
   const out = Object.create(null);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${source}: ${what} is not an object of URI to keys`);
-  for (const [uri, keys] of Object.entries(value)) {
+  for (const [uri, entry] of Object.entries(value)) {
     if (PROTOTYPE_NAMES.has(uri) || !/^[a-z][a-z0-9+.-]*:/.test(uri)) throw new Error(`${source}: ${what} names ${JSON.stringify(uri)}, which is not a participant URI`);
+    const keys = Array.isArray(entry) ? entry : entry && typeof entry === "object" ? entry.keys : null;
     if (!Array.isArray(keys) || !keys.length || !keys.every(isKey)) throw new Error(`${source}: ${what}[${uri}] is not a list of Ed25519 public keys`);
     out[uri] = keys;
+    if (!Array.isArray(entry)) identities[uri] = identityOf(entry, `${source}: ${what}[${uri}]`);
   }
   return out;
 }
@@ -371,9 +414,10 @@ export function policyFromTrust(json, source) {
   if (!validRule(rule)) throw new Error(`${source}: rule is ${JSON.stringify(rule)}; it is any_one_approves, all_approve or quorum:<n>`);
   const people = json.people ?? [];
   if (!Array.isArray(people) || !people.every((l) => typeof l === "string")) throw new Error(`${source}: people is not a list of allowed_signers lines`);
+  const identities = Object.create(null);
   return {
     source, workspace: json.workspace ?? null, rule,
-    reviewers: keyMap(json.reviewers ?? {}, "reviewers", source), agents: keyMap(json.agents ?? {}, "agents", source), people,
+    reviewers: keyMap(json.reviewers ?? {}, "reviewers", source, identities), agents: keyMap(json.agents ?? {}, "agents", source), people, identities,
   };
 }
 
@@ -401,13 +445,15 @@ export function onlinePolicy(gate, ev) {
   const configured = new Set((gate.config.humans ?? []).map((h) => h.uri));
   const reviewers = Object.create(null);
   const agents = Object.create(null);
+  const identities = Object.create(null);
+  for (const h of gate.config.humans ?? []) if (typeof h.uri === "string" && !PROTOTYPE_NAMES.has(h.uri)) identities[h.uri] = identityOf(h, `chap.config.json humans[${h.uri}]`);
   for (const [uri, m] of Object.entries(ev.members ?? {})) {
     if (PROTOTYPE_NAMES.has(uri)) continue;
     const keys = (m.keys ?? []).filter(isKey);
     if (m.type === "human" && configured.has(uri)) reviewers[uri] = keys;
     if (m.type === "agent") agents[uri] = keys;
   }
-  return { source: `the gate at ${gate.base}`, workspace: ev.workspace, rule: reviewRule(gate).rule, reviewers, agents, people: [] };
+  return { source: `the gate at ${gate.base}`, workspace: ev.workspace, rule: reviewRule(gate).rule, reviewers, agents, people: [], identities };
 }
 
 // -- the evidence a commit carries -----------------------------------------------
@@ -422,6 +468,7 @@ export function onlinePolicy(gate, ev) {
  * signatures against the keys its own policy pins.
  */
 export function buildNote(ev, gateUrl) {
+  const isRange = ev.task.kind === RANGE_KIND;
   const settling = ev.decisions.filter((d) => ["decide.approve", "decide.override"].includes(d.envelope.method)).at(-1);
   if (!settling) throw new Error(`Task ${ev.task.task_id} has no approval on the chain`);
   const submission = ev.submissions.filter((x) => x.seq < settling.seq).at(-1);
@@ -446,14 +493,34 @@ export function buildNote(ev, gateUrl) {
     submission: submission ? { method: submission.envelope.method, seq: submission.seq, arrived: submission.arrived, envelope: submission.envelope } : null,
     decision: { method: settling.envelope.method, reviewer: params.from, seq: settling.seq, arrived: settling.arrived, comment: params.comment ?? params.rationale ?? null, tags: params.tags ?? null },
     decisions: round.map((d) => ({ method: d.envelope.method, reviewer: d.envelope.params?.from, seq: d.seq, arrived: d.arrived, envelope: d.envelope })),
-    approved_artefact: approved,
-    proposed_artefact: proposed,
+    // A branch is approved as its commits stand, so its artefact is the one
+    // in the agent's signed submission, kept there once.
+    approved_artefact: isRange ? null : approved,
+    proposed_artefact: isRange ? null : proposed,
     decision_envelope: settling.envelope,
     reviewer_keys: reviewerKeys,
     agent_keys: ev.keys[ev.task.assignee] ?? [],
     chain_head: ev.chain_head,
     chain_enabled: ev.chain_enabled,
   };
+}
+
+/** The artefact a note's submission carries. */
+function submittedArtefact(note) {
+  const sub = note?.submission?.envelope;
+  if (!sub) return null;
+  return (sub.method === "review.request" ? sub.params?.artefact : sub.params?.output) ?? null;
+}
+
+/**
+ * The proposed and the approved artefact of a note. A branch's note keeps
+ * its artefact once, in the agent's submission, and an edit never applies
+ * to a branch, so what was proposed is what was approved.
+ */
+export function noteArtefacts(note) {
+  const proposed = note?.proposed_artefact ?? submittedArtefact(note);
+  const approved = note?.approved_artefact ?? (note?.kind === RANGE_KIND ? proposed : null);
+  return { proposed, approved };
 }
 
 /**
@@ -472,9 +539,10 @@ export async function checkApproval(note, policy, { taskId = note.task_id, allow
   const problems = [];
   if (note.task_id !== taskId) problems.push(`the note is for ${note.task_id}, the commit names ${taskId}`);
   if (policy.workspace && note.workspace !== policy.workspace) problems.push(`the note is from ${note.workspace}, and ${policy.source} covers ${policy.workspace}`);
-  const approved = note.approved_artefact;
-  const proposed = note.proposed_artefact;
-  if (!approved || typeof approved.patch !== "string") problems.push("the note holds no approved patch");
+  const { approved, proposed } = noteArtefacts(note);
+  const isRange = note.kind === RANGE_KIND;
+  if (isRange) { if (!approved || !Array.isArray(approved.commits) || !approved.commits.length) problems.push("the note holds no commits"); }
+  else if (!approved || typeof approved.patch !== "string") problems.push("the note holds no approved patch");
   if (!proposed) problems.push("the note holds no proposed artefact");
   const proposedDigest = proposed ? await contentHash(proposed) : null;
 
@@ -517,6 +585,7 @@ export async function checkApproval(note, policy, { taskId = note.task_id, allow
     // The approval names the submission that opened its round, so an approval
     // from one round cannot be counted with approvals from another.
     if (!roundDigest || p.round !== roundDigest) { problems.push(`the approval by ${from} does not name the submission of this review round`); continue; }
+    if (env.method === "decide.override" && isRange) { problems.push(`${from} approved the branch with an edit; a branch is approved as its commits stand`); continue; }
     if (env.method === "decide.override") {
       overridden = true;
       try {
@@ -561,22 +630,56 @@ export async function checkChange(repo, { parent, parentTree, tree, approved }) 
   return problems;
 }
 
-/** The trailers a governed commit carries, from its note. */
-export async function trailersFor(note) {
-  const approvers = [...new Set((note.decisions ?? []).filter((d) => d.method === "decide.approve" || d.method === "decide.override").map((d) => d.reviewer))];
-  const pairs = [
-    ["CHAP-Workspace", note.workspace],
-    ["CHAP-Task", note.task_id],
-    ["CHAP-Agent", note.agent],
-    ...(approvers.length ? approvers : [note.decision.reviewer]).map((r) => ["CHAP-Reviewer", r]),
+/**
+ * How a commit names a reviewer: "Name <email>" when the policy gives both,
+ * the name alone, or the participant URI when it gives neither.
+ */
+export function reviewedByLine(uri, identities) {
+  const id = own(identities, uri);
+  const name = id?.name || uri;
+  return id?.email ? `${name} <${id.email}>` : name;
+}
+
+/** The trailer tokens a verifier compares with the evidence. The coordinator's address, the rule and the chain head are a record. */
+export const CHECKED_TRAILERS = new Set(["Reviewed-by", "CHAP-Model", "CHAP-Workspace", "CHAP-Task", "CHAP-Series", "CHAP-Proposed-Commit", "CHAP-Agent", "CHAP-Reviewer", "CHAP-Decision", "CHAP-Artefact"]);
+
+/**
+ * The trailers a governed commit carries, from its note and the policy it
+ * was checked under: for each approving reviewer, Reviewed-by with the name
+ * and email the policy gives, and CHAP-Reviewer with the fingerprint of the
+ * key their approval verified against; the model that wrote the change; the
+ * task, the agent, the decision, the rule and the artefact's digest; for a
+ * commit of a branch, its place in the branch and the commit the reviewers
+ * saw.
+ */
+export async function trailersFor(note, policy = null, { series = null } = {}) {
+  const { approved } = noteArtefacts(note);
+  const approvals = (note.decisions ?? []).filter((d) => d.method === "decide.approve" || d.method === "decide.override");
+  const approvers = [...new Set(approvals.map((d) => d.reviewer))];
+  const named = approvers.length ? approvers : [note.decision.reviewer];
+  const pairs = named.map((uri) => ["Reviewed-by", reviewedByLine(uri, policy?.identities)]);
+  if (approved?.model) pairs.push(["CHAP-Model", approved.model]);
+  pairs.push(["CHAP-Workspace", note.workspace], ["CHAP-Task", note.task_id]);
+  if (series) pairs.push(["CHAP-Series", `${series.index + 1}/${series.of}`], ["CHAP-Proposed-Commit", series.proposed]);
+  pairs.push(["CHAP-Agent", note.agent]);
+  for (const uri of named) {
+    const envelope = approvals.filter((d) => d.reviewer === uri).at(-1)?.envelope;
+    const keys = own(policy?.reviewers, uri) ?? note.reviewer_keys?.[uri] ?? [];
+    const key = envelope?.sig ? verifyingKey(envelope, keys) : null;
+    pairs.push(["CHAP-Reviewer", key ? `${uri} ${fingerprint(key)}` : uri]);
+  }
+  pairs.push(
     ["CHAP-Decision", note.decision.method === "decide.override" ? "override" : "approve"],
     ["CHAP-Rule", note.rule ?? "any_one_approves"],
-    ["CHAP-Artefact", await contentHash(note.approved_artefact)],
+    ["CHAP-Artefact", await contentHash(approved)],
     ["CHAP-Coordinator", note.coordinator],
-  ];
+  );
   if (note.chain_head) pairs.push(["CHAP-Chain-Head", note.chain_head]);
   return pairs;
 }
+
+/** The trailers of a message the verifier compares, as sorted "Token: value" lines. */
+export const checkedLines = (pairs) => pairs.filter(([token]) => CHECKED_TRAILERS.has(token)).map(([t, v]) => `${t}: ${v}`).sort();
 
 /** Whether `sig` on an envelope verifies against one of the JWKs given. */
 export function envelopeVerifies(envelope, jwks) {
@@ -592,10 +695,16 @@ export function envelopeVerifies(envelope, jwks) {
   for (const jwk of candidates) {
     try {
       const key = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: jwk.x }, format: "jwk" });
-      if (cryptoVerify(null, bytes, key, Buffer.from(b64, "base64"))) return { ok: true, kid };
+      if (cryptoVerify(null, bytes, key, Buffer.from(b64, "base64"))) return { ok: true, kid, jwk };
     } catch { /* the next key */ }
   }
   return { ok: false, reason: `the signature does not verify against the key ${kid}` };
+}
+
+/** The key among those given that verifies an envelope's signature, or null. */
+export function verifyingKey(envelope, jwks) {
+  const v = envelopeVerifies(envelope, jwks);
+  return v.ok ? v.jwk : null;
 }
 
 export { canonicalize, contentHash, git };

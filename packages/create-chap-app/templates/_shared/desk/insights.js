@@ -27,6 +27,9 @@ export function outcomeOf(t) {
 
 const wasSentBack = (t) => decisionsOf(t).some((d) => d.kind === "reject" && d.request_revision);
 
+/** The model a task's work came from: the one the artefact names, else what drafted it. */
+const modelOf = (t) => t.artefact?.model ?? t.artefact?.drafted_by ?? null;
+
 /** The files whose section differs between two patches. */
 function filesChanged(before, after) {
   if (typeof before !== "string" || typeof after !== "string") return [];
@@ -60,10 +63,12 @@ export function summarise(tasks) {
     row[k] += 1;
     byDay.set(day, row);
   }
-  // Models: how often each one's work was accepted as written.
+  // Models: how often each one's work was accepted as written. An artefact
+  // names its model, or, in the templates that draft with one, the model is
+  // what drafted it.
   const models = new Map();
   for (const t of tasks) {
-    const model = t.artefact?.drafted_by;
+    const model = modelOf(t);
     if (!model) continue;
     const m = models.get(model) ?? { model, changes: 0, decided: 0, approve: 0, override: 0, reject: 0, sent_back: 0 };
     m.changes++;
@@ -72,13 +77,14 @@ export function summarise(tasks) {
     if (wasSentBack(t)) m.sent_back++;
     models.set(model, m);
   }
-  // Code changes: the files reviewers edit, and the files in changes sent back or rejected.
+  // Code changes and branches: the files reviewers edit, and the files in
+  // changes sent back or rejected.
   const files = new Map();
   const fileRow = (path) => files.get(path) ?? files.set(path, { path, changes: 0, edited: 0, sent_back: 0, rejected: 0 }).get(path);
   for (const t of tasks) {
     const a = t.artefact;
-    if (!a || typeof a.patch !== "string") continue;
-    const paths = (a.files ?? []).map((f) => f.path);
+    if (!a || (typeof a.patch !== "string" && !Array.isArray(a.commits))) continue;
+    const paths = Array.isArray(a.commits) ? [...new Set(a.commits.flatMap((c) => (c.files ?? []).map((f) => f.path)))] : (a.files ?? []).map((f) => f.path);
     for (const path of paths) fileRow(path).changes++;
     if (outcomeOf(t) === "override") for (const path of filesChanged(a.patch, t.output?.patch)) fileRow(path).edited++;
     if (wasSentBack(t)) for (const path of paths) fileRow(path).sent_back++;
@@ -92,7 +98,7 @@ export function summarise(tasks) {
     median_time_ms: median(times),
     by_kind: count(tasks, (t) => t.kind),
     by_agent: count(tasks, (t) => t.assignee),
-    by_model: count(tasks.filter((t) => t.artefact?.drafted_by), (t) => t.artefact.drafted_by),
+    by_model: count(tasks.filter(modelOf), modelOf),
     models: [...models.values()].sort((x, y) => y.changes - x.changes),
     files: [...files.values()].filter((f) => f.edited || f.sent_back || f.rejected || f.changes).sort((x, y) => (y.edited + y.sent_back + y.rejected) - (x.edited + x.sent_back + x.rejected) || y.changes - x.changes),
     by_reviewer: count(decisions, (d) => d.reviewer),

@@ -9,7 +9,7 @@
 // what happened.
 
 import { contentHash, deepEqual, generateSigner, jsonPatch, makeClient, signerFromJwk } from "./chap-client.mjs";
-import { ago, codeAnomalies, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
+import { ago, artefactAnomalies, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
 import { parsePatch } from "./diff.js";
 import { decisionsOf, outcomeOf, renderInsights, renderMarkdown } from "./insights.js";
 
@@ -21,6 +21,9 @@ const state = {
   config: null, client: null, tasks: [], reviews: [], selectedId: null, view: "review",
   editing: null, health: null, chain: { entries: [], from: null, total: 0, verified: null }, chainShown: -1,
   analytics: { report: false, refine: null, cases: false }, busy: false, lost: false,
+  // The lists are brief; the task on show is read whole. A branch remembers
+  // the commit on show and the commits opened.
+  detail: null, range: { taskId: null, index: 0, read: new Set() }, reads: new Map(),
 };
 
 // -- helpers --------------------------------------------------------------------
@@ -49,6 +52,21 @@ function notice(message, kind = "") { const n = $("notice"); n.textContent = mes
 function chip(id, text, cls) { const c = $(id); c.className = `chip ${cls}`; c.lastElementChild.textContent = text; }
 
 const selected = () => state.tasks.find((t) => t.task_id === state.selectedId) ?? null;
+
+/** The whole view of the selected task, once read. */
+const current = () => (state.detail?.id === state.selectedId ? state.detail.view : null);
+
+/** What changes when a task does: its state, its last update, the submission under review. */
+const detailKey = (t) => `${t.state}|${t.updated_at}|${t.submission?.seq ?? ""}|${(t.decision_log ?? []).length}`;
+
+/** Read the selected task whole. Returns the view it replaced, if it was of the same task. */
+async function loadDetail(t) {
+  const prior = state.detail?.id === t.task_id ? state.detail.view : null;
+  const view = await getJson(`/api/tasks/${encodeURIComponent(t.task_id)}`);
+  if (state.selectedId !== t.task_id) return prior;
+  state.detail = { id: t.task_id, key: detailKey(t), view };
+  return prior;
+}
 
 /** When the current review round opened: the last time the task entered review_requested. */
 const roundStart = (t) => (t.history ?? []).filter((h) => h.state === "review_requested").at(-1)?.ts ?? t.review?.requested_at ?? "";
@@ -154,7 +172,7 @@ function lost(e) {
 
 async function refresh() {
   // Every open task, and the most recent ones for the decided list.
-  const [health, open, recent] = await Promise.all([getJson("/api/health"), getJson("/api/tasks?state=created,in_progress,review_requested"), getJson("/api/tasks?limit=200")]);
+  const [health, open, recent] = await Promise.all([getJson("/api/health"), getJson("/api/tasks?state=created,in_progress,review_requested&brief=1"), getJson("/api/tasks?limit=200&brief=1")]);
   if (state.lost) { state.lost = false; toast("Connected again", "ok"); }
   chip("connection", "live", "good");
   $("connection").title = `${health.members} members, ${health.tasks} tasks, ${health.audit} chain entries`;
@@ -165,11 +183,15 @@ async function refresh() {
   state.tasks = [...byId.values()].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
   renderQueue();
   const now = selected();
-  if (before && !now) { state.selectedId = null; state.editing = null; renderReview(); }
-  else if (now && before && (before.state !== now.state || !deepEqual(before.artefact, now.artefact))) {
-    if (state.editing) { notice("The artefact changed while you were editing it; your edit is kept, the decision binds to the new artefact.", "bad"); }
+  if (before && !now) { state.selectedId = null; state.detail = null; state.editing = null; renderReview(); }
+  else if (now && detailKey(now) !== state.detail?.key) {
+    const prior = await loadDetail(now);
+    const fresh = current();
+    if (prior && fresh && prior.state === fresh.state && !deepEqual(prior.artefact, fresh.artefact)) {
+      if (state.editing) notice("The artefact changed while you were editing it; your edit is kept, the decision binds to the new artefact.", "bad");
+      toast("The artefact under review changed; this is the current one.");
+    }
     renderReview();
-    if (before.state === now.state) toast("The artefact under review changed; this is the current one.");
   }
   if (health.audit !== state.chainShown) {
     state.chain.total = health.audit;
@@ -253,24 +275,43 @@ function renderQueue() {
 function select_(id) {
   state.selectedId = id;
   state.editing = null;
+  if (state.range.taskId !== id) {
+    if (!state.reads.has(id)) state.reads.set(id, new Set());
+    state.range = { taskId: id, index: 0, read: state.reads.get(id) };
+  }
   setHash({ task: id });
   renderQueue();
   renderReview();
   if (state.view !== "review") showView("review");
+  const t = selected();
+  if (t && state.detail?.id !== id) loadDetail(t).then(() => { if (state.selectedId === id) renderReview(); }).catch(lost);
+}
+
+/** Open another commit of the branch on show. */
+function selectCommit(i) {
+  const t = current();
+  const commits = t?.artefact?.commits;
+  if (!Array.isArray(commits) || i < 0 || i >= commits.length) return;
+  state.range.index = i;
+  renderReview();
+  document.querySelector(".commit-detail")?.scrollIntoView({ block: "start", behavior: "smooth" });
 }
 
 // -- the review -----------------------------------------------------------------
 
 function renderReview() {
-  const t = selected();
+  const t = current() ?? selected();
   $("review-empty").hidden = !!t;
   $("review").hidden = !t;
   $("decision-bar").hidden = !(t && mine(t));
   if (!t) return;
+  const loading = !current();
   const artefact = t.artefact ?? t.output ?? null;
   $("r-title").textContent = titleOf(t);
   $("r-state").replaceWith(Object.assign(stateBadge(t.state), { id: "r-state" }));
   $("r-kind").textContent = t.kind;
+  // A branch's own header says what it is now; the task's input is its first proposal.
+  $("r-input-card").hidden = t.kind === "commit_range";
   const approvalsSoFar = t.state === "review_requested" && t.review?.rule && t.review.rule !== "any_one_approves"
     ? `${(t.review.decisions ?? []).filter((d) => d.kind === "approve").length} so far` : null;
   const facts = [["agent", t.assignee], ["reviewers", t.review?.requested_to?.join(", ")], ["rule", t.review?.rule], ["approvals", approvalsSoFar], ["opened", t.review?.requested_at ? `${ago(t.review.requested_at)} ago` : null], ["mode", t.mode], ["task", t.task_id]];
@@ -290,16 +331,26 @@ function renderReview() {
   // review with one reviewer's decision, so the desk offers no edit there:
   // request changes, and the edited version is approved again by everyone.
   const multi = multiRule(t);
-  const blocked = anomaliesOf(t).length > 0;
-  $("r-edit").hidden = !(mine(t) && artefact !== null && !multi && !blocked);
-  $("r-edit-hint").hidden = !(mine(t) && (multi || blocked));
-  $("r-edit-hint").textContent = blocked ? "This patch cannot be shown faithfully, so it cannot be approved or edited here." : multi ? `Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.` : "";
-  $("approve").disabled = blocked;
+  const branch = shapeOf(artefact) === "commits";
+  const blocked = !loading && anomaliesOf(t).length > 0;
+  $("r-edit").hidden = !(mine(t) && artefact !== null && !multi && !blocked && !branch && !loading);
+  $("r-edit-hint").hidden = !(mine(t) && (multi || blocked || branch));
+  $("r-edit-hint").textContent = blocked ? (branch ? "A commit of this branch cannot be shown faithfully, so the branch cannot be approved here." : "This patch cannot be shown faithfully, so it cannot be approved or edited here.")
+    : branch ? "A branch is approved as its commits stand. Request changes, and the agent amends them."
+    : multi ? `Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.` : "";
+  $("approve").disabled = blocked || loading;
   $("r-edit").textContent = state.editing ? "Editing" : "Edit";
   $("override").hidden = !state.editing;
   $("cancel-edit").hidden = !state.editing;
+  if (branch && !loading) {
+    const commits = artefact.commits;
+    state.range.index = Math.min(state.range.index, commits.length - 1);
+    state.range.read.add(commits[state.range.index].sha);
+  }
   const body = $("r-artefact");
-  body.replaceChildren(artefact === null ? el("span", { class: "muted small", text: "Nothing submitted yet." }) : renderArtefact(artefact, { editing: state.editing }));
+  body.replaceChildren(artefact === null ? el("span", { class: "muted small", text: "Nothing submitted yet." })
+    : loading ? el("span", { class: "muted small", text: "Reading the artefact." })
+    : renderArtefact(artefact, { editing: state.editing, range: branch ? { index: state.range.index, read: state.range.read, onSelect: selectCommit } : null }));
   const history = $("r-history");
   const events = [];
   for (const h of t.history ?? []) events.push({ ts: h.ts, who: h.from, what: h.state.replace(/_/g, " "), note: h.note });
@@ -312,12 +363,13 @@ function renderReview() {
 /** Whether a task's review needs more than one approval, so an edit would settle it alone. */
 const multiRule = (t) => !!t.review?.rule && t.review.rule !== "any_one_approves";
 
-/** What the desk cannot show faithfully of a code change. */
-const anomaliesOf = (t) => (shapeOf(t.artefact) === "code" ? codeAnomalies(t.artefact) : []);
+/** What the desk cannot show faithfully of a code change or a branch. */
+const anomaliesOf = (t) => artefactAnomalies(t.artefact);
 
 function toggleEdit() {
-  const t = selected();
+  const t = current();
   if (!t || !mine(t)) return;
+  if (shapeOf(t.artefact) === "commits") { notice("A branch is approved as its commits stand. Request changes, and the agent amends them.", "bad"); return; }
   if (multiRule(t)) { notice(`Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.`, "bad"); return; }
   if (anomaliesOf(t).length) { notice("This patch cannot be shown faithfully, so it cannot be edited here.", "bad"); return; }
   state.editing = state.editing ? null : { state: {}, value: () => t.artefact };
@@ -329,7 +381,7 @@ function toggleEdit() {
 const tags = () => $("tags").value.split(",").map((s) => s.trim()).filter(Boolean);
 
 async function decide(kind) {
-  const t = selected();
+  const t = current();
   if (!t || !mine(t) || state.busy) return;
   const comment = $("comment").value.trim();
   const artefact = t.artefact;
@@ -338,6 +390,10 @@ async function decide(kind) {
   const round = t.submission?.envelope ? { round: await contentHash(t.submission.envelope) } : {};
   const base = { task_id: t.task_id, approved_artefact_digest: await contentHash(artefact), ...round, ...(tags().length ? { tags: tags() } : {}) };
   if ((kind === "approve" || kind === "override") && anomaliesOf(t).length) { notice("This patch cannot be shown faithfully. Reject it, or request changes.", "bad"); return; }
+  if (kind === "override" && shapeOf(artefact) === "commits") { notice("A branch is approved as its commits stand. Request changes, and the agent amends them.", "bad"); return; }
+  // An approval of a branch covers every commit in it: one not opened yet is
+  // shown before the approval is sent.
+  if (kind === "approve" && shapeOf(artefact) === "commits" && !(await confirmBranch(artefact))) return;
   if (kind === "override" && multiRule(t)) { notice(`Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.`, "bad"); return; }
   let call;
   if (kind === "approve") call = ["decide.approve", { ...base, ...(comment ? { comment } : {}) }];
@@ -375,9 +431,37 @@ async function decide(kind) {
   }
 }
 
+/** Ask before approving a branch whose commits were not all opened; resolve true to approve. */
+function confirmBranch(artefact) {
+  const unread = artefact.commits.filter((c) => !state.range.read.has(c.sha));
+  if (!unread.length) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const done = (ok) => { $("confirm").hidden = true; $("confirm-send").onclick = null; $("confirm-cancel").onclick = null; resolve(ok); };
+    $("confirm-title").textContent = `Approve all ${artefact.commits.length} commits?`;
+    $("confirm-cancel").textContent = "Back to the branch";
+    $("confirm-send").textContent = `Approve all ${artefact.commits.length}`;
+    $("confirm-send").disabled = false;
+    const list = el("ol", { class: "commits compact" });
+    for (const c of unread) {
+      const open = () => { done(false); selectCommit(artefact.commits.indexOf(c)); };
+      list.append(el("li", {}, el("button", { class: "commit-row", onclick: open },
+        el("span", { class: "sha mono", text: String(c.sha).slice(0, 7) }),
+        el("span", { class: "subject", text: c.message.split("\n")[0] }))));
+    }
+    const opened = artefact.commits.length - unread.length;
+    $("confirm-body").replaceChildren(el("p", { text: `You have opened ${opened} of the ${artefact.commits.length} commits. The approval covers every one of them as it stands. Not read yet:` }), list);
+    $("confirm").hidden = false;
+    $("confirm-send").onclick = () => done(true);
+    $("confirm-cancel").onclick = () => done(false);
+  });
+}
+
 /** Show the patch an edit produces, and resolve true when the reviewer confirms it. */
 function confirmEdit(edited) {
   return new Promise((resolve) => {
+    $("confirm-title").textContent = "The change you are approving";
+    $("confirm-cancel").textContent = "Back to the edit";
+    $("confirm-send").textContent = "Approve this version";
     const anomalies = parsePatch(edited.patch).anomalies;
     const box = $("confirm-body");
     box.replaceChildren(...[
@@ -432,8 +516,9 @@ function renderActivity() {
         el("span", { class: `method m-${String(call.method ?? "").split(".")[0]} m-${String(call.method ?? "").replace(".", "-")}` }, call.method ?? "?", e.outcome ? el("span", { class: "badge bad", style: "margin-left:6px", text: `refused ${e.outcome.code}` }) : null),
         el("span", { class: "who", title: call.params?.task_id ?? "", text: call.params?.from ?? "" }),
         el("span", { class: "gist", title: gist(call), text: gist(call) }),
-        el("span", { class: "when", title: e.arrived, text: e.arrived ? `${ago(e.arrived)} ago` : "" })),
-      el("pre", { class: "json", text: JSON.stringify(e, null, 2) }));
+        el("span", { class: "when", title: e.arrived, text: e.arrived ? `${ago(e.arrived)} ago` : "" })));
+    // An entry can carry a whole branch, so its JSON is written when it is opened.
+    d.addEventListener("toggle", () => { if (d.open && !d.querySelector("pre")) d.append(el("pre", { class: "json", text: JSON.stringify(e, null, 2) })); });
     return d;
   }));
 }
@@ -446,7 +531,7 @@ async function loadAllTasks() {
   // Every task, for counting. The queue holds the open ones and the most
   // recent; Insights counts the whole workspace, read when it is shown.
   if (state.allTasksAt && Date.now() - state.allTasksAt < 30_000 && state.allTasksAudit === state.health?.audit) return;
-  state.allTasks = (await getJson("/api/tasks")).tasks;
+  state.allTasks = (await getJson("/api/tasks?brief=1")).tasks;
   state.allTasksAt = Date.now();
   state.allTasksAudit = state.health?.audit;
 }
@@ -478,7 +563,9 @@ function showView(name) {
 function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName);
-  if (e.key === "Escape") { if (!$("help").hidden) $("help").hidden = true; else if (typing) e.target.blur(); return; }
+  if (e.key === "Escape") { if (!$("help").hidden) $("help").hidden = true; else if (!$("confirm").hidden) $("confirm-cancel").click(); else if (typing) e.target.blur(); return; }
+  // While a dialog is open, the page under it does not move.
+  if (!$("confirm").hidden || (!$("help").hidden && e.key !== "?")) return;
   if (typing) return;
   const ordered = [...document.querySelectorAll("#queue .item")].map((b) => b.dataset.id);
   const at = ordered.indexOf(state.selectedId);
@@ -489,6 +576,8 @@ function onKey(e) {
     case "r": if (selected() && mine(selected())) { $("comment").focus(); notice("Write the note, then press Request changes.", ""); } break;
     case "x": decide("reject"); break;
     case "e": toggleEdit(); break;
+    case "n": if (state.view === "review") selectCommit(state.range.index + 1); break;
+    case "p": if (state.view === "review") selectCommit(state.range.index - 1); break;
     case "1": showView("review"); break;
     case "2": showView("activity"); break;
     case "3": showView("insights"); break;

@@ -1,7 +1,9 @@
 // How an artefact is shown and edited, by its shape: a code change as a diff
-// with each file editable whole, a message as a letter, text as text, and
-// anything else as JSON. Editing gives back the edited artefact; the desk
-// turns the difference into an RFC 6902 patch for decide.override.
+// with each file editable whole, a branch as its commits read one by one,
+// a message as a letter, text as text, and anything else as JSON. Editing
+// gives back the edited artefact; the desk turns the difference into an
+// RFC 6902 patch for decide.override. A branch is decided as its commits
+// stand, so it has no edit.
 
 import { applyFile, fileStats, parsePatch, rewritePatch } from "./diff.js";
 
@@ -22,6 +24,7 @@ export const el = (tag, attrs = {}, ...children) => {
 
 export function shapeOf(artefact) {
   if (artefact && typeof artefact === "object" && !Array.isArray(artefact)) {
+    if (Array.isArray(artefact.commits)) return "commits";
     if (typeof artefact.patch === "string") return "code";
     if (typeof artefact.body === "string") return "message";
     return "json";
@@ -30,9 +33,10 @@ export function shapeOf(artefact) {
   return "json";
 }
 
-/** A short line for a queue entry or a title. */
+/** A short line for a queue entry or a title. A branch is named by its current proposal, which a revision can change. */
 export function titleOf(task) {
   const a = task.artefact ?? task.output ?? null;
+  if (Array.isArray(a?.commits) && a.summary) return a.summary;
   return task.input?.summary ?? a?.summary ?? a?.subject ?? task.input?.subject ?? task.input?.title ?? `${task.kind} ${task.task_id}`;
 }
 
@@ -109,6 +113,9 @@ function modeBadge(file) {
  * contents travelled with the change and agree with the patch; `onEdit(path)`
  * is called with the path. `editing` maps a path to its content under edit.
  */
+/** A file whose diff has more lines than this opens closed, and is drawn when opened. */
+const BIG_FILE_LINES = 600;
+
 export function renderDiff(patch, { files = [], editable = false, onEdit = null, editing = Object.create(null) } = {}) {
   const root = el("div", { class: "diff" });
   const meta = new Map(files.map((f) => [f.path, f]));
@@ -118,14 +125,17 @@ export function renderDiff(patch, { files = [], editable = false, onEdit = null,
     const info = meta.get(file.path);
     const editingThis = Object.prototype.hasOwnProperty.call(editing, file.path);
     const canEdit = editable && contentsAgree(info, file);
+    const lines = file.hunks.reduce((n, h) => n + h.lines.length, 0);
+    const big = !file.binary && !editingThis && lines > BIG_FILE_LINES;
     const summary = el("summary", {},
       el("span", { class: "path", text: file.path }),
+      big ? el("span", { class: "badge", title: "Open it to read it", text: `${lines} lines` }) : null,
       file.status !== "modified" ? el("span", { class: `badge ${file.status === "added" ? "ok" : file.status === "deleted" ? "bad" : ""}`, text: file.status }) : null,
       modeBadge(file),
       el("span", { class: "stats" }, el("span", { class: "add", text: `+${stats.added}` }), el("span", { class: "del", text: `-${stats.removed}` })),
       canEdit ? el("button", { class: "btn small edit", text: editingThis ? "Editing" : "Edit", onclick: (e) => { e.preventDefault(); e.stopPropagation(); onEdit?.(file.path); } })
         : editable && !file.binary && file.status !== "deleted" ? el("span", { class: "small muted", text: "not editable here" }) : null);
-    const details = el("details", { class: "diff-file card", open: true, id: `file-${file.path}` }, summary);
+    const details = el("details", { class: "diff-file card", open: !big, id: `file-${file.path}` }, summary);
     if (editingThis) {
       const area = el("textarea", { class: "code", "aria-label": `Content of ${file.path} after your edit`, spellcheck: "false" });
       area.value = editing[file.path];
@@ -133,6 +143,9 @@ export function renderDiff(patch, { files = [], editable = false, onEdit = null,
       details.append(el("div", { class: "editor" }, el("div", { class: "editor-bar" }, "The whole file as it should be after the change. The patch is written again from it, and you see the result before it is sent."), area));
     } else if (file.binary) {
       details.append(el("div", { class: "diff-binary", text: "A binary file: the desk cannot show its content. Approve it only if you know what it is." }));
+    } else if (big) {
+      // Drawn when opened, so a large change does not slow the page.
+      details.addEventListener("toggle", () => { if (details.open && !details.querySelector(".diff-table")) details.append(diffTable(file)); });
     } else {
       details.append(diffTable(file));
     }
@@ -147,6 +160,24 @@ export function codeAnomalies(artefact) {
   const seen = new Set();
   for (const f of artefact.files ?? []) { if (seen.has(f.path)) anomalies.push(`${f.path} is listed twice`); seen.add(f.path); }
   return anomalies;
+}
+
+/** What the desk cannot show faithfully of a branch: each commit's patch anomalies, and a file listed twice in one commit. */
+export function rangeAnomalies(artefact) {
+  const out = [];
+  for (const c of artefact.commits ?? []) {
+    const sha = String(c.sha ?? "").slice(0, 7);
+    if (typeof c.patch === "string") for (const a of parsePatch(c.patch).anomalies) out.push(`${sha}: ${a}`);
+    const seen = new Set();
+    for (const f of c.files ?? []) { if (seen.has(f.path)) out.push(`${sha}: ${f.path} is listed twice`); seen.add(f.path); }
+  }
+  return out;
+}
+
+/** What the desk cannot show faithfully of an artefact, by its shape. */
+export function artefactAnomalies(artefact) {
+  const shape = shapeOf(artefact);
+  return shape === "code" ? codeAnomalies(artefact) : shape === "commits" ? rangeAnomalies(artefact) : [];
 }
 
 /** The banner for a patch the desk cannot show faithfully, or null. */
@@ -167,6 +198,77 @@ function invisibleBanner(patch) {
 
 const LONG = (s) => s.length > 80 || s.includes("\n");
 
+const sumOf = (files, key) => (files ?? []).reduce((n, f) => n + (typeof f[key] === "number" ? f[key] : 0), 0);
+
+/** A raw git date, "1700000000 +0100", as "2023-11-14 22:13 +0100". */
+export function gitDate(raw) {
+  const m = /^(\d+) ([+-])(\d{2})(\d{2})$/.exec(raw ?? "");
+  if (!m) return raw ?? "";
+  const offset = (m[2] === "-" ? -1 : 1) * (Number(m[3]) * 60 + Number(m[4])) * 60_000;
+  return `${new Date(Number(m[1]) * 1000 + offset).toISOString().slice(0, 16).replace("T", " ")} ${m[2]}${m[3]}${m[4]}`;
+}
+
+/**
+ * A branch: what it is, its commits as a list to read in order, and the one
+ * selected with its message, author, files and diff. `index` is the commit
+ * shown, `read` the commits opened so far, `onSelect(i)` opens another.
+ */
+function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null } = {}) {
+  const commits = artefact.commits;
+  const at = Math.min(Math.max(0, index), commits.length - 1);
+  const head = el("div", { class: "stack", style: "margin-bottom:12px" });
+  const anomalies = rangeAnomalies(artefact);
+  if (anomalies.length) head.append(el("div", { class: "alert" }, el("b", { text: "Do not approve this branch. " }), "The desk cannot show every commit as git would apply it: ", anomalies.join("; "), "."));
+  if (artefact.summary) head.append(el("div", {}, el("b", { text: artefact.summary })));
+  const added = commits.reduce((n, c) => n + sumOf(c.files, "added"), 0);
+  const removed = commits.reduce((n, c) => n + sumOf(c.files, "removed"), 0);
+  const facts = [["branch", artefact.branch], ["onto", artefact.base ? String(artefact.base).slice(0, 12) : "an empty repository"], ["commits", String(commits.length)], ["written by", artefact.model], ["drafted by", artefact.drafted_by], ["repository", artefact.repo]];
+  head.append(el("div", { class: "row small muted" },
+    facts.filter(([, v]) => v).map(([k, v]) => el("span", {}, `${k} `, el("b", { class: k === "onto" ? "mono" : "", text: v }))),
+    el("span", { class: "stats mono" }, el("span", { class: "add", text: `+${added}` }), " ", el("span", { class: "del", text: `-${removed}` }))));
+
+  const list = el("ol", { class: "commits", "aria-label": "Commits, oldest first" });
+  commits.forEach((c, i) => {
+    const isRead = read.has(c.sha);
+    list.append(el("li", {}, el("button", {
+      class: `commit-row${i === at ? " selected" : ""}${isRead ? " read" : ""}`, title: `${c.sha}\n${c.message}`, onclick: () => onSelect?.(i), "aria-current": i === at ? "true" : null,
+    },
+    el("span", { class: "n", text: String(i + 1) }),
+    el("span", { class: "sha mono", text: String(c.sha).slice(0, 7) }),
+    el("span", { class: "subject", text: c.message.split("\n")[0] || "(no message)" }),
+    el("span", { class: "stats mono" }, el("span", { class: "add", text: `+${sumOf(c.files, "added")}` }), el("span", { class: "del", text: `-${sumOf(c.files, "removed")}` })),
+    el("span", { class: "mark", "aria-label": isRead ? "read" : "not read yet", text: isRead ? "✓" : "" }))));
+  });
+  const readCount = commits.filter((c) => read.has(c.sha)).length;
+  const nav = el("div", { class: "commit-nav" },
+    el("span", { class: `small ${readCount === commits.length ? "ok-text" : "muted"}`, text: readCount === commits.length ? `All ${commits.length} commits read` : `${readCount} of ${commits.length} commits read` }),
+    el("span", { class: "spacer" }),
+    el("button", { class: "btn small", disabled: at === 0, onclick: () => onSelect?.(at - 1), title: "Previous commit (p)" }, "Previous ", el("kbd", { text: "p" })),
+    el("button", { class: "btn small", disabled: at === commits.length - 1, onclick: () => onSelect?.(at + 1), title: "Next commit (n)" }, "Next ", el("kbd", { text: "n" })));
+
+  const c = commits[at];
+  const author = c.author ? `${c.author.name} <${c.author.email}>` : "unknown";
+  const detail = el("div", { class: "commit-detail" },
+    el("div", { class: "commit-head" },
+      el("span", { class: "badge accent", text: `Commit ${at + 1} of ${commits.length}` }),
+      el("span", { class: "mono small", title: c.sha, text: String(c.sha).slice(0, 12) }),
+      el("span", { class: "small muted" }, "by ", el("b", { text: author }), c.author?.date ? `, ${gitDate(c.author.date)}` : "")),
+    el("pre", { class: "commit-message", text: c.message || "(no message)" }));
+  if (typeof c.patch === "string") {
+    const banner = invisibleBanner(c.patch);
+    if (banner) detail.append(banner);
+    const chips = el("div", { class: "files" });
+    for (const f of parsePatch(c.patch)) {
+      const st = fileStats(f);
+      chips.append(el("span", { class: "file-chip", onclick: () => document.getElementById(`file-${f.path}`)?.scrollIntoView({ block: "start", behavior: "smooth" }) }, f.path, el("span", { class: "add", text: f.binary ? "bin" : `+${st.added}` }), el("span", { class: "del", text: f.binary ? "" : `-${st.removed}` })));
+    }
+    detail.append(chips, c.patch.trim() ? renderDiff(c.patch, { files: [] }) : el("div", { class: "muted small", text: "This commit changes no file." }));
+  } else {
+    detail.append(el("div", { class: "muted small", text: "Loading this commit's change." }));
+  }
+  return el("div", { class: "branch" }, head, list, nav, detail);
+}
+
 function renderMessage(a) {
   const dl = el("dl", { class: "letter" });
   for (const key of Object.keys(a)) {
@@ -183,8 +285,9 @@ function renderMessage(a) {
  * artefact is shown in its editable form and `editing.value()` gives the
  * edited artefact; `editing.state` is kept between renders.
  */
-export function renderArtefact(artefact, { editing = null } = {}) {
+export function renderArtefact(artefact, { editing = null, range = null } = {}) {
   const shape = shapeOf(artefact);
+  if (shape === "commits") return renderCommits(artefact, range ?? {});
   if (shape === "code") {
     const head = el("div", { class: "stack", style: "margin-bottom:12px" });
     const banner = anomalyBanner(artefact);

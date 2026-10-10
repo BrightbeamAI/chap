@@ -2,6 +2,8 @@
 //
 //   --repo <path>   the repository (default: the current directory)
 //   --by <name>     who drafted it, recorded on the artefact (default: working tree)
+//   --model <name>  the model that wrote it, as the commit will name it, for
+//                   example "Claude Opus 5.5" (default: CHAP_MODEL)
 //   --task <id>     submit to this task, a revision of a change sent back
 //   --wait          stay until the decision is made, and say what it was
 //   --commit        with --wait: commit the approved change here, through the hooks
@@ -26,11 +28,12 @@ import { applyToWorkingTree, commitAll, patchApplies, repoRoot } from "./lib/git
 const here = dirname(fileURLToPath(import.meta.url));
 
 export function parseArgs(argv) {
-  const out = { summary: null, repo: process.cwd(), by: "working tree", task: null, wait: false, commit: false, poll: 2000 };
+  const out = { summary: null, repo: process.cwd(), by: "working tree", model: process.env.CHAP_MODEL ?? null, task: null, wait: false, commit: false, poll: 2000 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--repo") out.repo = argv[++i];
     else if (a === "--by") out.by = argv[++i];
+    else if (a === "--model") out.model = argv[++i];
     else if (a === "--task") out.task = argv[++i];
     else if (a === "--wait") out.wait = true;
     else if (a === "--commit") { out.commit = true; out.wait = true; }
@@ -63,8 +66,9 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   if (!repo) throw new Error(`${args.repo} is not inside a git repository`);
   const gate = await loadGate(gateDir);
   const client = await agentClient(gate);
-  const artefact = await describeChange(repo, { summary: args.summary, drafted_by: args.by });
+  const artefact = await describeChange(repo, { summary: args.summary, drafted_by: args.by, model: args.model });
   if (!artefact) { log("Nothing to propose: the working tree matches HEAD."); return 0; }
+  if (!artefact.model) log("No --model was given, so the commit will not name the model that wrote it.");
   const review = reviewRule(gate);
   let ready = await reviewersReady(client, review);
   if (!ready.ok) {
@@ -76,7 +80,7 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   const { task_id, state, revised, digest } = await propose(client, artefact, { gate, taskId: args.task, review });
   const files = artefact.files.map((f) => `${f.path} (+${f.added ?? "bin"} -${f.removed ?? "bin"})`).join(", ");
   log(`${revised ? "Revised" : "Proposed as"} ${task_id} (${state}): ${artefact.summary}`);
-  log(`  ${artefact.files.length} file${artefact.files.length === 1 ? "" : "s"}: ${files}`);
+  log(`  ${artefact.files.length} file${artefact.files.length === 1 ? "" : "s"}: ${files}${artefact.model ? `, written by ${artefact.model}` : ""}`);
   log(`  digest ${digest}`);
   log(`  review at ${gate.base}/#task=${encodeURIComponent(task_id)}`);
   if (!args.wait) return 0;

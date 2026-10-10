@@ -2,7 +2,7 @@
   "name": "code-gate",
   "title": "Code gate",
   "language": "typescript",
-  "description": "Every change a coding agent makes in a git repository is proposed as a patch, reviewed as a diff in the desk, signed by the reviewer, and committed only once approved, with the evidence beside the commit and a verifier for CI. Claude Code, Cursor, the built-in agent, or any agent that can run a command.",
+  "description": "Every change a coding agent makes in a git repository is proposed as a patch, reviewed as a diff in the desk, signed by the reviewer, and committed only once approved, or reviewed as a branch, commit by commit, before it is pushed. Each governed commit names its reviewers and the model that wrote it, with the evidence beside it and a verifier for CI. Claude Code, Cursor, the built-in agent, or any agent that can run a command.",
   "shared": {
     "desk": "desk",
     "node/server.mjs": "server.mjs",

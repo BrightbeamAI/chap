@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_TEMPLATE, generate, listTemplates, parseArgs } from "../index.mjs";
+import { DEFAULT_TEMPLATE, generate, gitIdentity, listTemplates, parseArgs } from "../index.mjs";
 
 async function walk(dir, prefix = "") {
   const out = [];
@@ -70,6 +70,13 @@ test("the flags are parsed", () => {
   assert.equal(a.yes, true);
   assert.equal(a.dir, "/tmp/x");
   assert.throws(() => parseArgs(["--bogus"]), /Unknown option/);
+  const b = parseArgs(["g", "--human-name", "Ada Lovelace", "--human-email", "ada@example.org", "--review-at", "push"]);
+  assert.deepEqual([b.humanName, b.humanEmail, b.reviewAt], ["Ada Lovelace", "ada@example.org", "push"]);
+  assert.throws(() => parseArgs(["g", "--human-name", 'Ada "the" Lovelace']), /can go in a commit trailer/);
+  assert.throws(() => parseArgs(["g", "--human-email", "not an email"]), /Not an email address/);
+  assert.throws(() => parseArgs(["g", "--review-at", "never"]), /commit or push/);
+  const me = gitIdentity();
+  assert.ok(me.name === null || typeof me.name === "string");
 });
 
 test("the code gate's hooks stay executable and its workflow lands under .github", async () => {
@@ -78,7 +85,7 @@ test("the code gate's hooks stay executable and its workflow lands under .github
   await rm(dir, { recursive: true });
   const t = (await listTemplates()).find((x) => x.name === "code-gate");
   const { written } = await generate({ name: "my-gate", template: "code-gate", profiles: t.default_profiles }, { targetDir: dir });
-  for (const hook of ["pre-commit", "commit-msg", "post-commit"]) {
+  for (const hook of ["pre-commit", "commit-msg", "post-commit", "pre-push"]) {
     assert.ok(written.includes(`hooks/${hook}`), hook);
     assert.ok((await stat(join(dir, "hooks", hook))).mode & 0o100, `${hook} is executable`);
   }
@@ -86,6 +93,20 @@ test("the code gate's hooks stay executable and its workflow lands under .github
   assert.ok(!written.some((w) => w.startsWith("github/")));
   const instructions = await readFile(join(dir, "AGENT_INSTRUCTIONS.md"), "utf8");
   assert.ok(instructions.includes(`${dir}/propose.mjs`), "the instructions name this project's propose.mjs");
+  await rm(dir, { recursive: true });
+});
+
+test("the code gate names its reviewer by name and email, and reviews at commit or at push", async () => {
+  const t = (await listTemplates()).find((x) => x.name === "code-gate");
+  const dir = await mkdtemp(join(tmpdir(), "cca-who-"));
+  await rm(dir, { recursive: true });
+  await generate({ name: "who", template: "code-gate", profiles: t.default_profiles, human_name: "Ada Lovelace", human_email: "ada@example.org", review_at: "push" }, { targetDir: dir });
+  const config = JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8"));
+  assert.deepEqual([config.humans[0].display_name, config.humans[0].email, config.review_at], ["Ada Lovelace", "ada@example.org", "push"]);
+  assert.ok(config.max_envelope_bytes >= 16 * 1024 * 1024, "a branch fits in one review");
+  await rm(dir, { recursive: true });
+  await generate({ name: "who", template: "code-gate", profiles: t.default_profiles }, { targetDir: dir });
+  assert.equal(JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8")).review_at, "commit");
   await rm(dir, { recursive: true });
 });
 

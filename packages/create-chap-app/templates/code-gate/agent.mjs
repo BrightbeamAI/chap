@@ -25,7 +25,7 @@
 import { lstat, readFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { makeProvider } from "./lib/providers.mjs";
+import { makeProvider, modelName } from "./lib/providers.mjs";
 import { agentClient, agentSigningKey, api, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "./lib/gate.mjs";
 import { applyToWorkingTree, commitAll, commitsWithTrailer, currentBranch, git, head, patchApplies, repoRoot, workingTreePatch } from "./lib/git.mjs";
 import { syncOverride } from "./propose.mjs";
@@ -256,7 +256,7 @@ async function draft(repo, provider, task, { revision = null, previousPatch = nu
   let answer;
   try { answer = parseAnswer(text); } catch (e) { log(`${task.key}: the model's answer could not be used (${e.message})`); return null; }
   await applyAnswer(repo, answer);
-  return describeChange(repo, { summary: task.title, drafted_by: provider.model_id, requested_by: "tasks.csv" });
+  return describeChange(repo, { summary: task.title, drafted_by: "the built-in agent", model: modelName(provider.model_id), requested_by: "tasks.csv" });
 }
 
 /** Take back whatever the working tree holds beyond HEAD. */

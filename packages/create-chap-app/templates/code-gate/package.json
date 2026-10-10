@@ -14,6 +14,7 @@
     "demo-repo": "node demo-repo.mjs",
     "agent": "node agent.mjs",
     "propose": "node propose.mjs",
+    "propose-branch": "node propose-branch.mjs",
     "install-hooks": "node install-hooks.mjs",
     "verify": "node verify.mjs",
     "report": "node report.mjs",

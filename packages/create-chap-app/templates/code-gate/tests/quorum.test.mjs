@@ -41,7 +41,7 @@ test("a change waits for two reviewers, a revision starts a new round, and the c
   assert.equal((await decide(alice, "decide.approve", review)).state, "completed");
   await commit(g, repo, "Add ZERO_VALUE");
   const info = await commitInfo(repo, await head(repo));
-  const reviewers = (await parseTrailers(repo, info.message)).filter((t) => t.token === "CHAP-Reviewer").map((t) => t.value).sort();
+  const reviewers = (await parseTrailers(repo, info.message)).filter((t) => t.token === "CHAP-Reviewer").map((t) => t.value.split(" ")[0]).sort();
   assert.deepEqual(reviewers, ["human:alice@local", "human:bob@local"]);
   const results = await verifyRange(repo, "HEAD", { gate: g.gate });
   assert.equal(results[0].status, "ok", results[0].detail);

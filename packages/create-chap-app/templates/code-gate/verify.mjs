@@ -13,8 +13,9 @@
 //                             parents (git 2.38 or later); otherwise every merge commit fails
 //   --base <sha>              the commit a pull request merges into: the range is then one
 //                             line of commits from the point where it leaves <sha>'s history,
-//                             with no merge in it, and no approval in it was used in <sha>'s
-//                             history already (in CI, the pull request's base)
+//                             with no merge in it, no approval in it was used in <sha>'s
+//                             history already, and an approved branch in it is there whole
+//                             (in CI, the pull request's base)
 //   --allow-unsigned          accept decisions with no signature (where signatures are off)
 //   --json                    print the results as JSON
 //
@@ -27,8 +28,13 @@
 // override's operations lead to the approved artefact; the commit's parent
 // is the commit the change was approved against; the approved patch is
 // git's own diff of the change and gives the commit's tree; no other commit
-// in the range uses the same approval; and the commit's signature verifies
-// against the agent's pinned key. With --coordinator the same checks run
+// in the range uses the same approval; the trailers say what the evidence
+// says, the reviewers' names and emails and the model included; and the
+// commit's signature verifies against the agent's pinned key. A sealed
+// commit of an approved branch is held to the commit the reviewers saw: its
+// tree, author and message, its place in the branch, the sealed commit
+// before it, and the patch the desk showed for it. With --coordinator the
+// same checks run
 // against the gate's own records, and the note must agree with them. With
 // neither, the gate in chap.config.json beside this file is asked. Exit
 // code 1 on any failure.
@@ -37,8 +43,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildNote, checkApproval, checkChange, contentHash, evidence, loadGate, onlinePolicy, readTrustFile, served, trustAtRef } from "./lib/gate.mjs";
-import { cleanMergeTree, commitInfo, commitSignature, commitsWithTrailer, emptyTree, git, parseTrailers, readNote, repoRoot, revList, treeOf, verifySshSignature } from "./lib/git.mjs";
+import { buildNote, checkApproval, checkChange, checkedLines, contentHash, evidence, loadGate, noteArtefacts, onlinePolicy, RANGE_KIND, readTrustFile, served, trailersFor, trustAtRef } from "./lib/gate.mjs";
+import { cleanMergeTree, commitInfo, commitSignature, commitsWithTrailer, emptyTree, git, parseTrailers, rawCommit, readNote, repoRoot, revList, treeOf, verifySshSignature } from "./lib/git.mjs";
+import { checkRangeCommit, seriesOf } from "./lib/range.mjs";
 import { opensshPublicKey } from "./keys.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -109,12 +116,27 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
     return row("FAIL", "no CHAP approval: the message carries no CHAP-Task trailer");
   }
   const problems = [];
-  if (seen.has(taskId)) problems.push(`${taskId} was used already by ${seen.get(taskId).slice(0, 12)}; an approval covers one commit`);
+  // A commit of a sealed branch names its place in it; an approval covers
+  // one commit, or one commit at each place of an approved branch.
+  const series = seriesOf(trailerList);
+  const place = series && series.invalid === undefined ? series : null;
+  const useKey = place ? `${taskId}#${place.index}` : taskId;
+  const what = place ? `${taskId} at ${place.index + 1}/${place.of}` : taskId;
+  if (seen.has(useKey)) problems.push(`${what} was used already by ${seen.get(useKey).slice(0, 12)}; an approval covers one commit`);
   else if (seen.base) {
-    const before = await commitsWithTrailer(repo, "CHAP-Task", taskId, [seen.base]);
-    if (before.length) problems.push(`${taskId} was used already by ${before[0].slice(0, 12)} in the base's history; an approval covers one commit`);
+    for (const other of await commitsWithTrailer(repo, "CHAP-Task", taskId, [seen.base])) {
+      const theirs = place ? seriesOf(await parseTrailers(repo, (await commitInfo(repo, other)).message)) : null;
+      if (!place || (theirs && theirs.index === place.index)) { problems.push(`${what} was used already by ${other.slice(0, 12)} in the base's history; an approval covers one commit`); break; }
+    }
   }
-  seen.set(taskId, sha);
+  seen.set(useKey, sha);
+  if (place) {
+    seen.series ??= new Map();
+    const entry = seen.series.get(taskId) ?? { of: place.of, have: new Set(), shas: [] };
+    entry.have.add(place.index);
+    entry.shas.push(sha);
+    seen.series.set(taskId, entry);
+  }
 
   // The note: from the repository, and, with a gate, rebuilt from its records.
   let note = null;
@@ -122,12 +144,15 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
   if (text) { try { note = JSON.parse(text); } catch { problems.push("the evidence note is not JSON"); } }
   let usePolicy = policy;
   if (gate) {
-    const ev = await evidence(gate, taskId).catch(() => null);
+    // The commits of one branch share a task: its evidence is read once.
+    seen.evidence ??= new Map();
+    if (!seen.evidence.has(taskId)) seen.evidence.set(taskId, await evidence(gate, taskId).catch(() => null));
+    const ev = seen.evidence.get(taskId);
     if (!ev) problems.push(`the gate at ${gate.base} does not know ${taskId}`);
     else if (ev.task.state !== "completed") problems.push(`the gate holds ${taskId} as ${ev.task.state}`);
     else {
       const fromGate = buildNote(ev, gate.url);
-      if (note && (await contentHash(note.approved_artefact)) !== (await contentHash(fromGate.approved_artefact))) problems.push("the note's approved artefact differs from the gate's record");
+      if (note && (await contentHash(noteArtefacts(note).approved)) !== (await contentHash(noteArtefacts(fromGate).approved))) problems.push("the note's approved artefact differs from the gate's record");
       note = fromGate;
       if (!usePolicy) usePolicy = onlinePolicy(gate, ev);
     }
@@ -138,17 +163,28 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
   }
   if (!usePolicy) return row("FAIL", [...problems, "no trust policy to check the approval against"].join("; "), { task_id: taskId });
 
+  if (series && note.kind !== RANGE_KIND) problems.push("the commit names a place in an approved branch, and its note approves a single change");
+  if (!series && note.kind === RANGE_KIND) problems.push("the note approves a branch, and the commit names no place in it");
   problems.push(...(await checkApproval(note, usePolicy, { taskId, allowUnsigned })));
-  if (trailers["CHAP-Workspace"] && note.workspace !== trailers["CHAP-Workspace"]) problems.push("the note's workspace differs from the trailer");
-  const approvedDigest = note.approved_artefact ? await contentHash(note.approved_artefact) : null;
-  if (approvedDigest && trailers["CHAP-Artefact"] && approvedDigest !== trailers["CHAP-Artefact"]) problems.push("the approved artefact's digest differs from the CHAP-Artefact trailer");
+  const { approved } = noteArtefacts(note);
   const reviewers = [...new Set((note.decisions ?? []).filter((d) => d.method === "decide.approve" || d.method === "decide.override").map((d) => d.reviewer))];
-  const trailerReviewers = trailerList.filter((t) => t.token === "CHAP-Reviewer").map((t) => t.value);
-  if (trailerReviewers.slice().sort().join(",") !== reviewers.slice().sort().join(",")) problems.push("the CHAP-Reviewer trailers differ from the approvals in the note");
-  if (typeof note.approved_artefact?.patch === "string") {
+  // The trailers the commit should carry, from the evidence and the policy:
+  // who reviewed it, by name and email, with the key their approval
+  // verified against; the model; the task, the agent, the decision, the
+  // artefact's digest; for a branch, the place and the commit proposed.
+  if (note.decision && approved) {
+    const expected = checkedLines(await trailersFor(note, usePolicy, place ? { series: { ...place, proposed: approved.commits?.[place.index]?.sha ?? null } } : {}));
+    const actual = checkedLines(trailerList.map((t) => [t.token, t.value]));
+    const missing = expected.filter((l) => !actual.includes(l));
+    const extra = actual.filter((l) => !expected.includes(l));
+    if (missing.length || extra.length) problems.push(`the trailers differ from the evidence${missing.length ? `; missing ${missing.map((l) => JSON.stringify(l)).join(", ")}` : ""}${extra.length ? `; not borne out ${extra.map((l) => JSON.stringify(l)).join(", ")}` : ""}`);
+  }
+  if (series && note.kind === RANGE_KIND) {
+    problems.push(...(await checkRangeCommit(repo, await rawCommit(repo, sha), { series, note })));
+  } else if (!series && typeof approved?.patch === "string") {
     const parent = info.parents[0] ?? null;
     const parentTree = parent ? await treeOf(repo, parent) : await emptyTree(repo);
-    problems.push(...(await checkChange(repo, { parent, parentTree, tree: info.tree, approved: note.approved_artefact })));
+    problems.push(...(await checkChange(repo, { parent, parentTree, tree: info.tree, approved })));
   }
   const signature = await signedBy(repo, sha, signerLines(note.agent, usePolicy.agents?.[note.agent]));
   if (signature.signed && !signature.ok) problems.push(`the commit's signature: ${signature.detail}`);
@@ -156,10 +192,36 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
 
   if (problems.length) return row("FAIL", problems.join("; "), { task_id: taskId, reviewers });
   const how = note.decision?.method === "decide.override" ? "approved with an edit" : "approved";
-  const by = reviewers.length > 1 ? `${reviewers.join(" and ")} (${usePolicy.rule})` : reviewers[0];
-  const parts = [`${how} by ${by} as ${taskId}`, `checked against ${usePolicy.source}`];
+  const names = reviewers.map((uri) => usePolicy.identities?.[uri]?.name ?? uri);
+  const by = names.length > 1 ? `${names.join(" and ")} (${usePolicy.rule})` : names[0];
+  const parts = [`${how} by ${by} as ${taskId}${place ? `, commit ${place.index + 1} of ${place.of} of the branch` : ""}`, `checked against ${usePolicy.source}`];
+  if (approved?.model) parts.push(`written by ${approved.model}`);
   if (signature.signed) parts.push("commit signed by the agent's key");
   return row("ok", parts.join(", "), { task_id: taskId, reviewers });
+}
+
+/**
+ * The approved branches a set of commits holds only part of. A branch is
+ * approved as a whole, so each place in it must be among the commits
+ * checked, or in the history given (what the base, or the remote, holds
+ * already). Returns [{ task_id, of, missing: [n], shas }].
+ */
+export async function seriesGaps(repo, seen, history = []) {
+  const out = [];
+  for (const [taskId, entry] of seen.series ?? []) {
+    let missing = [];
+    for (let i = 0; i < entry.of; i++) if (!entry.have.has(i)) missing.push(i);
+    if (missing.length && history.length) {
+      const before = new Set();
+      for (const other of await commitsWithTrailer(repo, "CHAP-Task", taskId, history)) {
+        const s = seriesOf(await parseTrailers(repo, (await commitInfo(repo, other)).message));
+        if (s && s.invalid === undefined) before.add(s.index);
+      }
+      missing = missing.filter((i) => !before.has(i));
+    }
+    if (missing.length) out.push({ task_id: taskId, of: entry.of, missing: missing.map((i) => i + 1), shas: entry.shas });
+  }
+  return out;
 }
 
 /**
@@ -217,6 +279,14 @@ export async function verifyRange(repoPath, range, options = {}) {
     const r = await verifyCommit(repo, sha, { ...options, policy, gate, seen });
     if (anchored) { r.status = "FAIL"; r.detail = anchored + (r.detail ? `; ${r.detail}` : ""); }
     results.push(r);
+  }
+  // A pull request lands an approved branch whole: commits of it missing
+  // from the range and from the base's history fail the ones that are here.
+  for (const gap of seen.base ? await seriesGaps(repo, seen, [seen.base]) : []) {
+    for (const r of results.filter((x) => gap.shas.includes(x.sha))) {
+      r.status = "FAIL";
+      r.detail = `${gap.task_id} approved a branch of ${gap.of} commits, and commit${gap.missing.length === 1 ? "" : "s"} ${gap.missing.join(", ")} of it ${gap.missing.length === 1 ? "is" : "are"} not here; an approved branch lands whole${r.detail ? `; ${r.detail}` : ""}`;
+    }
   }
   return results;
 }

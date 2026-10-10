@@ -11,6 +11,7 @@
 
 import { readFile, readdir, mkdir, copyFile, writeFile, stat, access, chmod } from "node:fs/promises";
 import { realpathSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { dirname, join, resolve, basename } from "node:path";
@@ -32,7 +33,7 @@ export async function listTemplates(dir = TEMPLATES_DIR) {
 }
 
 export function parseArgs(argv) {
-  const args = { name: null, template: null, profiles: null, yes: false, help: false, list: false, dir: null, human: null, agent: null };
+  const args = { name: null, template: null, profiles: null, yes: false, help: false, list: false, dir: null, human: null, agent: null, humanName: null, humanEmail: null, reviewAt: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const value = () => {
@@ -48,6 +49,9 @@ export function parseArgs(argv) {
     else if (a === "--dir") args.dir = value();
     else if (a === "--human") args.human = uri(value());
     else if (a === "--agent") args.agent = uri(value());
+    else if (a === "--human-name") args.humanName = personName(value());
+    else if (a === "--human-email") args.humanEmail = email(value());
+    else if (a === "--review-at") { args.reviewAt = value(); if (!["commit", "push"].includes(args.reviewAt)) throw new Error("--review-at is commit or push"); }
     else if (a.startsWith("-")) throw new Error(`Unknown option ${a}`);
     else if (!args.name) args.name = a;
     else throw new Error(`Unexpected argument ${a}`);
@@ -65,6 +69,29 @@ function uri(value) {
   return value;
 }
 
+// A person's name and email go into JSON and into commit trailers, so they
+// hold no quote, backslash, angle bracket or control character.
+const PERSON_RE = /^[^"\\<>\x00-\x1f\x7f]{1,120}$/;
+const EMAIL_RE = /^(?=.{3,254}$)[^\s"\\<>@]+@[^\s"\\<>@]+$/;
+
+function personName(value) {
+  if (!PERSON_RE.test(value) || !value.trim()) throw new Error(`Not a name that can go in a commit trailer: ${value}`);
+  return value.trim();
+}
+
+function email(value) {
+  if (!EMAIL_RE.test(value)) throw new Error(`Not an email address: ${value}`);
+  return value;
+}
+
+/** The developer's own name and email from git config, each where it is set and usable; null for either otherwise. */
+export function gitIdentity(cwd = process.cwd()) {
+  const read = (key) => { try { return execFileSync("git", ["config", "--get", key], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } };
+  const name = read("user.name");
+  const mail = read("user.email");
+  return { name: PERSON_RE.test(name) && name.trim() ? name.trim() : null, email: EMAIL_RE.test(mail) ? mail : null };
+}
+
 function slug(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
@@ -80,7 +107,7 @@ async function walk(dir, prefix = "") {
   return out;
 }
 
-const TEXT = /\.(mjs|js|json|py|md|html|css|txt|csv|yml|yaml|toml|cfg|sh|gitignore)$|^\.gitignore$|(^|\/)(pre-commit|commit-msg|post-commit)$/;
+const TEXT = /\.(mjs|js|json|py|md|html|css|txt|csv|yml|yaml|toml|cfg|sh|gitignore)$|^\.gitignore$|(^|\/)(pre-commit|commit-msg|post-commit|pre-push)$/;
 
 /**
  * npm leaves .gitignore files out of a published package, so a template
@@ -96,10 +123,11 @@ export function dotted(rel) {
 /**
  * Generate a project. Returns the list of files written.
  *
- * `answers`: { name, template, profiles, human_uri, human_name, agent_uri }.
- * Placeholders replaced in text files: __PROJECT_NAME__, __PROJECT_DIR__
- * (the absolute path written to), __WORKSPACE__, __PROFILES_JSON__,
- * __PROFILES_CSV__, __HUMAN_URI__, __HUMAN_NAME__, __AGENT_URI__.
+ * `answers`: { name, template, profiles, human_uri, human_name, human_email,
+ * agent_uri, review_at }. Placeholders replaced in text files:
+ * __PROJECT_NAME__, __PROJECT_DIR__ (the absolute path written to),
+ * __WORKSPACE__, __PROFILES_JSON__, __PROFILES_CSV__, __HUMAN_URI__,
+ * __HUMAN_NAME__, __HUMAN_EMAIL__, __AGENT_URI__, __REVIEW_AT__.
  */
 export async function generate(answers, { templatesDir = TEMPLATES_DIR, targetDir } = {}) {
   const manifest = JSON.parse(await readFile(join(templatesDir, answers.template, "template.json"), "utf8"));
@@ -117,7 +145,9 @@ export async function generate(answers, { templatesDir = TEMPLATES_DIR, targetDi
     __PROFILES_CSV__: answers.profiles.join(","),
     __HUMAN_URI__: answers.human_uri ?? defaults.human_uri ?? "human:you@local",
     __HUMAN_NAME__: answers.human_name ?? defaults.human_name ?? "You",
+    __HUMAN_EMAIL__: answers.human_email ?? defaults.human_email ?? "you@localhost",
     __AGENT_URI__: answers.agent_uri ?? defaults.agent_uri ?? "agent:drafter",
+    __REVIEW_AT__: answers.review_at ?? defaults.review_at ?? "commit",
   };
 
   // Source files: the template's own, then the shared files it names.
@@ -171,6 +201,9 @@ function usage(templates) {
     "  --template, -t   the template (asked for when missing)",
     "  --profiles, -p   comma-separated profiles the workspace advertises (the template's default when missing)",
     "  --human          the reviewer's participant URI (default human:you@local)",
+    "  --human-name     the reviewer's name, as a reviewed commit names them (default: git config user.name)",
+    "  --human-email    the reviewer's email, likewise (default: git config user.email)",
+    "  --review-at      code gate: commit (each change before it is committed) or push (a branch before it is pushed)",
     "  --agent          the agent's participant URI (the template's default when missing)",
     "  --dir            where to write (default: ./<name>)",
     "  --yes, -y        take every default without asking",
@@ -226,11 +259,16 @@ export async function main(argv = process.argv.slice(2)) {
     }
     if (!NAME_RE.test(name)) throw new Error(`The project name must be lower case letters, digits and hyphens, starting with a letter: ${name}`);
 
+    const me = gitIdentity();
     const result = await generate(
-      { name, template, profiles, human_uri: args.human ?? undefined, agent_uri: args.agent ?? undefined },
+      {
+        name, template, profiles, human_uri: args.human ?? undefined, agent_uri: args.agent ?? undefined,
+        human_name: args.humanName ?? me.name ?? undefined, human_email: args.humanEmail ?? me.email ?? undefined, review_at: args.reviewAt ?? undefined,
+      },
       { targetDir: args.dir ?? undefined },
     );
-    console.log(`\nCreated ${result.target} from the ${manifest.title} template with ${profiles.join(", ")}.\n`);
+    console.log(`\nCreated ${result.target} from the ${manifest.title} template with ${profiles.join(", ")}.`);
+    console.log(`The reviewer is ${result.fill.__HUMAN_NAME__} <${result.fill.__HUMAN_EMAIL__}> as ${result.fill.__HUMAN_URI__}; change it in chap.config.json.\n`);
     console.log("Next:");
     console.log(`  cd ${args.dir ? result.target : basename(result.target)}`);
     for (const step of manifest.run ?? []) console.log(`  ${step}`);

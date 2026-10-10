@@ -20,11 +20,19 @@ The generator copies the template, fills in the names, and prints how to run
 the project. It installs nothing. Each project pins the published
 `chap-coordinator` packages and says in its README what to install.
 
+The reviewer is named by `--human` (a participant URI, `human:you@local` by
+default), `--human-name` and `--human-email`, which default to `git config
+user.name` and `user.email`; a reviewed commit names its reviewer by that
+name and email. `--agent` names the agent's URI. For the code gate,
+`--review-at push` reviews an agent's branch before it is pushed, where the
+default, `commit`, reviews each change before it is committed.
+`npx create-chap-app --help` lists every flag.
+
 ## The templates
 
 | Template | Language | What it does |
 |---|---|---|
-| `code-gate` | TypeScript | Every change a coding agent makes in a git repository is proposed as a patch, reviewed as a diff, signed and committed only once approved, with the evidence beside the commit, a verifier for CI, and insights on what reviewers correct. Claude Code, Cursor, the built-in agent or any agent that can run a command. `npm run demo` runs it all. |
+| `code-gate` | TypeScript | Every change a coding agent makes in a git repository is proposed as a patch, reviewed as a diff, signed and committed only once approved, or, for an agent that commits on its own, its branch is reviewed commit by commit before it is pushed. Each governed commit names its reviewers by name and email and the model that wrote it, with the evidence beside it, a verifier for CI, and insights on what reviewers correct. Claude Code, Cursor, the built-in agent or any agent that can run a command. `npm run demo` runs it all. |
 | `mcp-gate` | TypeScript | Claude Desktop, Cursor or Claude Code connects to an MCP server over HTTP. Every call that changes state is recorded, and work that requires review waits for you in the desk. No API key needed. |
 | `support-desk` | Python | Tickets from a CSV. The agent drafts a reply to each, the draft waits for your decision, and the reply as you decided it is written to `replies/`. |
 | `outbound-approval` | Python | Drafts are held until the named approver decides, and only an approved message reaches `outbox/`. Trial mode requires review whatever the agent says, and a pause stops the agent. |

@@ -30,16 +30,17 @@ export async function until(read, timeoutMs = 10000) {
 
 /**
  * A gate on a free port. `humans` are the reviewer URIs chap.config.json
- * names; `review` is its review rule. Returns the server, the gate handle
+ * names; `review` is its review rule; `extra` sets other configuration. Returns the server, the gate handle
  * the libraries take, an agent client with a key on disk, and `reviewer(uri)`
  * to make a signing reviewer who has joined.
  */
-export async function startGate({ suffix = "", humans = null, review = null } = {}) {
+export async function startGate({ suffix = "", humans = null, review = null, extra = {} } = {}) {
   const config = await loadConfig();
   config.store = ":memory:";
   if (suffix) config.workspace = `${config.workspace}_${suffix}`;
   if (humans) config.humans = humans.map((uri) => ({ uri, display_name: uri, role: "reviewer" }));
   if (review) config.review = review;
+  Object.assign(config, extra);
   const coord = await makeCoordinator(config);
   const server = await makeServer(config, coord);
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
