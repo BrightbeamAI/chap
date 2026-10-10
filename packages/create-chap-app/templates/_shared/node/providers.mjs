@@ -31,18 +31,26 @@ const env = (name) => {
 
 /**
  * A model's name as people say it, from the id a provider takes:
- * claude-opus-5-5 is "Claude Opus 5.5", gpt-5.5 is "GPT-5.5"; any other id
- * is kept as it is. The scripted drafter is named as what it is.
+ * claude-opus-5-5 is "Claude Opus 5.5", claude-3-5-sonnet-20241022 is
+ * "Claude 3.5 Sonnet", gpt-5.5 is "GPT-5.5". A cloud provider's form of a
+ * Claude id (us.anthropic.claude-sonnet-4-5-20250929-v1:0,
+ * claude-sonnet-4-5@20250929) and a context-window suffix such as [1m] read
+ * the same. Any other id is kept as it is. The scripted drafter is named as
+ * what it is.
  * @param {string} id
  */
 export function modelName(id) {
   if (!id) return id;
   if (id === "scripted") return "scripted drafter (no model)";
-  const claude = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(id);
-  if (claude) return `Claude ${claude[1][0].toUpperCase()}${claude[1].slice(1)} ${claude[2]}${claude[3] ? `.${claude[3]}` : ""}`;
-  const gpt = /^gpt-(.+)$/i.exec(id);
+  const bare = String(id).trim().replace(/\[[^\]]*\]$/, "").replace(/^(?:[a-z]{2,4}\.)?anthropic\./, "").replace(/-v\d+(?::\d+)?$/, "").replace(/@\d{8}$/, "");
+  const cap = (w) => `${w[0].toUpperCase()}${w.slice(1)}`;
+  const claude = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/.exec(bare);
+  if (claude) return `Claude ${cap(claude[1])} ${claude[2]}${claude[3] ? `.${claude[3]}` : ""}`;
+  const older = /^claude-(\d+)(?:-(\d))?-([a-z]+)(?:-\d{8})?$/.exec(bare);
+  if (older) return `Claude ${older[1]}${older[2] ? `.${older[2]}` : ""} ${cap(older[3])}`;
+  const gpt = /^gpt-(.+)$/i.exec(bare);
   if (gpt) return `GPT-${gpt[1]}`;
-  return id;
+  return bare;
 }
 
 /** @returns {ProviderName} */

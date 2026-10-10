@@ -12,7 +12,7 @@ import { commitInfo, git, parseTrailers, rawCommit, readNote, writeNote } from "
 import { describeRange, proposeRange, sealRange, sealedMessage } from "../lib/range.mjs";
 import { buildTrust } from "../trust.mjs";
 import { verifyRange } from "../verify.mjs";
-import { appendTo, commit, decide, demoRepo, hookEnv, projectDir, reviewsFor, run, startGate } from "./helpers.mjs";
+import { appendTo, commit, decide, demoRepo, git_, hookEnv, projectDir, reviewsFor, run, startGate } from "./helpers.mjs";
 
 let g, you, repo, remote, base;
 const MODEL = "Claude Opus 5.5";
@@ -242,6 +242,42 @@ test("a trust policy names each reviewer, a name that cannot sit in a trailer is
   assert.equal(modelName("gpt-5.5"), "GPT-5.5");
   assert.equal(modelName("gemma3:4b"), "gemma3:4b");
   await assert.rejects(describeRange(repo, { base, head: "main", model: "bad\nmodel" }).catch((e) => { throw e; }), /holds no commits|Not a model name/);
+});
+
+test("each commit names the model Claude Code wrote it with: the line leaves the message, and the sealed commit says so in Drafted-by", async () => {
+  await git(repo, ["checkout", "-q", "-b", "agent/models", base]);
+  await appendTo(repo, "lib/calc.mjs", "\nexport function multiply(a, b) {\n  return a * b;\n}\n");
+  await sh("git", ["commit", "-q", "-am", "Add multiply\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"]);
+  await appendTo(repo, "README.md", "\n`multiply(a, b)` multiplies a by b.\n");
+  await sh("git", ["commit", "-q", "-am", "Document multiply\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"]);
+  const artefact = await describeRange(repo, { base: "origin/main", head: "agent/models", drafted_by: "Claude Code", model: "Claude Fable 5.1", branch: "agent/models" });
+  assert.deepEqual(artefact.commits.map((c) => c.model), ["Claude Opus 5.5", "Claude Sonnet 5.5"]);
+  assert.deepEqual(artefact.commits.map((c) => c.message), ["Add multiply", "Document multiply"]);
+  assert.equal(artefact.model, "Claude Opus 5.5 and Claude Sonnet 5.5", "the commits outweigh the agent's word");
+  assert.equal(artefact.model_source, "commits");
+  const { task_id } = await proposeRange(g.agent, artefact, { gate: g.gate });
+  const review = (await reviewsFor(g, you)).find((r) => r.task_id === task_id);
+  await decide(you, "decide.approve", review, {});
+  const { stdout } = await sh(process.execPath, [join(projectDir, "propose-branch.mjs"), "origin/main..agent/models", "--by", "Claude Code", "--wait"]);
+  assert.match(stdout, /written by Claude Opus 5\.5 and Claude Sonnet 5\.5 \(from the commits\)/);
+  const sealed = (await git(repo, ["rev-list", "--reverse", `${base}..agent/models`])).split("\n").filter(Boolean);
+  for (const [i, model] of ["Claude Opus 5.5", "Claude Sonnet 5.5"].entries()) {
+    const { message } = await commitInfo(repo, sealed[i]);
+    assert.doesNotMatch(message, /Co-Authored-By/i);
+    assert.deepEqual(values(await trailersOf(sealed[i]), "Drafted-by"), [model]);
+  }
+  const rows = await verifyRange(repo, `${base}..agent/models`, { gate: g.gate, base });
+  assert.deepEqual(rows.map((r) => r.status), ["ok", "ok"], rows.map((r) => r.detail).join("\n"));
+  assert.match(rows[1].detail, /written by Claude Sonnet 5\.5/);
+  // A Drafted-by line that names another model is not borne out.
+  const forged = (await commitInfo(repo, sealed[1])).message.replace("Drafted-by: Claude Sonnet 5.5", "Drafted-by: Claude Opus 5.5");
+  const tree = (await git(repo, ["rev-parse", `${sealed[1]}^{tree}`])).trim();
+  const fake = (await git_(repo, ["commit-tree", tree, "-p", sealed[0], "-F", "-"], forged)).trim();
+  await writeNote(repo, fake, await readNote(repo, sealed[1]));
+  const [bad] = await verifyRange(repo, `${sealed[0]}..${fake}`, { gate: g.gate });
+  assert.equal(bad.status, "FAIL");
+  assert.match(bad.detail, /the trailers differ from the evidence/);
+  await git(repo, ["checkout", "-q", "main"]);
 });
 
 test("a local remote-tracking ref hides nothing from the pre-push hook, and part of an approved branch is not pushed", async () => {

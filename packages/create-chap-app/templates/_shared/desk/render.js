@@ -266,6 +266,14 @@ const LONG = (s) => s.length > 80 || s.includes("\n");
 const sumOf = (files, key) => (files ?? []).reduce((n, f) => n + (typeof f[key] === "number" ? f[key] : 0), 0);
 
 /** A raw git date, "1700000000 +0100", as "2023-11-14 22:13 +0100". */
+/** Where the model's name came from, as the desk says it after the name. */
+const MODEL_SOURCES = { commits: "from the commits", session: "from the session", agent: "as the agent says" };
+export function modelWithSource(artefact) {
+  if (!artefact?.model) return null;
+  const source = MODEL_SOURCES[artefact.model_source];
+  return source ? `${artefact.model} (${source})` : artefact.model;
+}
+
 export function gitDate(raw) {
   const m = /^(\d+) ([+-])(\d{2})(\d{2})$/.exec(raw ?? "");
   if (!m) return raw ?? "";
@@ -287,7 +295,7 @@ function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null,
   if (artefact.summary) head.append(el("div", {}, el("b", { text: artefact.summary })));
   const added = commits.reduce((n, c) => n + sumOf(c.files, "added"), 0);
   const removed = commits.reduce((n, c) => n + sumOf(c.files, "removed"), 0);
-  const facts = [["branch", artefact.branch], ["onto", artefact.base ? String(artefact.base).slice(0, 12) : "an empty repository"], ["commits", String(commits.length)], ["written by", artefact.model], ["drafted by", artefact.drafted_by], ["repository", artefact.repo]];
+  const facts = [["branch", artefact.branch], ["onto", artefact.base ? String(artefact.base).slice(0, 12) : "an empty repository"], ["commits", String(commits.length)], ["written by", modelWithSource(artefact)], ["drafted by", artefact.drafted_by], ["repository", artefact.repo]];
   head.append(el("div", { class: "row small muted" },
     facts.filter(([, v]) => v).map(([k, v]) => el("span", {}, `${k} `, el("b", { class: k === "onto" ? "mono" : "", text: v }))),
     el("span", { class: "stats mono" }, el("span", { class: "add", text: `+${added}` }), " ", el("span", { class: "del", text: `-${removed}` }))));
@@ -317,7 +325,8 @@ function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null,
     el("div", { class: "commit-head" },
       el("span", { class: "badge accent", text: `Commit ${at + 1} of ${commits.length}` }),
       el("span", { class: "mono small", title: c.sha, text: String(c.sha).slice(0, 12) }),
-      el("span", { class: "small muted" }, "by ", el("b", { text: author }), c.author?.date ? `, ${gitDate(c.author.date)}` : "")),
+      el("span", { class: "small muted" }, "by ", el("b", { text: author }), c.author?.date ? `, ${gitDate(c.author.date)}` : ""),
+      c.model && c.model !== artefact.model ? el("span", { class: "small muted" }, "written by ", el("b", { text: c.model })) : null),
     el("pre", { class: "commit-message", text: c.message || "(no message)" }));
   if (typeof c.patch === "string") {
     const banner = invisibleBanner(c.patch);
@@ -369,9 +378,10 @@ export function renderArtefact(artefact, { editing = null, range = null, comment
     const facts = [];
     if (artefact.branch) facts.push(["branch", artefact.branch]);
     if (artefact.base) facts.push(["base", String(artefact.base).slice(0, 12)]);
+    if (artefact.model) facts.push(["written by", modelWithSource(artefact)]);
     if (artefact.drafted_by) facts.push(["drafted by", artefact.drafted_by]);
     if (artefact.repo) facts.push(["repository", artefact.repo]);
-    if (facts.length) head.append(el("div", { class: "row small muted" }, facts.map(([k, v]) => el("span", {}, `${k} `, el("b", { class: "mono", text: v })))));
+    if (facts.length) head.append(el("div", { class: "row small muted" }, facts.map(([k, v]) => el("span", {}, `${k} `, el("b", { class: k === "branch" || k === "base" ? "mono" : "", text: v })))));
     const chips = el("div", { class: "files" });
     for (const f of parsePatch(artefact.patch)) {
       const st = fileStats(f);

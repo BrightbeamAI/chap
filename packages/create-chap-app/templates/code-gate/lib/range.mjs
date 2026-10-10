@@ -9,6 +9,8 @@
 import { basename } from "node:path";
 import { api, approvalOf, contentHash, lastDecision, modelLabel, noteArtefacts, RANGE_KIND, sha256, submitForReview, trailersFor } from "./gate.mjs";
 import { blobAt, committerIdent, commitTree, emptyTree, faithfulCheck, git, GATE_TRAILER, numstat, parseTrailers, rawCommit, treeDiff, treeOf, writeNote } from "./git.mjs";
+import { branchModel, commitModel, withoutAttribution } from "./model.mjs";
+import { modelName } from "./providers.mjs";
 
 /** The most commits one branch review takes. */
 export const MAX_RANGE_COMMITS = 100;
@@ -49,9 +51,14 @@ export function proposedMessage(message) {
  * message in another encoding, or a change that cannot be shown as text is
  * refused, each with what to do. A message keeps no line in the gate's own
  * form: a commit sealed before and amended since is proposed again as it
- * now is.
+ * now is. A commit Claude Code made names its model in a Co-Authored-By
+ * line; the commit keeps that model, the line leaves its message, and the
+ * sealed commit names the model in Drafted-by. `model`, with
+ * `model_source` ("session" or "agent"), names the model where the commits
+ * do not.
  */
-export async function describeRange(repo, { base, head = "HEAD", summary = null, drafted_by = null, model = null, branch = null, context = null, since = null } = {}) {
+export async function describeRange(repo, { base, head = "HEAD", summary = null, drafted_by = null, model = null, model_source = null, branch = null, context = null, since = null } = {}) {
+  const session = model ? { model: modelLabel(modelName(model)), source: model_source ?? "agent" } : null;
   const headSha = await commitOf(repo, head).catch(() => "");
   if (!headSha) throw new Error(`${head} is not a commit in ${repo}`);
   let fork = null;
@@ -78,7 +85,8 @@ export async function describeRange(repo, { base, head = "HEAD", summary = null,
     const sha = raw.sha;
     if ((raw.parents[0] ?? null) !== parent) throw new Error(`${short(sha)} does not sit on ${short(parent)}: the commits are not one line. Rebase the branch, then propose it again.`);
     if (raw.encoding && !/^utf-?8$/i.test(raw.encoding)) throw new Error(`${short(sha)} has a message in ${raw.encoding}; the gate reads UTF-8 only`);
-    const message = proposedMessage(raw.message);
+    const message = proposedMessage(withoutAttribution(raw.message));
+    const own = commitModel(raw.message);
     const patch = await treeDiff(repo, parentTree, raw.tree);
     const check = await faithfulCheck(repo, parentTree, patch);
     if (!check.ok) throw new Error(`${short(sha)} cannot be shown to a reviewer as it stands: ${check.reason.replace(/^what a reviewer sees of the patch is not what git applies: /, "")}`);
@@ -96,11 +104,12 @@ export async function describeRange(repo, { base, head = "HEAD", summary = null,
       if (before !== null) f.before = before;
       if (after !== null) f.after = after;
     }
-    commits.push({ sha, parent, tree: raw.tree, author: raw.author, message, files, patch });
+    commits.push({ sha, parent, tree: raw.tree, author: raw.author, message, files, patch, ...(own ? { model: own } : {}) });
     parent = sha;
     parentTree = raw.tree;
   }
   const subject = (m) => m.split("\n")[0];
+  const named = branchModel(commits, session);
   return {
     summary: summary ?? (commits.length === 1 ? subject(commits[0].message) : `${commits.length} commits${branch ? ` on ${branch}` : ""}`),
     repo: basename(repo),
@@ -109,7 +118,7 @@ export async function describeRange(repo, { base, head = "HEAD", summary = null,
     head: headSha,
     commits,
     ...(drafted_by ? { drafted_by } : {}),
-    ...(model ? { model: modelLabel(model) } : {}),
+    ...(named.model ? { model: named.model, model_source: named.source } : {}),
     ...(context ? { context } : {}),
     ...(since ? { since } : {}),
   };

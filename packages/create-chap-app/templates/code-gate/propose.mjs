@@ -2,8 +2,10 @@
 //
 //   --repo <path>   the repository (default: the current directory)
 //   --by <name>     who drafted it, recorded on the artefact (default: working tree)
-//   --model <name>  the model that wrote it, as the commit will name it, for
-//                   example "Claude Opus 5.5" (default: CHAP_MODEL)
+//   --model <name>  the model that wrote it, for example "Claude Opus 5.5",
+//                   where the session does not name it: CHAP_MODEL names the
+//                   session's model when Claude Code's SessionStart hook sets it
+//                   (install-hooks.mjs --claude)
 //   --context <file> a note for the reviewer, in Markdown ("-" reads standard input):
 //                   what was asked, what changed and why, how it was tested
 //   --task <id>     submit to this task, a revision of a change sent back
@@ -32,13 +34,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agentClient, changeSince, commitSigning, describeChange, ensureGate, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, revisionTarget, task } from "./lib/gate.mjs";
 import { announce, commandAgain, printPrompt, promptAfter, readContext, reviewerName, waitWithin, withNote } from "./lib/loop.mjs";
+import { MODEL_SOURCES, sessionModel } from "./lib/model.mjs";
 import { submittedArtefact } from "./desk/followup.js";
 import { applyToWorkingTree, commitAll, patchApplies, repoRoot } from "./lib/git.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 export function parseArgs(argv) {
-  const out = { summary: null, repo: process.cwd(), by: "working tree", model: process.env.CHAP_MODEL ?? null, context: null, task: null, wait: false, commit: false, poll: 2000, timeout: null, open: true };
+  const out = { summary: null, repo: process.cwd(), by: "working tree", model: null, context: null, task: null, wait: false, commit: false, poll: 2000, timeout: null, open: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--repo") out.repo = argv[++i];
@@ -81,7 +84,10 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   await ensureGate(gate, { log });
   const client = await agentClient(gate);
   const again = commandAgain(join(here, "propose.mjs"), argv);
-  const artefact = await describeChange(repo, { summary: args.summary, drafted_by: args.by, model: args.model, context: await readContext(args.context) });
+  // The model the commit names: the session's, from CHAP_MODEL, else the agent's word, --model.
+  const session = sessionModel({ flag: args.model });
+  if (session.differs) log(`--model says ${session.differs}, and the session runs ${session.model}: the session's model is the one named.`);
+  const artefact = await describeChange(repo, { summary: args.summary, drafted_by: args.by, model: session.model, model_source: session.source, context: await readContext(args.context) });
   if (!artefact) { log("Nothing to propose: the working tree matches HEAD."); return 0; }
   // Sent back, and the working tree still holds the change reviewed: the
   // review is what the agent needs, so it is given again.
@@ -95,7 +101,7 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   // A revision shows the reviewer what changed since they sent it back.
   const since = reviewed ? await changeSince(repo, reviewed, artefact) : null;
   if (since) artefact.since = since;
-  if (!artefact.model) log("No --model was given, so the commit will not name the model that wrote it.");
+  if (!artefact.model) log('No model is named: the session gives none, so Drafted-by names the agent. Pass --model, or see "The model that wrote it" in the README.');
   const review = reviewRule(gate);
   let ready = await reviewersReady(client, review);
   if (!ready.ok) {
@@ -107,7 +113,7 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   const { task_id, state, revised, digest } = await propose(client, artefact, { gate, taskId: args.task, review });
   const files = artefact.files.map((f) => `${f.path} (+${f.added ?? "bin"} -${f.removed ?? "bin"})`).join(", ");
   log(`${revised ? "Revised" : "Proposed as"} ${task_id} (${state}): ${artefact.summary}`);
-  log(`  ${artefact.files.length} file${artefact.files.length === 1 ? "" : "s"}: ${files}${artefact.model ? `, written by ${artefact.model}` : ""}`);
+  log(`  ${artefact.files.length} file${artefact.files.length === 1 ? "" : "s"}: ${files}${artefact.model ? `, written by ${artefact.model}${MODEL_SOURCES[artefact.model_source] ? ` (${MODEL_SOURCES[artefact.model_source]})` : ""}` : ""}`);
   log(`  digest ${digest}`);
   if (state === "review_requested") await announce(gate, task_id, { open: args.open, log });
   else log(`  review at ${gate.base}/#task=${encodeURIComponent(task_id)}`);

@@ -443,7 +443,9 @@ function commandFor(t) {
   const dir = state.config?.gate_dir;
   if (!dir) return null;
   const q = (s) => (/^[A-Za-z0-9_./:=@%+,-]+$/.test(s) ? s : `"${String(s).replace(/(["\\$`])/g, "\\$1")}"`);
-  const flags = [a.drafted_by ? `--by ${q(a.drafted_by)}` : null, a.model ? `--model ${q(a.model)}` : `--model "the model you run as"`].filter(Boolean).join(" ");
+  // --model only where the agent's word named the model: the commits or the session name it otherwise.
+  const said = a.model && (a.model_source === "agent" || !a.model_source);
+  const flags = [a.drafted_by ? `--by ${q(a.drafted_by)}` : null, said ? `--model ${q(a.model)}` : null].filter(Boolean).join(" ");
   if (Array.isArray(a.commits)) return `node ${q(`${dir}/propose-branch.mjs`)} ${String(a.base ?? "").slice(0, 12)}..${a.branch ?? "HEAD"} ${flags} --wait`;
   return `node ${q(`${dir}/propose.mjs`)} ${q(a.summary ?? "what the change does")} ${flags} --wait --commit`;
 }

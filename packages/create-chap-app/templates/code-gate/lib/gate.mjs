@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { canonicalize, contentHash, deepEqual, makeClient, signerFromJwk } from "../desk/chap-client.mjs";
 import { keyPathFor, readKeyFile, sshKeyFiles } from "../keys.mjs";
 import { blobAt, currentBranch, faithfulCheck, git, head, numstat, signsOwnCommits, treeDiff, treeOf, workingTreeChange } from "./git.mjs";
+import { modelName } from "./providers.mjs";
 
 /** The most text a change carries as file contents beside its patch, so the desk can edit files whole. */
 export const MAX_CONTENT_BYTES = 200_000;
@@ -220,7 +221,7 @@ export function changeKey(base, patch) {
  * size, so a reviewer can edit a file whole. Null when the working tree
  * matches HEAD.
  */
-export async function describeChange(repo, { summary, drafted_by = "working tree", model = null, requested_by, context = null } = {}) {
+export async function describeChange(repo, { summary, drafted_by = "working tree", model = null, model_source = null, requested_by, context = null } = {}) {
   const { baseTree, tree, patch } = await workingTreeChange(repo);
   if (!patch.trim()) return null;
   // The patch travels as text. It must give the working tree back, and read
@@ -249,7 +250,7 @@ export async function describeChange(repo, { summary, drafted_by = "working tree
     files,
     patch,
     drafted_by,
-    ...(model ? { model: modelLabel(model) } : {}),
+    ...(model ? { model: modelLabel(modelName(model)), ...(model_source ? { model_source } : {}) } : {}),
     ...(requested_by ? { requested_by } : {}),
     ...(context ? { context } : {}),
   };
@@ -749,9 +750,14 @@ export const CHECKED_TRAILERS = new Set(["Drafted-by", "Reviewed-by", "CHAP-Appr
 /** The tokens of the longer form an earlier version of the gate wrote, read so its commits still verify. */
 export const LEGACY_CHECKED_TRAILERS = new Set(["Reviewed-by", "CHAP-Model", "CHAP-Workspace", "CHAP-Task", "CHAP-Series", "CHAP-Proposed-Commit", "CHAP-Agent", "CHAP-Reviewer", "CHAP-Decision", "CHAP-Artefact"]);
 
-/** Who drafted the change, as its commit says: the model the artefact names, or else the agent. */
-export function draftedBy(note) {
-  return noteArtefacts(note).approved?.model ?? note.agent;
+/**
+ * Who drafted the change, as its commit says: for a commit of a branch, the
+ * model that commit names; else the model the artefact names; else the agent.
+ */
+export function draftedBy(note, series = null) {
+  const approved = noteArtefacts(note).approved;
+  const own = series && Array.isArray(approved?.commits) ? approved.commits[series.index]?.model : null;
+  return own ?? approved?.model ?? note.agent;
 }
 
 /** The reviewers whose approvals the note holds, in order. */
@@ -772,7 +778,7 @@ function approversOf(note) {
  */
 export async function trailersFor(note, policy = null, { series = null, signoff = null } = {}) {
   return [
-    ["Drafted-by", draftedBy(note)],
+    ["Drafted-by", draftedBy(note, series)],
     ...approversOf(note).map((uri) => ["Reviewed-by", reviewedByLine(uri, policy?.identities)]),
     ...(signoff ? [["Signed-off-by", signoff]] : []),
     ["CHAP-Approval", series ? `${note.task_id} ${series.index + 1}/${series.of}` : note.task_id],

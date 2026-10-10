@@ -209,7 +209,8 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
   const names = reviewers.map((uri) => usePolicy.identities?.[uri]?.name ?? uri);
   const by = names.length > 1 ? `${names.join(" and ")} (${usePolicy.rule})` : names[0];
   const parts = [`${how} by ${by} as ${taskId}${place ? `, commit ${place.index + 1} of ${place.of} of the branch` : ""}`, `checked against ${usePolicy.source}`];
-  if (approved?.model) parts.push(`written by ${approved.model}`);
+  const model = (place && approved?.commits?.[place.index]?.model) ?? approved?.model;
+  if (model) parts.push(`written by ${model}`);
   if (signature.signed && signature.ok) parts.push(byAgent ? "commit signed by the agent's key" : "commit signed by a person the policy lists");
   return row("ok", parts.join(", "), { task_id: taskId, reviewers });
 }

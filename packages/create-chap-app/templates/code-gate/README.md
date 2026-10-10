@@ -101,11 +101,17 @@ reported and left alone unless `--force` is given.
 **Claude Code.** Copy `AGENT_INSTRUCTIONS.md` into the repository as
 `CLAUDE.md`, or into the project's instructions. It tells the assistant
 never to commit itself, to write a short context note for the reviewer,
-and to run `propose.mjs` with `--wait --commit` and `--model` naming the
-model it runs as when a change is ready, which proposes, waits for the
-decision and commits an approved change through the hooks in one step: the
-review loop below. For the `chap.*` tools, which
-let it read its tasks and the chain:
+and to run `propose.mjs` with `--wait --commit` when a change is ready,
+which proposes, waits for the decision and commits an approved change
+through the hooks in one step: the review loop below. So that each commit
+names the model the session runs, without the assistant saying so:
+
+```
+node install-hooks.mjs --repo <path> --claude
+```
+
+(the model that wrote it, below). For the `chap.*` tools, which let it read
+its tasks and the chain:
 
 ```
 claude mcp add --transport http chap http://127.0.0.1:8791/mcp
@@ -132,9 +138,9 @@ beside them, or the file `CHAP_CONFIG` names. `CHAP_URL` is the gate's
 `POST /chap` address (by default `http://127.0.0.1:8791/chap`, from
 `CHAP_HOST` and `PORT`); `CHAP_AGENT_URI` replaces the agent's URI from the
 configuration, and `CHAP_AGENT_KEY` the path of its key (by default under
-`keys/`). `CHAP_MODEL` names the model when `--model` is not given. A commit made by `propose.mjs` or the built-in agent passes
-`CHAP_URL` and `CHAP_CONFIG` to its hooks, so they ask the gate the command
-asked.
+`keys/`). `CHAP_MODEL` names the model of the session the commands run in.
+A commit made by `propose.mjs` or the built-in agent passes `CHAP_URL` and
+`CHAP_CONFIG` to its hooks, so they ask the gate the command asked.
 
 ## The review loop
 
@@ -180,7 +186,7 @@ freely: `pre-commit` lets an unapproved commit through and says so, and
 When the branch is ready:
 
 ```
-node propose-branch.mjs origin/main..agent/work --by "Claude (Cowork)" --model "Claude Opus 5.5" --wait --push origin
+node propose-branch.mjs origin/main..agent/work --by "Claude Code" --wait --push origin
 ```
 
 (`--to <branch>` pushes it under another name, and `--help` lists the
@@ -352,9 +358,9 @@ Signed-off-by: __HUMAN_NAME__ <__HUMAN_EMAIL__>
 CHAP-Approval: tsk_01HV...
 ```
 
-`Drafted-by` names the model that wrote the change: `--model` (or
-`CHAP_MODEL`) for `propose.mjs` and `propose-branch.mjs`, the model the
-built-in agent drafted with, or the agent's URI when no model is named.
+`Drafted-by` names the model that wrote the change, from the agent's own
+record (the model that wrote it, below), the model the built-in agent
+drafted with, or the agent's URI when no model is named.
 `Reviewed-by` names each approving reviewer, one line each, by the name and
 email the trust policy gives, or `chap.config.json` where there is no
 policy. `Signed-off-by` names the committer, as git records them on the
@@ -370,6 +376,30 @@ proposed and as approved, the workspace, the rule and who the round was
 addressed to, the keys the workspace recorded, the gate's address and the
 chain head. A branch's commits share one note, which holds the branch once,
 in the agent's signed submission. `git log --show-notes=chap` prints it.
+
+**The model that wrote it.** The gate reads the model from the agent's own
+harness, so nobody types it:
+
+- Claude Code ends each commit it makes with `Co-Authored-By: <model>
+  <noreply@anthropic.com>`, naming the model of that moment. The commit
+  keeps that model, the line leaves the message the reviewers see, and the
+  sealed commit names the model in `Drafted-by`. Each commit of a branch
+  names its own model, so a branch written partly by one model and partly
+  by another says which wrote which.
+- `install-hooks.mjs --claude` adds a SessionStart hook to the
+  repository's `.claude/settings.local.json` (kept out of git): as each
+  Claude Code session starts, `claude-session.mjs` hands its model to the
+  commands it runs as `CHAP_MODEL`. `propose.mjs` reads it, and so does
+  `propose-branch.mjs` for commits that carry no line of their own. A model
+  chosen with `/model` partway through a session reaches the commits it
+  makes, through their own line, and not `CHAP_MODEL`.
+- `--model` names the model where neither says, and the command says when
+  no model is named.
+
+The desk shows where the name came from beside it. Each of these is a
+record of what the harness or the agent said: the agent writes its own
+commit messages and runs its own commands, and the reviewer's signature
+covers the name as it was proposed.
 
 **Signing.** `sign_commits` in `chap.config.json` says how the gate's
 commits are signed. `"committer"`, the default, signs them as your own

@@ -4,8 +4,11 @@
 //                      history (default: the current branch since its upstream)
 //   --repo <path>      the repository (default: the current directory)
 //   --by <name>        the agent or tool that made the commits, as the desk shows it
-//   --model <name>     the model that wrote them, as each commit will name it,
-//                      for example "Claude Opus 5.5" (default: CHAP_MODEL)
+//   --model <name>     the model that wrote them, for example "Claude Opus 5.5",
+//                      where neither the commits nor the session name it: a
+//                      commit Claude Code made names its model in a Co-Authored-By
+//                      line, and CHAP_MODEL names the session's model when Claude
+//                      Code's SessionStart hook sets it (install-hooks.mjs --claude)
 //   --summary <text>   one line for the review (default: from the commits)
 //   --context <file>   a note for the reviewer, in Markdown ("-" reads it from standard
 //                      input): what was asked, what changed and why, how it was tested,
@@ -55,6 +58,7 @@ import { fileURLToPath } from "node:url";
 import { agentClient, api, approvalOf, buildNote, checkApproval, commitSigning, contentHash, ensureGate, evidence, gateEnv, lastDecision, loadGate, onlinePolicy, reviewersReady, reviewRule, strictestRule, trustAtRef } from "./lib/gate.mjs";
 import { git, parseTrailers, rawCommit, repoRoot } from "./lib/git.mjs";
 import { announce, commandAgain, printPrompt, promptAfter, readContext, reviewerName, waitWithin, withNote } from "./lib/loop.mjs";
+import { MODEL_SOURCES, sessionModel } from "./lib/model.mjs";
 import { branchReviews, describeRange, proposeRange, sealRange, sinceLastReview } from "./lib/range.mjs";
 import { pushNotes } from "./push-notes.mjs";
 import { verifyCommit } from "./verify.mjs";
@@ -64,7 +68,7 @@ const short = (sha) => (sha ? String(sha).slice(0, 12) : "none");
 const quoted = (path) => (/[\s"'$`\\]/.test(path) ? JSON.stringify(path) : path);
 
 export function parseArgs(argv) {
-  const out = { range: null, repo: process.cwd(), by: null, model: process.env.CHAP_MODEL || null, summary: null, context: null, task: null, wait: false, push: null, to: null, poll: 2000, timeout: null, open: true, help: false };
+  const out = { range: null, repo: process.cwd(), by: null, model: null, summary: null, context: null, task: null, wait: false, push: null, to: null, poll: 2000, timeout: null, open: true, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const value = () => { const v = argv[++i]; if (v === undefined || v.startsWith("--")) throw new Error(`${a} needs a value`); return v; };
@@ -197,8 +201,12 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   }
   // A revision shows the reviewers what changed since they last looked.
   const since = underway?.state === "in_progress" ? await sinceLastReview(repo, headOf(underway), headSha) : null;
-  const artefact = await describeRange(repo, { base: prefix.start ?? base, head, summary: args.summary, drafted_by: args.by ?? gate.config.agent?.display_name ?? client.from, model: args.model, branch, context, since });
-  if (!artefact.model) log("No --model was given, so the commits will not name the model that wrote them.");
+  // The model each commit names, from Claude Code's own line on it; else the
+  // session's, from CHAP_MODEL; else the agent's word, --model.
+  const session = sessionModel({ flag: args.model });
+  if (session.differs) log(`--model says ${session.differs}, and the session runs ${session.model}: the session's model is the one named.`);
+  const artefact = await describeRange(repo, { base: prefix.start ?? base, head, summary: args.summary, drafted_by: args.by ?? gate.config.agent?.display_name ?? client.from, model: session.model, model_source: session.source, branch, context, since });
+  if (!artefact.model) log('No model is named: the commits carry no Co-Authored-By line naming one and the session gives none, so Drafted-by names the agent. Pass --model, or see "The model that wrote it" in the README.');
   const size = Buffer.byteLength(JSON.stringify(artefact));
   const limit = cfg.max_envelope_bytes ?? 1_048_576;
   if (size > limit - 64 * 1024) throw new Error(`The branch's commits come to ${(size / 1_048_576).toFixed(1)} MB, more than the gate takes in one review (${(limit / 1_048_576).toFixed(1)} MB, max_envelope_bytes in chap.config.json). Review it in parts: ${base}..<a commit part way>, then the rest.`);
@@ -228,7 +236,7 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   const added = held.commits.reduce((n, c) => n + c.files.reduce((m, f) => m + (f.added ?? 0), 0), 0);
   const removed = held.commits.reduce((n, c) => n + c.files.reduce((m, f) => m + (f.removed ?? 0), 0), 0);
   log(`${revised ? "Revised" : state === "completed" ? "Approved already as" : "Proposed as"} ${task_id} (${state}): ${held.summary}`);
-  log(`  ${held.commits.length} commit${held.commits.length === 1 ? "" : "s"}${branch ? ` on ${branch}` : ""} since ${short(held.base)}, +${added} -${removed}${held.model ? `, written by ${held.model}` : ""}`);
+  log(`  ${held.commits.length} commit${held.commits.length === 1 ? "" : "s"}${branch ? ` on ${branch}` : ""} since ${short(held.base)}, +${added} -${removed}${held.model ? `, written by ${held.model}${MODEL_SOURCES[held.model_source] ? ` (${MODEL_SOURCES[held.model_source]})` : ""}` : ""}`);
   for (const c of held.commits) log(`    ${short(c.sha)}  ${c.message.split("\n")[0]}`);
   if (state === "review_requested") await announce(gate, task_id, { open: args.open, log });
   else log(`  review at ${gate.base}/#task=${encodeURIComponent(task_id)}`);

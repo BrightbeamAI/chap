@@ -27,15 +27,17 @@ screen, and waits for their decision. The rules:
 4. **When the change is ready, propose it:**
 
    ```
-   node "__PROJECT_DIR__/propose.mjs" "what the change does, in one line" --by claude-code --model "the model you run as" --context .git/CHAP_CONTEXT.md --wait --commit --timeout 9
+   node "__PROJECT_DIR__/propose.mjs" "what the change does, in one line" --by claude-code --context .git/CHAP_CONTEXT.md --wait --commit --timeout 9
    ```
 
    Run it with the longest time limit your command tool allows; with
-   `--timeout 9` it stops waiting within ten minutes. Name your model as
-   people say it, such as "Claude Opus 5.5": the commit names it, beside
-   whoever approved the change. Where the
-   gate is committed in this repository as `tools/chap-gate`, the command is
-   `node tools/chap-gate/propose.mjs` with the same arguments.
+   `--timeout 9` it stops waiting within ten minutes. The commit names the
+   model that wrote it, beside whoever approved it: the gate reads the model
+   from your session. If the command says no model is named, run it again
+   with `--model` and your model's name as people say it, such as
+   "Claude Opus 5.5". Where the gate is committed in this repository as
+   `tools/chap-gate`, the command is `node tools/chap-gate/propose.mjs` with
+   the same arguments.
 5. **Read the outcome by its exit code.**
    - **0**: approved and committed. If the reviewer edited your change,
      their version is committed, and the output holds a prompt that shows
@@ -59,12 +61,14 @@ screen, and waits for their decision. The rules:
    unrelated change in the diff will send it back.
 8. **When this gate reviews at push** (`"review_at": "push"` in its
    chap.config.json), you may commit as you go, with a message that says
-   what each commit does. Never push yourself. When the work is ready, write
+   what each commit does. Keep the Co-Authored-By line naming your model
+   that you add to a commit: the gate reads the model from it. Never push
+   yourself. When the work is ready, write
    the context note as in rule 3 and propose the branch, which the reviewer
    reads commit by commit:
 
    ```
-   node "__PROJECT_DIR__/propose-branch.mjs" origin/main..HEAD --by claude-code --model "the model you run as" --context .git/CHAP_CONTEXT.md --wait --timeout 9
+   node "__PROJECT_DIR__/propose-branch.mjs" origin/main..HEAD --by claude-code --context .git/CHAP_CONTEXT.md --wait --timeout 9
    ```
 
    Add `--push origin` when the person you work for asks for an approval to

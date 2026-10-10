@@ -129,8 +129,10 @@ refuse a commit unless the staged tree is an approved change: approved
 against the commit's parent, read by the desk as the change git makes with
 it, unused by any earlier commit, and approved by reviewers a trust policy
 names. The commit carries four trailers: the model that wrote the change
-(`Drafted-by`), each approving reviewer by name and email (`Reviewed-by`,
-from the trust policy), the committer (`Signed-off-by`), and
+(`Drafted-by`, read from the agent's harness: the Co-Authored-By line Claude
+Code writes on each commit, or the session's model a SessionStart hook
+hands to the commands it runs), each approving reviewer by name and email
+(`Reviewed-by`, from the trust policy), the committer (`Signed-off-by`), and
 `CHAP-Approval`, the task whose evidence the note holds, which holds an
 approval to one commit in history nobody can rewrite. It is signed as the
 committer's own commits are, or with the agent's key where the team asks for
