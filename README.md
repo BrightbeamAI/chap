@@ -16,14 +16,15 @@
 </p>
 
 <p align="center">
-  CHAP gives approvals, overrides, handoffs and escalations a shared, auditable shape across MCP and A2A.
+  CHAP gives approvals, overrides, handoffs and escalations one shared, auditable shape across MCP and A2A.
 </p>
 
 <p align="center">
   <a href="./START_HERE.md"><strong>Start here</strong></a> ·
+  <a href="#concepts">Concepts</a> ·
   <a href="#install">Install</a> ·
-  <a href="./examples/drive-chap-from-claude-desktop.md">MCP quickstart</a> ·
   <a href="#the-90-second-tour">90-second tour</a> ·
+  <a href="./examples/drive-chap-from-claude-desktop.md">MCP quickstart</a> ·
   <a href="./IN_PRACTICE.md">Scenarios</a> ·
   <a href="./IMPLEMENTATIONS.md">Implementations</a> ·
   <a href="https://github.com/BrightbeamAI/chap/wiki">Wiki</a> ·
@@ -47,25 +48,83 @@
 
 ---
 
-You have agents doing real work. Drafting code reviews, triaging tickets, suggesting settlements, reviewing contracts. A human approves, edits, or rejects each one. Right now, that decision lives in your application code, your chat threads, your ticket comments, and your head. When something goes wrong six weeks later, reconstructing what happened costs you forty-five minutes and is half guesswork.
+Work is moving towards teams in which hundreds of agents and hundreds of people take part. Agents draft, triage and recommend; people approve, correct, overrule and escalate. Those human decisions make the work accountable, yet they are usually recorded only in chat threads, ticket comments and memory.
 
-CHAP gives you one place to put those decisions and one shape to put them in. The agent's draft is an artefact. The human's edit is a structured override with a diff, a rationale, and tags you control. Switch the hash chain on, as the tour below does, and each entry carries a hash of the one before it, so `audit.verify_chain` detects an altered entry as long as you keep a recent chain head where the coordinator's operator cannot change it ([`SECURITY.md`](./SECURITY.md) §5). One query over the log replaces grepping across four UIs.
+CHAP gives those decisions a defined structure and an auditable record: what the agent produced, what the person decided and why, in one log that can be queried and verified.
 
-The record survives key rotation, expiring vendor logs, and people leaving; one `audit.read` call returns the whole thing. The overrides your reviewers were already making accumulate into supervision data you'd otherwise have to commission. When approvals must be non-repudiable, `security-signed/1.0`, switched on by the `requireSignatures` option (`require_signatures` in Python), refuses calls without a valid Ed25519 signature apart from `workspace.create` and `participant.join`, and `identity-oidc/1.0` can bind the key to a verified identity. Under `audit-scitt/1.0`, calling `audit.submit_to_scitt` hands a SCITT statement for each entry to a transparency service through a submitter you supply. And CHAP sits beside MCP and A2A and replaces neither: MCP for tools, A2A for other agents, CHAP for the shared work with humans.
+- **Structured overrides.** When a person edits an agent's work, the edit is recorded with a diff, a rationale and tags your team defines, so corrections can be analysed later.
+- **A tamper-evident log.** Every change is recorded in order. With the hash chain on, an altered entry is detected on verification, provided a recent chain head is kept out of the operator's reach ([`SECURITY.md`](./SECURITY.md) §5). The history survives key rotation, expired vendor logs and staff changes.
+- **Signatures and identity.** Optional extensions, called profiles, require every call to be signed, bind signing keys to verified identities, and submit entries to a transparency log.
+- **Alongside MCP and A2A.** MCP connects agents to tools and A2A connects agents to each other; CHAP records the work agents share with people.
 
-That's the whole pitch.
+## Concepts
+
+CHAP is a protocol: a set of calls that agents, people and their tools send to a **coordinator**, the service that mediates a workspace. The coordinator checks each call against the workspace's rules, answers it, and records each accepted change in the workspace's audit log. The TypeScript and Python packages below are coordinators, to embed in your own process or run as a server.
+
+| Term | What it is |
+|---|---|
+| **Workspace** | A named context for one body of work: its members, its tasks, and the profiles it uses |
+| **Participant** | A member, named by a URI such as `human:alice@example.org` or `agent:triage`; `group:` names a set of members |
+| **Task** | A unit of work, assigned to a participant |
+| **Artefact** | What a participant produces in a task: a draft, a decision, an override |
+| **Envelope** | One call, as a JSON-RPC 2.0 message; its `method` is the verb, such as `task.create` or `decide.approve` |
+| **Audit log** | The ordered record of every change to the workspace; with the hash chain on, each entry carries the hash of the one before it |
+
+The verbs read as their names. A task is created, completed and sent for review (`task.create`, `task.complete`, `review.request`). A reviewer approves, rejects or overrides it (`decide.approve`, `decide.reject`, `decide.override`). Work is handed off or escalated (`handoff.propose`, `escalate.raise`), and `audit.read` returns the record.
+
+**Core and profiles.** Every coordinator implements **Core** (`core/1.0`): workspaces, participants, tasks and the audit log. Everything else is an optional **profile**, named with its version. `review/1.0` adds review requests and decisions. Others add quick questions to a person (`whisper/1.0`), group votes (`deliberation/1.0`), handoffs (`handoff/1.0`), pausing and rollback (`control/1.0`), routing (`routing/1.0`), shadow and trial modes (`modes/1.0`), signed calls (`security-signed/1.0`), verified identities (`identity-oidc/1.0`, `identity-vc/1.0`) and a transparency log (`audit-scitt/1.0`). A workspace advertises the profiles it uses, and the coordinator refuses calls that belong to any other profile. [`core/SPEC.md`](./core/SPEC.md) fits Core on one page, [`profiles/PROFILES.md`](./profiles/PROFILES.md) lists the profiles, and [`GLOSSARY.md`](./GLOSSARY.md) defines every term.
+
+## Install
+
+**Libraries.** Each package implements Core and every profile; a new workspace advertises `core/1.0` and `review/1.0` unless you name others.
+
+<table>
+<tr><th>TypeScript</th><th>Python</th></tr>
+<tr><td>
+
+```bash
+npm install @brightbeamai/chap-coordinator
+```
+
+</td><td>
+
+```bash
+pip install chap-coordinator
+```
+
+</td></tr>
+</table>
+
+**A new project.** [`create-chap-app`](./packages/create-chap-app/) generates one with a review desk, one profile setting and a `diff-profiles` command:
+
+```bash
+npx create-chap-app my-gate
+cd my-gate && npm install && npm run demo
+```
+
+The default template is the code gate: each change a coding agent makes in a git repository is reviewed as a diff, approved with the reviewer's signature, and committed with the evidence beside it for CI to verify. The other templates are an MCP gate for Claude Desktop, Cursor and Claude Code, a support desk, an outbound approval gate and a production set. [`docs/profile-explorer.md`](./docs/profile-explorer.md) shows what each profile changes.
+
+**From a clone of this repository.** [`START_HERE.md`](./START_HERE.md) runs a local review desk on the Python coordinator, with Python 3.10 or later and nothing else to install:
+
+```bash
+git clone https://github.com/BrightbeamAI/chap.git && cd chap
+python3 start-here/start.py
+```
+
+[`examples/00-five-minute-start.md`](./examples/00-five-minute-start.md) sends envelopes to the Core reference server with `curl` and reads back the audit log. The libraries are in [`packages/coordinator/`](./packages/coordinator/) and [`packages/coordinator-py/`](./packages/coordinator-py/), the reference implementations in [`reference/`](./reference/) and [`reference/python/`](./reference/python/).
 
 ## The 90-second tour
 
-A solo developer using Cursor to review pull requests. The bot flags a "warning" the developer disagrees with. Here's the whole exchange, end to end. The clip below runs in about 23 seconds across six labelled steps; the matching code is right underneath.
+A solo developer reviews pull requests with Cursor, and the bot flags a warning the developer disagrees with. The clip shows the exchange in six steps, in about 23 seconds.
 
 <p align="center">
   <img src="docs/img/hero.gif" alt="Six-step CHAP Core+Review walkthrough with a progress bar and step indicator across the top. Step 1: Setup (workspace, two participants, a task). Step 2: Drafting (agent drafts a response). Step 3: Pending review (review.request with the draft artefact). Step 4: Override (human disagrees: diff, rationale, tags). Step 5: Audit chain (hash-linked replay, prev_hash continuous). Step 6: Two months in (override learning report shows framework-pattern as the top tag, pointing the next prompt revision at the right problem)." width="100%">
 </p>
 
-And here's the code, every line of it. One continuous story in two languages; pick whichever stack you actually use.
+The code for each step follows, in TypeScript and Python.
 
-**1. Spin up a workspace.** An embedded coordinator with SQLite persistence and the hash chain switched on, two participants, a workspace:
+<details>
+<summary><b>1. Spin up a workspace</b>: a coordinator with SQLite and the hash chain, and two participants</summary>
 
 <table>
 <tr><th>TypeScript</th><th>Python</th></tr>
@@ -137,7 +196,10 @@ send("participant.join", {
 
 </td></tr></table>
 
-**2. The bot drafts, you override.** Wire your existing Cursor integration to emit envelopes:
+</details>
+
+<details>
+<summary><b>2. The bot drafts, you override</b>: your Cursor integration emits the envelopes</summary>
 
 <table>
 <tr><th>TypeScript</th><th>Python</th></tr>
@@ -242,9 +304,14 @@ send("decide.override", {
 
 </td></tr></table>
 
-> **About the surfaces.** TypeScript ships a typed facade (`coord.api.*`) so every method gets full autocomplete and compile-time checks. Python keeps the JSON-RPC envelope shape on the surface (`coord.dispatch({...})`) and consumers wrap it however suits the call site; a `send()` helper is the idiom the Python tests use. Both paths emit the same params and the same envelope shape, so the audit chain reads the same whichever client made the call.
+> **The two surfaces.** TypeScript ships a typed facade, `coord.api.*`, so every method has autocomplete and compile-time checks. Python keeps the JSON-RPC envelope on the surface, `coord.dispatch({...})`, wrapped here in a `send()` helper, the idiom the Python tests use. Both send the same parameters in the same envelope, so the audit chain reads the same whichever client made the call.
 
-**3. Two months in, analyse what you've been doing.** The reference repo ships an analytics script in both languages that reads the audit chain (over HTTP or straight from your SQLite file) and groups overrides:
+</details>
+
+<details>
+<summary><b>3. Two months in</b>: a script groups your overrides by tag, intent and reviewer</summary>
+
+The repository ships the script in both languages. It reads the audit chain over HTTP or straight from your SQLite file:
 
 ```bash
 # TypeScript reference, against the SqliteStore from step 1:
@@ -273,79 +340,52 @@ Top reviewers:
 Hint: the most common tags are your next prompt revision targets.
 ```
 
-Your next prompt revision for Cursor cites the pattern by name instead of guessing at it.
+The most common tags name what the next prompt revision for Cursor should fix.
 
-For the full picture, [`chap-analytics`](./packages/chap-analytics/) (`pip install chap-analytics`) projects the whole chain into documented pandas tables, from a SQLite file, a JSON export, a live coordinator or a plain `audit.read`. The overrides, decisions, reviewers, whispers and handoffs can then be analysed as the supervision dataset they are. A [notebook](./packages/chap-analytics/examples/chap_analytics_walkthrough.ipynb) walks a week of review work from the raw envelopes to the tables. The plan for what sits above the tables is in [`ANALYTICS_ROADMAP.md`](./ANALYTICS_ROADMAP.md).
+</details>
 
----
+[`chap-analytics`](./packages/chap-analytics/) (`pip install chap-analytics`) loads the whole chain into documented pandas tables, from a SQLite file, a JSON export, a live coordinator or an `audit.read`: overrides, decisions, reviewers, whispers and handoffs. A [notebook](./packages/chap-analytics/examples/chap_analytics_walkthrough.ipynb) works through a week of review data, and [`ANALYTICS_ROADMAP.md`](./ANALYTICS_ROADMAP.md) describes the planned work.
 
-## The override envelope, in detail
+## The override envelope
 
-If you read one shape closely, make it the override envelope. Every field has a job:
+The override envelope records a reviewer's change to an agent's output. Each field is annotated below:
 
 <p align="center">
   <img src="docs/img/override-anatomy.svg" alt="Anatomy of a decide.override envelope, with each field annotated: task_id links to the review chain, from carries queryable identity, logical_id survives revision, intent_preserved separates refining from substituting overrides, diff is RFC 6902 JSON Patch, rationale is the 'why' alongside the 'what', tags are structured supervision data." width="100%">
 </p>
 
-The two fields most people miss on first read are `intent_preserved` and `tags`.
+Two fields matter most for analysis:
 
-`intent_preserved` distinguishes a *refining* override (the human agreed with the agent's decision but rewrote how it was expressed) from a *substituting* override (the human reached a different decision). These are two different failure modes and they want different fixes. A high refining rate around one policy clause means the agent's retrieval is off; a high substituting rate on the same clause means the policy itself is ambiguous, or the agent's task context is wrong.
-
-`tags` is the controlled vocabulary your team agrees on. Keep it small. Whatever you put there is the dimension you'll aggregate on three months from now, when you're answering questions like *which prompts need work?* or *which paths is the bot getting consistently wrong?*
-
-## Install
-
-**TypeScript / Node:**
-
-```bash
-npm install @brightbeamai/chap-coordinator
-```
-
-**Python:**
-
-```bash
-pip install chap-coordinator
-```
-
-**A project on your own agent and data:**
-
-```bash
-npx create-chap-app my-gate
-cd my-gate && npm install && npm run demo
-```
-
-generates a project with a review desk, one profile setting and a
-`diff-profiles` command ([`packages/create-chap-app/`](./packages/create-chap-app/)).
-The default template is the code gate: every change a coding agent makes in
-a git repository is reviewed as a diff, signed and committed only once a
-person approves it, with the evidence beside the commit for CI to verify.
-[`docs/profile-explorer.md`](./docs/profile-explorer.md) shows what each
-profile changes.
-
-Either package gives you Core and every profile; a new workspace advertises `core/1.0` and `review/1.0` unless you name others. The TypeScript reference is in [`reference/`](./reference/); the Python reference is in [`reference/python/`](./reference/python/). The TypeScript library lives at [`packages/coordinator/`](./packages/coordinator/); the Python library at [`packages/coordinator-py/`](./packages/coordinator-py/).
-
-New here? [`START_HERE.md`](./START_HERE.md) gets you to one real decision in about two minutes, with Python and nothing else:
-
-```bash
-git clone https://github.com/BrightbeamAI/chap.git && cd chap
-python3 start-here/start.py
-```
-
-Five-minute hands-on walkthrough with the envelopes in view: [`examples/00-five-minute-start.md`](./examples/00-five-minute-start.md).
+- **`intent_preserved`** tells a *refining* override, where the person kept the agent's decision and rewrote its wording, from a *substituting* one, where the person decided differently. Each points at a different fix: many refining overrides around one policy clause point at the agent's retrieval; many substituting ones point at an ambiguous policy, or at the agent's task context.
+- **`tags`** are the small, controlled vocabulary your team agrees on. They are what you will count by three months from now, to answer *which prompts need work?* and *which paths does the bot keep getting wrong?*
 
 ## Status
 
-CHAP 0.3 is a public draft: a small Core and optional profiles ([`SPECIFICATION.md`](./SPECIFICATION.md)). Two reference coordinators, in TypeScript and Python, implement the same methods, and a differential fuzzer checks that they answer and log alike. The conformance harness covers Core and `review/1.0` and runs against the Python coordinator and a standalone TypeScript server. A coordinator can present itself as an [MCP](https://modelcontextprotocol.io) server or an [A2A](https://a2a-protocol.org) agent, and five framework bridges put LangGraph, Pydantic AI, AG2, LlamaIndex Workflows, and Google ADK human-in-the-loop decisions on the audit log. The full inventory, the repository layout, and how CHAP relates to MCP and A2A are in [`ABOUT.md`](./ABOUT.md).
+CHAP 0.3 is a public draft: a small Core and optional profiles ([`SPECIFICATION.md`](./SPECIFICATION.md)).
 
-Before 1.0 a minor release may break things, and its changelog lists each break with a migration. From 1.0 the specification follows Semantic Versioning ([`ROADMAP.md`, Version numbers](./ROADMAP.md#version-numbers)). If you need strict stability, wait for 1.0. [`ROADMAP.md`](./ROADMAP.md) sets out what 1.0 will promise and the milestones that lead to it.
+- Two reference coordinators, in TypeScript and Python, implement the same methods, and a differential fuzzer checks that they answer and log alike.
+- The conformance harness covers Core and `review/1.0`, and runs against the Python coordinator and a standalone TypeScript server.
+- A coordinator can present itself as an [MCP](https://modelcontextprotocol.io) server or an [A2A](https://a2a-protocol.org) agent.
+- Framework bridges put LangGraph, Pydantic AI, AG2, LlamaIndex Workflows and Google ADK human-in-the-loop decisions on the audit log.
+
+Before 1.0, a minor release may break things, and its changelog lists each break with a migration; from 1.0 the specification follows [Semantic Versioning](./ROADMAP.md#version-numbers). For strict stability, wait for 1.0: [`ROADMAP.md`](./ROADMAP.md) sets out what it will promise and the milestones on the way.
 
 ## Read this next
 
-If you have not run anything yet, [`START_HERE.md`](./START_HERE.md) takes about two minutes. After that, [`IN_PRACTICE.md`](./IN_PRACTICE.md), twelve scenarios from a solo developer with Cursor up to GMP-regulated manufacturing; it's the most useful next read. [`ABOUT.md`](./ABOUT.md) covers what's in the repo, how CHAP relates to MCP and A2A, the standards it reuses, and how to contribute. [`core/SPEC.md`](./core/SPEC.md) fits Core on one screen. And the [technical report on arXiv](https://arxiv.org/abs/2606.09751) grounds the design choices: architecture, profile semantics, threat model, and the twelve scenarios as JSON traces in a worked appendix.
+| Read | For |
+|---|---|
+| [`START_HERE.md`](./START_HERE.md) | A local review desk on the Python coordinator, with nothing to install beyond Python |
+| [`IN_PRACTICE.md`](./IN_PRACTICE.md) | Scenarios, from a solo developer with Cursor to GMP-regulated manufacturing |
+| [`ABOUT.md`](./ABOUT.md) | The repository's contents, how CHAP relates to MCP and A2A, the standards it reuses, and contributing |
+| [`core/SPEC.md`](./core/SPEC.md) | Core, on one page |
+| [The technical report](https://arxiv.org/abs/2606.09751) | The architecture, profile semantics and threat model, with the scenarios as JSON traces |
 
 ## Cite
 
-If you reference CHAP in academic or technical work, please cite the technical report:
+If you reference CHAP in academic or technical work, please cite the technical report.
+
+<details>
+<summary>BibTeX</summary>
 
 ```bibtex
 @techreport{chap2026,
@@ -358,6 +398,8 @@ If you reference CHAP in academic or technical work, please cite the technical r
   url         = {https://arxiv.org/abs/2606.09751}
 }
 ```
+
+</details>
 
 ---
 
