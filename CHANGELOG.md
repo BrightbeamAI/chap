@@ -73,6 +73,8 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   message), lets a reviewer request changes as well as approve, edit or
   reject, reads the chain as activity, and counts in an Insights view what
   reviewers accept, edit and send back, by model and, for code, by file.
+  Its text grows with the window, from a phone to a large monitor, and two
+  buttons make it smaller or larger for each reviewer.
 - **Analytics in every project.** `analytics.py` writes the
   `chap-analytics` report, the evaluation cases and a refinement page from
   the project's store, and the desk links them.

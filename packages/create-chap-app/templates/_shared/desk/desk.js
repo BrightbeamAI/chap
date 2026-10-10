@@ -95,6 +95,20 @@ async function boot() {
     document.documentElement.dataset.theme = next;
     localStorage.setItem("chap-desk-theme", next);
   };
+  // The text size: a step on the scale the root size is multiplied by,
+  // kept in this browser for next time.
+  const steps = [0.875, 1, 1.125, 1.25, 1.375, 1.5];
+  let step = steps.indexOf(Number(localStorage.getItem("chap-desk-text") ?? 1));
+  if (step < 0) step = 1;
+  const applyText = (say) => {
+    document.documentElement.style.setProperty("--scale", String(steps[step]));
+    $("text-smaller").disabled = step === 0;
+    $("text-larger").disabled = step === steps.length - 1;
+    if (say) { localStorage.setItem("chap-desk-text", String(steps[step])); toast(`Text size ${Math.round(steps[step] * 100)}%`); }
+  };
+  applyText(false);
+  $("text-smaller").onclick = () => { step = Math.max(0, step - 1); applyText(true); };
+  $("text-larger").onclick = () => { step = Math.min(steps.length - 1, step + 1); applyText(true); };
   $("help-btn").onclick = () => { $("help").hidden = false; };
   $("help-close").onclick = () => { $("help").hidden = true; };
   $("help").onclick = (e) => { if (e.target === $("help")) $("help").hidden = true; };
@@ -119,11 +133,17 @@ async function boot() {
   const short = state.config.profiles.map((p) => p.replace(/\/1\.0$/, "").replace("security-signed", "signed").replace("audit-scitt", "scitt"));
   $("profiles").replaceChildren(el("span", { class: "chip profiles", title: state.config.profiles.join(", "), text: short.join(" · ") }));
   chip("chain", state.config.chain_enabled ? "chain on" : "chain off", state.config.chain_enabled ? "good" : "");
+  // Each reviewer by name, and by URI where two share a name; the URI is
+  // in the tooltip.
   const select = $("reviewer");
-  for (const h of state.config.humans) select.append(el("option", { value: h.uri, text: h.display_name ? `${h.display_name} (${h.uri})` : h.uri }));
+  const humans = state.config.humans;
+  const shared = (name) => humans.filter((h) => h.display_name === name).length > 1;
+  for (const h of humans) select.append(el("option", { value: h.uri, title: h.uri, text: h.display_name ? (shared(h.display_name) ? `${h.display_name} (${h.uri})` : h.display_name) : h.uri }));
   const wanted = hashParams().get("reviewer");
-  if (wanted && state.config.humans.some((h) => h.uri === wanted)) select.value = wanted;
-  select.onchange = () => setReviewer(select.value);
+  if (wanted && humans.some((h) => h.uri === wanted)) select.value = wanted;
+  const titleSelect = () => { select.title = `Deciding as ${select.value}`; };
+  titleSelect();
+  select.onchange = () => { titleSelect(); return setReviewer(select.value); };
   await setReviewer(select.value);
   const task = hashParams().get("task");
   if (task) select_(task);

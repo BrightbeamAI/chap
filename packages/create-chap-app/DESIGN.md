@@ -74,14 +74,16 @@ and its modules. It has three views.
   the files reviewers edit or send back; and the reviewers' own words. It
   links the pages `chap-analytics` writes, below.
 
-Keyboard shortcuts, light and dark, and a layout that folds on a narrow
-screen. The task lists come from the owning process, which reads its own
-workspace state at `GET /api/reviews` and `GET /api/tasks`, with each task's
-decisions across review rounds read from the chain. The lists the desk polls
-are brief, without whole-file contents or a branch's patches, and the task
-on show is read whole from `GET /api/tasks/<id>`. The chain records the
-calls, and the coordinator answers the caller who asked; which reviews a
-person is shown is the deployment's decision, as SPECIFICATION §15.1 says.
+Keyboard shortcuts, light and dark, text that grows with the window from a
+phone to a large monitor, two buttons that make it smaller or larger for
+each reviewer, and a layout that folds on a narrow screen. The task lists
+come from the owning process, which reads its own workspace state at
+`GET /api/reviews` and `GET /api/tasks`, with each task's decisions across
+review rounds read from the chain. The lists the desk polls are brief,
+without whole-file contents or a branch's patches, and the task on show is
+read whole from `GET /api/tasks/<id>`. The chain records the calls, and the
+coordinator answers the caller who asked; which reviews a person is shown
+is the deployment's decision, as SPECIFICATION §15.1 says.
 
 Under `security-signed/1.0` the desk signs each call in the browser with an
 Ed25519 key it generates and keeps in the browser's storage. The public key

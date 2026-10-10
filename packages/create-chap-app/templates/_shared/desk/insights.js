@@ -117,22 +117,26 @@ function bars(pairs, { max = null } = {}) {
     el("span", { class: "n", text: String(n) }))));
 }
 
-/** Decisions per day as stacked bars, drawn as SVG. */
+/**
+ * Decisions per day as stacked bars, drawn as SVG, with the days below as
+ * text, so they keep the desk's text size whatever the width of the chart.
+ */
 function dayChart(rows) {
-  const W = 600, H = 150, pad = 24;
+  const W = 600, H = 130, pad = 24, top = 8;
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("class", "chart");
   svg.setAttribute("preserveAspectRatio", "none");
-  if (!rows.length) return svg;
+  const wrap = el("div", { class: "day-chart" }, svg);
+  if (!rows.length) return wrap;
   const colours = { approve: "var(--ok)", override: "var(--warn)", reject: "var(--bad)" };
   const max = Math.max(1, ...rows.map((r) => r.approve + r.override + r.reject));
   const bw = Math.max(4, Math.min(40, (W - 2 * pad) / rows.length - 6));
   const step = (W - 2 * pad) / rows.length;
   rows.forEach((r, i) => {
-    let y = H - pad;
+    let y = H;
     for (const kind of ["approve", "override", "reject"]) {
-      const h = ((H - 2 * pad) * r[kind]) / max;
+      const h = ((H - top) * r[kind]) / max;
       if (!h) continue;
       const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
       rect.setAttribute("x", String(pad + i * step + (step - bw) / 2));
@@ -147,18 +151,18 @@ function dayChart(rows) {
       svg.append(rect);
       y -= h;
     }
-    if (rows.length <= 14 || i % Math.ceil(rows.length / 14) === 0) {
-      const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      t.setAttribute("x", String(pad + i * step + step / 2));
-      t.setAttribute("y", String(H - 6));
-      t.setAttribute("text-anchor", "middle");
-      t.setAttribute("font-size", "10");
-      t.setAttribute("fill", "var(--muted)");
-      t.textContent = r.day.slice(5);
-      svg.append(t);
-    }
   });
-  return svg;
+  // A label under at most fourteen of the days; on a phone, every other one of those.
+  const every = Math.ceil(rows.length / 14);
+  const days = el("div", { class: "chart-days" });
+  days.style.gridTemplateColumns = `repeat(${rows.length}, minmax(0, 1fr))`;
+  let shown = 0;
+  rows.forEach((r, i) => {
+    const labelled = i % every === 0;
+    days.append(el("span", { class: labelled && shown++ % 2 ? "minor" : "", text: labelled ? r.day.slice(5) : "" }));
+  });
+  wrap.append(days);
+  return wrap;
 }
 
 const stat = (label, value, sub) => el("div", { class: "card stat" }, el("div", { class: "label", text: label }), el("div", { class: "value", text: value }), sub ? el("div", { class: "sub", text: sub }) : null);

@@ -449,7 +449,9 @@ under you is refused, and the verifier counts it in its own round only.
 Under a multi-approval rule the queue shows the approvals so far, and a
 change you have approved leaves your queue until the next round. Activity
 reads the chain, with what each call did. `j` and `k` move through the
-queue, `a`, `r` and `x` decide, `e` edits, and `?` lists the keys.
+queue, `a`, `r` and `x` decide, `e` edits, and `?` lists the keys. The text
+grows with the window, from a phone to a large monitor; the two A buttons at
+the top make it smaller or larger, and the desk keeps your choice.
 
 ## Insights and analytics
 
