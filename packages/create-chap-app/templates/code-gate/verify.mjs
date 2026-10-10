@@ -1,44 +1,55 @@
 // Verify that commits were approved through the gate: `node verify.mjs [range] [options]`.
 //
-//   range                    commits to check, e.g. main..HEAD (default: HEAD alone)
-//   --repo <path>            the repository (default: the current directory)
-//   --coordinator <url>      also check each task against a running gate (POST /chap address)
-//   --require-signed-commit  fail a commit the agent's key did not sign
-//   --allow-git-signed       let a commit with no CHAP approval through when git verifies
-//                            its own signature (git verify-commit), for people's commits
-//   --allow-unsigned         accept decisions with no signature (signatures off)
-//   --json                   print the results as JSON
+//   range                     commits to check, e.g. main..HEAD (default: HEAD alone)
+//   --repo <path>             the repository (default: the current directory)
+//   --trust <file>            the trust policy: a chap-trust.json, read from this file
+//   --trust-ref <ref>         the trust policy: chap-trust.json as the repository holds it at <ref>
+//   --coordinator <url>       check each task against a running gate (its POST /chap address);
+//                             with no trust policy given, the gate's records are the policy
+//   --require-signed-commit   fail a commit that the agent's key did not sign
+//   --allow-people            let a commit with no CHAP approval through when it is signed by a
+//                             key the trust policy lists under people (SSH signatures)
+//   --allow-clean-merges      let a merge commit through when its tree is the clean merge of its
+//                             parents (git 2.38 or later); otherwise every merge commit fails
+//   --allow-unsigned          accept decisions with no signature (where signatures are off)
+//   --json                    print the results as JSON
 //
-// For each commit with CHAP trailers the note under refs/notes/chap is read
-// and checked, with nothing but the repository: the approved artefact's
-// digest matches the trailer; every decision of the final review round
-// names the task, signs the digest of what was proposed, and verifies
-// against the reviewer's key on record; an override's operations lead from
-// the proposed artefact to the approved one; the review rule is met by
-// that many distinct reviewers; and the approved patch applied to the
-// commit's parent gives the commit's tree. A commit the gate made carries
-// an SSH signature by the agent's key, which is checked against the key
-// the note holds for the agent. With --coordinator the task is read there
-// too and must be completed with the same artefact. A commit with no
-// trailers fails, unless --allow-git-signed applies; a merge commit is
-// reported and passed. Exit code 1 on any failure.
+// A trust policy says whose approvals count and which agents may commit,
+// with their keys pinned. Offline, with --trust or --trust-ref, each commit
+// is checked with nothing but the repository: its note's approvals come
+// from reviewers the policy names, never from an agent, verify against the
+// pinned keys and sign the digest of what was proposed; the agent's signed
+// submission is the proposed artefact; the policy's rule is met; an
+// override's operations lead to the approved artefact; the commit's parent
+// is the commit the change was approved against; the approved patch is
+// git's own diff of the change and gives the commit's tree; no other commit
+// in the range uses the same approval; and the commit's signature verifies
+// against the agent's pinned key. With --coordinator the same checks run
+// against the gate's own records, and the note must agree with them. With
+// neither, the gate in chap.config.json beside this file is asked. Exit
+// code 1 on any failure.
 
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkNote, contentHash, task as readTask, outcomeOfView } from "./lib/gate.mjs";
-import { commitInfo, commitSignature, emptyTree, gitSignatureVerifies, parseTrailers, readNote, repoRoot, revList, treeAfterPatch, verifySshSignature } from "./lib/git.mjs";
+import { buildNote, checkApproval, checkChange, contentHash, evidence, loadGate, onlinePolicy, readTrustFile, served, trustAtRef } from "./lib/gate.mjs";
+import { cleanMergeTree, commitInfo, commitSignature, emptyTree, parseTrailers, readNote, repoRoot, revList, treeOf, verifySshSignature } from "./lib/git.mjs";
 import { opensshPublicKey } from "./keys.mjs";
 
+const here = dirname(fileURLToPath(import.meta.url));
+
 export function parseArgs(argv) {
-  const out = { range: "HEAD", repo: process.cwd(), coordinator: process.env.CHAP_URL ?? null, requireSignedCommit: false, allowGitSigned: false, allowUnsigned: false, json: false };
+  const out = { range: "HEAD", repo: process.cwd(), trust: null, trustRef: null, coordinator: null, requireSignedCommit: false, allowPeople: false, allowCleanMerges: false, allowUnsigned: false, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--repo") out.repo = argv[++i];
+    else if (a === "--trust") out.trust = argv[++i];
+    else if (a === "--trust-ref") out.trustRef = argv[++i];
     else if (a === "--coordinator") out.coordinator = argv[++i];
     else if (a === "--require-signed-commit") out.requireSignedCommit = true;
-    else if (a === "--allow-git-signed") out.allowGitSigned = true;
+    else if (a === "--allow-people") out.allowPeople = true;
+    else if (a === "--allow-clean-merges") out.allowCleanMerges = true;
     else if (a === "--allow-unsigned") out.allowUnsigned = true;
     else if (a === "--json") out.json = true;
     else if (a.startsWith("-")) throw new Error(`Unknown option ${a}`);
@@ -47,17 +58,16 @@ export function parseArgs(argv) {
   return out;
 }
 
-/** Check the commit's SSH signature against the agent keys the note holds. */
-async function commitSignedByAgent(repo, sha, note) {
+/** Check a commit's SSH signature against allowed signers lines. */
+async function signedBy(repo, sha, lines) {
   const sig = await commitSignature(repo, sha);
   if (!sig) return { signed: false };
   if (!sig.ssh) return { signed: true, ok: false, detail: "the commit carries a signature that is not an SSH signature" };
-  const keys = (note.agent_keys ?? []).filter((k) => k?.kty === "OKP" && k?.crv === "Ed25519" && typeof k.x === "string");
-  if (!keys.length) return { signed: true, ok: false, detail: "the note holds no key for the agent to check the commit's signature against" };
+  if (!lines.length) return { signed: true, ok: false, detail: "no key to check the commit's signature against" };
   const dir = await mkdtemp(join(tmpdir(), "chap-signers-"));
   try {
     const file = join(dir, "allowed_signers");
-    await writeFile(file, keys.map((k) => `${note.agent} namespaces="git" ${opensshPublicKey(k).split(" ").slice(0, 2).join(" ")}`).join("\n") + "\n");
+    await writeFile(file, lines.join("\n") + "\n");
     const v = await verifySshSignature(repo, sha, file);
     return { signed: true, ok: v.ok, detail: v.detail };
   } finally {
@@ -65,71 +75,115 @@ async function commitSignedByAgent(repo, sha, note) {
   }
 }
 
-/** Check one commit. Returns { sha, subject, status: "ok" | "FAIL" | "merge", detail, task_id?, reviewers? }. */
-export async function verifyCommit(repo, sha, { coordinator = null, requireSignedCommit = false, allowGitSigned = false, allowUnsigned = false } = {}) {
+const signerLines = (uri, jwks) => (jwks ?? []).filter((k) => k?.kty === "OKP" && k?.crv === "Ed25519" && typeof k.x === "string")
+  .map((k) => `${uri} namespaces="git" ${opensshPublicKey(k).split(" ").slice(0, 2).join(" ")}`);
+
+/**
+ * Check one commit. `policy` is a trust policy, or null to take it from
+ * the gate's records for each task. Returns { sha, subject, status:
+ * "ok" | "FAIL", detail, task_id?, reviewers? }.
+ */
+export async function verifyCommit(repo, sha, { policy = null, gate = null, seen = new Map(), requireSignedCommit = false, allowPeople = false, allowCleanMerges = false, allowUnsigned = false } = {}) {
   const info = await commitInfo(repo, sha);
   const subject = info.message.split("\n")[0];
   const row = (status, detail, extra = {}) => ({ sha, subject, status, detail, ...extra });
-  if (info.parents.length > 1) return row("merge", "a merge commit; its parents are checked, it is not a change of its own");
+  if (info.parents.length > 1) {
+    if (!allowCleanMerges) return row("FAIL", "a merge commit: what it brings in was never proposed as one change. Rebase, or pass --allow-clean-merges");
+    const clean = await cleanMergeTree(repo, info.parents[0], info.parents[1]);
+    if (info.parents.length !== 2 || clean === null) return row("FAIL", "a merge commit whose merge this git cannot reproduce cleanly (git merge-tree --write-tree needs git 2.38 or later)");
+    return clean === info.tree ? row("ok", "a clean merge of its parents, carrying no change of its own") : row("FAIL", "a merge commit whose tree is not the clean merge of its parents: it carries changes of its own");
+  }
   const trailerList = await parseTrailers(repo, info.message);
   const trailers = Object.fromEntries(trailerList.map((t) => [t.token, t.value]));
   const taskId = trailers["CHAP-Task"];
   if (!taskId) {
-    if (allowGitSigned && (await gitSignatureVerifies(repo, sha))) return row("ok", "no CHAP approval; git verifies the commit's own signature");
+    if (allowPeople && policy?.people?.length) {
+      const s = await signedBy(repo, sha, policy.people);
+      if (s.signed && s.ok) return row("ok", `no CHAP approval; signed by a person ${policy.source} lists (${s.detail})`);
+    }
     return row("FAIL", "no CHAP approval: the message carries no CHAP-Task trailer");
   }
+  const problems = [];
+  if (seen.has(taskId)) problems.push(`${taskId} was used already by ${seen.get(taskId).slice(0, 12)}; an approval covers one commit`);
+  seen.set(taskId, sha);
+
+  // The note: from the repository, and, with a gate, rebuilt from its records.
+  let note = null;
   const text = await readNote(repo, sha);
-  if (!text) return row("FAIL", `no evidence note for ${taskId}; fetch it with: git fetch origin refs/notes/chap:refs/notes/chap`, { task_id: taskId });
-  let note;
-  try { note = JSON.parse(text); } catch { return row("FAIL", "the evidence note is not JSON", { task_id: taskId }); }
-  const problems = await checkNote(note, { taskId, allowUnsigned });
+  if (text) { try { note = JSON.parse(text); } catch { problems.push("the evidence note is not JSON"); } }
+  let usePolicy = policy;
+  if (gate) {
+    const ev = await evidence(gate, taskId).catch(() => null);
+    if (!ev) problems.push(`the gate at ${gate.base} does not know ${taskId}`);
+    else if (ev.task.state !== "completed") problems.push(`the gate holds ${taskId} as ${ev.task.state}`);
+    else {
+      const fromGate = buildNote(ev, gate.url);
+      if (note && (await contentHash(note.approved_artefact)) !== (await contentHash(fromGate.approved_artefact))) problems.push("the note's approved artefact differs from the gate's record");
+      note = fromGate;
+      if (!usePolicy) usePolicy = onlinePolicy(gate, ev);
+    }
+  }
+  if (!note) {
+    problems.push(`no evidence note for ${taskId}; fetch it with: git fetch origin refs/notes/chap:refs/notes/chap`);
+    return row("FAIL", problems.join("; "), { task_id: taskId });
+  }
+  if (!usePolicy) return row("FAIL", [...problems, "no trust policy to check the approval against"].join("; "), { task_id: taskId });
+
+  problems.push(...(await checkApproval(note, usePolicy, { taskId, allowUnsigned })));
   if (trailers["CHAP-Workspace"] && note.workspace !== trailers["CHAP-Workspace"]) problems.push("the note's workspace differs from the trailer");
   const approvedDigest = note.approved_artefact ? await contentHash(note.approved_artefact) : null;
   if (approvedDigest && trailers["CHAP-Artefact"] && approvedDigest !== trailers["CHAP-Artefact"]) problems.push("the approved artefact's digest differs from the CHAP-Artefact trailer");
-  const reviewers = [...new Set((note.decisions ?? []).filter((d) => d.method !== "decide.reject").map((d) => d.reviewer))];
+  const reviewers = [...new Set((note.decisions ?? []).filter((d) => d.method === "decide.approve" || d.method === "decide.override").map((d) => d.reviewer))];
   const trailerReviewers = trailerList.filter((t) => t.token === "CHAP-Reviewer").map((t) => t.value);
-  if (trailerReviewers.length && reviewers.length && trailerReviewers.slice().sort().join(",") !== reviewers.slice().sort().join(",")) problems.push("the CHAP-Reviewer trailers differ from the decisions in the note");
+  if (trailerReviewers.slice().sort().join(",") !== reviewers.slice().sort().join(",")) problems.push("the CHAP-Reviewer trailers differ from the approvals in the note");
   if (typeof note.approved_artefact?.patch === "string") {
-    const parentTree = info.parents.length ? `${info.parents[0]}^{tree}` : await emptyTree(repo);
-    try {
-      const tree = await treeAfterPatch(repo, parentTree, note.approved_artefact.patch);
-      if (tree !== info.tree) problems.push("the approved patch applied to the parent does not give this commit's tree");
-    } catch (e) { problems.push(`the approved patch does not apply to the parent: ${e.message.split("\n")[0]}`); }
+    const parent = info.parents[0] ?? null;
+    const parentTree = parent ? await treeOf(repo, parent) : await emptyTree(repo);
+    problems.push(...(await checkChange(repo, { parent, parentTree, tree: info.tree, approved: note.approved_artefact })));
   }
-  const signature = await commitSignedByAgent(repo, sha, note);
+  const signature = await signedBy(repo, sha, signerLines(note.agent, usePolicy.agents?.[note.agent]));
   if (signature.signed && !signature.ok) problems.push(`the commit's signature: ${signature.detail}`);
   if (!signature.signed && requireSignedCommit) problems.push("the commit is not signed by the agent's key");
-  let online = null;
-  if (coordinator) {
-    const gate = { base: coordinator.replace(/\/chap\/?$/, "") };
-    const view = await readTask(gate, taskId);
-    if (!view) problems.push(`the coordinator at ${coordinator} does not know ${taskId}`);
-    else {
-      if (view.state !== "completed") problems.push(`the coordinator holds ${taskId} as ${view.state}`);
-      if ((await contentHash(view.output)) !== approvedDigest) problems.push("the coordinator's approved artefact differs from the note");
-      if (outcomeOfView(view) !== (note.decision?.method === "decide.override" ? "override" : "approve")) problems.push("the coordinator's decision differs from the note");
-      online = view.state;
-    }
-  }
+
   if (problems.length) return row("FAIL", problems.join("; "), { task_id: taskId, reviewers });
   const how = note.decision?.method === "decide.override" ? "approved with an edit" : "approved";
-  const by = reviewers.length > 1 ? `${reviewers.join(" and ")} (${note.rule})` : reviewers[0] ?? note.decision?.reviewer;
-  const parts = [`${how} by ${by} as ${taskId}`, "decisions signed"];
+  const by = reviewers.length > 1 ? `${reviewers.join(" and ")} (${usePolicy.rule})` : reviewers[0];
+  const parts = [`${how} by ${by} as ${taskId}`, `checked against ${usePolicy.source}`];
   if (signature.signed) parts.push("commit signed by the agent's key");
-  if (online) parts.push(`${online} at the coordinator`);
   return row("ok", parts.join(", "), { task_id: taskId, reviewers });
 }
 
+/**
+ * Check every commit of a range. The policy comes from `trust` (a file),
+ * `trustRef` (chap-trust.json at a revision), or a gate: `gate` (as
+ * loadGate returns it) or the one at `coordinator`; with none, from the
+ * gate in chap.config.json beside this file.
+ */
 export async function verifyRange(repoPath, range, options = {}) {
   const repo = await repoRoot(repoPath);
   if (!repo) throw new Error(`${repoPath} is not inside a git repository`);
+  let policy = null;
+  if (options.trust) policy = await readTrustFile(options.trust);
+  else if (options.trustRef) {
+    policy = await trustAtRef(repo, options.trustRef);
+    if (!policy) throw new Error(`${options.trustRef} holds no chap-trust.json`);
+  }
+  let gate = options.gate ?? null;
+  if (!gate && options.coordinator) gate = { config: (await loadGate(here)).config, url: options.coordinator, base: options.coordinator.replace(/\/chap\/?$/, "") };
+  else if (!gate && !policy) {
+    gate = await loadGate(here);
+    try { await served(gate); } catch (e) {
+      throw new Error(`No trust policy was given, and the gate at ${gate.base} cannot be asked (${e.message}). Pass --trust chap-trust.json, --trust-ref <ref>, or --coordinator <url>.`);
+    }
+  }
+  const seen = new Map();
   const results = [];
-  for (const sha of await revList(repo, range)) results.push(await verifyCommit(repo, sha, options));
+  for (const sha of await revList(repo, range)) results.push(await verifyCommit(repo, sha, { ...options, policy, gate, seen }));
   return results;
 }
 
 export function render(results) {
-  const lines = results.map((r) => `${r.status.padEnd(5)} ${r.sha.slice(0, 12)}  ${r.subject.slice(0, 50).padEnd(50)}  ${r.detail}`);
+  const lines = results.map((r) => `${r.status.padEnd(5)} ${r.sha.slice(0, 12)}  ${r.subject.slice(0, 44).padEnd(44)}  ${r.detail}`);
   const failed = results.filter((r) => r.status === "FAIL").length;
   lines.push(failed ? `${failed} of ${results.length} commit${results.length === 1 ? "" : "s"} failed` : `${results.length} commit${results.length === 1 ? "" : "s"} verified`);
   return lines.join("\n");

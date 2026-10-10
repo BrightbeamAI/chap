@@ -9,7 +9,8 @@
 // what happened.
 
 import { contentHash, deepEqual, generateSigner, jsonPatch, makeClient, signerFromJwk } from "./chap-client.mjs";
-import { ago, el, renderArtefact, renderJson, stateBadge, titleOf } from "./render.js";
+import { ago, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
+import { parsePatch } from "./diff.js";
 import { decisionsOf, outcomeOf, renderInsights, renderMarkdown } from "./insights.js";
 
 const $ = (id) => document.getElementById(id);
@@ -126,7 +127,7 @@ async function setReviewer(uri) {
   const signer = await signerFor(uri);
   state.client = makeClient({ workspace: state.config.workspace, from: uri, signer });
   chip("signing", signer ? `signed · ${signer.kid.slice(0, 8)}` : "unsigned", signer ? "good" : "");
-  $("signing").title = signer ? `Decisions are signed in this browser as ${uri} with the Ed25519 key ${signer.kid}` : "This workspace does not require signatures";
+  $("signing").title = signer ? `Decisions are signed in this browser as ${uri} with the Ed25519 key ${signer.kid}, fingerprint ${await fingerprint(signer.publicJwk)}. Give the fingerprint to whoever keeps the trust policy, so your approvals count.` : "This workspace does not require signatures";
   if (signer) {
     const me = state.config.humans.find((h) => h.uri === uri);
     try { await state.client.call("participant.join", { type: "human", role: me?.role ?? "reviewer", display_name: me?.display_name, jwks: { keys: [signer.publicJwk] } }); }
@@ -134,6 +135,13 @@ async function setReviewer(uri) {
   }
   state.chainShown = -1;
   await refresh().catch(lost);
+}
+
+/** A key's fingerprint as ssh-keygen and trust.mjs print it: SHA256 of the raw public key, base64. */
+async function fingerprint(jwk) {
+  const raw = Uint8Array.from(atob(jwk.x.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", raw));
+  return "SHA256:" + btoa(String.fromCharCode(...digest)).replace(/=+$/, "");
 }
 
 function lost(e) {
@@ -281,10 +289,12 @@ function renderReview() {
   // Under a rule that needs more than one approval, an edit would settle the
   // review with one reviewer's decision, so the desk offers no edit there:
   // request changes, and the edited version is approved again by everyone.
-  const multi = !!t.review?.rule && t.review.rule !== "any_one_approves";
-  $("r-edit").hidden = !(mine(t) && artefact !== null && !multi);
-  $("r-edit-hint").hidden = !(mine(t) && multi);
-  $("r-edit-hint").textContent = multi ? `Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.` : "";
+  const multi = multiRule(t);
+  const blocked = anomaliesOf(t).length > 0;
+  $("r-edit").hidden = !(mine(t) && artefact !== null && !multi && !blocked);
+  $("r-edit-hint").hidden = !(mine(t) && (multi || blocked));
+  $("r-edit-hint").textContent = blocked ? "This patch cannot be shown faithfully, so it cannot be approved or edited here." : multi ? `Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.` : "";
+  $("approve").disabled = blocked;
   $("r-edit").textContent = state.editing ? "Editing" : "Edit";
   $("override").hidden = !state.editing;
   $("cancel-edit").hidden = !state.editing;
@@ -299,9 +309,17 @@ function renderReview() {
   $("r-history-card").hidden = !events.length;
 }
 
+/** Whether a task's review needs more than one approval, so an edit would settle it alone. */
+const multiRule = (t) => !!t.review?.rule && t.review.rule !== "any_one_approves";
+
+/** What the desk cannot show faithfully of a code change's patch. */
+const anomaliesOf = (t) => (shapeOf(t.artefact) === "code" ? parsePatch(t.artefact.patch).anomalies : []);
+
 function toggleEdit() {
   const t = selected();
   if (!t || !mine(t)) return;
+  if (multiRule(t)) { notice(`Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.`, "bad"); return; }
+  if (anomaliesOf(t).length) { notice("This patch cannot be shown faithfully, so it cannot be edited here.", "bad"); return; }
   state.editing = state.editing ? null : { state: {}, value: () => t.artefact };
   renderReview();
   if (state.editing) { notice("Edit the artefact, give a rationale, then approve your edit.", ""); $("comment").focus(); }
@@ -316,6 +334,8 @@ async function decide(kind) {
   const comment = $("comment").value.trim();
   const artefact = t.artefact;
   const base = { task_id: t.task_id, approved_artefact_digest: await contentHash(artefact), ...(tags().length ? { tags: tags() } : {}) };
+  if ((kind === "approve" || kind === "override") && anomaliesOf(t).length) { notice("This patch cannot be shown faithfully. Reject it, or request changes.", "bad"); return; }
+  if (kind === "override" && multiRule(t)) { notice(`Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.`, "bad"); return; }
   let call;
   if (kind === "approve") call = ["decide.approve", { ...base, ...(comment ? { comment } : {}) }];
   else if (kind === "changes") { if (!comment) { notice("Say what to change; the agent reads the note.", "bad"); $("comment").focus(); return; } call = ["decide.reject", { ...base, comment, request_revision: true }]; }
@@ -326,6 +346,9 @@ async function decide(kind) {
     try { edited = state.editing.value(); } catch (e) { notice(`The edit is not usable: ${e.message}`, "bad"); return; }
     const diff = jsonPatch(artefact, edited);
     if (!diff.length) { notice("Nothing changed. Approve as written, or edit the artefact.", "bad"); return; }
+    // A code change is shown as it will be committed, and sent only once the
+    // reviewer confirms it: the patch written from the edit is what they approve.
+    if (shapeOf(edited) === "code" && !(await confirmEdit(edited))) return;
     call = ["decide.override", { ...base, diff, rationale: comment, intent_preserved: true }];
   }
   state.busy = true;
@@ -347,6 +370,23 @@ async function decide(kind) {
     state.busy = false;
     for (const id of ["approve", "changes", "reject", "override"]) $(id).disabled = false;
   }
+}
+
+/** Show the patch an edit produces, and resolve true when the reviewer confirms it. */
+function confirmEdit(edited) {
+  return new Promise((resolve) => {
+    const anomalies = parsePatch(edited.patch).anomalies;
+    const box = $("confirm-body");
+    box.replaceChildren(...[
+      anomalies.length ? el("div", { class: "alert" }, "The edit produced a patch the desk cannot show faithfully: ", anomalies.join("; "), ". It cannot be sent.") : null,
+      renderDiff(edited.patch, { files: edited.files ?? [] }),
+    ].filter(Boolean));
+    $("confirm-send").disabled = anomalies.length > 0;
+    $("confirm").hidden = false;
+    const done = (ok) => { $("confirm").hidden = true; $("confirm-send").onclick = null; $("confirm-cancel").onclick = null; resolve(ok); };
+    $("confirm-send").onclick = () => done(true);
+    $("confirm-cancel").onclick = () => done(false);
+  });
 }
 
 // -- activity -------------------------------------------------------------------
@@ -399,12 +439,23 @@ function renderActivity() {
 
 // Insights is drawn again only when what it counts has changed, so a
 // reader scrolling or selecting text is not interrupted by the poll.
-function renderInsightsView({ force = false } = {}) {
-  const key = JSON.stringify([state.tasks.length, state.tasks.map((t) => t.updated_at).sort().at(-1), state.health?.audit, state.chain.verified, state.analytics.summary?.written]);
+async function loadAllTasks() {
+  // Every task, for counting. The queue holds the open ones and the most
+  // recent; Insights counts the whole workspace, read when it is shown.
+  if (state.allTasksAt && Date.now() - state.allTasksAt < 30_000 && state.allTasksAudit === state.health?.audit) return;
+  state.allTasks = (await getJson("/api/tasks")).tasks;
+  state.allTasksAt = Date.now();
+  state.allTasksAudit = state.health?.audit;
+}
+
+async function renderInsightsView({ force = false } = {}) {
+  try { await loadAllTasks(); } catch { /* the queue's tasks are counted instead */ }
+  const tasks = state.allTasks ?? state.tasks;
+  const key = JSON.stringify([tasks.length, tasks.map((t) => t.updated_at).sort().at(-1), state.health?.audit, state.chain.verified, state.analytics.summary?.written]);
   if (!force && key === state.insightsKey) return;
   state.insightsKey = key;
   const chain = state.config.chain_enabled ? { entries: state.health?.audit ?? 0, verified: state.chain.verified } : null;
-  const view = renderInsights(state.tasks, { chain, analytics: state.analytics, onOpenTask: (t) => select_(t.task_id) });
+  const view = renderInsights(tasks, { chain, analytics: state.analytics, onOpenTask: (t) => select_(t.task_id) });
   $("insights").replaceChildren(view);
   if (state.analytics.refine) { const r = view.querySelector("#refine"); if (r) r.innerHTML = renderMarkdown(state.analytics.refine); }
 }

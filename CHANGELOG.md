@@ -45,14 +45,16 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
 - **The code gate.** A `create-chap-app` template that puts every commit a
   coding agent makes behind a person's decision. The agent's change is
   proposed as a patch and reviewed as a diff; the repository's hooks commit
-  only an approved patch, with `CHAP-*` trailers, a signature by the agent's
-  key in git's SSH format, and a note under `refs/notes/chap` holding the
-  artefact as proposed and as approved, each reviewer's signed decision and
-  the chain head. `verify.mjs` checks a range of commits from the
-  repository alone, a workflow runs it on pull requests, a review rule sets
-  how many reviewers a change needs, and `npm run demo` runs the whole path
-  with a built-in agent. Claude Code, Cursor or any agent that can run a
-  command proposes through `propose.mjs`.
+  only an approved change, on the commit it was approved against, with
+  `CHAP-*` trailers, a signature by the agent's key in git's SSH format, and
+  a note under `refs/notes/chap` holding the agent's signed proposal, each
+  reviewer's signed decision and the chain head. A trust policy the team
+  keeps in the repository pins whose approvals count and the rule;
+  `verify.mjs` checks a range of commits against it from the repository
+  alone, and a workflow runs the base branch's verifier and policy on every
+  pull request. `npm run demo` runs the whole path with a built-in agent,
+  and Claude Code, Cursor or any agent that can run a command proposes
+  through `propose.mjs`.
 - **The desk, rebuilt.** Every template's desk shows the artefact by its
   shape (a diff for code, editable a file at a time; a letter for a
   message), lets a reviewer request changes as well as approve, edit or

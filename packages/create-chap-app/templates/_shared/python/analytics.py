@@ -58,8 +58,12 @@ def patch_sections(patch) -> dict[str, str]:
     current = None
     for line in patch.splitlines(keepends=True):
         if line.startswith("diff --git "):
-            parts = line.rstrip("\n").split(" b/", 1)
-            current = parts[1] if len(parts) == 2 else line
+            # With renames off both halves name the same path, so the line is
+            # split in the middle, which holds for a path with " b/" in it.
+            rest = line.rstrip("\n")[len("diff --git "):]
+            n = (len(rest) - 5) // 2
+            path = rest[2:2 + n]
+            current = path if rest.startswith("a/") and rest[2 + n:] == f" b/{path}" else rest
             out[current] = ""
         if current is not None:
             out[current] += line

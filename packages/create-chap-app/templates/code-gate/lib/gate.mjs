@@ -1,7 +1,7 @@
 // The gate's CHAP side: the configuration, a signing client for the agent,
-// a proposal as a task under review, the decision on it, and the evidence
-// a commit carries. propose.mjs, agent.mjs, the hooks and verify.mjs all
-// run on these.
+// a proposal as a task under review, the decision on it, the trust policy
+// that says whose approvals count, and the evidence a commit carries.
+// propose.mjs, agent.mjs, the hooks, trust.mjs and verify.mjs run on these.
 
 import { execFile } from "node:child_process";
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
@@ -10,27 +10,37 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalize, contentHash, deepEqual, makeClient, signerFromJwk } from "../desk/chap-client.mjs";
 import { keyPathFor, readKeyFile, sshKeyFiles } from "../keys.mjs";
-import { currentBranch, fileAt, head, patchStats, workingTreePatch } from "./git.mjs";
+import { blobAt, currentBranch, faithfulCheck, git, head, numstat, workingTreeChange } from "./git.mjs";
 
 /** The most text a change carries as file contents beside its patch, so the desk can edit files whole. */
 export const MAX_CONTENT_BYTES = 200_000;
 
 export const TASK_KIND = "code_change";
 export const NOTE_VERSION = 1;
+export const TRUST_FILE = "chap-trust.json";
 const here = dirname(fileURLToPath(import.meta.url));
+
+// -- the gate --------------------------------------------------------------------
 
 /**
  * The gate directory, its configuration, and where the coordinator answers.
- * CHAP_URL names a gate elsewhere, and CHAP_AGENT_URI the agent this
- * developer's proposals come from, when a team shares one gate.
+ * CHAP_URL names a gate elsewhere, CHAP_AGENT_URI the agent this
+ * developer's proposals come from, when a team shares one gate, and
+ * CHAP_CONFIG a configuration file other than chap.config.json here.
  */
 export async function loadGate(dir = dirname(here)) {
-  const config = JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8"));
+  const configPath = process.env.CHAP_CONFIG ?? join(dir, "chap.config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
   if (process.env.CHAP_AGENT_URI) config.agent = { ...(config.agent ?? {}), uri: process.env.CHAP_AGENT_URI };
   const host = process.env.CHAP_HOST ?? config.host ?? "127.0.0.1";
   const port = process.env.PORT ?? config.port ?? 8791;
   const url = process.env.CHAP_URL ?? `http://${host}:${port}/chap`;
-  return { dir, config, url, base: url.replace(/\/chap\/?$/, "") };
+  return { dir, config, configPath, url, base: url.replace(/\/chap\/?$/, "") };
+}
+
+/** The environment a commit made for this gate passes to its hooks, so they ask the same gate. */
+export function gateEnv(gate) {
+  return { CHAP_URL: gate.url, ...(gate.configPath ? { CHAP_CONFIG: gate.configPath } : {}) };
 }
 
 /** GET from the gate's read API. A 404 gives null. */
@@ -45,7 +55,7 @@ export async function api(gate, path) {
 export async function served(gate) {
   let cfg;
   try { cfg = await api(gate, "/api/config"); } catch (e) {
-    throw new Error(`The gate at ${gate.base} is not answering (${e.cause?.code ?? e.message}). Start it with: npm start`);
+    throw Object.assign(new Error(`The gate at ${gate.base} is not answering (${e.cause?.code ?? e.message}). Start it with: npm start`), { unreachable: true });
   }
   if (cfg.workspace !== gate.config.workspace) {
     throw new Error(`${gate.base} serves ${cfg.workspace}, and chap.config.json here names ${gate.config.workspace}`);
@@ -111,26 +121,33 @@ export function changeKey(base, patch) {
   return "change-" + sha256(`${base ?? "none"}\n${patch}`).slice(0, 24);
 }
 
+// -- a change ----------------------------------------------------------------------
+
 /**
- * The artefact under review for a change in a repository: the patch of the
- * working tree against HEAD, with the files it touches and where it came
- * from. Null when the working tree matches HEAD.
+ * The artefact under review for a change in a repository: the canonical
+ * patch of the working tree against HEAD, the commit it applies to, the
+ * files it touches and where it came from. Each text file's content before
+ * and after, read from the two trees, travels beside the patch up to a
+ * size, so a reviewer can edit a file whole. Null when the working tree
+ * matches HEAD.
  */
 export async function describeChange(repo, { summary, drafted_by = "working tree", requested_by } = {}) {
-  const patch = await workingTreePatch(repo);
+  const { baseTree, tree, patch } = await workingTreeChange(repo);
   if (!patch.trim()) return null;
-  const base = await head(repo);
-  const files = await patchStats(repo, patch);
-  // Each text file's content before and after travels with the patch, up to
-  // a size, so a reviewer can edit the file whole and the desk writes the
-  // patch again. A binary file, or a change too large, carries the patch only.
+  // The patch travels as text. It must give the working tree back, and read
+  // in the desk as the change it is, or the reviewer would decide on
+  // something other than what gets committed: a file that is not UTF-8
+  // text, or a submodule, is refused here.
+  const check = await faithfulCheck(repo, baseTree, patch);
+  if (!check.ok) throw new Error(`This change cannot be proposed as it stands: ${check.reason.replace(/^what a reviewer sees of the patch is not what git applies: /, "")}`);
+  if (check.tree !== tree) throw new Error("This change cannot be proposed as text: a file in it is not UTF-8, so the patch would not give the working tree back");
+  const files = await numstat(repo, baseTree, tree);
   let total = 0;
   const contents = [];
   for (const f of files) {
     if (f.added === null) { contents.push(null); continue; }
-    const before = base ? await fileAt(repo, base, f.path) : null;
-    let after = null;
-    try { after = await readFile(join(repo, f.path), "utf8"); } catch { /* deleted */ }
+    const before = await blobAt(repo, baseTree, f.path);
+    const after = await blobAt(repo, tree, f.path);
     total += (before?.length ?? 0) + (after?.length ?? 0);
     contents.push({ before, after });
   }
@@ -139,7 +156,7 @@ export async function describeChange(repo, { summary, drafted_by = "working tree
     summary,
     repo: basename(repo),
     branch: await currentBranch(repo),
-    base,
+    base: await head(repo),
     files,
     patch,
     drafted_by,
@@ -161,11 +178,16 @@ export async function revisionTarget(gate, client, artefact) {
 /** The review rule in chap.config.json: { rule, to }. any_one_approves when none is set. */
 export const reviewRule = (gate) => ({ rule: gate?.config?.review?.rule ?? "any_one_approves", to: gate?.config?.review?.to ?? null });
 
-/** How many distinct approvals a rule needs, given who it is addressed to. */
-export function approvalsNeeded(rule, to = []) {
-  if (rule.startsWith("quorum:")) return Math.max(1, parseInt(rule.slice("quorum:".length), 10) || 1);
-  if (rule === "all_approve") return Math.max(1, to.length);
+/** How many distinct approvals a rule needs, given the reviewers it covers. */
+export function approvalsNeeded(rule, reviewers = []) {
+  if (String(rule).startsWith("quorum:")) return Math.max(1, parseInt(String(rule).slice("quorum:".length), 10) || 1);
+  if (rule === "all_approve") return Math.max(1, reviewers.length);
   return 1;
+}
+
+/** Of several rules, the one that needs the most approvals. */
+export function strictestRule(rules, reviewers = []) {
+  return rules.filter(Boolean).reduce((a, b) => (approvalsNeeded(b, reviewers) > approvalsNeeded(a, reviewers) ? b : a), "any_one_approves");
 }
 
 /** The human members other than this participant: who a review is addressed to by default. */
@@ -260,10 +282,11 @@ export async function waitForDecision(gate, id, { pollMs = 2000, timeoutMs = nul
   }
 }
 
-/** The approved code changes the gate holds, newest first. */
-export async function approvedChanges(gate, limit = 50) {
-  const r = await api(gate, `/api/tasks?kind=${TASK_KIND}&state=completed&limit=${limit}`);
-  return r?.tasks ?? [];
+/** The approved code changes the gate holds, newest first; with `base`, only those made against that commit. */
+export async function approvedChanges(gate, { base, limit } = {}) {
+  const r = await api(gate, `/api/tasks?kind=${TASK_KIND}&state=completed${limit ? `&limit=${limit}` : ""}`);
+  const tasks = r?.tasks ?? [];
+  return base === undefined ? tasks : tasks.filter((t) => (t.output?.base ?? null) === base);
 }
 
 /** The evidence behind a task's decisions, from the read API. */
@@ -271,12 +294,15 @@ export const evidence = (gate, id) => api(gate, `/api/tasks/${encodeURIComponent
 
 // -- RFC 6902, the part decide.override uses -----------------------------------
 
+const UNSAFE_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
 /** Apply add, remove and replace operations to a JSON value. Other operations are refused. */
 export function applyJsonPatch(doc, ops) {
   let out = structuredClone(doc);
   for (const op of ops) {
     if (!["add", "remove", "replace"].includes(op.op)) throw new Error(`Unsupported patch operation: ${op.op}`);
-    const tokens = op.path === "" ? [] : op.path.split("/").slice(1).map((t) => t.replace(/~1/g, "/").replace(/~0/g, "~"));
+    const tokens = op.path === "" ? [] : String(op.path).split("/").slice(1).map((t) => t.replace(/~1/g, "/").replace(/~0/g, "~"));
+    if (tokens.some((t) => UNSAFE_KEYS.has(t))) throw new Error(`Refused path: ${op.path}`);
     if (tokens.length === 0) {
       if (op.op === "remove") throw new Error("Cannot remove the root");
       out = structuredClone(op.value);
@@ -284,45 +310,88 @@ export function applyJsonPatch(doc, ops) {
     }
     let parent = out;
     for (const t of tokens.slice(0, -1)) {
-      parent = Array.isArray(parent) ? parent[Number(t)] : parent?.[t];
-      if (parent === undefined) throw new Error(`Path not found: ${op.path}`);
+      parent = Array.isArray(parent) ? parent[Number(t)] : (parent && Object.hasOwn(parent, t) ? parent[t] : undefined);
+      if (parent === undefined || parent === null || typeof parent !== "object") throw new Error(`Path not found: ${op.path}`);
     }
     const last = tokens.at(-1);
     if (Array.isArray(parent)) {
       const i = last === "-" ? parent.length : Number(last);
+      if (!Number.isInteger(i) || i < 0 || i > parent.length) throw new Error(`Path not found: ${op.path}`);
       if (op.op === "add") parent.splice(i, 0, structuredClone(op.value));
-      else if (op.op === "remove") parent.splice(i, 1);
-      else parent[i] = structuredClone(op.value);
+      else if (op.op === "remove") { if (i >= parent.length) throw new Error(`Path not found: ${op.path}`); parent.splice(i, 1); }
+      else { if (i >= parent.length) throw new Error(`Path not found: ${op.path}`); parent[i] = structuredClone(op.value); }
     } else {
-      if (op.op === "remove") { if (!(last in parent)) throw new Error(`Path not found: ${op.path}`); delete parent[last]; }
-      else if (op.op === "replace" && !(last in parent)) throw new Error(`Path not found: ${op.path}`);
+      const own = Object.hasOwn(parent, last);
+      if (op.op === "remove") { if (!own) throw new Error(`Path not found: ${op.path}`); delete parent[last]; }
+      else if (op.op === "replace" && !own) throw new Error(`Path not found: ${op.path}`);
       else parent[last] = structuredClone(op.value);
     }
   }
   return out;
 }
 
+// -- the trust policy ---------------------------------------------------------------
+
+/**
+ * A trust policy says whose approvals count and which agents may commit:
+ * { source, workspace, rule, reviewers: { uri: [jwk] }, agents: { uri: [jwk] },
+ *   people: [allowed_signers line] }. The keys are pinned, so a note signed
+ * with any other key does not verify, whatever the note itself carries.
+ */
+export function policyFromTrust(json, source) {
+  if (!json || json.chap_trust !== 1) throw new Error(`${source} is not a CHAP trust file (chap_trust: 1)`);
+  return {
+    source, workspace: json.workspace ?? null, rule: json.rule ?? "any_one_approves",
+    reviewers: json.reviewers ?? {}, agents: json.agents ?? {}, people: json.people ?? [],
+  };
+}
+
+/** The trust policy in a file. */
+export async function readTrustFile(path) {
+  return policyFromTrust(JSON.parse(await readFile(path, "utf8")), path);
+}
+
+/** The trust policy a repository holds at a revision, or null when it holds none. */
+export async function trustAtRef(repo, ref, name = TRUST_FILE) {
+  const text = await blobAt(repo, ref, name);
+  return text === null ? null : policyFromTrust(JSON.parse(text), `${ref}:${name}`);
+}
+
+/**
+ * The policy a running gate gives for a task's evidence: the reviewers are
+ * the humans chap.config.json names, with the keys the workspace records
+ * for them, and every agent member is an agent. A participant who joined
+ * under another URI counts for nothing, whatever type it gave itself.
+ */
+export function onlinePolicy(gate, ev) {
+  const configured = new Set((gate.config.humans ?? []).map((h) => h.uri));
+  const reviewers = {};
+  const agents = {};
+  for (const [uri, m] of Object.entries(ev.members ?? {})) {
+    if (m.type === "human" && configured.has(uri)) reviewers[uri] = m.keys ?? [];
+    if (m.type === "agent") agents[uri] = m.keys ?? [];
+  }
+  return { source: `the gate at ${gate.base}`, workspace: ev.workspace, rule: reviewRule(gate).rule, reviewers, agents, people: [] };
+}
+
 // -- the evidence a commit carries -----------------------------------------------
 
 /**
- * The note written beside a commit, from the task's evidence: the task,
- * the review rule and who the final round was addressed to, every decision
- * of that round as the chain holds it (signed under security-signed/1.0),
- * the artefact as proposed in that round and as approved, the keys on
- * record for the reviewers and for the agent, and the chain head. The
- * approved artefact of an override is the proposed one with the reviewer's
- * operations applied. `decision` and `decision_envelope` name the decision
- * that settled the review.
+ * The note written beside a commit, from the task's evidence: the task, the
+ * review rule and who the final round was addressed to, the agent's signed
+ * submission that opened the round, every decision of the round as the
+ * chain holds it, the artefact as proposed and as approved, the keys on
+ * record for the reviewers and the agent, and the chain head. The keys and
+ * the rule are a record of what the workspace held; a verifier checks the
+ * signatures against the keys its own policy pins.
  */
 export function buildNote(ev, gateUrl) {
   const settling = ev.decisions.filter((d) => ["decide.approve", "decide.override"].includes(d.envelope.method)).at(-1);
   if (!settling) throw new Error(`Task ${ev.task.task_id} has no approval on the chain`);
-  // The round the settling decision belongs to opened with the last
-  // submission before it; its artefact is what the decisions sign.
   const submission = ev.submissions.filter((x) => x.seq < settling.seq).at(-1);
   const round = ev.decisions.filter((d) => d.seq > (submission?.seq ?? -1) && d.seq <= settling.seq);
   const approved = ev.task.output;
-  const proposed = submission?.envelope.params?.output ?? submission?.envelope.params?.artefact ?? approved;
+  const proposed = submission?.envelope.params?.output ?? submission?.envelope.params?.artefact ?? null;
   const params = settling.envelope.params;
   const rule = ev.task.review?.rule ?? submission?.envelope.params?.rule ?? "any_one_approves";
   const requestedTo = ev.task.review?.requested_to ?? submission?.envelope.params?.to ?? [];
@@ -338,6 +407,7 @@ export function buildNote(ev, gateUrl) {
     summary: approved?.summary ?? ev.task.input?.summary ?? "",
     rule,
     requested_to: requestedTo,
+    submission: submission ? { method: submission.envelope.method, seq: submission.seq, arrived: submission.arrived, envelope: submission.envelope } : null,
     decision: { method: settling.envelope.method, reviewer: params.from, seq: settling.seq, arrived: settling.arrived, comment: params.comment ?? params.rationale ?? null, tags: params.tags ?? null },
     decisions: round.map((d) => ({ method: d.envelope.method, reviewer: d.envelope.params?.from, seq: d.seq, arrived: d.arrived, envelope: d.envelope })),
     approved_artefact: approved,
@@ -351,55 +421,90 @@ export function buildNote(ev, gateUrl) {
 }
 
 /**
- * Check a note on its own: the decisions of the final round name the task,
- * sign the digest of the proposed artefact and verify against the keys on
- * record; an override's operations lead from the proposed artefact to the
- * approved one; and the rule is met, with that many distinct reviewers
- * approving. Under a rule that needs more than one approval an override
- * does not count, since the reviewers who approved saw the proposed
- * version and not the edited one. Returns a list of problems, empty when
- * the note holds.
+ * Check a note against a trust policy. The agent the note names must be one
+ * the policy trusts, and its signed submission must be the proposed
+ * artefact. Each counted approval must come from a reviewer the policy
+ * names, never from an agent, sign the digest of the proposed artefact and
+ * verify against that reviewer's pinned key; an override's operations must
+ * lead from the proposed artefact to the approved one. The policy's rule
+ * must be met by that many distinct reviewers, and under a rule that needs
+ * more than one approval an override does not count, since the others
+ * approved the proposed version. The rule the note itself records is not
+ * read. Returns a list of problems, empty when the note holds.
  */
-export async function checkNote(note, { taskId = note.task_id, allowUnsigned = false } = {}) {
+export async function checkApproval(note, policy, { taskId = note.task_id, allowUnsigned = false } = {}) {
   const problems = [];
   if (note.task_id !== taskId) problems.push(`the note is for ${note.task_id}, the commit names ${taskId}`);
+  if (policy.workspace && note.workspace !== policy.workspace) problems.push(`the note is from ${note.workspace}, and ${policy.source} covers ${policy.workspace}`);
   const approved = note.approved_artefact;
-  const proposed = note.proposed_artefact ?? approved;
+  const proposed = note.proposed_artefact;
   if (!approved || typeof approved.patch !== "string") problems.push("the note holds no approved patch");
+  if (!proposed) problems.push("the note holds no proposed artefact");
   const proposedDigest = proposed ? await contentHash(proposed) : null;
-  const decisions = Array.isArray(note.decisions) && note.decisions.length
-    ? note.decisions
-    : [{ method: note.decision_envelope?.method, reviewer: note.decision_envelope?.params?.from, envelope: note.decision_envelope }];
+
+  const agentKeys = policy.agents?.[note.agent];
+  if (!agentKeys) problems.push(`${note.agent} is not an agent ${policy.source} names`);
+  const sub = note.submission?.envelope;
+  if (!sub) problems.push("the note holds no submission from the agent");
+  else {
+    const p = sub.params ?? {};
+    const artefact = sub.method === "review.request" ? p.artefact : p.output;
+    if (!["task.complete", "review.request"].includes(sub.method) || p.task_id !== taskId) problems.push("the submission in the note is not one for this task");
+    else if (p.from !== note.agent) problems.push(`the submission was made by ${p.from}, and the note names ${note.agent}`);
+    else if (!proposedDigest || (await contentHash(artefact)) !== proposedDigest) problems.push("the submission is not the proposed artefact");
+    else if (sub.sig) {
+      if (agentKeys) { const v = envelopeVerifies(sub, agentKeys); if (!v.ok) problems.push(`the agent's signature on its submission: ${v.reason}`); }
+    } else if (!allowUnsigned) problems.push("the agent's submission is unsigned");
+  }
+
   const approvers = new Set();
   let overridden = false;
-  for (const d of decisions) {
+  for (const d of note.decisions ?? []) {
     const env = d.envelope ?? {};
-    const params = env.params ?? {};
+    const p = env.params ?? {};
     if (!["decide.approve", "decide.override"].includes(env.method)) continue;
-    if (params.task_id !== taskId) { problems.push(`a decision by ${params.from} names another task`); continue; }
-    if (params.approved_artefact_digest !== proposedDigest) { problems.push(`the decision by ${params.from} does not sign the digest of the proposed artefact`); continue; }
-    const keys = (note.reviewer_keys ?? {})[params.from] ?? [];
+    const from = p.from;
+    if (p.task_id !== taskId) { problems.push(`an approval by ${from} names another task`); continue; }
+    if (from === note.agent || policy.agents?.[from]) { problems.push(`${from} approved the change, and is an agent`); continue; }
+    const keys = policy.reviewers?.[from];
+    if (!keys) { problems.push(`${from} approved the change, and is not a reviewer ${policy.source} names`); continue; }
+    if (p.approved_artefact_digest !== proposedDigest) { problems.push(`the approval by ${from} does not sign the digest of the proposed artefact`); continue; }
     if (env.sig) {
       const v = envelopeVerifies(env, keys);
-      if (!v.ok) { problems.push(`the signature of ${params.from}: ${v.reason}`); continue; }
-    } else if (!allowUnsigned) {
-      problems.push(`the decision by ${params.from} is unsigned (pass --allow-unsigned where signatures are off)`);
-      continue;
-    }
+      if (!v.ok) { problems.push(`the signature of ${from}: ${v.reason}`); continue; }
+    } else if (!allowUnsigned) { problems.push(`the approval by ${from} is unsigned (pass --allow-unsigned where signatures are off)`); continue; }
     if (env.method === "decide.override") {
       overridden = true;
       try {
-        if (!deepEqual(applyJsonPatch(proposed, params.diff ?? []), approved)) problems.push("the reviewer's operations applied to the proposed artefact do not give the approved one");
+        if (!deepEqual(applyJsonPatch(proposed, p.diff ?? []), approved)) problems.push("the reviewer's operations applied to the proposed artefact do not give the approved one");
       } catch (e) { problems.push(`the reviewer's operations do not apply: ${e.message}`); }
     }
-    approvers.add(params.from);
+    approvers.add(from);
   }
-  const rule = note.rule ?? "any_one_approves";
-  const need = approvalsNeeded(rule, note.requested_to ?? []);
+  const reviewerList = Object.keys(policy.reviewers ?? {});
+  const need = approvalsNeeded(policy.rule, reviewerList);
   if (!overridden && approved && proposed && !deepEqual(proposed, approved)) problems.push("approved as written, yet the approved artefact differs from the proposed one");
-  if (need > 1 && overridden) problems.push(`under ${rule} an edit settles the review with one reviewer's decision; request changes so the edited version is approved again`);
-  else if (approvers.size < need) problems.push(`${rule} needs ${need} approval${need === 1 ? "" : "s"}; ${approvers.size} on record`);
-  if (rule === "all_approve") for (const uri of note.requested_to ?? []) if (!approvers.has(uri)) problems.push(`all_approve: no approval from ${uri}`);
+  if (need > 1 && overridden) problems.push(`under ${policy.rule} an edit settles the review with one reviewer's decision; request changes so the edited version is approved again`);
+  else if (approvers.size < need) problems.push(`${policy.rule} needs ${need} approval${need === 1 ? "" : "s"} from reviewers ${policy.source} names; ${approvers.size} on record`);
+  if (policy.rule === "all_approve") for (const uri of reviewerList) if (!approvers.has(uri)) problems.push(`all_approve: no approval from ${uri}`);
+  return problems;
+}
+
+/**
+ * Check that a commit (or a commit about to be made) is the approved change:
+ * its parent is the commit the change was proposed against, what the desk
+ * showed of the approved patch is the change git makes with it, and it
+ * gives the commit's tree. Returns a list of problems.
+ */
+export async function checkChange(repo, { parent, parentTree, tree, approved }) {
+  const problems = [];
+  if ((approved?.base ?? null) !== (parent ?? null)) {
+    problems.push(`the change was approved against ${approved?.base ? approved.base.slice(0, 12) : "an empty repository"}, and this commit's parent is ${parent ? parent.slice(0, 12) : "none"}; propose it again on this base`);
+    return problems;
+  }
+  const c = await faithfulCheck(repo, parentTree, approved.patch);
+  if (!c.ok) problems.push(c.reason);
+  else if (c.tree !== tree) problems.push("the approved patch applied to the parent does not give this commit's tree");
   return problems;
 }
 
@@ -429,8 +534,8 @@ export function envelopeVerifies(envelope, jwks) {
   const [, kid, b64] = parts;
   const { sig: _omit, ...rest } = envelope;
   const bytes = Buffer.from(canonicalize(rest), "utf8");
-  const candidates = (jwks ?? []).filter((k) => k && (k.kid === kid || !k.kid));
-  if (!candidates.length) return { ok: false, reason: `no key on record with kid ${kid}` };
+  const candidates = (jwks ?? []).filter((k) => k && typeof k.x === "string" && (k.kid === kid || !k.kid));
+  if (!candidates.length) return { ok: false, reason: `no pinned key with kid ${kid}` };
   for (const jwk of candidates) {
     try {
       const key = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: jwk.x }, format: "jwk" });
@@ -440,4 +545,4 @@ export function envelopeVerifies(envelope, jwks) {
   return { ok: false, reason: `the signature does not verify against the key ${kid}` };
 }
 
-export { canonicalize, contentHash };
+export { canonicalize, contentHash, git };

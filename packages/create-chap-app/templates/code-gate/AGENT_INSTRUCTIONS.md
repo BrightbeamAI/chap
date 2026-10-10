@@ -15,6 +15,9 @@ make here is reviewed by a person before it is committed. The rules:
    node __PROJECT_DIR__/propose.mjs "what the change does, in one line" --by claude-code --wait --commit
    ```
 
+   Where the gate is committed in this repository as `tools/chap-gate`, the
+   command is `node tools/chap-gate/propose.mjs` with the same arguments.
+
    It opens a task as you, submits the patch for review, waits for the
    decision, and commits an approved change through the hooks, so the
    commit carries the CHAP trailers and the evidence note. It prints the
@@ -25,8 +28,11 @@ make here is reviewed by a person before it is committed. The rules:
    printed a note: act on the note, then propose again with the same
    summary, which goes to the same task. Exit code 2 means rejected: take
    the change out of the working tree and stop.
-5. **Do not propose what you were not asked for.** A reviewer who sees an
+5. **Keep to one change on one base.** An approval covers the change on the
+   commit it was proposed against. Do not commit, rebase or merge anything
+   else while a change waits; if the branch moves on, propose again.
+6. **Do not propose what you were not asked for.** A reviewer who sees an
    unrelated change in the diff will send it back.
-6. The gate also answers as an MCP server at `http://127.0.0.1:8791/mcp`
+7. The gate also answers as an MCP server at `http://127.0.0.1:8791/mcp`
    with the `chap.*` tools, for reading your tasks and the chain. Reading
    is free; writing happens through `propose.mjs`.

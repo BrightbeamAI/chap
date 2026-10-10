@@ -1,32 +1,62 @@
 # Every commit a pull request brings must have been approved through the
-# CHAP code gate. The check needs no coordinator: the evidence travels with
-# the repository as a note under refs/notes/chap, which the gate writes at
-# commit time and `git push origin refs/notes/chap` sends along.
+# CHAP code gate, under the trust policy the base branch holds.
 #
-# Copy this file into the governed repository's .github/workflows/, and set
-# CHAP_GATE_DIR to where the gate project lives relative to the repository,
-# or install the gate's package there. A commit made by a person with git's
-# own signature passes with --allow-git-signed once the verifying keys are
-# configured on the runner; drop the flag to require an approval for every
-# commit on the branch.
+# The check reads the pull request's commits as data and runs nothing from
+# them: the verifier and the trust policy (chap-trust.json) come from the
+# base branch, in a separate checkout, and the workflow itself runs on
+# pull_request_target, so it is the base branch's copy of this file that
+# runs. A pull request that edits the verifier, the policy or this file
+# cannot change its own check; protect those paths with CODEOWNERS so the
+# edits get a person's review when they land.
+#
+# Copy this file into the governed repository's .github/workflows/, commit
+# the gate project at CHAP_GATE_DIR and chap-trust.json at the root, and
+# make the job a required status check in the branch protection. Push the
+# evidence notes with the commits (node <gate>/push-notes.mjs); the job
+# fetches them from this repository.
 name: CHAP code gate
 
 on:
-  pull_request:
+  pull_request_target:
+
+permissions:
+  contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     env:
       CHAP_GATE_DIR: tools/chap-gate
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - name: The base branch, which holds the verifier and the trust policy
+        uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+      - name: The pull request's commits, read as data
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
           fetch-depth: 0
-      - name: Fetch the evidence notes
-        run: git fetch origin refs/notes/chap:refs/notes/chap || echo "no notes pushed yet"
+          persist-credentials: false
+      - name: The base commit and the evidence notes from this repository
+        working-directory: head
+        run: |
+          git fetch --no-tags "https://github.com/${{ github.repository }}" "$BASE_SHA"
+          git fetch --no-tags "https://github.com/${{ github.repository }}" "+refs/notes/chap:refs/notes/chap" || echo "no notes pushed yet"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Add --allow-people to accept commits that people signed with their own
+      # SSH keys, when chap-trust.json lists those keys under "people".
       - name: Verify every commit of the pull request
-        run: node "$CHAP_GATE_DIR/verify.mjs" "origin/${{ github.base_ref }}..HEAD" --allow-git-signed
+        run: |
+          node "base/$CHAP_GATE_DIR/verify.mjs" "$BASE_SHA..$HEAD_SHA" \
+            --repo head \
+            --trust base/chap-trust.json \
+            --require-signed-commit

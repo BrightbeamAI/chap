@@ -295,7 +295,11 @@ export function taskEvidence(coord, workspace, taskId) {
     const member = typeof uri === "string" ? ws.members.get(uri) : undefined;
     if (member && !(uri in keys)) keys[uri] = (member.keys ?? []).map((k) => k.jwk);
   }
-  return { workspace, task: viewOf(ws, task, decisionLog(ws)), submissions, decisions, keys, chain_head: ws.chain_head ?? null, chain_enabled: !!ws.chain_enabled };
+  // Every member's type and public keys, so a checker can tell a person
+  // from an agent by the workspace's own record.
+  const members = {};
+  for (const [uri, m] of ws.members) members[uri] = { type: m.type, role: m.role, keys: (m.keys ?? []).filter((k) => !k.revoked_at).map((k) => k.jwk) };
+  return { workspace, task: viewOf(ws, task, decisionLog(ws)), submissions, decisions, keys, members, chain_head: ws.chain_head ?? null, chain_enabled: !!ws.chain_enabled };
 }
 
 export function publicConfig(config) {
@@ -430,7 +434,9 @@ export async function makeServer(config, coord) {
         return reply(res, 200, file.body, file.type);
       }
       if (req.method === "GET" && url.pathname.startsWith("/analytics/")) {
-        const name = decodeURIComponent(url.pathname.slice("/analytics/".length)) || "index.html";
+        let name;
+        try { name = decodeURIComponent(url.pathname.slice("/analytics/".length)) || "index.html"; } catch { return reply(res, 400, { error: "a malformed escape in the path" }); }
+        if (name.includes("\0")) return reply(res, 404, { error: "not found" });
         const type = TYPES[extname(name)];
         if (!type || name.includes("/") || name.includes("\\") || name.startsWith(".")) return reply(res, 404, { error: "not found" });
         try {
@@ -451,17 +457,20 @@ export async function makeServer(config, coord) {
       if (url.pathname === "/api/config") return reply(res, 200, publicConfig(config));
       if (url.pathname === "/api/reviews") return reply(res, 200, { reviews: openReviews(coord, config.workspace, url.searchParams.get("reviewer") || undefined) });
       if (url.pathname === "/api/tasks") {
-        const limit = Number(url.searchParams.get("limit") ?? 0) || undefined;
+        const rawLimit = url.searchParams.get("limit");
+        if (rawLimit !== null && !/^\d+$/.test(rawLimit)) return reply(res, 400, { error: "limit is a whole number" });
+        const limit = Number(rawLimit ?? 0) || undefined;
         return reply(res, 200, { tasks: listTasks(coord, config.workspace, { kind: url.searchParams.get("kind") || undefined, state: url.searchParams.get("state") || undefined, limit }) });
       }
       if (url.pathname.startsWith("/api/tasks/")) {
-        const rest = url.pathname.slice("/api/tasks/".length);
-        const [id, part] = rest.split("/").map(decodeURIComponent);
-        if (part === "evidence") {
+        let parts;
+        try { parts = url.pathname.slice("/api/tasks/".length).split("/").map(decodeURIComponent); } catch { return reply(res, 400, { error: "a malformed escape in the path" }); }
+        const [id, ...rest] = parts;
+        if (rest.length === 1 && rest[0] === "evidence") {
           const evidence = taskEvidence(coord, config.workspace, id);
           return evidence ? reply(res, 200, evidence) : reply(res, 404, { error: "unknown task" });
         }
-        if (part !== undefined) return reply(res, 404, { error: "not found" });
+        if (rest.length) return reply(res, 404, { error: "not found" });
         const view = taskView(coord, config.workspace, id);
         return view ? reply(res, 200, view) : reply(res, 404, { error: "unknown task" });
       }

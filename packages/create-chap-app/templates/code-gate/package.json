@@ -18,8 +18,10 @@
     "verify": "node verify.mjs",
     "report": "node report.mjs",
     "analytics": "python3 analytics.py",
-    "test": "node --test",
-    "diff-profiles": "node diff-profiles.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "diff-profiles": "node diff-profiles.mjs",
+    "trust": "node trust.mjs",
+    "push-notes": "node push-notes.mjs"
   },
   "dependencies": {
     "@brightbeamai/chap-coordinator": "^0.3.0",

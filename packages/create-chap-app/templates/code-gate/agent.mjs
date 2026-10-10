@@ -22,11 +22,11 @@
 // the repository themselves and use propose.mjs; this one shows the whole
 // path with nothing else installed.
 
-import { readFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { lstat, readFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeProvider } from "./lib/providers.mjs";
-import { agentClient, agentSigningKey, describeChange, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "./lib/gate.mjs";
+import { agentClient, agentSigningKey, api, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "./lib/gate.mjs";
 import { applyToWorkingTree, commitAll, commitsWithTrailer, currentBranch, git, head, patchApplies, repoRoot, workingTreePatch } from "./lib/git.mjs";
 import { syncOverride } from "./propose.mjs";
 
@@ -112,6 +112,17 @@ export function buildPrompt(task, context, { revision = null, previousPatch = nu
   return lines.join("\n");
 }
 
+/**
+ * Whether a path the model gave is one the agent may write: relative,
+ * inside the repository, and nowhere under .git in any letter case (a
+ * file there would change git's own configuration).
+ */
+export function safePath(path) {
+  if (typeof path !== "string" || !path || path.includes("\0") || path.includes("\\") || path.startsWith("/")) return false;
+  const parts = path.split("/");
+  return parts.every((s) => s && s !== "." && s !== ".." && s.toLowerCase() !== ".git");
+}
+
 /** The JSON object in a model's answer, with or without code fences. */
 export function parseAnswer(text) {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
@@ -122,18 +133,31 @@ export function parseAnswer(text) {
   if (!Array.isArray(answer.files)) throw new Error("the answer has no files list");
   for (const f of answer.files) {
     if (typeof f.path !== "string" || typeof f.content !== "string") throw new Error("each file needs a path and a content string");
-    if (f.path.startsWith("/") || f.path.split("/").includes("..")) throw new Error(`a path outside the repository: ${f.path}`);
+    if (!safePath(f.path)) throw new Error(`a path the agent may not write: ${f.path}`);
   }
-  return { summary: String(answer.summary ?? ""), files: answer.files, delete: Array.isArray(answer.delete) ? answer.delete.filter((p) => typeof p === "string" && !p.startsWith("/") && !p.split("/").includes("..")) : [] };
+  const removals = Array.isArray(answer.delete) ? answer.delete : [];
+  for (const p of removals) if (!safePath(p)) throw new Error(`a path the agent may not delete: ${p}`);
+  return { summary: String(answer.summary ?? ""), files: answer.files, delete: removals };
+}
+
+/** Refuse a path that passes through a symbolic link, which could point outside the repository. */
+async function noLinkOnTheWay(repo, path) {
+  const parts = path.split("/");
+  for (let i = 1; i <= parts.length; i++) {
+    let st;
+    try { st = await lstat(join(repo, ...parts.slice(0, i))); } catch { return; }
+    if (st.isSymbolicLink()) throw new Error(`${path} passes through a symbolic link; the agent writes real files only`);
+  }
 }
 
 /** Write the answer into the working tree. */
 export async function applyAnswer(repo, answer) {
   for (const f of answer.files) {
+    await noLinkOnTheWay(repo, f.path);
     await mkdir(dirname(join(repo, f.path)), { recursive: true });
     await writeFile(join(repo, f.path), f.content);
   }
-  for (const p of answer.delete) await rm(join(repo, p), { force: true });
+  for (const p of answer.delete) { await noLinkOnTheWay(repo, p); await rm(join(repo, p), { force: true }); }
 }
 
 // -- the scripted drafter -----------------------------------------------------
@@ -246,10 +270,11 @@ export async function handleTask({ gate, client, provider, repo, task, log, poll
     if (view.state === "completed") {
       const committed = await commitsWithTrailer(repo, "CHAP-Task", id);
       if (committed.length) { log(`${task.key}: committed earlier as ${committed[0].slice(0, 12)}`); return decision?.kind ?? "approve"; }
+      if ((view.output.base ?? null) !== (await head(repo))) { log(`${task.key}: approved against ${String(view.output.base).slice(0, 12)}, and ${branch} has moved on; nothing committed, propose it again`); return "stale"; }
       await discardWorkingTree(repo);
       if (!(await patchApplies(repo, view.output.patch))) { log(`${task.key}: the approved patch no longer applies to ${branch}; nothing committed`); return "stale"; }
       await applyToWorkingTree(repo, view.output.patch);
-      const sha = await commitAll(repo, `${view.output.summary ?? task.title}\n`, { signingKey });
+      const sha = await commitAll(repo, `${view.output.summary ?? task.title}\n`, { signingKey, env: gateEnv(gate) });
       log(`${task.key}: ${decision?.kind === "override" ? "approved with an edit" : "approved"} by ${decision?.reviewer}; committed as ${sha.slice(0, 12)} on ${branch}${signingKey ? ", signed" : ""}`);
       return decision?.kind ?? "approve";
     }
@@ -286,12 +311,21 @@ export async function handleTask({ gate, client, provider, repo, task, log, poll
   }
 }
 
-export async function run({ source, repo: repoPath, branch, once = false, pollMs = 2000, log = console.log, gateDir = here, keyPath } = {}) {
-  const gate = await loadGate(gateDir);
+export async function run({ source, repo: repoPath, branch, once = false, pollMs = 2000, log = console.log, gateDir = here, keyPath, gate: given = null } = {}) {
+  const gate = given ?? await loadGate(gateDir);
   const repo = await repoRoot(repoPath);
   if (!repo) throw new Error(`${repoPath} is not inside a git repository. Make one with: npm run demo-repo`);
-  if ((await workingTreePatch(repo)).trim()) throw new Error(`${repo} has uncommitted changes; the agent needs a clean working tree`);
   const client = await agentClient(gate, { keyPath });
+  // A working tree with changes in it is one the agent left while a change
+  // waited for review: carry on when it holds exactly the patch of one of
+  // this agent's open changes, and refuse anything else.
+  const dirty = await workingTreePatch(repo);
+  if (dirty.trim()) {
+    const open = (await api(gate, "/api/tasks?kind=code_change&state=review_requested,in_progress,completed"))?.tasks ?? [];
+    if (!open.some((t) => t.assignee === client.from && (t.artefact?.patch === dirty || t.output?.patch === dirty))) {
+      throw new Error(`${repo} has uncommitted changes that are not a change waiting for review; commit, stash or remove them first`);
+    }
+  }
   const provider = makeProvider(scriptedDraft);
   const probe = await provider.probe();
   if (!probe.ok) throw new Error(probe.detail);

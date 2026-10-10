@@ -117,17 +117,19 @@ a read until it is resumed.
 **Code gate** (TypeScript). Every change a coding agent makes in a git
 repository is proposed as a patch, reviewed as a diff in the desk, decided
 and signed by a person, and committed only then. The repository's hooks
-refuse a commit unless the staged tree is an approved patch applied to the
-commit's parent, and check the evidence as the verifier will. The commit
-carries `CHAP-*` trailers and is signed with the agent's key through git's
-SSH signing; a note under `refs/notes/chap` carries the artefact as
-proposed and as approved, each reviewer's signed decision, the keys on
-record and the chain head. `verify.mjs` checks a range of commits from the
-repository alone, and a workflow runs it on pull requests. A review rule in
-`chap.config.json` sets how many reviewers a change needs. Claude Code,
-Cursor or any agent that can run a command proposes with `propose.mjs`; a
-built-in agent and `npm run demo` show the whole path with nothing else
-installed.
+refuse a commit unless the staged tree is an approved change: approved
+against the commit's parent, read by the desk as the change git makes with
+it, not committed before, and approved by reviewers a trust policy names.
+The commit carries `CHAP-*` trailers and is signed with the agent's key
+through git's SSH signing; a note under `refs/notes/chap` carries the
+agent's signed proposal, each reviewer's signed decision, the artefact as
+proposed and as approved, and the chain head. The trust policy,
+`chap-trust.json` in the governed repository, pins the reviewers' and
+agents' keys and the rule; `verify.mjs` checks a range of commits against
+it from the repository alone, and a workflow runs the base branch's
+verifier and policy on every pull request. Claude Code, Cursor or any agent
+that can run a command proposes with `propose.mjs`; a built-in agent and
+`npm run demo` show the whole path with nothing else installed.
 
 **MCP gate** (TypeScript). One process serves the desk, `POST /chap`, and an
 MCP server over streamable HTTP at `/mcp`. Claude Desktop, Cursor or Claude
@@ -167,7 +169,10 @@ round starts with no decisions: in the coordinators, a resubmission through
 decisions, which would let a quorum be met across two versions. And because
 `decide.override` settles a review whatever its rule, the desk offers no
 edit under a multi-approval rule, and the code gate's checks refuse an
-override there. Both behaviours are noted for the coordinators.
+override there. The code gate applies its own rule, from the trust policy
+and `chap.config.json`, to the approvals on record, whatever rule the review
+ran under, so an agent that opens a one-approval review gains nothing. Both
+coordinator behaviours are noted for the coordinators.
 
 ## Analytics
 

@@ -226,7 +226,10 @@ export function renderInsights(tasks, { chain = null, analytics = null, onOpenTa
 /** A small Markdown rendering: headings, paragraphs, lists, tables, code spans and blocks, bold. */
 export function renderMarkdown(text) {
   const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // A link is kept only for an http(s) address or a path on this server;
+  // anything else, a javascript: URL included, stays as its text.
+  const safeUrl = (u) => /^(https?:\/\/|\/(?!\/)|\.\/|#)/i.test(u) && !/["'<>\s]/.test(u);
+  const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => (safeUrl(url) ? `<a href="${url}" target="_blank" rel="noopener">${text}</a>` : `${text} (${url})`));
   const out = [];
   const lines = text.split("\n");
   let i = 0;

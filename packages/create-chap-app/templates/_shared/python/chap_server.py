@@ -314,13 +314,25 @@ def task_evidence(coord: Coordinator, workspace: str, task_id: str) -> dict | No
             decisions.append(row)
         elif method in ("task.complete", "review.request"):
             submissions.append(row)
+    def jwks(member) -> list:
+        out = []
+        for k in member.keys or []:
+            record = _as_dict(k) if not isinstance(k, dict) else k
+            if not record.get("revoked_at"):
+                out.append(record.get("jwk"))
+        return out
+
     keys: dict[str, list] = {}
     for uri in [*((d["envelope"].get("params") or {}).get("from") for d in decisions), task.assignee]:
         member = ws.members.get(uri) if isinstance(uri, str) else None
         if member is not None and uri not in keys:
             keys[uri] = [(k.jwk if hasattr(k, "jwk") else k.get("jwk")) for k in (member.keys or [])]
+    # Every member's type and public keys, so a checker can tell a person
+    # from an agent by the workspace's own record.
+    members = {uri: {"type": m.type, "role": m.role, "keys": jwks(m)} for uri, m in ws.members.items()}
     return {"workspace": workspace, "task": _view_of(ws, task, decision_log(ws)), "submissions": submissions, "decisions": decisions,
-            "keys": keys, "chain_head": ws.chain_head, "chain_enabled": bool(getattr(ws, "chain_enabled", False))}
+            "keys": keys, "members": members, "chain_head": ws.chain_head,
+            "chain_enabled": bool(getattr(ws, "chain_enabled", False))}
 
 
 def public_config(config: dict) -> dict:
@@ -453,11 +465,11 @@ class Handler(BaseHTTPRequestHandler):
                 # report regenerated while the server runs is served as it is now.
                 name = unquote(path[len("/analytics/"):]) or "index.html"
                 content_type = TYPES.get(Path(name).suffix)
-                if not content_type or "/" in name or "\\" in name or name.startswith("."):
+                if not content_type or "/" in name or "\\" in name or "\0" in name or name.startswith("."):
                     return self._reply(404, {"error": "not found"})
                 try:
                     return self._reply(200, (ANALYTICS_DIR / name).read_bytes(), content_type)
-                except FileNotFoundError:
+                except (OSError, ValueError):
                     return self._reply(404, {"error": "no analytics page by that name; run the analytics script to write them"})
             if path == "/chap" and method == "POST":
                 if not (self.headers.get("content-type") or "").lower().startswith("application/json"):
@@ -478,7 +490,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/tasks":
                 query = parse_qs(url.query)
                 first = lambda name: (query.get(name) or [None])[0] or None  # noqa: E731
-                limit = int(first("limit") or 0) or None
+                raw_limit = first("limit")
+                if raw_limit is not None and not raw_limit.isdigit():
+                    return self._reply(400, {"error": "limit is a whole number"})
+                limit = int(raw_limit or 0) or None
                 with srv.lock:
                     tasks = list_tasks(coord, config["workspace"], first("kind"), first("state"), limit)
                 return self._reply(200, {"tasks": tasks})

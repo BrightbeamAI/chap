@@ -20,7 +20,7 @@
 
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentClient, agentSigningKey, describeChange, lastDecision, loadGate, propose, reviewersReady, reviewRule, task, waitForDecision } from "./lib/gate.mjs";
+import { agentClient, agentSigningKey, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, task, waitForDecision } from "./lib/gate.mjs";
 import { applyToWorkingTree, commitAll, patchApplies, repoRoot } from "./lib/git.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -93,7 +93,7 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
     }
     if (args.commit) {
       const signing = await agentSigningKey(gate);
-      const sha = await commitAll(repo, `${artefact.summary}\n`, { signingKey: signing.key });
+      const sha = await commitAll(repo, `${artefact.summary}\n`, { signingKey: signing.key, env: gateEnv(gate) });
       log(`Committed as ${sha.slice(0, 12)} with the CHAP trailers and the evidence note${signing.key ? ", signed with the agent's key" : `; unsigned: ${signing.reason}`}.`);
     } else {
       log("Commit it with: git commit -am \"...\" (the hooks add the trailers and the note).");

@@ -13,48 +13,98 @@ export function splitLines(text) {
 }
 
 /**
- * Parse a patch into files: [{ path, oldPath, newPath, status, binary, mode,
- * headerLines, hunks: [{ oldStart, oldLines, newStart, newLines, header, lines: [{ type, text, noNewline }] }], text }].
- * `type` is " ", "+" or "-". `text` is the whole section as it was.
+ * The path in a `diff --git a/P b/P` line. With renames off both sides name
+ * the same path, so the line is split in the middle, which holds for a path
+ * with spaces or " b/" in it. Null when the two halves differ.
+ */
+export function gitLinePath(line) {
+  const rest = line.slice("diff --git ".length);
+  if ((rest.length - 5) % 2 !== 0) return null;
+  const n = (rest.length - 5) / 2;
+  const a = rest.slice(2, 2 + n);
+  return rest.startsWith("a/") && rest.slice(2 + n) === ` b/${a}` ? a : null;
+}
+
+/**
+ * Parse a patch into files: [{ path, status, binary, mode, oldMode, newMode,
+ * headerLines, hunks: [{ oldStart, oldLines, newStart, newLines, header,
+ * lines: [{ type, text, noNewline }] }], text }]. `type` is " ", "+" or "-".
+ * `text` is the whole section as it was.
+ *
+ * `patch.anomalies` lists what the desk cannot show faithfully: text
+ * before the first file, a section whose ---/+++ names differ from its
+ * diff --git line, a binary section for a file the change also treats as
+ * text, or a section that does not parse. A patch the gate made has none;
+ * a reviewer should not approve one that has any.
  */
 export function parsePatch(patch) {
   const files = [];
+  const anomalies = [];
   const lines = patch.split("\n");
   if (lines.at(-1) === "") lines.pop();
   let i = 0;
+  while (i < lines.length && !lines[i].startsWith("diff --git ")) {
+    if (lines[i].trim()) { anomalies.push("text before the first file, which git apply may also apply"); break; }
+    i++;
+  }
+  while (i < lines.length && !lines[i].startsWith("diff --git ")) i++;
   while (i < lines.length) {
-    if (!lines[i].startsWith("diff --git ")) { i++; continue; }
     const start = i;
-    const m = lines[i].match(/^diff --git a\/(.*) b\/(.*)$/);
-    const file = { path: m ? m[2] : lines[i].slice(11), oldPath: m ? m[1] : null, newPath: m ? m[2] : null, status: "modified", binary: false, mode: null, headerLines: [lines[i]], hunks: [] };
+    const path = gitLinePath(lines[i]);
+    const file = { path: path ?? lines[i].slice(11), status: "modified", binary: false, mode: null, oldMode: null, newMode: null, headerLines: [lines[i]], hunks: [] };
+    if (path === null) anomalies.push(`a file header that names two paths: ${lines[i]}`);
+    let minus = null, plus = null;
     i++;
     while (i < lines.length && !lines[i].startsWith("@@") && !lines[i].startsWith("diff --git ")) {
       const line = lines[i];
       file.headerLines.push(line);
       if (line.startsWith("new file mode ")) { file.status = "added"; file.mode = line.slice(14); }
       else if (line.startsWith("deleted file mode ")) { file.status = "deleted"; file.mode = line.slice(18); }
-      else if (line.startsWith("rename from ")) { file.status = "renamed"; file.oldPath = line.slice(12); }
-      else if (line.startsWith("rename to ")) { file.newPath = line.slice(10); file.path = file.newPath; }
-      else if (line.startsWith("new mode ")) file.mode = line.slice(9);
+      else if (line.startsWith("old mode ")) file.oldMode = line.slice(9);
+      else if (line.startsWith("new mode ")) file.newMode = line.slice(9);
+      else if (line.startsWith("rename from ") || line.startsWith("rename to ") || line.startsWith("copy from ") || line.startsWith("copy to ")) anomalies.push(`a rename or copy in ${file.path}, which the gate never writes`);
       else if (line.startsWith("Binary files ") || line.startsWith("GIT binary patch")) file.binary = true;
+      else if (line.startsWith("--- ")) minus = line.slice(4);
+      else if (line.startsWith("+++ ")) plus = line.slice(4);
       i++;
+    }
+    if (file.binary) {
+      // The binary payload runs to the next file; its lines are not hunks.
+      while (i < lines.length && !lines[i].startsWith("diff --git ")) i++;
+    }
+    if (minus !== null || plus !== null) {
+      const wantMinus = file.status === "added" ? "/dev/null" : `a/${file.path}`;
+      const wantPlus = file.status === "deleted" ? "/dev/null" : `b/${file.path}`;
+      if (minus !== wantMinus || plus !== wantPlus) anomalies.push(`${file.path}: its --- and +++ lines name ${minus} and ${plus}, which git would apply instead`);
     }
     while (i < lines.length && lines[i].startsWith("@@")) {
       const h = lines[i].match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/);
+      if (!h) { anomalies.push(`${file.path}: a hunk header that does not parse`); i++; continue; }
       const hunk = { header: lines[i], oldStart: Number(h[1]), oldLines: h[2] === undefined ? 1 : Number(h[2]), newStart: Number(h[3]), newLines: h[4] === undefined ? 1 : Number(h[4]), section: h[5].trim(), lines: [] };
       i++;
+      let old = 0, neu = 0;
       while (i < lines.length && !lines[i].startsWith("@@") && !lines[i].startsWith("diff --git ")) {
         const line = lines[i];
         if (line.startsWith("\\")) { if (hunk.lines.length) hunk.lines.at(-1).noNewline = true; }
-        else if (line === "" ) { hunk.lines.push({ type: " ", text: "" }); }
-        else hunk.lines.push({ type: line[0], text: line.slice(1) });
+        else if (line === "") { hunk.lines.push({ type: " ", text: "" }); old++; neu++; }
+        else if (line[0] === " " || line[0] === "+" || line[0] === "-") {
+          hunk.lines.push({ type: line[0], text: line.slice(1) });
+          if (line[0] !== "+") old++;
+          if (line[0] !== "-") neu++;
+        } else { anomalies.push(`${file.path}: a line in a hunk that is not context, an addition or a removal`); }
         i++;
       }
+      if (old !== hunk.oldLines || neu !== hunk.newLines) anomalies.push(`${file.path}: a hunk whose line counts do not match its header`);
       file.hunks.push(hunk);
     }
     file.text = lines.slice(start, i).join("\n") + "\n";
     files.push(file);
   }
+  const textual = new Set(files.filter((f) => !f.binary).map((f) => f.path));
+  for (const f of files) if (f.binary && textual.has(f.path)) anomalies.push(`${f.path} appears both as text and as binary`);
+  const seen = new Set();
+  for (const f of files) { if (seen.has(f.path)) anomalies.push(`${f.path} appears twice`); seen.add(f.path); }
+  files.anomalies = anomalies;
   return files;
 }
 
@@ -193,12 +243,20 @@ export function unifiedDiff(path, before, after, { context = 3, status = null, m
  */
 export function rewritePatch(patch, edits, contents) {
   const files = parsePatch(patch);
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const sections = files.map((f) => {
-    if (!(f.path in edits)) return f.text;
-    const before = contents[f.path] ?? null;
+    if (!has(edits, f.path)) return f.text;
+    const before = has(contents, f.path) ? contents[f.path] : null;
     const after = edits[f.path];
     const status = before === null ? "added" : after === null ? "deleted" : "modified";
-    return unifiedDiff(f.path, before, after, { status, mode: f.mode ?? "100644" });
+    let section = unifiedDiff(f.path, before, after, { status, mode: f.mode ?? "100644" });
+    if (section && f.oldMode && f.newMode && status === "modified") {
+      // Keep a mode change the original section carried.
+      const lines = section.split("\n");
+      lines.splice(1, 0, `old mode ${f.oldMode}`, `new mode ${f.newMode}`);
+      section = lines.join("\n");
+    }
+    return section;
   });
   return sections.join("");
 }
