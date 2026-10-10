@@ -7,8 +7,8 @@
 // verify.mjs accept a sealed commit only when all of that holds.
 
 import { basename } from "node:path";
-import { api, contentHash, lastDecision, modelLabel, noteArtefacts, RANGE_KIND, sha256, submitForReview, trailersFor } from "./gate.mjs";
-import { commitTree, emptyTree, faithfulCheck, git, GATE_TRAILER, numstat, parseTrailers, rawCommit, treeDiff, treeOf, writeNote } from "./git.mjs";
+import { api, approvalOf, contentHash, lastDecision, modelLabel, noteArtefacts, RANGE_KIND, sha256, submitForReview, trailersFor } from "./gate.mjs";
+import { committerIdent, commitTree, emptyTree, faithfulCheck, git, GATE_TRAILER, numstat, parseTrailers, rawCommit, treeDiff, treeOf, writeNote } from "./git.mjs";
 
 /** The most commits one branch review takes. */
 export const MAX_RANGE_COMMITS = 100;
@@ -25,8 +25,6 @@ async function commitOf(repo, rev) {
   return (await git(repo, ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`])).trim();
 }
 
-/** The value of a trailer, the last one when it is given twice. */
-const trailer = (list, token) => list.filter((t) => t.token === token).map((t) => t.value).at(-1);
 
 /**
  * A proposed commit's message as the reviewers see it and the sealed commit
@@ -152,18 +150,20 @@ export function sealedMessage(message, pairs) {
  * Seal an approved branch: write each approved commit again on the sealed
  * one before it, the first on the approved base, with its own tree, author
  * and message and the gate's trailers, signed with `signingKey` when one is
- * given; then write the evidence note beside each. Returns the sealed
- * commits, oldest first.
+ * given or with the committer's own key with `signOwn`; then write the
+ * evidence note beside each. Returns the sealed commits, oldest first.
  */
-export async function sealRange(repo, { note, policy = null, signingKey = null, env = {} }) {
+export async function sealRange(repo, { note, policy = null, signingKey = null, signOwn = false, env = {} }) {
   const { approved } = noteArtefacts(note);
   if (!Array.isArray(approved?.commits)) throw new Error(`${note.task_id} holds no commits to seal`);
   const of = approved.commits.length;
   let parent = approved.base ?? null;
   const sealed = [];
+  // Signed off by whoever seals it: the committer git records on each commit.
+  const signoff = await committerIdent(repo, env);
   for (const [index, c] of approved.commits.entries()) {
-    const pairs = await trailersFor(note, policy, { series: { index, of, proposed: c.sha } });
-    const sha = await commitTree(repo, { tree: c.tree, parent, author: c.author, message: sealedMessage(c.message, pairs), signingKey, env });
+    const pairs = await trailersFor(note, policy, { series: { index, of, proposed: c.sha }, signoff });
+    const sha = await commitTree(repo, { tree: c.tree, parent, author: c.author, message: sealedMessage(c.message, pairs), signingKey, signOwn, env });
     sealed.push(sha);
     parent = sha;
   }
@@ -174,13 +174,17 @@ export async function sealRange(repo, { note, policy = null, signingKey = null, 
   return sealed;
 }
 
-/** A commit's place in a sealed branch, from its trailers: { index, of, proposed }, or null when it is not one. */
+/**
+ * A commit's place in a sealed branch, from its trailers: { index, of,
+ * proposed }, { invalid } when it does not read, or null when it is not one.
+ * `proposed` is the commit the reviewers saw, which only the longer form
+ * an earlier version wrote names; the place alone finds it in the evidence.
+ */
 export function seriesOf(trailerList) {
-  const text = trailer(trailerList, "CHAP-Series");
-  if (text === undefined) return null;
-  const m = /^([1-9][0-9]*)\/([1-9][0-9]*)$/.exec(text);
-  if (!m || Number(m[1]) > Number(m[2])) return { invalid: text };
-  return { index: Number(m[1]) - 1, of: Number(m[2]), proposed: trailer(trailerList, "CHAP-Proposed-Commit") ?? null };
+  const approval = approvalOf(trailerList);
+  if (!approval || approval.invalid !== undefined || !approval.place) return approval?.invalid !== undefined ? { invalid: approval.invalid } : null;
+  if (approval.place.invalid !== undefined) return { invalid: approval.place.invalid };
+  return { ...approval.place, proposed: approval.proposed ?? null };
 }
 
 /**
@@ -195,13 +199,13 @@ export async function checkRangeCommit(repo, commit, { series, note }) {
   const problems = [];
   const { approved } = noteArtefacts(note);
   const commits = approved?.commits;
-  if (series.invalid !== undefined) return [`CHAP-Series ${JSON.stringify(series.invalid)} is not <n>/<of>`];
+  if (series.invalid !== undefined) return [`the commit's place in its branch, ${JSON.stringify(series.invalid)}, does not read as <n>/<of>`];
   if (!Array.isArray(commits) || commits.length !== series.of) return [`the commit says it is one of ${series.of}, and the approved branch holds ${Array.isArray(commits) ? commits.length : "no"} commits`];
   for (const [i, x] of commits.entries()) {
     if ((x.parent ?? null) !== (i === 0 ? (approved.base ?? null) : commits[i - 1].sha)) return ["the approved commits are not one line on their base"];
   }
   const c = commits[series.index];
-  if (c.sha !== series.proposed) problems.push(`it says it was proposed as ${short(series.proposed)}, and commit ${series.index + 1} of the approved branch is ${short(c.sha)}`);
+  if (series.proposed && c.sha !== series.proposed) problems.push(`it says it was proposed as ${short(series.proposed)}, and commit ${series.index + 1} of the approved branch is ${short(c.sha)}`);
   if (commit.tree !== c.tree) problems.push(`its tree is not the tree of ${short(c.sha)}, the commit the reviewers saw`);
   if (c.message.split("\n").some((line) => GATE_TRAILER.test(line))) problems.push(`the message the reviewers saw for ${short(c.sha)} holds a line only the gate writes`);
   const prefix = `${c.message}\n\n`;
@@ -215,8 +219,8 @@ export async function checkRangeCommit(repo, commit, { series, note }) {
     if (parent !== (approved.base ?? null)) problems.push(`the branch was approved on ${short(approved.base)}, and its first commit sits on ${short(parent)}`);
   } else {
     const prev = parent ? await rawCommit(repo, parent) : null;
-    const theirs = prev ? await parseTrailers(repo, prev.message) : [];
-    if (!prev || trailer(theirs, "CHAP-Task") !== note.task_id || trailer(theirs, "CHAP-Series") !== `${series.index}/${series.of}` || prev.tree !== commits[series.index - 1].tree) {
+    const theirs = prev ? approvalOf(await parseTrailers(repo, prev.message)) : null;
+    if (!prev || theirs?.task !== note.task_id || theirs?.place?.index !== series.index - 1 || theirs?.place?.of !== series.of || prev.tree !== commits[series.index - 1].tree) {
       problems.push(`it does not sit on commit ${series.index} of the same approved branch`);
     }
   }

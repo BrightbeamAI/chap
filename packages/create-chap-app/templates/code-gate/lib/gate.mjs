@@ -10,7 +10,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalize, contentHash, deepEqual, makeClient, signerFromJwk } from "../desk/chap-client.mjs";
 import { keyPathFor, readKeyFile, sshKeyFiles } from "../keys.mjs";
-import { blobAt, currentBranch, faithfulCheck, git, head, numstat, workingTreeChange } from "./git.mjs";
+import { blobAt, currentBranch, faithfulCheck, git, head, numstat, signsOwnCommits, workingTreeChange } from "./git.mjs";
 
 /** The most text a change carries as file contents beside its patch, so the desk can edit files whole. */
 export const MAX_CONTENT_BYTES = 200_000;
@@ -109,6 +109,28 @@ export async function agentSigningKey(gate, { keyPath } = {}) {
   if (!(await sshCanSign())) return { key: null, reason: "ssh-keygen with -Y sign (OpenSSH 8.2 or later) is not on PATH" };
   const files = await sshKeyFiles(uri, path);
   return { key: files.privatePath, allowedSigners: files.allowedSigners };
+}
+
+/**
+ * How the gate's commits are signed, from sign_commits in chap.config.json.
+ * "committer", the default, leaves it to the committer's own git
+ * configuration: a commit is signed with your key when you sign your
+ * commits, so GitHub shows it as yours, and is unsigned when you do not, as
+ * your other commits are. "agent" signs with the agent's key, which a code
+ * host verifies only for an account that holds that key. false signs
+ * nothing. The approval's own signatures travel in the evidence note
+ * whatever this says. Returns { mode, key, signOwn, noSign, describe }.
+ */
+export async function commitSigning(gate, repo, { keyPath } = {}) {
+  const mode = gate.config.sign_commits ?? "committer";
+  if (mode === false || mode === "off") return { mode: "off", key: null, signOwn: false, noSign: true, describe: "unsigned, as sign_commits says" };
+  if (mode === "agent" || mode === true) {
+    const a = await agentSigningKey(gate, { keyPath });
+    return { mode: "agent", key: a.key, signOwn: false, noSign: !a.key, describe: a.key ? "signed with the agent's key" : `unsigned: ${a.reason}` };
+  }
+  if (mode !== "committer") throw new Error(`sign_commits in chap.config.json is ${JSON.stringify(mode)}; it is "committer", "agent" or false`);
+  const own = repo ? await signsOwnCommits(repo) : false;
+  return { mode: "committer", key: null, signOwn: own, noSign: false, describe: own ? "signed with your own key, as your other commits are" : "unsigned, as your other commits are" };
 }
 
 /** A client for a human reviewer, signing with a key when one is given. */
@@ -640,23 +662,47 @@ export function reviewedByLine(uri, identities) {
   return id?.email ? `${name} <${id.email}>` : name;
 }
 
-/** The trailer tokens a verifier compares with the evidence. The coordinator's address, the rule and the chain head are a record. */
-export const CHECKED_TRAILERS = new Set(["Reviewed-by", "CHAP-Model", "CHAP-Workspace", "CHAP-Task", "CHAP-Series", "CHAP-Proposed-Commit", "CHAP-Agent", "CHAP-Reviewer", "CHAP-Decision", "CHAP-Artefact"]);
+/** The trailer tokens a verifier compares with the evidence. Everything else about the approval is in the note. */
+export const CHECKED_TRAILERS = new Set(["Drafted-by", "Reviewed-by", "CHAP-Approval"]);
+
+/** The tokens of the longer form an earlier version of the gate wrote, read so its commits still verify. */
+export const LEGACY_CHECKED_TRAILERS = new Set(["Reviewed-by", "CHAP-Model", "CHAP-Workspace", "CHAP-Task", "CHAP-Series", "CHAP-Proposed-Commit", "CHAP-Agent", "CHAP-Reviewer", "CHAP-Decision", "CHAP-Artefact"]);
+
+/** Who drafted the change, as its commit says: the model the artefact names, or else the agent. */
+export function draftedBy(note) {
+  return noteArtefacts(note).approved?.model ?? note.agent;
+}
+
+/** The reviewers whose approvals the note holds, in order. */
+function approversOf(note) {
+  const approvers = [...new Set((note.decisions ?? []).filter((d) => d.method === "decide.approve" || d.method === "decide.override").map((d) => d.reviewer))];
+  return approvers.length ? approvers : [note.decision.reviewer];
+}
 
 /**
  * The trailers a governed commit carries, from its note and the policy it
- * was checked under: for each approving reviewer, Reviewed-by with the name
- * and email the policy gives, and CHAP-Reviewer with the fingerprint of the
- * key their approval verified against; the model that wrote the change; the
- * task, the agent, the decision, the rule and the artefact's digest; for a
- * commit of a branch, its place in the branch and the commit the reviewers
- * saw.
+ * was checked under, and nothing more: who drafted it (the model), each
+ * approving reviewer by the name and email the policy gives, who signed it
+ * off (the committer, "Name <email>", when `signoff` is given), and
+ * CHAP-Approval, the task whose evidence the note holds, with the commit's
+ * place when it is one of an approved branch. The workspace, the
+ * coordinator, the keys, the decision, the rule and the chain head are in
+ * the note, where the verifier reads them.
  */
-export async function trailersFor(note, policy = null, { series = null } = {}) {
+export async function trailersFor(note, policy = null, { series = null, signoff = null } = {}) {
+  return [
+    ["Drafted-by", draftedBy(note)],
+    ...approversOf(note).map((uri) => ["Reviewed-by", reviewedByLine(uri, policy?.identities)]),
+    ...(signoff ? [["Signed-off-by", signoff]] : []),
+    ["CHAP-Approval", series ? `${note.task_id} ${series.index + 1}/${series.of}` : note.task_id],
+  ];
+}
+
+/** The longer trailers an earlier version of the gate wrote, recomputed so a verifier can hold its commits to them. */
+export async function legacyTrailersFor(note, policy = null, { series = null } = {}) {
   const { approved } = noteArtefacts(note);
   const approvals = (note.decisions ?? []).filter((d) => d.method === "decide.approve" || d.method === "decide.override");
-  const approvers = [...new Set(approvals.map((d) => d.reviewer))];
-  const named = approvers.length ? approvers : [note.decision.reviewer];
+  const named = approversOf(note);
   const pairs = named.map((uri) => ["Reviewed-by", reviewedByLine(uri, policy?.identities)]);
   if (approved?.model) pairs.push(["CHAP-Model", approved.model]);
   pairs.push(["CHAP-Workspace", note.workspace], ["CHAP-Task", note.task_id]);
@@ -668,18 +714,36 @@ export async function trailersFor(note, policy = null, { series = null } = {}) {
     const key = envelope?.sig ? verifyingKey(envelope, keys) : null;
     pairs.push(["CHAP-Reviewer", key ? `${uri} ${fingerprint(key)}` : uri]);
   }
-  pairs.push(
-    ["CHAP-Decision", note.decision.method === "decide.override" ? "override" : "approve"],
-    ["CHAP-Rule", note.rule ?? "any_one_approves"],
-    ["CHAP-Artefact", await contentHash(approved)],
-    ["CHAP-Coordinator", note.coordinator],
-  );
-  if (note.chain_head) pairs.push(["CHAP-Chain-Head", note.chain_head]);
+  pairs.push(["CHAP-Decision", note.decision.method === "decide.override" ? "override" : "approve"], ["CHAP-Artefact", await contentHash(approved)]);
   return pairs;
 }
 
 /** The trailers of a message the verifier compares, as sorted "Token: value" lines. */
-export const checkedLines = (pairs) => pairs.filter(([token]) => CHECKED_TRAILERS.has(token)).map(([t, v]) => `${t}: ${v}`).sort();
+export const checkedLines = (pairs, tokens = CHECKED_TRAILERS) => pairs.filter(([token]) => tokens.has(token)).map(([t, v]) => `${t}: ${v}`).sort();
+
+/**
+ * The approval a commit's trailers name: { task, place, legacy, proposed? },
+ * where place is { index, of } for a commit of an approved branch, null for
+ * a single change, or { invalid } when it does not read. Reads CHAP-Approval,
+ * and CHAP-Task with CHAP-Series as an earlier version wrote them. Null when
+ * the commit names no approval; { invalid } when its CHAP-Approval does not
+ * read as "<task>" or "<task> <n>/<of>".
+ */
+export function approvalOf(trailerList) {
+  const get = (token) => trailerList.filter((t) => t.token === token).map((t) => t.value).at(-1);
+  const place = (n, of) => (Number(n) >= 1 && Number(n) <= Number(of) ? { index: Number(n) - 1, of: Number(of) } : { invalid: `${n}/${of}` });
+  const value = get("CHAP-Approval");
+  if (value !== undefined) {
+    const m = /^(tsk_[A-Za-z0-9]+)(?: ([0-9]+)\/([0-9]+))?$/.exec(value);
+    if (!m) return { invalid: value };
+    return { task: m[1], place: m[2] ? place(m[2], m[3]) : null, legacy: false };
+  }
+  const task = get("CHAP-Task");
+  if (task === undefined) return null;
+  const series = get("CHAP-Series");
+  const m = series === undefined ? null : /^([0-9]+)\/([0-9]+)$/.exec(series);
+  return { task, place: series === undefined ? null : m ? place(m[1], m[2]) : { invalid: series }, legacy: true, proposed: get("CHAP-Proposed-Commit") ?? null };
+}
 
 /** Whether `sig` on an envelope verifies against one of the JWKs given. */
 export function envelopeVerifies(envelope, jwks) {

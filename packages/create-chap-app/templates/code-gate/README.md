@@ -3,9 +3,9 @@
 A gate on the commits coding agents make. The agent works in a git
 repository as it does today. Every change it wants to commit is proposed as a
 patch, reviewed as a diff in the desk, decided and signed by a person, and
-only then committed, by hooks that refuse anything else. The commit carries
-the decision as trailers and is signed with the agent's key; the evidence
-travels beside it as a git note: the agent's signed proposal, each
+only then committed, by hooks that refuse anything else. The commit says
+who drafted it, who reviewed it and who signed it off, in four short
+trailers; the evidence travels beside it as a git note: the agent's signed proposal, each
 reviewer's signed decision as the chain holds it, the artefact as proposed
 and as approved, and the chain head. A verifier checks any range of commits
 against a trust policy the team keeps in the repository, and a workflow runs
@@ -38,8 +38,8 @@ Open <http://127.0.0.1:8791/>. The desk joins you as `__HUMAN_URI__` with a
 key it generates in the browser, and the agent's first change arrives as a
 diff:
 
-- **Approve** it, and the agent commits it on `agent/demo` with the trailers,
-  the note and its signature.
+- **Approve** it, and the agent commits it on `agent/demo` with its trailers
+  and the note.
 - **Request changes** with a note on the second, and the agent drafts again
   with your note and submits the revision to the same task.
 - **Edit** a file of a change in the desk, look at the patch your edit makes,
@@ -51,8 +51,8 @@ Then look at what was recorded, with the demo still running:
 
 ```
 cd demo-repo
-git log --show-signature --show-notes=chap agent/demo
-node ../verify.mjs main..agent/demo --require-signed-commit
+git log --show-notes=chap agent/demo
+node ../verify.mjs main..agent/demo
 cd .. && npm run report
 ```
 
@@ -79,9 +79,10 @@ gate's hooks:
   committed before. It then checks the approval as the verifier will, under
   the trust policy (below): the approvers, their signatures, the agent's
   signed proposal and the review rule.
-- `commit-msg` sets the trailers for that approval: `Reviewed-by` with each
-  approver's name and email, `CHAP-Model` with the model that wrote the
-  change, and the `CHAP-*` record.
+- `commit-msg` sets the trailers for that approval: `Drafted-by` with the
+  model that wrote the change, `Reviewed-by` with each approver's name and
+  email, `Signed-off-by` with the committer's, and `CHAP-Approval`, the link
+  to the evidence.
 - `post-commit` writes the evidence note under `refs/notes/chap`, when the
   commit made is the one approved.
 - `pre-push` refuses a push that would send a commit with no approval that
@@ -89,12 +90,13 @@ gate's hooks:
 
 It also points the repository's `gpg.ssh.allowedSignersFile` at
 `keys/allowed_signers` when nothing is set there, so `git log
---show-signature` names the agent. `CHAP_GATE=off git commit` commits
+--show-signature` names the agent where commits are signed with its key
+(`"sign_commits": "agent"`, below). `CHAP_GATE=off git commit` commits
 without an approval and says so; the commit carries no trailers, and the
-verifier fails it. `CHAP_GATE=off git push` pushes without the check, as
-the first push of a repository's existing history needs to. `--remove` takes the hooks away; a repository that runs
-hooks from somewhere else already is reported and left alone unless
-`--force` is given.
+verifier fails it. `CHAP_GATE=off git push` pushes without the check, as the
+first push of a repository's existing history needs to. `--remove` takes the
+hooks away; a repository that runs hooks from somewhere else already is
+reported and left alone unless `--force` is given.
 
 **Claude Code.** Copy `AGENT_INSTRUCTIONS.md` into the repository as
 `CLAUDE.md`, or into the project's instructions. It tells the assistant
@@ -161,9 +163,9 @@ commits, and the same command proposes them again to the same review.
 
 Once the branch is approved, it is sealed: each commit is written again
 with the same tree, author and message, followed by the gate's trailers,
-which name who reviewed it, the model that wrote it, its place in the branch
-and the commit the reviewers saw. Each sealed commit is signed with the
-agent's key and has the evidence beside it as a note. The branch then points
+which name the model that wrote it, who reviewed it, who signed it off and
+its place in the approved branch. Each sealed commit is signed as your own
+commits are (see signing, below) and has the evidence beside it as a note. The branch then points
 at the sealed commits, and `--push` pushes them through the pre-push hook
 and pushes the notes after them. Without `--push`, push the branch
 yourself, then `node push-notes.mjs`. The same command, run again, carries
@@ -283,8 +285,9 @@ leave it off.
    team's gate and `CHAP_AGENT_URI` to their agent's own URI, say
    `agent:claude-code@alice`, runs `node keys.mjs` once to make that agent's
    key, joins it by proposing once, and runs `install-hooks.mjs` in their
-   clone. The agent's public line from `keys.mjs` goes on the code host as a
-   signing key for that identity, so the host shows its commits as verified.
+   clone. Governed commits are signed as each developer signs their own;
+   with SSH signing set up for git and the key added to GitHub as a signing
+   key, GitHub shows them as verified.
 4. **A review rule.** `"review": { "rule": "quorum:2" }` in
    `chap.config.json` makes every change wait for two reviewers. Under a rule
    that needs more than one approval, each revision opens a new round, so an
@@ -308,44 +311,48 @@ leave it off.
 
 ## What a governed commit carries
 
-The message ends with trailers:
+The message ends with four trailers:
 
 ```
+Drafted-by: Claude Opus 5.5
 Reviewed-by: __HUMAN_NAME__ <__HUMAN_EMAIL__>
-CHAP-Model: Claude Opus 5.5
-CHAP-Workspace: __WORKSPACE__
-CHAP-Task: tsk_...
-CHAP-Agent: __AGENT_URI__
-CHAP-Reviewer: __HUMAN_URI__ SHA256:...
-CHAP-Decision: approve
-CHAP-Rule: any_one_approves
-CHAP-Artefact: sha256:...
-CHAP-Coordinator: http://127.0.0.1:8791/chap
-CHAP-Chain-Head: sha256:...
+Signed-off-by: __HUMAN_NAME__ <__HUMAN_EMAIL__>
+CHAP-Approval: tsk_01HV...
 ```
 
-`Reviewed-by` names each approving reviewer by the name and email the trust
-policy gives, or `chap.config.json` where there is no policy, and
-`CHAP-Reviewer` gives the same reviewer's URI with the fingerprint of the
-key their approval verified against. `CHAP-Model` names the model that wrote
-the change: `--model` (or `CHAP_MODEL`) for `propose.mjs` and
-`propose-branch.mjs`, and the model the built-in agent drafted with (or its
-scripted drafter); a change proposed with no model named carries no
-`CHAP-Model`. A sealed commit of a branch adds
-`CHAP-Series`, its place in the branch, and `CHAP-Proposed-Commit`, the
-commit the reviewers saw. The commit is signed
-with the agent's key in git's SSH format, the same Ed25519 key it signs its
-CHAP calls with. The note under `refs/notes/chap` holds the agent's signed
-submission of the change, every decision of the final review round with its
-signature, the artefact as proposed and as approved, the rule and who the
-round was addressed to, the keys the workspace recorded, and the chain head.
-A branch's commits share one note, which holds the branch once, in the
-agent's signed submission. `git log --show-notes=chap` prints it.
+`Drafted-by` names the model that wrote the change: `--model` (or
+`CHAP_MODEL`) for `propose.mjs` and `propose-branch.mjs`, the model the
+built-in agent drafted with, or the agent's URI when no model is named.
+`Reviewed-by` names each approving reviewer, one line each, by the name and
+email the trust policy gives, or `chap.config.json` where there is no
+policy. `Signed-off-by` names the committer, as git records them on the
+commit. `CHAP-Approval` names the task whose evidence the note holds, with
+the commit's place (`3/9`) when it is one of an approved branch; it is what
+holds an approval to one commit, in history nobody can rewrite once it is
+on the main branch.
+
+Everything else stays out of the message and in the note under
+`refs/notes/chap`: the agent's signed submission of the change, every
+decision of the final review round with its signature, the artefact as
+proposed and as approved, the workspace, the rule and who the round was
+addressed to, the keys the workspace recorded, the gate's address and the
+chain head. A branch's commits share one note, which holds the branch once,
+in the agent's signed submission. `git log --show-notes=chap` prints it.
+
+**Signing.** `sign_commits` in `chap.config.json` says how the gate's
+commits are signed. `"committer"`, the default, signs them as your own
+commits are signed: with your key when git is set to sign
+(`commit.gpgsign`), so GitHub shows them as verified once that key is on
+your account as a signing key, and unsigned when it is not, as your other
+commits are. `"agent"` signs with the agent's key, which a code host
+verifies only for an account that holds that key and commits under that
+account's email. `false` signs nothing. The approval's own signatures are in
+the note whatever this says.
 
 ## Verify
 
 ```
-node verify.mjs main..HEAD --trust chap-trust.json --require-signed-commit
+node verify.mjs main..HEAD --trust chap-trust.json
 ```
 
 checks every commit in the range with nothing but the repository and the
@@ -354,22 +361,25 @@ against their pinned keys, and sign the digest of what the agent proposed;
 the agent's submission is signed by an agent the policy names; the policy's
 rule is met, and an edit counts only where one approval is enough; each
 approval names the round it was made in and the workspace the policy covers;
-an override's operations lead from the proposed artefact to the approved one;
-the commit's parent is the commit the change was approved against; the desk
-reads the approved patch as the change git makes, and it gives the commit's
-tree; no other commit in the range uses the same approval; the trailers say
-what the evidence says, reviewers' names and emails and the model included;
-and the commit's signature verifies against the agent's pinned key. A sealed
-commit of a branch is held to the commit the reviewers saw, to its place in
-the branch and the sealed commit before it, and to the patch the desk
-showed for it, and each place in an approved branch is used once. `--base <commit>` checks
-the range as a pull request into that commit, as the workflow does: one line
-of commits from where it leaves the base's history, and no approval used in
-that history already. `--trust-ref <ref>` reads the policy as the repository
-holds it at a revision. With no policy given,
-the verifier asks the gate in `chap.config.json` (or `--coordinator <url>`),
-and checks against the reviewers the configuration names and the keys the
-workspace records.
+an override's operations lead from the proposed artefact to the approved
+one; the commit's parent is the commit the change was approved against; the
+desk reads the approved patch as the change git makes, and it gives the
+commit's tree; no other commit in the range uses the same approval; the
+trailers say what the evidence says, reviewers' names and emails and the
+model included, and the sign-off names the committer; and a git signature on
+the commit, when it is one the policy can check, verifies.
+`--require-signed-commit` also requires each commit to be signed with a key
+the policy lists, the agent's or a person's. A sealed commit of a branch is
+held to the commit the reviewers saw, to its place in the branch and the
+sealed commit before it, and to the patch the desk showed for it, and each
+place in an approved branch is used once. `--base <commit>` checks the range
+as a pull request into that commit, as the workflow does: one line of
+commits from where it leaves the base's history, no approval used in that
+history already, and an approved branch there whole. `--trust-ref <ref>`
+reads the policy as the repository holds it at a revision. With no policy
+given, the verifier asks the gate in `chap.config.json` (or `--coordinator
+<url>`), and checks against the reviewers the configuration names and the
+keys the workspace records.
 
 `--allow-people` lets a commit with no approval through when it is signed
 by a person's SSH key that the policy lists under `people` (an

@@ -1,7 +1,7 @@
 // Two reviewers: a change waits for both, an approval of an earlier version
 // does not count for a revision, the rule holds whatever route the agent
 // took to open the review, an edit does not settle it, and the commit
-// carries one CHAP-Reviewer trailer per approving reviewer.
+// carries one Reviewed-by trailer per approving reviewer.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { jsonPatch } from "../desk/chap-client.mjs";
@@ -41,7 +41,7 @@ test("a change waits for two reviewers, a revision starts a new round, and the c
   assert.equal((await decide(alice, "decide.approve", review)).state, "completed");
   await commit(g, repo, "Add ZERO_VALUE");
   const info = await commitInfo(repo, await head(repo));
-  const reviewers = (await parseTrailers(repo, info.message)).filter((t) => t.token === "CHAP-Reviewer").map((t) => t.value.split(" ")[0]).sort();
+  const reviewers = (await parseTrailers(repo, info.message)).filter((t) => t.token === "Reviewed-by").map((t) => t.value).sort();
   assert.deepEqual(reviewers, ["human:alice@local", "human:bob@local"]);
   const results = await verifyRange(repo, "HEAD", { gate: g.gate });
   assert.equal(results[0].status, "ok", results[0].detail);

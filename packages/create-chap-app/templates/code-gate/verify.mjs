@@ -6,7 +6,8 @@
 //   --trust-ref <ref>         the trust policy: chap-trust.json as the repository holds it at <ref>
 //   --coordinator <url>       check each task against a running gate (its POST /chap address);
 //                             with no trust policy given, the gate's records are the policy
-//   --require-signed-commit   fail a commit that the agent's key did not sign
+//   --require-signed-commit   fail a commit that is not signed with a key the trust policy
+//                             lists: the agent's, or a person's under people
 //   --allow-people            let a commit with no CHAP approval through when it is signed by a
 //                             key the trust policy lists under people (SSH signatures)
 //   --allow-clean-merges      let a merge commit through when its tree is the clean merge of its
@@ -43,8 +44,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildNote, checkApproval, checkChange, checkedLines, contentHash, evidence, loadGate, noteArtefacts, onlinePolicy, RANGE_KIND, readTrustFile, served, trailersFor, trustAtRef } from "./lib/gate.mjs";
-import { cleanMergeTree, commitInfo, commitSignature, commitsWithTrailer, emptyTree, git, parseTrailers, rawCommit, readNote, repoRoot, revList, treeOf, verifySshSignature } from "./lib/git.mjs";
+import { approvalOf, buildNote, checkApproval, checkChange, checkedLines, contentHash, evidence, legacyTrailersFor, LEGACY_CHECKED_TRAILERS, loadGate, noteArtefacts, onlinePolicy, RANGE_KIND, readTrustFile, served, trailersFor, trustAtRef } from "./lib/gate.mjs";
+import { cleanMergeTree, commitInfo, commitSignature, commitsWithApproval, emptyTree, git, parseTrailers, rawCommit, readNote, repoRoot, revList, treeOf, verifySshSignature } from "./lib/git.mjs";
 import { checkRangeCommit, seriesOf } from "./lib/range.mjs";
 import { opensshPublicKey } from "./keys.mjs";
 
@@ -106,15 +107,16 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
     return clean === info.tree ? row("ok", "a clean merge of its parents, carrying no change of its own") : row("FAIL", "a merge commit whose tree is not the clean merge of its parents: it carries changes of its own");
   }
   const trailerList = await parseTrailers(repo, info.message);
-  const trailers = Object.fromEntries(trailerList.map((t) => [t.token, t.value]));
-  const taskId = trailers["CHAP-Task"];
-  if (!taskId) {
+  const approval = approvalOf(trailerList);
+  if (!approval) {
     if (allowPeople && policy?.people?.length) {
       const s = await signedBy(repo, sha, policy.people);
       if (s.signed && s.ok) return row("ok", `no CHAP approval; signed by a person ${policy.source} lists (${s.detail})`);
     }
-    return row("FAIL", "no CHAP approval: the message carries no CHAP-Task trailer");
+    return row("FAIL", "no CHAP approval: the message carries no CHAP-Approval trailer");
   }
+  if (approval.invalid !== undefined) return row("FAIL", `CHAP-Approval ${JSON.stringify(approval.invalid)} does not read as <task> or <task> <n>/<of>`);
+  const taskId = approval.task;
   const problems = [];
   // A commit of a sealed branch names its place in it; an approval covers
   // one commit, or one commit at each place of an approved branch.
@@ -124,7 +126,7 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
   const what = place ? `${taskId} at ${place.index + 1}/${place.of}` : taskId;
   if (seen.has(useKey)) problems.push(`${what} was used already by ${seen.get(useKey).slice(0, 12)}; an approval covers one commit`);
   else if (seen.base) {
-    for (const other of await commitsWithTrailer(repo, "CHAP-Task", taskId, [seen.base])) {
+    for (const other of await commitsWithApproval(repo, taskId, [seen.base])) {
       const theirs = place ? seriesOf(await parseTrailers(repo, (await commitInfo(repo, other)).message)) : null;
       if (!place || (theirs && theirs.index === place.index)) { problems.push(`${what} was used already by ${other.slice(0, 12)} in the base's history; an approval covers one commit`); break; }
     }
@@ -169,15 +171,24 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
   const { approved } = noteArtefacts(note);
   const reviewers = [...new Set((note.decisions ?? []).filter((d) => d.method === "decide.approve" || d.method === "decide.override").map((d) => d.reviewer))];
   // The trailers the commit should carry, from the evidence and the policy:
-  // who reviewed it, by name and email, with the key their approval
-  // verified against; the model; the task, the agent, the decision, the
-  // artefact's digest; for a branch, the place and the commit proposed.
+  // the model that drafted it, each approving reviewer by name and email,
+  // and the approval with the commit's place in a branch. A commit in the
+  // longer form an earlier version wrote is held to that form.
   if (note.decision && approved) {
-    const expected = checkedLines(await trailersFor(note, usePolicy, place ? { series: { ...place, proposed: approved.commits?.[place.index]?.sha ?? null } } : {}));
-    const actual = checkedLines(trailerList.map((t) => [t.token, t.value]));
+    const series = place ? { ...place, proposed: approved.commits?.[place.index]?.sha ?? null } : null;
+    const tokens = approval.legacy ? LEGACY_CHECKED_TRAILERS : undefined;
+    const expected = checkedLines(await (approval.legacy ? legacyTrailersFor : trailersFor)(note, usePolicy, series ? { series } : {}), tokens);
+    const actual = checkedLines(trailerList.map((t) => [t.token, t.value]), tokens);
     const missing = expected.filter((l) => !actual.includes(l));
     const extra = actual.filter((l) => !expected.includes(l));
     if (missing.length || extra.length) problems.push(`the trailers differ from the evidence${missing.length ? `; missing ${missing.map((l) => JSON.stringify(l)).join(", ")}` : ""}${extra.length ? `; not borne out ${extra.map((l) => JSON.stringify(l)).join(", ")}` : ""}`);
+    // The sign-off names the committer the commit records, and only them.
+    if (!approval.legacy) {
+      const raw = await rawCommit(repo, sha);
+      const committer = raw?.committer ? `${raw.committer.name} <${raw.committer.email}>` : null;
+      const signoffs = trailerList.filter((t) => t.token === "Signed-off-by").map((t) => t.value);
+      if (signoffs.length !== 1 || signoffs[0] !== committer) problems.push(`Signed-off-by should name the committer, ${committer}, once; the commit says ${signoffs.length ? signoffs.map((v) => JSON.stringify(v)).join(", ") : "nothing"}`);
+    }
   }
   if (series && note.kind === RANGE_KIND) {
     problems.push(...(await checkRangeCommit(repo, await rawCommit(repo, sha), { series, note })));
@@ -186,9 +197,12 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
     const parentTree = parent ? await treeOf(repo, parent) : await emptyTree(repo);
     problems.push(...(await checkChange(repo, { parent, parentTree, tree: info.tree, approved })));
   }
-  const signature = await signedBy(repo, sha, signerLines(note.agent, usePolicy.agents?.[note.agent]));
-  if (signature.signed && !signature.ok) problems.push(`the commit's signature: ${signature.detail}`);
-  if (!signature.signed && requireSignedCommit) problems.push("the commit is not signed by the agent's key");
+  // A git signature is checked against the keys the policy lists. One by
+  // a key it does not list (the committer's own, say) is a record, and
+  // fails the commit only where signed commits are required.
+  const signature = await signedBy(repo, sha, [...signerLines(note.agent, usePolicy.agents?.[note.agent]), ...(usePolicy.people ?? [])]);
+  const byAgent = signature.signed && signature.ok && signature.detail.includes(`for ${note.agent} `);
+  if (requireSignedCommit && !(signature.signed && signature.ok)) problems.push(signature.signed ? `the commit is signed with a key ${usePolicy.source} does not list (${signature.detail})` : "the commit is not signed");
 
   if (problems.length) return row("FAIL", problems.join("; "), { task_id: taskId, reviewers });
   const how = note.decision?.method === "decide.override" ? "approved with an edit" : "approved";
@@ -196,7 +210,7 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
   const by = names.length > 1 ? `${names.join(" and ")} (${usePolicy.rule})` : names[0];
   const parts = [`${how} by ${by} as ${taskId}${place ? `, commit ${place.index + 1} of ${place.of} of the branch` : ""}`, `checked against ${usePolicy.source}`];
   if (approved?.model) parts.push(`written by ${approved.model}`);
-  if (signature.signed) parts.push("commit signed by the agent's key");
+  if (signature.signed && signature.ok) parts.push(byAgent ? "commit signed by the agent's key" : "commit signed by a person the policy lists");
   return row("ok", parts.join(", "), { task_id: taskId, reviewers });
 }
 
@@ -213,7 +227,7 @@ export async function seriesGaps(repo, seen, history = []) {
     for (let i = 0; i < entry.of; i++) if (!entry.have.has(i)) missing.push(i);
     if (missing.length && history.length) {
       const before = new Set();
-      for (const other of await commitsWithTrailer(repo, "CHAP-Task", taskId, history)) {
+      for (const other of await commitsWithApproval(repo, taskId, history)) {
         const s = seriesOf(await parseTrailers(repo, (await commitInfo(repo, other)).message));
         if (s && s.invalid === undefined) before.add(s.index);
       }

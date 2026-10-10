@@ -33,7 +33,7 @@ async function agentCommits(branch) {
 }
 
 before(async () => {
-  g = await startGate({ suffix: "branch", extra: { review_at: "push" } });
+  g = await startGate({ suffix: "branch", extra: { review_at: "push", sign_commits: "agent" } });
   you = await g.reviewer(g.config.humans[0].uri);
   repo = await demoRepo();
   remote = join(await mkdtemp(join(tmpdir(), "chap-remote-")), "remote.git");
@@ -95,11 +95,11 @@ test("a branch proposed, read commit by commit, approved, sealed with the review
     assert.ok(raw.signed, "signed with the agent's key");
     assert.ok(raw.message.startsWith(`${original.message}\n\n`));
     const t = await trailersOf(sha);
+    assert.deepEqual([...new Set(t.map((x) => x.token))].sort(), ["CHAP-Approval", "Drafted-by", "Reviewed-by", "Signed-off-by"]);
+    assert.deepEqual(values(t, "Drafted-by"), [MODEL]);
     assert.deepEqual(values(t, "Reviewed-by"), [`${me.display_name} <${me.email}>`]);
-    assert.deepEqual(values(t, "CHAP-Model"), [MODEL]);
-    assert.deepEqual(values(t, "CHAP-Series"), [`${i + 1}/2`]);
-    assert.deepEqual(values(t, "CHAP-Proposed-Commit"), [original.sha]);
-    assert.deepEqual(values(t, "CHAP-Reviewer"), [`${me.uri} ${fingerprint(you.signer.publicJwk)}`]);
+    assert.deepEqual(values(t, "Signed-off-by"), [`${raw.committer.name} <${raw.committer.email}>`]);
+    assert.deepEqual(values(t, "CHAP-Approval"), [`${task_id} ${i + 1}/2`]);
     assert.ok(await git(remote, ["notes", "--ref=chap", "show", sha]), "the note went up with the commits");
   }
   const note = JSON.parse(await readNote(repo, sealed[0]));
@@ -139,10 +139,11 @@ test("a sealed branch altered in any way fails", async () => {
   await check(await forge({ tree: one.tree }), /its tree is not the tree of/);
   await check(await forge({ message: two.message.replace("Document subtract", "Document subtract and more") }), /its message is not the message of/);
   await check(await forge({ message: `${two.message.trimEnd()}\nReviewed-by: Somebody Else <else@example.org>\n` }), /the trailers differ from the evidence; not borne out "Reviewed-by: Somebody Else <else@example\.org>"/);
-  await check(await forge({ message: two.message.replace(`CHAP-Model: ${MODEL}`, "CHAP-Model: Another Model") }), /missing "CHAP-Model: Claude Opus 5\.5"/);
-  await check(await forge({ message: two.message.replace(/^CHAP-Proposed-Commit: .*$/m, `CHAP-Proposed-Commit: ${one.sha}`) }), /it says it was proposed as/);
+  await check(await forge({ message: two.message.replace(`Drafted-by: ${MODEL}`, "Drafted-by: Another Model") }), /missing "Drafted-by: Claude Opus 5\.5"/);
+  await check(await forge({ message: two.message.replace(/^(CHAP-Approval: \S+) 2\/2$/m, "$1 1/2") }), /its tree is not the tree of|its first commit sits on/);
+  await check(await forge({ message: two.message.replace(/^Signed-off-by: .*$/m, "Signed-off-by: Somebody Else <else@example.org>") }), /Signed-off-by should name the committer/);
   // A line slipped in among the trailers: git no longer reads them as trailers at all.
-  const [body, block] = [two.message.slice(0, two.message.indexOf("\n\nReviewed-by:")), two.message.slice(two.message.indexOf("\n\nReviewed-by:") + 2)];
+  const [body, block] = [two.message.slice(0, two.message.indexOf("\n\nDrafted-by:")), two.message.slice(two.message.indexOf("\n\nDrafted-by:") + 2)];
   await check(await forge({ message: `${body}\n\nThe reviewers also said yes to this line.\n${block}` }), /no CHAP approval|lines other than the gate's trailers follow/);
   // A paragraph slipped in between the proposed message and the trailers.
   await check(await forge({ message: `${body}\n\nThe reviewers also said yes to this paragraph.\n\n${block}` }), /lines other than the gate's trailers follow|its message is not the message of/);
@@ -206,7 +207,7 @@ test("a branch with a merge, or with a commit approved already, is not proposed"
   await git(repo, ["checkout", "-q", "main"]);
   // Sealed commits proposed again read as their messages, without the gate's lines.
   const again = await describeRange(repo, { base: base, head: "agent/work" });
-  assert.ok(again.commits.every((c) => !/^(Reviewed-by|CHAP-[A-Za-z-]+):/m.test(c.message)));
+  assert.ok(again.commits.every((c) => !/^(Drafted-by|Reviewed-by|CHAP-[A-Za-z-]+):/m.test(c.message)));
   assert.equal(again.commits[1].message, "Document subtract\n\nThe README lists every function.");
 });
 
@@ -219,7 +220,7 @@ test("a change proposed with its model, approved and committed under review_at p
   await decide(you, "decide.approve", review);
   await commit(g, repo, "Add ONE");
   const t = await trailersOf("HEAD");
-  assert.deepEqual(values(t, "CHAP-Model"), ["Claude Fable 5.1"]);
+  assert.deepEqual(values(t, "Drafted-by"), ["Claude Fable 5.1"]);
   assert.deepEqual(values(t, "Reviewed-by"), [`${g.config.humans[0].display_name} <${g.config.humans[0].email}>`]);
   const [r] = await verifyRange(repo, "HEAD", { gate: g.gate });
   assert.equal(r.status, "ok", r.detail);
@@ -311,7 +312,7 @@ test("the command carries on: a revision sent to the same review, an approval se
   assert.match(run6.stdout, /Proposed as tsk_\w+ \(review_requested\): 2 commits on agent\/again/);
   const headNow = (await git(repo, ["rev-parse", "agent/again"])).trim();
   const fresh = (await reviewsFor(g, you)).find((r) => r.artefact.head === headNow);
-  assert.ok(fresh.artefact.commits.every((c) => !/CHAP-|Reviewed-by/.test(c.message)), "the sealed commit's trailers are not proposed again");
+  assert.ok(fresh.artefact.commits.every((c) => !/CHAP-|Reviewed-by|Drafted-by/.test(c.message)), "the sealed commit's trailers are not proposed again");
   await git(repo, ["checkout", "-q", "main"]);
 });
 
@@ -322,5 +323,44 @@ test("under review_at push a commit is made with the gate down, and a detached h
   assert.match(stderr, /the gate is not answering, so nothing is checked now/);
   await git(repo, ["checkout", "-q", "--detach", "HEAD"]);
   await assert.rejects(sh(process.execPath, [join(projectDir, "propose-branch.mjs"), "origin/main..HEAD", "--push", "origin"]), (e) => /is not a local branch, so name where to push: --push origin --to <branch>/.test(e.stderr));
+  await git(repo, ["checkout", "-q", "main"]);
+});
+
+test("by default a sealed commit is signed as the committer signs their own, and a commit in the earlier long form still verifies", async () => {
+  const { legacyTrailersFor, noteArtefacts } = await import("../lib/gate.mjs");
+  const { sealedMessage } = await import("../lib/range.mjs");
+  await agentCommits("agent/own");
+  const artefact = await describeRange(repo, { base: "origin/main", head: "agent/own", model: MODEL, branch: "agent/own" });
+  const { task_id } = await proposeRange(g.agent, artefact, { gate: g.gate });
+  await decide(you, "decide.approve", (await reviewsFor(g, you)).find((r) => r.task_id === task_id));
+  const ev = await evidence(g.gate, task_id);
+  const note = buildNote(ev, g.gate.url);
+  const policy = onlinePolicy(g.gate, ev);
+  // The committer signs nothing: the sealed commits carry no signature, and verify; signed commits required, they fail.
+  const plain = await sealRange(repo, { note, policy });
+  assert.equal((await rawCommit(repo, plain[1])).signed, false);
+  assert.deepEqual((await verifyRange(repo, `${base}..${plain[1]}`, { gate: g.gate })).map((r) => r.status), ["ok", "ok"]);
+  assert.match((await verifyRange(repo, `${base}..${plain[1]}`, { gate: g.gate, requireSignedCommit: true }))[0].detail, /the commit is not signed/);
+  // The committer signs with a key of their own, which the policy does not list: a record, and no failure.
+  const own = join(await mkdtemp(join(tmpdir(), "own-key-")), "id");
+  await run("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", own]);
+  await git(repo, ["config", "gpg.format", "ssh"]);
+  await git(repo, ["config", "user.signingkey", own]);
+  await git(repo, ["config", "commit.gpgsign", "true"]);
+  const signedOwn = await sealRange(repo, { note, policy, signOwn: true });
+  assert.equal((await rawCommit(repo, signedOwn[1])).signed, true);
+  assert.deepEqual((await verifyRange(repo, `${base}..${signedOwn[1]}`, { gate: g.gate })).map((r) => r.status), ["ok", "ok"]);
+  for (const key of ["gpg.format", "user.signingkey", "commit.gpgsign"]) await git(repo, ["config", "--unset", key]);
+  // The longer trailers an earlier version wrote, on the same approval.
+  const { approved } = noteArtefacts(note);
+  let parent = approved.base;
+  for (const [index, c] of approved.commits.entries()) {
+    const pairs = await legacyTrailersFor(note, policy, { series: { index, of: approved.commits.length, proposed: c.sha } });
+    const message = sealedMessage(c.message, [...pairs, ["CHAP-Rule", "any_one_approves"], ["CHAP-Coordinator", note.coordinator]]);
+    parent = (await git(repo, ["commit-tree", c.tree, "-p", parent, "-F", "-"], { input: message, env: { GIT_AUTHOR_NAME: c.author.name, GIT_AUTHOR_EMAIL: c.author.email, GIT_AUTHOR_DATE: c.author.date } })).trim();
+    await writeNote(repo, parent, JSON.stringify(note));
+  }
+  const legacy = await verifyRange(repo, `${base}..${parent}`, { gate: g.gate, base });
+  assert.deepEqual(legacy.map((r) => r.status), ["ok", "ok"], legacy.map((r) => r.detail).join("\n"));
   await git(repo, ["checkout", "-q", "main"]);
 });

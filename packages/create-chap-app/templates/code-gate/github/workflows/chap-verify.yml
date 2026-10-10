@@ -68,11 +68,13 @@ jobs:
         with:
           node-version: 22
       # Add --allow-people to accept commits that people signed with their own
-      # SSH keys, when chap-trust.json lists those keys under "people".
+      # SSH keys, when chap-trust.json lists those keys under "people". Add
+      # --require-signed-commit when every governed commit is signed with a
+      # key chap-trust.json lists: the agent's ("sign_commits": "agent") or a
+      # person's.
       - name: Verify every commit of the pull request
         run: |
           node "base/$CHAP_GATE_DIR/verify.mjs" "$BASE_SHA..$HEAD_SHA" \
             --repo head \
             --base "$BASE_SHA" \
-            --trust base/chap-trust.json \
-            --require-signed-commit
+            --trust base/chap-trust.json

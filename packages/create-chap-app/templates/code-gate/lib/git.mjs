@@ -280,13 +280,20 @@ export async function patchApplies(repo, patch, { reverse = false } = {}) {
  * Stage everything and commit with the message given. Returns the new
  * commit. With `signingKey`, the path of an OpenSSH private key, the commit
  * is signed with it (git's SSH signing), whatever the repository's own
- * signing settings are.
+ * signing settings are; with `noSign` it is not signed; with neither, git
+ * signs as the committer's own configuration says.
  */
-export async function commitAll(repo, message, { signingKey = null, env = {} } = {}) {
+export async function commitAll(repo, message, { signingKey = null, noSign = false, env = {} } = {}) {
   await git(repo, ["add", "-A", "--", "."], { env });
   const signing = signingKey ? ["-c", "gpg.format=ssh", "-c", `user.signingkey=${signingKey}`] : [];
-  await git(repo, [...signing, "commit", "--quiet", ...(signingKey ? ["-S"] : []), "-F", "-"], { input: message, env });
+  const sign = signingKey ? ["-S"] : noSign ? ["--no-gpg-sign"] : [];
+  await git(repo, [...signing, "commit", "--quiet", ...sign, "-F", "-"], { input: message, env });
   return (await git(repo, ["rev-parse", "HEAD"])).trim();
+}
+
+/** Whether the committer's own git configuration signs commits (commit.gpgsign). */
+export async function signsOwnCommits(repo) {
+  return git(repo, ["config", "--bool", "--get", "commit.gpgsign"]).then((o) => o.trim() === "true", () => false);
 }
 
 /** The commit's signature block, or null when it is unsigned. */
@@ -323,14 +330,21 @@ export async function parseTrailers(repo, message) {
   });
 }
 
-/** A line the gate writes in a commit's trailers: its own CHAP-* lines and Reviewed-by. */
-export const GATE_TRAILER = /^(CHAP-[A-Za-z-]+|Reviewed-by):/;
+/** A line the gate writes in a commit's trailers: Drafted-by, Reviewed-by, Signed-off-by and its own CHAP-* lines. */
+export const GATE_TRAILER = /^(CHAP-[A-Za-z-]+|Reviewed-by|Drafted-by|Signed-off-by):/;
+
+/** Who commits here, as git would record it: "Name <email>", from git config and the environment. */
+export async function committerIdent(repo, env = {}) {
+  const out = (await git(repo, ["var", "GIT_COMMITTER_IDENT"], { env })).trim();
+  const m = /^(.*<[^<>]*>) \d+ [+-]\d{4}$/.exec(out);
+  return m ? m[1] : out;
+}
 
 /**
- * Set the gate's trailers in a commit message file: every existing CHAP-*
- * and Reviewed-by line is removed, so a message cannot name a reviewer the
- * approval does not, then each pair is added, so a token given twice (two
- * reviewers) appears twice.
+ * Set the gate's trailers in a commit message file: every existing CHAP-*,
+ * Reviewed-by, Drafted-by and Signed-off-by line is removed, so a message
+ * cannot name a reviewer the approval does not, then each pair is added, so
+ * a token given twice (two reviewers) appears twice.
  */
 export async function setTrailers(repo, file, pairs) {
   const { readFile, writeFile } = await import("node:fs/promises");
@@ -406,15 +420,26 @@ export async function objectExists(repo, sha) {
 
 /**
  * Write a commit object for a tree with git commit-tree: the parent given,
- * the author given with their date, the message as it is, and with
- * `signingKey`, signed with that OpenSSH key. The committer is whoever runs
- * it, as git config says. Returns the new commit. No hook runs.
+ * the author given with their date, and the message as it is. With
+ * `signingKey` it is signed with that OpenSSH key; with `signOwn`, with the
+ * committer's own signing key as git config names it (commit-tree does not
+ * read commit.gpgsign itself). The committer is whoever runs it, as git
+ * config says. Returns the new commit. No hook runs.
  */
-export async function commitTree(repo, { tree, parent = null, author, message, signingKey = null, env = {} }) {
+export async function commitTree(repo, { tree, parent = null, author, message, signingKey = null, signOwn = false, env = {} }) {
   const signing = signingKey ? ["-c", "gpg.format=ssh", "-c", `user.signingkey=${signingKey}`] : [];
   const who = author ? { GIT_AUTHOR_NAME: author.name, GIT_AUTHOR_EMAIL: author.email, GIT_AUTHOR_DATE: author.date } : {};
-  const out = await git(repo, [...signing, "commit-tree", tree, ...(parent ? ["-p", parent] : []), ...(signingKey ? ["-S"] : []), "-F", "-"], { input: message, env: { ...env, ...who } });
+  const out = await git(repo, [...signing, "commit-tree", tree, ...(parent ? ["-p", parent] : []), ...(signingKey || signOwn ? ["-S"] : []), "-F", "-"], { input: message, env: { ...env, ...who } });
   return out.trim();
+}
+
+/** The commits on the revisions given whose message names an approval: CHAP-Approval, or CHAP-Task as an earlier version wrote it. */
+export async function commitsWithApproval(repo, taskId, revs = ["--all"]) {
+  try {
+    const escaped = taskId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const out = await git(repo, ["log", "--format=%H", "-E", `--grep=^CHAP-Approval: ${escaped}( |$)`, `--grep=^CHAP-Task: ${escaped}$`, ...revs]);
+    return out.split("\n").filter(Boolean);
+  } catch { return []; }
 }
 
 /** The commits on any ref whose message carries the trailer given, newest first. */

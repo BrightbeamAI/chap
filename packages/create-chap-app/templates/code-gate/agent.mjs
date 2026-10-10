@@ -26,8 +26,8 @@ import { lstat, readFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeProvider, modelName } from "./lib/providers.mjs";
-import { agentClient, agentSigningKey, api, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "./lib/gate.mjs";
-import { applyToWorkingTree, commitAll, commitsWithTrailer, currentBranch, git, head, patchApplies, repoRoot, workingTreePatch } from "./lib/git.mjs";
+import { agentClient, commitSigning, api, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "./lib/gate.mjs";
+import { applyToWorkingTree, commitAll, commitsWithApproval, currentBranch, git, head, patchApplies, repoRoot, workingTreePatch } from "./lib/git.mjs";
 import { syncOverride } from "./propose.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -269,7 +269,7 @@ async function discardWorkingTree(repo) {
  * One task, start to finish: its outcome is approve, override, reject, or
  * the state the task was left in. `item` keeps the attempt count.
  */
-export async function handleTask({ gate, client, provider, repo, task, log, pollMs, signingKey = null }) {
+export async function handleTask({ gate, client, provider, repo, task, log, pollMs, signingKey = null, noSign = false }) {
   const base = await head(repo);
   const branch = await currentBranch(repo);
   const created = await client.call("task.create", {
@@ -282,13 +282,13 @@ export async function handleTask({ gate, client, provider, repo, task, log, poll
   for (;;) {
     const decision = lastDecision(view);
     if (view.state === "completed") {
-      const committed = await commitsWithTrailer(repo, "CHAP-Task", id);
+      const committed = await commitsWithApproval(repo, id);
       if (committed.length) { log(`${task.key}: committed earlier as ${committed[0].slice(0, 12)}`); return decision?.kind ?? "approve"; }
       if ((view.output.base ?? null) !== (await head(repo))) { log(`${task.key}: approved against ${String(view.output.base).slice(0, 12)}, and ${branch} has moved on; nothing committed, propose it again`); return "stale"; }
       await discardWorkingTree(repo);
       if (!(await patchApplies(repo, view.output.patch))) { log(`${task.key}: the approved patch no longer applies to ${branch}; nothing committed`); return "stale"; }
       await applyToWorkingTree(repo, view.output.patch);
-      const sha = await commitAll(repo, `${view.output.summary ?? task.title}\n`, { signingKey, env: gateEnv(gate) });
+      const sha = await commitAll(repo, `${view.output.summary ?? task.title}\n`, { signingKey, noSign, env: gateEnv(gate) });
       log(`${task.key}: ${decision?.kind === "override" ? "approved with an edit" : "approved"} by ${decision?.reviewer}; committed as ${sha.slice(0, 12)} on ${branch}${signingKey ? ", signed" : ""}`);
       return decision?.kind ?? "approve";
     }
@@ -346,8 +346,8 @@ export async function run({ source, repo: repoPath, branch, once = false, pollMs
   branch ??= `agent/${new Date().toISOString().slice(0, 10)}`;
   try { await git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]); await git(repo, ["switch", "--quiet", branch]); }
   catch { await git(repo, ["switch", "--quiet", "-c", branch]); }
-  const signing = await agentSigningKey(gate, { keyPath });
-  log(`agent ${client.from} on ${repo} (${branch}), drafting with ${probe.detail}; ${signing.key ? "commits signed with the agent's key" : `commits unsigned: ${signing.reason}`}`);
+  const signing = await commitSigning(gate, repo, { keyPath });
+  log(`agent ${client.from} on ${repo} (${branch}), drafting with ${probe.detail}; commits ${signing.describe}`);
   const done = new Set();
   const outcomes = {};
   for (;;) {
@@ -355,7 +355,7 @@ export async function run({ source, repo: repoPath, branch, once = false, pollMs
       if (done.has(task.key)) continue;
       done.add(task.key);
       try {
-        outcomes[task.key] = await handleTask({ gate, client, provider, repo, task, log, pollMs, signingKey: signing.key });
+        outcomes[task.key] = await handleTask({ gate, client, provider, repo, task, log, pollMs, signingKey: signing.key, noSign: signing.noSign });
       } catch (e) {
         log(`${task.key}: ${e instanceof Error ? e.message : String(e)}`);
         outcomes[task.key] = "error";

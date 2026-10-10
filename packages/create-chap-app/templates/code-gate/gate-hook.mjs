@@ -33,7 +33,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { approvedChanges, buildNote, checkApproval, checkChange, evidence, loadGate, onlinePolicy, reviewRule, served, strictestRule, trailersFor, trustAtRef } from "./lib/gate.mjs";
-import { commitInfo, commitsWithTrailer, emptyTree, git, head, mergeInProgress, objectExists, setTrailers, stagedTree, treeOf, writeNote } from "./lib/git.mjs";
+import { commitInfo, commitsWithApproval, committerIdent, emptyTree, git, head, mergeInProgress, objectExists, setTrailers, stagedTree, treeOf, writeNote } from "./lib/git.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const say = (line) => process.stderr.write(`chap: ${line}\n`);
@@ -121,7 +121,7 @@ async function preCommitChecked(repo, gate, atPush, letThrough) {
   let chosen = null;
   const reasons = [];
   for (const match of matches) {
-    const already = await commitsWithTrailer(repo, "CHAP-Task", match.task_id);
+    const already = await commitsWithApproval(repo, match.task_id);
     if (already.length) { reasons.push([match.task_id, [`was committed already, as ${already[0].slice(0, 12)}; an approval covers one commit. Propose the change again.`]]); continue; }
     const ev = await evidence(gate, match.task_id);
     const note = buildNote(ev, gate.url);
@@ -142,8 +142,9 @@ async function preCommitChecked(repo, gate, atPush, letThrough) {
   }
   const { note, policy } = chosen;
   // The trailers are written now, under the policy the approval was checked
-  // against: the reviewers' names and emails and their keys come from it.
-  const trailers = await trailersFor(note, policy);
+  // against: the reviewers' names and emails come from it, and the sign-off
+  // names whoever is committing.
+  const trailers = await trailersFor(note, policy, { signoff: await committerIdent(repo) });
   await writeFile(await approvalFile(repo), JSON.stringify({ note, tree, parent, trailers }));
   const approvers = [...new Set(note.decisions.filter((d) => d.method !== "decide.reject").map((d) => d.reviewer))];
   say(`approved as ${note.task_id} by ${approvers.join(" and ")} (${note.decision.method === "decide.override" ? "with an edit" : policy.rule}), checked against ${policy.source}`);

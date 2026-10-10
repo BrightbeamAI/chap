@@ -18,9 +18,10 @@
 // review: the desk shows each with its message, author, files and diff.
 // Once the reviewers approve, the branch is sealed: each commit is written
 // again with the same tree, author and message, followed by the gate's
-// trailers (Reviewed-by with each approver's name and email, CHAP-Model with
-// the model that wrote it, and the commit the reviewers saw), signed with
-// the agent's key, with the evidence as a note. The branch then points at
+// trailers (Drafted-by with the model that wrote it, Reviewed-by with each
+// approver's name and email, and CHAP-Approval linking it to the evidence),
+// signed as sign_commits in chap.config.json says, with the evidence as a
+// note. The branch then points at
 // the sealed commits, which are the ones the pre-push hook and verify.mjs
 // accept.
 //
@@ -36,9 +37,9 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentClient, agentSigningKey, api, buildNote, checkApproval, contentHash, evidence, gateEnv, lastDecision, loadGate, onlinePolicy, reviewersReady, reviewRule, served, strictestRule, trustAtRef, waitForDecision } from "./lib/gate.mjs";
+import { agentClient, api, approvalOf, buildNote, checkApproval, commitSigning, contentHash, evidence, gateEnv, lastDecision, loadGate, onlinePolicy, reviewersReady, reviewRule, served, strictestRule, trustAtRef, waitForDecision } from "./lib/gate.mjs";
 import { git, parseTrailers, rawCommit, repoRoot } from "./lib/git.mjs";
-import { describeRange, proposeRange, sealRange, seriesOf } from "./lib/range.mjs";
+import { describeRange, proposeRange, sealRange } from "./lib/range.mjs";
 import { pushNotes } from "./push-notes.mjs";
 import { verifyCommit } from "./verify.mjs";
 
@@ -120,9 +121,10 @@ async function approvedPrefix(repo, gate, cfg, base, head) {
   // commits amended, say) is proposed again from its first commit.
   const branches = new Map();
   for (const [i, sha] of shas.slice(0, kept).entries()) {
-    const place = seriesOf(await parseTrailers(repo, (await rawCommit(repo, sha)).message.replace(/\s+$/, "")));
+    const approval = approvalOf(await parseTrailers(repo, (await rawCommit(repo, sha)).message.replace(/\s+$/, "")));
+    const place = approval?.place;
     if (!place || place.invalid !== undefined) continue;
-    const task = (await parseTrailers(repo, (await rawCommit(repo, sha)).message.replace(/\s+$/, ""))).find((t) => t.token === "CHAP-Task")?.value;
+    const task = approval.task;
     const entry = branches.get(task) ?? { of: place.of, count: 0, first: i };
     entry.count++;
     branches.set(task, entry);
@@ -233,8 +235,8 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   const approvers = [...new Set(note.decisions.filter((d) => d.method === "decide.approve").map((d) => d.reviewer))];
   log(`Approved by ${approvers.join(" and ")}${decision?.comment ? `: ${decision.comment}` : ""}.`);
 
-  const signing = await agentSigningKey(gate);
-  const sealed = await sealRange(repo, { note, policy, signingKey: signing.key, env: gateEnv(gate) });
+  const signing = await commitSigning(gate, repo);
+  const sealed = await sealRange(repo, { note, policy, signingKey: signing.key, signOwn: signing.signOwn, env: gateEnv(gate) });
   const sealedHead = sealed.at(-1);
   // The branch, or a detached HEAD, moves to the sealed commits only from
   // the commits that were approved; one that moved since is left alone.
@@ -243,7 +245,7 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   if (branch) await move(`refs/heads/${branch}`);
   else if ((await commitOf(repo, "HEAD").catch(() => "")) === approvedHead) await move("HEAD", ["--no-deref"]);
   else moved = true;
-  log(`Sealed ${sealed.length} commit${sealed.length === 1 ? "" : "s"}: ${short(approvedHead)} is now ${short(sealedHead)}${branch && !moved ? ` on ${branch}` : ""}. Each names its reviewers and model in its trailers, ${signing.key ? "is signed with the agent's key" : `is unsigned (${signing.reason})`}, and has the evidence in refs/notes/chap.`);
+  log(`Sealed ${sealed.length} commit${sealed.length === 1 ? "" : "s"}: ${short(approvedHead)} is now ${short(sealedHead)}${branch && !moved ? ` on ${branch}` : ""}. Each names its reviewers and the model that drafted it, is ${signing.describe}, and has the evidence in refs/notes/chap.`);
   if (moved) {
     log(`${branch ?? "HEAD"} moved since the commits were proposed, so it was left where it is and nothing is pushed. The sealed commits end at ${sealedHead}; bring the branch to them with: git reset --hard ${sealedHead}, or propose the newer commits after them.`);
     return 1;

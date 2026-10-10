@@ -126,35 +126,36 @@ and signed by a person, and committed only then. The repository's hooks
 refuse a commit unless the staged tree is an approved change: approved
 against the commit's parent, read by the desk as the change git makes with
 it, unused by any earlier commit, and approved by reviewers a trust policy
-names. The commit carries trailers that name each approving reviewer by name
-and email (`Reviewed-by`, from the trust policy) and the model that wrote
-the change (`CHAP-Model`), with the `CHAP-*` record, and is signed with the
-agent's key through git's SSH signing; a note under `refs/notes/chap`
-carries the agent's signed proposal, each reviewer's signed decision, the
-artefact as proposed and as approved, and the chain head. The trust policy,
-`chap-trust.json` in the governed repository, pins the reviewers' and
-agents' keys and the rule; `verify.mjs` checks a range of commits against it
-from the repository alone, and a workflow runs the base branch's verifier
-and policy on every pull request. The hooks are the guardrail on a
-developer's machine, where they can be switched off; the pull request check,
-required by branch protection, is the boundary. It asks of a pull request
-that its commits be one line from where they leave the base branch, each
-approved on the commit it sits on, with no approval used in the base
-branch's history already. Every git command that reads a change runs with
-the repository's attributes and configuration set aside, so a
-`.gitattributes` in the change cannot alter what the reviewer is shown, and
-the contents the desk shows beside a patch are checked against the
-repository's blobs. Claude Code, Cursor or any agent that can run a command
-proposes with `propose.mjs`; a built-in agent and `npm run demo` show the
-whole path with nothing else installed. An agent that commits on its own, in
-a sandbox or a loop, has its branch reviewed before it is pushed
+names. The commit carries four trailers: the model that wrote the change
+(`Drafted-by`), each approving reviewer by name and email (`Reviewed-by`,
+from the trust policy), the committer (`Signed-off-by`), and
+`CHAP-Approval`, the task whose evidence the note holds, which holds an
+approval to one commit in history nobody can rewrite. It is signed as the
+committer's own commits are, or with the agent's key where the team asks for
+that; a note under `refs/notes/chap` carries the agent's signed proposal,
+each reviewer's signed decision, the artefact as proposed and as approved,
+and the chain head. The trust policy, `chap-trust.json` in the governed
+repository, pins the reviewers' and agents' keys and the rule; `verify.mjs`
+checks a range of commits against it from the repository alone, and a
+workflow runs the base branch's verifier and policy on every pull request.
+The hooks are the guardrail on a developer's machine, where they can be
+switched off; the pull request check, required by branch protection, is the
+boundary. It asks of a pull request that its commits be one line from where
+they leave the base branch, each approved on the commit it sits on, with no
+approval used in the base branch's history already. Every git command that
+reads a change runs with the repository's attributes and configuration set
+aside, so a `.gitattributes` in the change cannot alter what the reviewer is
+shown, and the contents the desk shows beside a patch are checked against
+the repository's blobs. Claude Code, Cursor or any agent that can run a
+command proposes with `propose.mjs`; a built-in agent and `npm run demo`
+show the whole path with nothing else installed. An agent that commits on
+its own, in a sandbox or a loop, has its branch reviewed before it is pushed
 (`review_at: push`): `propose-branch.mjs` proposes the commits as one
 review, which the desk shows commit by commit, and on approval seals them,
 writing each again with the same tree, author and message and the gate's
-trailers, signed with the agent's key. A pre-push hook lets only approved
-commits leave the machine. A branch is decided as its commits stand, with no
-edit, and the evidence keeps its artefact once, in the agent's signed
-submission.
+trailers. A pre-push hook lets only approved commits leave the machine. A
+branch is decided as its commits stand, with no edit, and the evidence keeps
+its artefact once, in the agent's signed submission.
 
 **MCP gate** (TypeScript). One process serves the desk, `POST /chap`, and an
 MCP server over streamable HTTP at `/mcp`. Claude Desktop, Cursor or Claude

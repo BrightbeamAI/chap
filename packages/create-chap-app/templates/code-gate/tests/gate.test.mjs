@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { jsonPatch } from "../desk/chap-client.mjs";
 import { readKeyFile } from "../keys.mjs";
 import { applyJsonPatch, buildNote, checkApproval, contentHash, describeChange, envelopeVerifies, fingerprint, onlinePolicy, propose } from "../lib/gate.mjs";
-import { commitInfo, git, head, parseTrailers, readNote } from "../lib/git.mjs";
+import { commitInfo, git, head, parseTrailers, rawCommit, readNote } from "../lib/git.mjs";
 import { syncOverride } from "../propose.mjs";
 import { verifyRange } from "../verify.mjs";
 import { summarise } from "../report.mjs";
@@ -24,7 +24,7 @@ import { appendTo, commit, decide, demoRepo, projectDir, reviewsFor, run, startG
 let g, human, repo;
 
 before(async () => {
-  g = await startGate();
+  g = await startGate({ extra: { sign_commits: "agent" } });
   human = await g.reviewer(g.config.humans[0].uri);
   repo = await demoRepo();
 });
@@ -67,14 +67,22 @@ test("the hooks refuse a commit with no approval, then commit the approved chang
   const sha = await head(repo);
   const info = await commitInfo(repo, sha);
   const trailers = Object.fromEntries((await parseTrailers(repo, info.message)).map((t) => [t.token, t.value]));
-  assert.equal(trailers["CHAP-Task"], review.task_id);
-  // The reviewer by name and email, and by URI with the fingerprint of the key their approval verified against.
+  // Who drafted it, who approved it by name and email, who signed it off
+  // (the committer), and the approval the evidence note holds; no more.
   const me = g.config.humans.find((h) => h.uri === human.from);
+  const committer = (await rawCommit(repo, sha)).committer;
+  assert.deepEqual(Object.keys(trailers).sort(), ["CHAP-Approval", "Drafted-by", "Reviewed-by", "Signed-off-by"]);
+  assert.equal(trailers["CHAP-Approval"], review.task_id);
   assert.equal(trailers["Reviewed-by"], `${me.display_name} <${me.email}>`);
-  assert.equal(trailers["CHAP-Reviewer"], `${human.from} ${fingerprint(human.signer.publicJwk)}`);
-  assert.equal(trailers["CHAP-Rule"], "any_one_approves");
-  assert.equal(trailers["CHAP-Artefact"], await contentHash(review.artefact));
+  assert.equal(trailers["Signed-off-by"], `${committer.name} <${committer.email}>`);
+  assert.equal(trailers["Drafted-by"], g.config.agent.uri, "with no model named, the agent");
   const note = JSON.parse(await readNote(repo, sha));
+  // The rest of the record is in the note.
+  assert.equal(note.rule, "any_one_approves");
+  assert.equal(note.workspace, g.config.workspace);
+  assert.ok(note.coordinator && note.chain_head);
+  assert.equal(await contentHash(note.approved_artefact), await contentHash(review.artefact));
+  assert.equal(note.reviewer_keys[human.from][0].x, human.signer.publicJwk.x, `the key behind ${fingerprint(human.signer.publicJwk)}`);
   assert.equal(note.submission.envelope.method, "task.complete");
   assert.match(note.submission.envelope.sig, /^ed25519:/);
   assert.equal(envelopeVerifies(note.decision_envelope, note.reviewer_keys[human.from]).ok, true);
