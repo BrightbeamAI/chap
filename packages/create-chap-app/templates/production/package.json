@@ -13,7 +13,8 @@
     "keys": "node keys.mjs",
     "doctor": "node doctor.mjs",
     "test": "node --test",
-    "diff-profiles": "node diff-profiles.mjs"
+    "diff-profiles": "node diff-profiles.mjs",
+    "analytics": "python3 analytics.py"
   },
   "dependencies": {
     "@brightbeamai/chap-coordinator": "^0.3.0"

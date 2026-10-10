@@ -84,7 +84,11 @@ test("a change in the working tree is proposed as a patch that waits in the desk
   const artefact = await describeChange(repo, { summary: "Add square", drafted_by: "the test" });
   assert.equal(artefact.branch, "main");
   assert.equal(artefact.base, await head(repo));
-  assert.deepEqual(artefact.files, [{ path: "lib/calc.mjs", added: 4, removed: 0 }]);
+  assert.equal(artefact.files.length, 1);
+  assert.equal(artefact.files[0].path, "lib/calc.mjs");
+  assert.equal(artefact.files[0].added, 4);
+  assert.match(artefact.files[0].before, /export function multiply/);
+  assert.match(artefact.files[0].after, /export function square/);
   assert.match(artefact.patch, /^diff --git a\/lib\/calc\.mjs b\/lib\/calc\.mjs/);
   const first = await propose(client, artefact, { gate });
   assert.equal(first.state, "review_requested");

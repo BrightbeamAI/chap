@@ -66,6 +66,8 @@ async function withTempIndex(repo, baseTree, fn) {
   }
 }
 
+// Renames are not detected, so every file in a patch is added, deleted or
+// modified under one path, and the desk can show and edit it as such.
 const DIFF = ["-c", "core.quotepath=off", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false"];
 
 /**
@@ -78,14 +80,19 @@ export async function workingTreePatch(repo, { base = "HEAD" } = {}) {
   return withTempIndex(repo, baseTree, async (env) => {
     await git(repo, ["add", "-A", "--", "."], { env });
     const against = baseTree ?? await emptyTree(repo);
-    return git(repo, [...DIFF, "diff", "--cached", "--binary", "--no-color", "--no-ext-diff", against], { env });
+    return git(repo, [...DIFF, "diff", "--cached", "--binary", "--no-renames", "--no-color", "--no-ext-diff", against], { env });
   });
+}
+
+/** A file's content at a revision, or null when it is not there. */
+export async function fileAt(repo, rev, path) {
+  try { return await git(repo, ["show", `${rev}:${path}`]); } catch { return null; }
 }
 
 /** The staged change as a patch, from the index a commit is being made from. */
 export async function stagedPatch(repo) {
   const parent = (await head(repo)) ? "HEAD" : await emptyTree(repo);
-  return git(repo, [...DIFF, "diff", "--cached", "--binary", "--no-color", "--no-ext-diff", parent]);
+  return git(repo, [...DIFF, "diff", "--cached", "--binary", "--no-renames", "--no-color", "--no-ext-diff", parent]);
 }
 
 /** The tree the index holds right now. */

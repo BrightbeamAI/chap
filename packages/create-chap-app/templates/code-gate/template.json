@@ -10,7 +10,8 @@
     "node/profiles-diff.mjs": "lib/profiles-diff.mjs",
     "node/oidc.mjs": "lib/oidc.mjs",
     "node/dev-issuer.mjs": "lib/dev-issuer.mjs",
-    "node/providers.mjs": "lib/providers.mjs"
+    "node/providers.mjs": "lib/providers.mjs",
+    "python/analytics.py": "analytics.py"
   },
   "default_profiles": [
     "core/1.0",

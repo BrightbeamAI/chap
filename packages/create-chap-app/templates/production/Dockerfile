@@ -19,7 +19,7 @@ COPY --from=install /app/node_modules ./node_modules
 COPY package.json chap.config.json server.mjs agent.mjs keys.mjs doctor.mjs messages.csv ./
 COPY desk ./desk
 COPY lib/oidc.mjs lib/profiles-diff.mjs lib/providers.mjs ./lib/
-RUN mkdir -p /app/data /app/keys /app/outbox && chown -R node:node /app
+RUN mkdir -p /app/data /app/keys /app/outbox /app/analytics && chown -R node:node /app
 USER node
 EXPOSE 8790
 CMD ["node", "server.mjs"]

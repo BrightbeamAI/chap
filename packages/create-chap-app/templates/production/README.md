@@ -33,7 +33,7 @@ With Docker Compose:
 
 ```
 npm run keys
-mkdir -p data outbox
+mkdir -p data outbox analytics
 docker compose up --build
 ```
 

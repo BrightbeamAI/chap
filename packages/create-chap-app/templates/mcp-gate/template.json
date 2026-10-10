@@ -6,7 +6,8 @@
   "shared": {
     "desk": "desk",
     "node/server.mjs": "server.mjs",
-    "node/profiles-diff.mjs": "lib/profiles-diff.mjs"
+    "node/profiles-diff.mjs": "lib/profiles-diff.mjs",
+    "python/analytics.py": "analytics.py"
   },
   "default_profiles": [
     "core/1.0",

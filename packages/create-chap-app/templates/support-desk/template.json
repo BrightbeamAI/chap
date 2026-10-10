@@ -8,7 +8,8 @@
     "python/chap_server.py": "chap_server.py",
     "python/chap_client.py": "chap_client.py",
     "python/providers.py": "providers.py",
-    "python/profiles_diff.py": "lib/profiles_diff.py"
+    "python/profiles_diff.py": "lib/profiles_diff.py",
+    "python/analytics.py": "analytics.py"
   },
   "default_profiles": [
     "core/1.0",

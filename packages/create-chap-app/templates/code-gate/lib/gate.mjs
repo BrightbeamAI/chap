@@ -9,7 +9,10 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalize, contentHash, makeClient, signerFromJwk } from "../desk/chap-client.mjs";
 import { keyPathFor, readKeyFile } from "../keys.mjs";
-import { currentBranch, head, patchStats, workingTreePatch } from "./git.mjs";
+import { currentBranch, fileAt, head, patchStats, workingTreePatch } from "./git.mjs";
+
+/** The most text a change carries as file contents beside its patch, so the desk can edit files whole. */
+export const MAX_CONTENT_BYTES = 200_000;
 
 export const TASK_KIND = "code_change";
 export const NOTE_VERSION = 1;
@@ -85,12 +88,27 @@ export async function describeChange(repo, { summary, drafted_by = "working tree
   const patch = await workingTreePatch(repo);
   if (!patch.trim()) return null;
   const base = await head(repo);
+  const files = await patchStats(repo, patch);
+  // Each text file's content before and after travels with the patch, up to
+  // a size, so a reviewer can edit the file whole and the desk writes the
+  // patch again. A binary file, or a change too large, carries the patch only.
+  let total = 0;
+  const contents = [];
+  for (const f of files) {
+    if (f.added === null) { contents.push(null); continue; }
+    const before = base ? await fileAt(repo, base, f.path) : null;
+    let after = null;
+    try { after = await readFile(join(repo, f.path), "utf8"); } catch { /* deleted */ }
+    total += (before?.length ?? 0) + (after?.length ?? 0);
+    contents.push({ before, after });
+  }
+  if (total <= MAX_CONTENT_BYTES) files.forEach((f, i) => { if (contents[i]) Object.assign(f, contents[i]); });
   return {
     summary,
     repo: basename(repo),
     branch: await currentBranch(repo),
     base,
-    files: await patchStats(repo, patch),
+    files,
     patch,
     drafted_by,
     ...(requested_by ? { requested_by } : {}),

@@ -10,7 +10,8 @@
     "node/oidc.mjs": "lib/oidc.mjs",
     "node/dev-issuer.mjs": "lib/dev-issuer.mjs",
     "node/keys.mjs": "keys.mjs",
-    "node/providers.mjs": "lib/providers.mjs"
+    "node/providers.mjs": "lib/providers.mjs",
+    "python/analytics.py": "analytics.py"
   },
   "default_profiles": [
     "core/1.0",
@@ -40,7 +41,7 @@
   },
   "run": [
     "npm run keys",
-    "mkdir -p data outbox",
+    "mkdir -p data outbox analytics",
     "docker compose up --build",
     "open http://127.0.0.1:8790/"
   ]
