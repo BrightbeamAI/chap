@@ -53,11 +53,17 @@ jobs:
           path: head
           fetch-depth: 0
           persist-credentials: false
+      # The token reads this repository, private or public; it is passed to
+      # these two fetches only, and never written to a checkout's config.
       - name: The base commit and the evidence notes from this repository
         working-directory: head
+        env:
+          TOKEN: ${{ github.token }}
+          UPSTREAM: https://github.com/${{ github.repository }}
         run: |
-          git fetch --no-tags "https://github.com/${{ github.repository }}" "$BASE_SHA"
-          git fetch --no-tags "https://github.com/${{ github.repository }}" "+refs/notes/chap:refs/notes/chap" || echo "no notes pushed yet"
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
+          git -c "http.extraheader=$AUTH" fetch --no-tags "$UPSTREAM" "$BASE_SHA"
+          git -c "http.extraheader=$AUTH" fetch --no-tags "$UPSTREAM" "+refs/notes/chap:refs/notes/chap" || echo "no notes pushed yet"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
