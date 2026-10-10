@@ -41,7 +41,7 @@ The layers, bottom up:
 """
 from __future__ import annotations
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 from . import briefs, charts, export, graph, models, sample, stats, watch  # noqa: E402
 from .frames import Frames, frames  # noqa: E402

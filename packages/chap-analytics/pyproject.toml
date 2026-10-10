@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "chap-analytics"
-version         = "0.2.1"
+version         = "0.2.2"
 description     = "The record of a collaboration between people and agents, measured and drawn: a CHAP audit chain as documented tables, statistics with their intervals, graphs, charts, briefs and a self-contained interactive report"
 readme          = "README.md"
 requires-python = ">=3.10"

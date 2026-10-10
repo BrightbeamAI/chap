@@ -4,7 +4,11 @@
 so a protocol release moves the coordinator packages together and leaves this
 one where it is until the tables or the analyses change.
 
-## Unreleased
+## 0.2.2
+
+Reads the store of the TypeScript coordinator, which the Node templates of
+`create-chap-app` run. Install it with `chap-coordinator` 0.3.0 or later where
+the `coordinator` extra drives a live coordinator.
 
 ### Fixed
 

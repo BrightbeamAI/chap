@@ -85,7 +85,7 @@ reads a CHAP chain into documented tables. It reads the store under `data/`
 and writes the package's interactive report, the evaluation cases (each
 corrected draft with the agent's version and yours) and a refinement page
 with the corrections ranked to `analytics/`, which the desk links from
-Insights. Run `pip install chap-analytics` first; `--watch 300` keeps the
+Insights. Run `pip install "chap-analytics>=0.2.2"` first; `--watch 300` keeps the
 pages current. A correction that recurs is a rule for the agent's prompt in
 `agent.py`.
 

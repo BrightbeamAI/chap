@@ -502,7 +502,7 @@ briefs; the evaluation cases, each corrected change with the agent's patch
 and the reviewer's, for an evaluation harness; and a refinement page with the
 correction clusters ranked, the files reviewers edited with their rationales,
 and every rejection note. The desk links them under Insights. It needs Python
-3.10 or later and `pip install chap-analytics`; `--watch 300` keeps the pages
+3.10 or later and `pip install "chap-analytics>=0.2.2"`; `--watch 300` keeps the pages
 current, and `npm run demo` does that by itself where the package is
 installed.
 
