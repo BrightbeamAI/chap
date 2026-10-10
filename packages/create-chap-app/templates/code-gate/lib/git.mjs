@@ -130,11 +130,42 @@ export async function patchApplies(repo, patch, { reverse = false } = {}) {
   try { await git(repo, ["apply", "--check", "--binary", ...(reverse ? ["-R"] : []), "-"], { input: patch }); return true; } catch { return false; }
 }
 
-/** Stage everything and commit with the message given. Returns the new commit. */
-export async function commitAll(repo, message, { sign = false, env = {} } = {}) {
+/**
+ * Stage everything and commit with the message given. Returns the new
+ * commit. With `signingKey`, the path of an OpenSSH private key, the commit
+ * is signed with it (git's SSH signing), whatever the repository's own
+ * signing settings are.
+ */
+export async function commitAll(repo, message, { signingKey = null, env = {} } = {}) {
   await git(repo, ["add", "-A", "--", "."], { env });
-  await git(repo, ["commit", "--quiet", ...(sign ? ["-S"] : []), "-F", "-"], { input: message, env });
+  const signing = signingKey ? ["-c", "gpg.format=ssh", "-c", `user.signingkey=${signingKey}`] : [];
+  await git(repo, [...signing, "commit", "--quiet", ...(signingKey ? ["-S"] : []), "-F", "-"], { input: message, env });
   return (await git(repo, ["rev-parse", "HEAD"])).trim();
+}
+
+/** The commit's signature block, or null when it is unsigned. */
+export async function commitSignature(repo, sha) {
+  const raw = await git(repo, ["cat-file", "commit", sha]);
+  const lines = raw.split("\n");
+  const at = lines.findIndex((l) => l.startsWith("gpgsig "));
+  if (at < 0) return null;
+  const sig = [lines[at].slice("gpgsig ".length)];
+  for (let i = at + 1; i < lines.length && lines[i].startsWith(" "); i++) sig.push(lines[i].slice(1));
+  const text = sig.join("\n");
+  return { text, ssh: text.startsWith("-----BEGIN SSH SIGNATURE-----") };
+}
+
+/**
+ * Whether git verifies the commit's SSH signature against the allowed
+ * signers file given. Returns { ok, detail } with git's own words.
+ */
+export async function verifySshSignature(repo, sha, allowedSignersFile) {
+  try {
+    const { stderr } = await run("git", ["-c", `gpg.ssh.allowedSignersFile=${allowedSignersFile}`, "verify-commit", sha], { cwd: repo, maxBuffer: MAX });
+    return { ok: true, detail: (stderr || "").trim().split("\n").find((l) => l.includes("Good")) ?? "good signature" };
+  } catch (e) {
+    return { ok: false, detail: ((e.stderr || e.message || "").toString().trim().split("\n")[0]) || "the signature does not verify" };
+  }
 }
 
 /** The trailers of a commit message: [{ token, value }]. */

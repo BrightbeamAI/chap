@@ -26,7 +26,7 @@ import { readFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeProvider } from "./lib/providers.mjs";
-import { agentClient, describeChange, lastDecision, loadGate, propose, reviewerPresent, sha256, task as readTask, waitForDecision } from "./lib/gate.mjs";
+import { agentClient, agentSigningKey, describeChange, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "./lib/gate.mjs";
 import { applyToWorkingTree, commitAll, commitsWithTrailer, currentBranch, git, head, patchApplies, repoRoot, workingTreePatch } from "./lib/git.mjs";
 import { syncOverride } from "./propose.mjs";
 
@@ -231,7 +231,7 @@ async function discardWorkingTree(repo) {
  * One task, start to finish: its outcome is approve, override, reject, or
  * the state the task was left in. `item` keeps the attempt count.
  */
-export async function handleTask({ gate, client, provider, repo, task, log, pollMs }) {
+export async function handleTask({ gate, client, provider, repo, task, log, pollMs, signingKey = null }) {
   const base = await head(repo);
   const branch = await currentBranch(repo);
   const created = await client.call("task.create", {
@@ -249,8 +249,8 @@ export async function handleTask({ gate, client, provider, repo, task, log, poll
       await discardWorkingTree(repo);
       if (!(await patchApplies(repo, view.output.patch))) { log(`${task.key}: the approved patch no longer applies to ${branch}; nothing committed`); return "stale"; }
       await applyToWorkingTree(repo, view.output.patch);
-      const sha = await commitAll(repo, `${view.output.summary ?? task.title}\n`);
-      log(`${task.key}: ${decision?.kind === "override" ? "approved with an edit" : "approved"} by ${decision?.reviewer}; committed as ${sha.slice(0, 12)} on ${branch}`);
+      const sha = await commitAll(repo, `${view.output.summary ?? task.title}\n`, { signingKey });
+      log(`${task.key}: ${decision?.kind === "override" ? "approved with an edit" : "approved"} by ${decision?.reviewer}; committed as ${sha.slice(0, 12)} on ${branch}${signingKey ? ", signed" : ""}`);
       return decision?.kind ?? "approve";
     }
     if (view.state === "declined") {
@@ -270,14 +270,17 @@ export async function handleTask({ gate, client, provider, repo, task, log, poll
     if (++attempts > 3) { log(`${task.key}: no usable change after three attempts; the task stays open for a person`); return view.state; }
     const artefact = await draft(repo, provider, task, { revision, previousPatch, log });
     if (!artefact) { log(`${task.key}: the draft changed nothing; trying again`); continue; }
-    // The review is addressed to the human members, so until one has joined
-    // the submission would be refused and the refusal recorded. The agent
-    // waits on workspace.describe, a read, and says so once.
-    if (!(await reviewerPresent(client))) {
-      log(`${task.key}: no reviewer has joined yet; open the desk at ${gate.base}/ and the draft is submitted then`);
-      while (!(await reviewerPresent(client))) await new Promise((r) => setTimeout(r, pollMs));
+    // The review is addressed to the human members, so until enough have
+    // joined for the rule the submission would be refused and the refusal
+    // recorded, or the review could never close. The agent waits on
+    // workspace.describe, a read, and says so once.
+    const review = reviewRule(gate);
+    let ready = await reviewersReady(client, review);
+    if (!ready.ok) {
+      log(`${task.key}: drafted, and waiting for reviewers to join (${review.rule} needs ${ready.need}, ${ready.have} so far). Open the desk at ${gate.base}/ and the draft goes in then`);
+      while (!(ready = await reviewersReady(client, review)).ok) await new Promise((r) => setTimeout(r, pollMs));
     }
-    const r = await propose(client, artefact, { taskId: id });
+    const r = await propose(client, artefact, { taskId: id, review });
     log(`${task.key}: ${revision ? "revised" : "drafted"} with ${provider.model_id}, ${artefact.files.length} file${artefact.files.length === 1 ? "" : "s"}, ${r.state} as ${id}`);
     view = await readTask(gate, id);
   }
@@ -295,7 +298,8 @@ export async function run({ source, repo: repoPath, branch, once = false, pollMs
   branch ??= `agent/${new Date().toISOString().slice(0, 10)}`;
   try { await git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]); await git(repo, ["switch", "--quiet", branch]); }
   catch { await git(repo, ["switch", "--quiet", "-c", branch]); }
-  log(`agent ${client.from} on ${repo} (${branch}), drafting with ${probe.detail}`);
+  const signing = await agentSigningKey(gate, { keyPath });
+  log(`agent ${client.from} on ${repo} (${branch}), drafting with ${probe.detail}; ${signing.key ? "commits signed with the agent's key" : `commits unsigned: ${signing.reason}`}`);
   const done = new Set();
   const outcomes = {};
   for (;;) {
@@ -303,7 +307,7 @@ export async function run({ source, repo: repoPath, branch, once = false, pollMs
       if (done.has(task.key)) continue;
       done.add(task.key);
       try {
-        outcomes[task.key] = await handleTask({ gate, client, provider, repo, task, log, pollMs });
+        outcomes[task.key] = await handleTask({ gate, client, provider, repo, task, log, pollMs, signingKey: signing.key });
       } catch (e) {
         log(`${task.key}: ${e instanceof Error ? e.message : String(e)}`);
         outcomes[task.key] = "error";

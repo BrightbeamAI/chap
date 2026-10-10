@@ -20,7 +20,7 @@
 
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentClient, describeChange, lastDecision, loadGate, propose, reviewerPresent, task, waitForDecision } from "./lib/gate.mjs";
+import { agentClient, agentSigningKey, describeChange, lastDecision, loadGate, propose, reviewersReady, reviewRule, task, waitForDecision } from "./lib/gate.mjs";
 import { applyToWorkingTree, commitAll, patchApplies, repoRoot } from "./lib/git.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -65,13 +65,15 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
   const client = await agentClient(gate);
   const artefact = await describeChange(repo, { summary: args.summary, drafted_by: args.by });
   if (!artefact) { log("Nothing to propose: the working tree matches HEAD."); return 0; }
-  if (!(await reviewerPresent(client))) {
-    const advice = `No reviewer has joined the workspace yet, so a review cannot open. Open the desk once at ${gate.base}/ so your key is registered`;
-    if (!args.wait) throw new Error(`${advice}, then propose again.`);
+  const review = reviewRule(gate);
+  let ready = await reviewersReady(client, review);
+  if (!ready.ok) {
+    const advice = `${review.rule} needs ${ready.need} reviewer${ready.need === 1 ? "" : "s"} in the workspace and ${ready.have} ${ready.have === 1 ? "has" : "have"} joined, so the review cannot open yet. A reviewer joins by opening the desk at ${gate.base}/`;
+    if (!args.wait) throw new Error(`${advice}; propose again after that.`);
     log(`${advice}; waiting for that.`);
-    while (!(await reviewerPresent(client))) await new Promise((r) => setTimeout(r, args.poll));
+    while (!(ready = await reviewersReady(client, review)).ok) await new Promise((r) => setTimeout(r, args.poll));
   }
-  const { task_id, state, revised, digest } = await propose(client, artefact, { gate, taskId: args.task });
+  const { task_id, state, revised, digest } = await propose(client, artefact, { gate, taskId: args.task, review });
   const files = artefact.files.map((f) => `${f.path} (+${f.added ?? "bin"} -${f.removed ?? "bin"})`).join(", ");
   log(`${revised ? "Revised" : "Proposed as"} ${task_id} (${state}): ${artefact.summary}`);
   log(`  ${artefact.files.length} file${artefact.files.length === 1 ? "" : "s"}: ${files}`);
@@ -90,8 +92,9 @@ export async function main(argv = process.argv.slice(2), { log = console.log, ga
       log(`Approved by ${decision?.reviewer ?? "a reviewer"}${decision?.comment ? `: ${decision.comment}` : ""}.`);
     }
     if (args.commit) {
-      const sha = await commitAll(repo, `${artefact.summary}\n`);
-      log(`Committed as ${sha.slice(0, 12)} with the CHAP trailers and the evidence note.`);
+      const signing = await agentSigningKey(gate);
+      const sha = await commitAll(repo, `${artefact.summary}\n`, { signingKey: signing.key });
+      log(`Committed as ${sha.slice(0, 12)} with the CHAP trailers and the evidence note${signing.key ? ", signed with the agent's key" : `; unsigned: ${signing.reason}`}.`);
     } else {
       log("Commit it with: git commit -am \"...\" (the hooks add the trailers and the note).");
     }

@@ -217,12 +217,33 @@ def _redact_state(state: dict | None, redact: Redactor | None) -> dict | None:
     return state
 
 
+# The collections a workspace snapshot holds, and the field each is keyed by.
+# The Python coordinator writes them as objects keyed by that field; the
+# TypeScript coordinator writes them as lists. The projection reads objects.
+_KEYED_COLLECTIONS = {
+    "tasks": "id", "overrides": "id", "whispers": "id", "deliberations": "id",
+    "handoffs": "id", "snapshots": "id", "route_decisions": "id", "members": "uri",
+}
+
+
+def _keyed_state(state: dict | None) -> dict | None:
+    """A snapshot with every collection keyed by id, whichever coordinator wrote it."""
+    if not isinstance(state, dict):
+        return state
+    out = dict(state)
+    for name, key in _KEYED_COLLECTIONS.items():
+        value = out.get(name)
+        if isinstance(value, list):
+            out[name] = {item[key]: item for item in value if isinstance(item, dict) and isinstance(item.get(key), str)}
+    return out
+
+
 def _chain(workspace: str, events: Iterable[dict], state: dict | None,
            source: str, redact: Redactor | None) -> Chain:
     evs = _apply_redaction(list(events), redact)
     evs.sort(key=lambda e: e.get("seq", 0) if isinstance(e, dict) else 0)
     return Chain(workspace=workspace, events=evs,
-                 state=_redact_state(state, redact), source=source)
+                 state=_redact_state(_keyed_state(state), redact), source=source)
 
 
 def from_json(path: str, *, workspace: str | None = None, redact: Redactor | None = None) -> Chain:

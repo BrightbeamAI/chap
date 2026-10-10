@@ -6,6 +6,15 @@ one where it is until the tables or the analyses change.
 
 ## Unreleased
 
+### Fixed
+
+- **A TypeScript coordinator's store.** `from_sqlite` and `from_json` read a
+  workspace snapshot the TypeScript coordinator wrote, which holds its tasks,
+  members, overrides and the other collections as lists where the Python
+  coordinator holds them as objects keyed by id. Reading one stopped with an
+  `AttributeError`; the collections are now keyed on load, and both
+  coordinators' stores project to the same tables.
+
 ## 0.2.1
 
 Reads the logs a 0.3 coordinator writes. Install it with `chap-coordinator`

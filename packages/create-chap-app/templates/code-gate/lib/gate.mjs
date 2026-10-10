@@ -3,12 +3,13 @@
 // a commit carries. propose.mjs, agent.mjs, the hooks and verify.mjs all
 // run on these.
 
+import { execFile } from "node:child_process";
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { canonicalize, contentHash, makeClient, signerFromJwk } from "../desk/chap-client.mjs";
-import { keyPathFor, readKeyFile } from "../keys.mjs";
+import { canonicalize, contentHash, deepEqual, makeClient, signerFromJwk } from "../desk/chap-client.mjs";
+import { keyPathFor, readKeyFile, sshKeyFiles } from "../keys.mjs";
 import { currentBranch, fileAt, head, patchStats, workingTreePatch } from "./git.mjs";
 
 /** The most text a change carries as file contents beside its patch, so the desk can edit files whole. */
@@ -65,6 +66,32 @@ export async function agentClient(gate, { keyPath } = {}) {
   if (signer) join_.jwks = { keys: [signer.publicJwk] };
   await client.call("participant.join", join_);
   return client;
+}
+
+let sshSigning = null;
+
+/** Whether ssh-keygen on PATH can sign (OpenSSH 8.2 or later), asked once. */
+export function sshCanSign() {
+  sshSigning ??= new Promise((resolve) => {
+    execFile("ssh-keygen", ["-?"], (err, stdout, stderr) => resolve(`${stdout ?? ""}${stderr ?? ""}`.includes("-Y sign")));
+  });
+  return sshSigning;
+}
+
+/**
+ * The key the agent's commits are signed with: its CHAP key in OpenSSH's
+ * format, written beside the JWK. Returns { key, allowedSigners } or
+ * { key: null, reason } when commits go unsigned: `sign_commits` is false
+ * in chap.config.json, there is no key file, or ssh-keygen cannot sign.
+ */
+export async function agentSigningKey(gate, { keyPath } = {}) {
+  if (gate.config.sign_commits === false) return { key: null, reason: "sign_commits is false in chap.config.json" };
+  const uri = gate.config.agent?.uri;
+  const path = keyPath ?? process.env.CHAP_AGENT_KEY ?? keyPathFor(uri, join(gate.dir, "keys"));
+  try { await access(path); } catch { return { key: null, reason: `no key file at ${path}; run npm run keys` }; }
+  if (!(await sshCanSign())) return { key: null, reason: "ssh-keygen with -Y sign (OpenSSH 8.2 or later) is not on PATH" };
+  const files = await sshKeyFiles(uri, path);
+  return { key: files.privatePath, allowedSigners: files.allowedSigners };
 }
 
 /** A client for a human reviewer, signing with a key when one is given. */
@@ -126,43 +153,75 @@ export async function revisionTarget(gate, client, artefact) {
   return (r?.tasks ?? []).find((t) => same(t) && lastDecision(t)?.kind === "reject") ?? null;
 }
 
+/** The review rule in chap.config.json: { rule, to }. any_one_approves when none is set. */
+export const reviewRule = (gate) => ({ rule: gate?.config?.review?.rule ?? "any_one_approves", to: gate?.config?.review?.to ?? null });
+
+/** How many distinct approvals a rule needs, given who it is addressed to. */
+export function approvalsNeeded(rule, to = []) {
+  if (rule.startsWith("quorum:")) return Math.max(1, parseInt(rule.slice("quorum:".length), 10) || 1);
+  if (rule === "all_approve") return Math.max(1, to.length);
+  return 1;
+}
+
+/** The human members other than this participant: who a review is addressed to by default. */
+export async function humanReviewers(client) {
+  const ws = await client.call("workspace.describe", {});
+  return (ws.members ?? []).filter((m) => m.uri !== client.from && m.type === "human").map((m) => m.uri);
+}
+
+/**
+ * Whether enough reviewers are members for the rule to be met. A review
+ * opened on task.complete is addressed to the human members other than the
+ * completer, and the completion is refused and recorded when there are
+ * none; a quorum with fewer members than it needs could never close. The
+ * desk joins a reviewer the first time it is opened.
+ */
+export async function reviewersReady(client, review = { rule: "any_one_approves", to: null }) {
+  const to = review.to ?? (await humanReviewers(client));
+  const need = approvalsNeeded(review.rule, to);
+  return { ok: to.length >= need, have: to.length, need, to };
+}
+
+/** Whether one reviewer has joined. */
+export async function reviewerPresent(client) {
+  return (await reviewersReady(client)).ok;
+}
+
 /**
  * Open the task for a change and submit the patch for review. A change
  * proposed before, on the same base, answers with the task it has; a
  * revision of a change the reviewer sent back goes to that task, named by
- * `taskId` or found by `revisionTarget`. Returns the task id, its state
- * after this call, whether it was a revision, and the digest the
- * reviewer's decision will carry.
+ * `taskId` or found by `revisionTarget`.
+ *
+ * Under the default rule the patch is submitted with task.complete, and the
+ * review opens addressed to the human members. Under a rule that needs more
+ * than one approval, each round is opened with review.request, so a round
+ * starts with no decisions and approvals of an earlier version are not
+ * counted for this one.
+ *
+ * Returns the task id, its state after this call, whether it was a
+ * revision, and the digest the reviewers' decisions will carry.
  */
-export async function propose(client, artefact, { gate = null, taskId = null } = {}) {
+export async function propose(client, artefact, { gate = null, taskId = null, review = reviewRule(gate) } = {}) {
   let target = taskId;
   if (!target && gate) target = (await revisionTarget(gate, client, artefact))?.task_id ?? null;
   const digest = await contentHash(artefact);
-  if (target) {
-    const state = (await client.call("task.complete", { task_id: target, output: artefact })).state;
-    return { task_id: target, state, revised: true, digest };
-  }
+  const submit = async (id) => {
+    if (review.rule !== "any_one_approves") {
+      const to = review.to ?? (await humanReviewers(client));
+      return (await client.call("review.request", { task_id: id, artefact, to, rule: review.rule })).state;
+    }
+    return (await client.call("task.complete", { task_id: id, output: artefact })).state;
+  };
+  if (target) return { task_id: target, state: await submit(target), revised: true, digest };
   const input = { summary: artefact.summary, repo: artefact.repo, branch: artefact.branch, base: artefact.base, files: artefact.files.map((f) => f.path) };
   if (artefact.requested_by) input.requested_by = artefact.requested_by;
   const created = await client.call("task.create", {
     kind: TASK_KIND, assignee: client.from, input, review_required: true, idempotency_key: changeKey(artefact.base, artefact.patch),
   });
   let state = created.state;
-  if (state === "created" || state === "in_progress") {
-    state = (await client.call("task.complete", { task_id: created.task_id, output: artefact })).state;
-  }
+  if (state === "created" || state === "in_progress") state = await submit(created.task_id);
   return { task_id: created.task_id, state, revised: false, digest };
-}
-
-/**
- * Whether a human other than the agent is a member. A review opened on
- * task.complete is addressed to the human members other than the completer,
- * and the completion is refused and recorded when there are none; the desk
- * joins a reviewer the first time it is opened.
- */
-export async function reviewerPresent(client) {
-  const ws = await client.call("workspace.describe", {});
-  return (ws.members ?? []).some((m) => m.uri !== client.from && m.type === "human");
 }
 
 /** The task's view from the read API, or null. */
@@ -170,6 +229,14 @@ export const task = (gate, id) => api(gate, `/api/tasks/${encodeURIComponent(id)
 
 /** The last decision on a task's review, or null. */
 export const lastDecision = (view) => view?.review?.decisions?.at(-1) ?? null;
+
+/** How a task ended, from its view: approve, override, reject, or null while it is open. */
+export function outcomeOfView(view) {
+  if (view?.state === "declined") return "reject";
+  if (view?.state !== "completed") return null;
+  const log = view.decision_log ?? view.review?.decisions ?? [];
+  return log.filter((d) => d.kind === "approve" || d.kind === "override").at(-1)?.kind === "override" ? "override" : "approve";
+}
 
 /**
  * Poll a task until it leaves review. Returns the view. `onState` hears each
@@ -233,21 +300,29 @@ export function applyJsonPatch(doc, ops) {
 // -- the evidence a commit carries -----------------------------------------------
 
 /**
- * The note written beside a commit: the task, the artefact as proposed and
- * as approved, the decision envelope as the chain holds it, the reviewer's
- * keys, and the chain head. The approved artefact of an override is the
- * proposed one with the reviewer's operations applied.
+ * The note written beside a commit, from the task's evidence: the task,
+ * the review rule and who the final round was addressed to, every decision
+ * of that round as the chain holds it (signed under security-signed/1.0),
+ * the artefact as proposed in that round and as approved, the keys on
+ * record for the reviewers and for the agent, and the chain head. The
+ * approved artefact of an override is the proposed one with the reviewer's
+ * operations applied. `decision` and `decision_envelope` name the decision
+ * that settled the review.
  */
 export function buildNote(ev, gateUrl) {
-  const decision = ev.decisions.filter((d) => ["decide.approve", "decide.override"].includes(d.envelope.method)).at(-1);
-  if (!decision) throw new Error(`Task ${ev.task.task_id} has no approval on the chain`);
+  const settling = ev.decisions.filter((d) => ["decide.approve", "decide.override"].includes(d.envelope.method)).at(-1);
+  if (!settling) throw new Error(`Task ${ev.task.task_id} has no approval on the chain`);
+  // The round the settling decision belongs to opened with the last
+  // submission before it; its artefact is what the decisions sign.
+  const submission = ev.submissions.filter((x) => x.seq < settling.seq).at(-1);
+  const round = ev.decisions.filter((d) => d.seq > (submission?.seq ?? -1) && d.seq <= settling.seq);
   const approved = ev.task.output;
-  const params = decision.envelope.params;
-  // The artefact the reviewer saw is the last submission before the decision;
-  // its digest is what the decision signs. For an approval it is the approved
-  // artefact; for an override, the reviewer's operations applied to it are.
-  const submission = ev.submissions.filter((s) => s.seq < decision.seq).at(-1);
-  const proposed = submission?.envelope.params?.output ?? approved;
+  const proposed = submission?.envelope.params?.output ?? submission?.envelope.params?.artefact ?? approved;
+  const params = settling.envelope.params;
+  const rule = ev.task.review?.rule ?? submission?.envelope.params?.rule ?? "any_one_approves";
+  const requestedTo = ev.task.review?.requested_to ?? submission?.envelope.params?.to ?? [];
+  const reviewerKeys = {};
+  for (const d of round) { const uri = d.envelope.params?.from; if (uri && ev.keys[uri]) reviewerKeys[uri] = ev.keys[uri]; }
   return {
     chap_note: NOTE_VERSION,
     workspace: ev.workspace,
@@ -256,24 +331,83 @@ export function buildNote(ev, gateUrl) {
     kind: ev.task.kind,
     agent: ev.task.assignee,
     summary: approved?.summary ?? ev.task.input?.summary ?? "",
-    decision: { method: decision.envelope.method, reviewer: params.from, seq: decision.seq, arrived: decision.arrived, comment: params.comment ?? params.rationale ?? null, tags: params.tags ?? null },
+    rule,
+    requested_to: requestedTo,
+    decision: { method: settling.envelope.method, reviewer: params.from, seq: settling.seq, arrived: settling.arrived, comment: params.comment ?? params.rationale ?? null, tags: params.tags ?? null },
+    decisions: round.map((d) => ({ method: d.envelope.method, reviewer: d.envelope.params?.from, seq: d.seq, arrived: d.arrived, envelope: d.envelope })),
     approved_artefact: approved,
     proposed_artefact: proposed,
-    decision_envelope: decision.envelope,
-    reviewer_keys: ev.keys[params.from] ?? [],
+    decision_envelope: settling.envelope,
+    reviewer_keys: reviewerKeys,
+    agent_keys: ev.keys[ev.task.assignee] ?? [],
     chain_head: ev.chain_head,
     chain_enabled: ev.chain_enabled,
   };
 }
 
+/**
+ * Check a note on its own: the decisions of the final round name the task,
+ * sign the digest of the proposed artefact and verify against the keys on
+ * record; an override's operations lead from the proposed artefact to the
+ * approved one; and the rule is met, with that many distinct reviewers
+ * approving. Under a rule that needs more than one approval an override
+ * does not count, since the reviewers who approved saw the proposed
+ * version and not the edited one. Returns a list of problems, empty when
+ * the note holds.
+ */
+export async function checkNote(note, { taskId = note.task_id, allowUnsigned = false } = {}) {
+  const problems = [];
+  if (note.task_id !== taskId) problems.push(`the note is for ${note.task_id}, the commit names ${taskId}`);
+  const approved = note.approved_artefact;
+  const proposed = note.proposed_artefact ?? approved;
+  if (!approved || typeof approved.patch !== "string") problems.push("the note holds no approved patch");
+  const proposedDigest = proposed ? await contentHash(proposed) : null;
+  const decisions = Array.isArray(note.decisions) && note.decisions.length
+    ? note.decisions
+    : [{ method: note.decision_envelope?.method, reviewer: note.decision_envelope?.params?.from, envelope: note.decision_envelope }];
+  const approvers = new Set();
+  let overridden = false;
+  for (const d of decisions) {
+    const env = d.envelope ?? {};
+    const params = env.params ?? {};
+    if (!["decide.approve", "decide.override"].includes(env.method)) continue;
+    if (params.task_id !== taskId) { problems.push(`a decision by ${params.from} names another task`); continue; }
+    if (params.approved_artefact_digest !== proposedDigest) { problems.push(`the decision by ${params.from} does not sign the digest of the proposed artefact`); continue; }
+    const keys = (note.reviewer_keys ?? {})[params.from] ?? [];
+    if (env.sig) {
+      const v = envelopeVerifies(env, keys);
+      if (!v.ok) { problems.push(`the signature of ${params.from}: ${v.reason}`); continue; }
+    } else if (!allowUnsigned) {
+      problems.push(`the decision by ${params.from} is unsigned (pass --allow-unsigned where signatures are off)`);
+      continue;
+    }
+    if (env.method === "decide.override") {
+      overridden = true;
+      try {
+        if (!deepEqual(applyJsonPatch(proposed, params.diff ?? []), approved)) problems.push("the reviewer's operations applied to the proposed artefact do not give the approved one");
+      } catch (e) { problems.push(`the reviewer's operations do not apply: ${e.message}`); }
+    }
+    approvers.add(params.from);
+  }
+  const rule = note.rule ?? "any_one_approves";
+  const need = approvalsNeeded(rule, note.requested_to ?? []);
+  if (!overridden && approved && proposed && !deepEqual(proposed, approved)) problems.push("approved as written, yet the approved artefact differs from the proposed one");
+  if (need > 1 && overridden) problems.push(`under ${rule} an edit settles the review with one reviewer's decision; request changes so the edited version is approved again`);
+  else if (approvers.size < need) problems.push(`${rule} needs ${need} approval${need === 1 ? "" : "s"}; ${approvers.size} on record`);
+  if (rule === "all_approve") for (const uri of note.requested_to ?? []) if (!approvers.has(uri)) problems.push(`all_approve: no approval from ${uri}`);
+  return problems;
+}
+
 /** The trailers a governed commit carries, from its note. */
 export async function trailersFor(note) {
+  const approvers = [...new Set((note.decisions ?? []).filter((d) => d.method === "decide.approve" || d.method === "decide.override").map((d) => d.reviewer))];
   const pairs = [
     ["CHAP-Workspace", note.workspace],
     ["CHAP-Task", note.task_id],
     ["CHAP-Agent", note.agent],
-    ["CHAP-Reviewer", note.decision.reviewer],
+    ...(approvers.length ? approvers : [note.decision.reviewer]).map((r) => ["CHAP-Reviewer", r]),
     ["CHAP-Decision", note.decision.method === "decide.override" ? "override" : "approve"],
+    ["CHAP-Rule", note.rule ?? "any_one_approves"],
     ["CHAP-Artefact", await contentHash(note.approved_artefact)],
     ["CHAP-Coordinator", note.coordinator],
   ];
@@ -290,7 +424,7 @@ export function envelopeVerifies(envelope, jwks) {
   const [, kid, b64] = parts;
   const { sig: _omit, ...rest } = envelope;
   const bytes = Buffer.from(canonicalize(rest), "utf8");
-  const candidates = jwks.filter((k) => k && (k.kid === kid || !k.kid));
+  const candidates = (jwks ?? []).filter((k) => k && (k.kid === kid || !k.kid));
   if (!candidates.length) return { ok: false, reason: `no key on record with kid ${kid}` };
   for (const jwk of candidates) {
     try {

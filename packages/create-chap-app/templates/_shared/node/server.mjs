@@ -197,15 +197,41 @@ export function taskView(coord, workspace, taskId) {
   const ws = coord.getWorkspace(workspace);
   const task = ws?.tasks.get(taskId);
   if (!task) return null;
-  return viewOf(ws, task);
+  return viewOf(ws, task, decisionLog(ws));
+}
+
+/**
+ * Every accepted decide.* call on the chain, by task, in order. A review
+ * opened again with review.request starts with no decisions, so the task's
+ * own review holds the current round only; this holds every round, with
+ * the note, the rationale, the tags and whether a revision was asked for.
+ * One scan of the log per request.
+ */
+function decisionLog(ws) {
+  const byTask = new Map();
+  for (const entry of ws.audit) {
+    const call = entry.envelope;
+    if (!call || typeof call.method !== "string" || !call.method.startsWith("decide.")) continue;
+    const p = call.params ?? {};
+    if (typeof p.task_id !== "string") continue;
+    const row = {
+      seq: entry.seq, ts: entry.arrived, reviewer: p.from, kind: call.method.slice("decide.".length),
+      comment: p.comment ?? null, rationale: p.rationale ?? null, tags: Array.isArray(p.tags) ? p.tags : [],
+      request_revision: p.request_revision === true,
+    };
+    if (!byTask.has(p.task_id)) byTask.set(p.task_id, []);
+    byTask.get(p.task_id).push(row);
+  }
+  return byTask;
 }
 
 /**
  * A task as the read API shows it. `artefact` is what is or was under
  * review, whatever was decided. An override's rationale lives on the
  * override artefact, and is put on the decision here as `rationale`.
+ * `decision_log` is every decision on the task, across review rounds.
  */
-function viewOf(ws, task) {
+function viewOf(ws, task, log = null) {
   let review = task.review ?? null;
   if (review) {
     review = { ...review, decisions: review.decisions.map((d) => {
@@ -218,22 +244,25 @@ function viewOf(ws, task) {
     task_id: task.id, kind: task.kind, state: task.state, assignee: task.assignee, mode: task.mode,
     created_at: task.created_at, updated_at: task.updated_at, input: task.input,
     output: task.output ?? null, artefact: task.pending_artefact ?? task.output ?? null,
-    review, history: task.history,
+    review, decision_log: log ? (log.get(task.id) ?? []) : undefined, history: task.history,
   };
 }
 
 /**
- * The workspace's tasks, newest first, narrowed by kind and state when
- * given. `limit` caps the list; the default is every task.
+ * The workspace's tasks, newest first, narrowed by kind and by state when
+ * given (several states comma separated). `limit` caps the list; the
+ * default is every task.
  */
 export function listTasks(coord, workspace, { kind, state, limit } = {}) {
   const ws = coord.getWorkspace(workspace);
   if (!ws) return [];
+  const states = state ? new Set(String(state).split(",").map((x) => x.trim()).filter(Boolean)) : null;
+  const log = decisionLog(ws);
   const out = [];
   for (const task of ws.tasks.values()) {
     if (kind && task.kind !== kind) continue;
-    if (state && task.state !== state) continue;
-    out.push(viewOf(ws, task));
+    if (states && !states.has(task.state)) continue;
+    out.push(viewOf(ws, task, log));
   }
   out.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
   return limit ? out.slice(0, limit) : out;
@@ -241,9 +270,10 @@ export function listTasks(coord, workspace, { kind, state, limit } = {}) {
 
 /**
  * The evidence behind a task's decisions: the task, the accepted
- * task.complete entries from the chain for it (each carries the artefact
- * as submitted), the accepted decide.* entries (signed envelopes under
- * security-signed/1.0), the keys on record for the reviewers who decided,
+ * task.complete and review.request entries from the chain for it (each
+ * carries the artefact as submitted, and each opens a review round), the
+ * accepted decide.* entries (signed envelopes under security-signed/1.0),
+ * the keys on record for the reviewers who decided and for the assignee,
  * and the chain head. A committer writes this beside what it commits, and
  * a verifier reads it.
  */
@@ -258,15 +288,14 @@ export function taskEvidence(coord, workspace, taskId) {
     if (!call || typeof call.method !== "string" || call.params?.task_id !== taskId) continue;
     const row = { seq: entry.seq, arrived: entry.arrived, prev_hash: entry.prev_hash, envelope: call };
     if (call.method.startsWith("decide.")) decisions.push(row);
-    else if (call.method === "task.complete") submissions.push(row);
+    else if (call.method === "task.complete" || call.method === "review.request") submissions.push(row);
   }
   const keys = {};
-  for (const d of decisions) {
-    const uri = d.envelope.params?.from;
+  for (const uri of [...decisions.map((d) => d.envelope.params?.from), task.assignee]) {
     const member = typeof uri === "string" ? ws.members.get(uri) : undefined;
     if (member && !(uri in keys)) keys[uri] = (member.keys ?? []).map((k) => k.jwk);
   }
-  return { workspace, task: viewOf(ws, task), submissions, decisions, keys, chain_head: ws.chain_head ?? null, chain_enabled: !!ws.chain_enabled };
+  return { workspace, task: viewOf(ws, task, decisionLog(ws)), submissions, decisions, keys, chain_head: ws.chain_head ?? null, chain_enabled: !!ws.chain_enabled };
 }
 
 export function publicConfig(config) {

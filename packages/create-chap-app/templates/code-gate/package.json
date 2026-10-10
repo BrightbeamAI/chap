@@ -8,6 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "demo": "node demo.mjs",
     "start": "node server.mjs",
     "keys": "node keys.mjs",
     "demo-repo": "node demo-repo.mjs",

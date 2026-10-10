@@ -7,7 +7,7 @@
 // with an approval, a revision, an override and a rejection. The decisions
 // here are scripted because this is a test; in the project the decision is
 // made in the desk.
-import { test, before, after } from "node:test";
+import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -17,9 +17,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { loadConfig, makeCoordinator, makeServer } from "../server.mjs";
 import { generateSigner, jsonPatch } from "../desk/chap-client.mjs";
-import { generateKeyFile } from "../keys.mjs";
+import { generateKeyFile, readKeyFile } from "../keys.mjs";
 import { createDemoRepo } from "../demo-repo.mjs";
-import { agentClient, applyJsonPatch, contentHash, describeChange, envelopeVerifies, loadGate, propose, reviewerClient } from "../lib/gate.mjs";
+import { agentClient, applyJsonPatch, buildNote, checkNote, contentHash, describeChange, envelopeVerifies, loadGate, propose, reviewerClient, reviewersReady, reviewRule } from "../lib/gate.mjs";
 import { commitInfo, git, head, parseTrailers, readNote, treeOf } from "../lib/git.mjs";
 import { syncOverride } from "../propose.mjs";
 import { verifyRange } from "../verify.mjs";
@@ -123,8 +123,11 @@ test("the hooks refuse a commit with no approval, then let the approved change t
   assert.equal(note.decision_envelope.method, "decide.approve");
   assert.match(note.decision_envelope.sig, /^ed25519:/);
   assert.equal(note.decision_envelope.params.approved_artefact_digest, trailers["CHAP-Artefact"]);
-  assert.equal(envelopeVerifies(note.decision_envelope, note.reviewer_keys).ok, true);
-  assert.equal(note.reviewer_keys[0].kid, human.signer.kid);
+  assert.equal(envelopeVerifies(note.decision_envelope, note.reviewer_keys[human.from]).ok, true);
+  assert.equal(note.reviewer_keys[human.from][0].kid, human.signer.kid);
+  assert.equal(note.rule, "any_one_approves");
+  assert.equal(note.agent_keys[0].kid, (await readKeyFile(config.agent.uri, keyPath)).kid);
+  assert.deepEqual(await checkNote(note), []);
   const offline = await verifyRange(repo, "HEAD");
   assert.equal(offline[0].status, "ok", offline[0].detail);
   assert.match(offline[0].detail, /signed/);
@@ -134,6 +137,10 @@ test("the hooks refuse a commit with no approval, then let the approved change t
 
 test("verification fails a tampered commit, a commit without an approval, and a note for another task", async () => {
   const approved = await head(repo);
+  // A commit made by hand with git commit carries no signature of the agent's key.
+  const strict = await verifyRange(repo, "HEAD", { requireSignedCommit: true });
+  assert.equal(strict[0].status, "FAIL");
+  assert.match(strict[0].detail, /not signed by the agent's key/);
   // A commit that bypassed the gate carries no trailers.
   await writeFile(join(repo, "README.md"), (await readFile(join(repo, "README.md"), "utf8")) + "\nSlipped past.\n");
   await commitIn(repo, "Slipped past", { CHAP_GATE: "off" });
@@ -154,7 +161,8 @@ test("verification fails a tampered commit, a commit without an approval, and a 
   // A tampered envelope does not verify.
   const note = JSON.parse(await readNote(repo, approved));
   const tampered = { ...note.decision_envelope, params: { ...note.decision_envelope.params, comment: "changed" } };
-  assert.equal(envelopeVerifies(tampered, note.reviewer_keys).ok, false);
+  assert.equal(envelopeVerifies(tampered, note.reviewer_keys[human.from]).ok, false);
+  assert.match((await checkNote({ ...note, decisions: [{ ...note.decisions[0], envelope: tampered }] })).join(), /signature of human:you@local/);
   await git(repo, ["reset", "-q", "--hard", approved]);
 });
 
@@ -208,6 +216,10 @@ test("the built-in agent takes tasks.csv through the gate: an approval, a revisi
   const results = await verifyRange(repo, `main..${branch}`);
   assert.deepEqual(results.map((r) => r.status), ["ok", "ok"]);
   assert.match(results[1].detail, /approved with an edit/);
+  // The gate signed both commits with the agent's key, in git's own SSH format.
+  for (const r of results) assert.match(r.detail, /commit signed by the agent's key/);
+  const strict = await verifyRange(repo, `main..${branch}`, { requireSignedCommit: true });
+  assert.deepEqual(strict.map((r) => r.status), ["ok", "ok"]);
   assert.match(await git(repo, ["show", `${branch}:lib/calc.mjs`]), /minuend less subtrahend/);
   assert.doesNotMatch(await git(repo, ["show", `${branch}:README.md`]), /## Use/, "the rejected change was not committed");
   assert.equal((await git(repo, ["status", "--porcelain"])).trim(), "", "the rejected change was taken out of the working tree");
@@ -232,7 +244,7 @@ test("a restarted agent commits nothing twice and opens no new task", async () =
   assert.equal(results.length, 2);
 });
 
-test("the report counts what the gate recorded and lists the reviewers' words", async () => {
+test("the report counts what the gate recorded, by model and by file, and lists the reviewers' words", async () => {
   const tasks = (await (await fetch(`${base}/api/tasks?kind=code_change`)).json()).tasks;
   const s = summarise(tasks);
   assert.equal(s.total, 5);
@@ -240,9 +252,20 @@ test("the report counts what the gate recorded and lists the reviewers' words", 
   assert.equal(s.overridden, 2);
   assert.equal(s.rejected, 1);
   assert.equal(s.revisions, 1);
-  assert.ok(s.override_rationales.some((o) => o.rationale === "say which is which"));
-  assert.ok(s.rejection_notes.some((r) => r.note === "name the parameters minuend and subtrahend" && r.revision));
-  assert.ok(s.by_model.some(([model]) => model === "scripted"));
+  assert.equal(s.sent_back, 1);
+  assert.ok(s.override_rationales.some((o) => o.text === "say which is which"));
+  assert.ok(s.rejection_notes.some((r) => r.text === "name the parameters minuend and subtrahend" && r.revision));
+  const scripted = s.models.find((m) => m.model === "scripted");
+  assert.deepEqual([scripted.changes, scripted.approve, scripted.override, scripted.reject, scripted.sent_back], [3, 1, 1, 1, 1]);
+  const calc = s.files.find((f) => f.path === "lib/calc.mjs");
+  assert.ok(calc.edited >= 2, "the reviewer's edits to lib/calc.mjs are counted");
+  assert.equal(calc.sent_back, 1);
+  const readme = s.files.find((f) => f.path === "README.md");
+  assert.ok(readme.rejected >= 1);
+  // The decision log keeps every round, the rejection that sent the change back included.
+  const subtract = tasks.find((t) => t.input?.summary === "Add a subtract function");
+  assert.deepEqual(subtract.decision_log.map((d) => d.kind), ["reject", "override"]);
+  assert.equal(subtract.decision_log[0].request_revision, true);
 });
 
 test("the evidence endpoint holds the submissions, the decisions and the reviewer's keys", async () => {
@@ -251,7 +274,7 @@ test("the evidence endpoint holds the submissions, the decisions and the reviewe
   assert.ok(ev.submissions.length >= 1);
   assert.ok(ev.decisions.length >= 1);
   assert.equal(ev.decisions.at(-1).envelope.params.from, human.from);
-  assert.deepEqual(Object.keys(ev.keys), [human.from]);
+  assert.deepEqual(Object.keys(ev.keys).sort(), [config.agent.uri, human.from].sort());
   assert.match(ev.chain_head, /^sha256:/);
   assert.equal((await fetch(`${base}/api/tasks/nope/evidence`)).status, 404);
 });
@@ -268,4 +291,77 @@ test("the pieces: the CSV, a model's answer, the prompt, and RFC 6902", async ()
   assert.match(answer.files[0].content, /## Use/);
   assert.deepEqual(applyJsonPatch({ a: 1, b: [1, 2] }, [{ op: "replace", path: "/a", value: 2 }, { op: "add", path: "/b/-", value: 3 }, { op: "remove", path: "/b/0" }]), { a: 2, b: [2, 3] });
   assert.throws(() => applyJsonPatch({}, [{ op: "move", from: "/a", path: "/b" }]), /Unsupported/);
+});
+
+describe("under quorum:2", () => {
+  let qconfig, qserver, qbase, qgate, a, b, qrepo, agent;
+  const qreviews = async (who) => (await (await fetch(`${qbase}/api/reviews?reviewer=${encodeURIComponent(who.from)}`)).json()).reviews;
+  const qdecide = (who, method, review, extra = {}) => contentHash(review.artefact).then((digest) => who.call(method, { task_id: review.task_id, approved_artefact_digest: digest, ...extra }));
+
+  before(async () => {
+    qconfig = await loadConfig();
+    qconfig.store = ":memory:";
+    qconfig.workspace = `${qconfig.workspace}_quorum`;
+    qconfig.review = { rule: "quorum:2" };
+    const coord = await makeCoordinator(qconfig);
+    qserver = await makeServer(qconfig, coord);
+    await new Promise((r) => qserver.listen(0, "127.0.0.1", r));
+    qbase = `http://127.0.0.1:${qserver.address().port}`;
+    qgate = { dir: projectDir, config: qconfig, url: `${qbase}/chap`, base: qbase };
+    agent = await agentClient(qgate, { keyPath });
+    a = reviewerClient(qgate, "human:alice@local", await generateSigner("human:alice@local"));
+    b = reviewerClient(qgate, "human:bob@local", await generateSigner("human:bob@local"));
+    qrepo = await createDemoRepo(await mkdtemp(join(tmpdir(), "chap-qrepo-")), { log: () => {}, hooks: false });
+  });
+
+  after(async () => {
+    await new Promise((r) => qserver.close(r));
+  });
+
+  test("a change waits for two reviewers, and an approval of an earlier version does not count", async () => {
+    await a.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [a.signer.publicJwk] } });
+    await writeFile(join(qrepo, "lib/calc.mjs"), (await readFile(join(qrepo, "lib/calc.mjs"), "utf8")) + "\nexport const ZERO = 0;\n");
+    const artefact = await describeChange(qrepo, { summary: "Add ZERO", drafted_by: "the test" });
+    // One reviewer cannot meet quorum:2.
+    assert.deepEqual(await reviewersReady(agent, reviewRule(qgate)), { ok: false, have: 1, need: 2, to: ["human:alice@local"] });
+    await b.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [b.signer.publicJwk] } });
+    assert.equal((await reviewersReady(agent, reviewRule(qgate))).ok, true);
+    const first = await propose(agent, artefact, { review: reviewRule(qgate) });
+    assert.equal(first.state, "review_requested");
+    let review = (await qreviews(a)).find((r) => r.task_id === first.task_id);
+    assert.equal(review.rule, "quorum:2");
+    assert.deepEqual(review.reviewers.sort(), ["human:alice@local", "human:bob@local"]);
+    // Alice approves, Bob asks for a change: the agent revises on a new round.
+    assert.equal((await qdecide(a, "decide.approve", review)).state, "review_requested");
+    assert.equal((await qdecide(b, "decide.reject", review, { comment: "name it ZERO_VALUE", request_revision: true })).state, "in_progress");
+    await writeFile(join(qrepo, "lib/calc.mjs"), (await readFile(join(qrepo, "lib/calc.mjs"), "utf8")).replace("export const ZERO = 0;", "export const ZERO_VALUE = 0;"));
+    const second = await propose(agent, await describeChange(qrepo, { summary: "Add ZERO", drafted_by: "the test" }), { gate: qgate, review: reviewRule(qgate) });
+    assert.equal(second.task_id, first.task_id);
+    assert.equal(second.revised, true);
+    review = (await qreviews(b)).find((r) => r.task_id === first.task_id);
+    assert.deepEqual(review.decisions, [], "a new round starts with no decisions");
+    // Bob approves the revision. Alice's approval was of the first version, so the review stays open.
+    assert.equal((await qdecide(b, "decide.approve", review)).state, "review_requested");
+    assert.equal((await qdecide(a, "decide.approve", review)).state, "completed");
+    const ev = await (await fetch(`${qbase}/api/tasks/${first.task_id}/evidence`)).json();
+    const note = buildNote(ev, `${qbase}/chap`);
+    assert.equal(note.rule, "quorum:2");
+    assert.deepEqual(note.decisions.map((d) => d.reviewer), ["human:bob@local", "human:alice@local"]);
+    assert.deepEqual(await checkNote(note), []);
+    const log = ev.task.decision_log.map((d) => `${d.reviewer}:${d.kind}`);
+    assert.deepEqual(log, ["human:alice@local:approve", "human:bob@local:reject", "human:bob@local:approve", "human:alice@local:approve"]);
+    // A note claiming quorum:2 with one approval does not hold.
+    assert.match((await checkNote({ ...note, decisions: note.decisions.slice(0, 1) })).join(), /needs 2 approvals; 1 on record/);
+  });
+
+  test("an edit under quorum:2 completes the task at the coordinator, and the gate does not accept it", async () => {
+    await writeFile(join(qrepo, "README.md"), (await readFile(join(qrepo, "README.md"), "utf8")) + "\nMore.\n");
+    const p = await propose(agent, await describeChange(qrepo, { summary: "More README", drafted_by: "the test" }), { review: reviewRule(qgate) });
+    const review = (await qreviews(a)).find((r) => r.task_id === p.task_id);
+    const edited = { ...review.artefact, patch: review.artefact.patch.replace("+More.", "+More, edited.") };
+    const r = await qdecide(a, "decide.override", review, { rationale: "wording", diff: jsonPatch(review.artefact, edited), intent_preserved: true });
+    assert.equal(r.state, "completed", "the coordinator settles the review on one override");
+    const note = buildNote(await (await fetch(`${qbase}/api/tasks/${p.task_id}/evidence`)).json(), `${qbase}/chap`);
+    assert.match((await checkNote(note)).join(), /under quorum:2 an edit settles the review/);
+  });
 });

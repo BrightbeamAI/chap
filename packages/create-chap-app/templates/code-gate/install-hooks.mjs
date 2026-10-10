@@ -5,6 +5,11 @@
 // post-commit hooks. A repository that already has a hooks path, or hooks
 // of its own in .git/hooks, is reported and left as it is unless --force
 // is given. --remove takes the setting away again.
+//
+// When the agent's key is in keys/, the repository's
+// gpg.ssh.allowedSignersFile is pointed at keys/allowed_signers, unless it
+// names a file already, so `git log --show-signature` there says which
+// commits the agent's key signed.
 
 import { access, chmod, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -37,6 +42,16 @@ export async function installHooks(repoPath, { force = false, remove = false, lo
   await git(repo, ["config", "core.hooksPath", HOOKS_DIR]);
   await access(join(HOOKS_DIR, "pre-commit"));
   log(`core.hooksPath in ${repo} now points at ${HOOKS_DIR}; every commit there needs an approved change`);
+  const signers = join(here, "keys", "allowed_signers");
+  let current_ = "";
+  try { current_ = (await git(repo, ["config", "--get", "gpg.ssh.allowedSignersFile"])).trim(); } catch { /* not set */ }
+  try {
+    await access(signers);
+    if (!current_) {
+      await git(repo, ["config", "gpg.ssh.allowedSignersFile", signers]);
+      log(`gpg.ssh.allowedSignersFile in ${repo} now names ${signers}, so git log --show-signature shows the agent's signatures`);
+    }
+  } catch { /* no agent key yet: npm run keys writes it */ }
   return { repo, installed: true };
 }
 

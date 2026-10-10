@@ -3,13 +3,15 @@
 // pre-commit   refuses the commit unless the staged change is exactly an
 //              artefact the gate holds as approved: the approved patch
 //              applied to the commit's parent gives the tree being
-//              committed. The match is written to .git/chap/approval.json
+//              committed. It then builds the evidence note and checks it
+//              as the verifier will: the signatures, the digests and the
+//              review rule. The note is written to .git/chap/approval.json
 //              for the two hooks after it.
 // commit-msg   adds the CHAP trailers for that approval to the message.
 // post-commit  writes the evidence beside the commit as a note under
 //              refs/notes/chap: the artefact as proposed and as approved,
-//              the signed decision as the chain holds it, the reviewer's
-//              keys and the chain head.
+//              the signed decisions as the chain holds them, the keys of
+//              the reviewers and the agent, and the chain head.
 //
 // CHAP_GATE=off lets a commit through with no approval and no trailers; a
 // verifier run with its default policy fails such a commit, so the bypass
@@ -19,7 +21,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { approvedChanges, buildNote, contentHash, evidence, loadGate, served, trailersFor } from "./lib/gate.mjs";
+import { approvedChanges, buildNote, checkNote, contentHash, evidence, loadGate, served, trailersFor } from "./lib/gate.mjs";
 import { addTrailersToFile, emptyTree, git, head, stagedPatch, stagedTree, treeAfterPatch, treeOf, writeNote } from "./lib/git.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +58,7 @@ export async function matchApproval(gate, repo, { patch, parentTree, tree }) {
 async function preCommit(repo, gate) {
   const patch = await stagedPatch(repo);
   if (!patch.trim()) { say("nothing staged, nothing to gate"); return 0; }
-  await served(gate);
+  const cfg = await served(gate);
   const parentTree = (await head(repo)) ? await treeOf(repo, "HEAD") : await emptyTree(repo);
   const tree = await stagedTree(repo);
   const match = await matchApproval(gate, repo, { patch, parentTree, tree });
@@ -66,36 +68,40 @@ async function preCommit(repo, gate) {
     say(`then decide at ${gate.base}/ and commit again. CHAP_GATE=off commits without an approval.`);
     return 1;
   }
-  const decision = match.review?.decisions?.at(-1);
+  const ev = await evidence(gate, match.task_id);
+  const note = buildNote(ev, gate.url);
+  const problems = await checkNote(note, { allowUnsigned: !cfg.require_signatures });
+  if (problems.length) {
+    say(`${match.task_id} is completed, and its evidence does not hold up:`);
+    for (const problem of problems) say(`  ${problem}`);
+    return 1;
+  }
   const file = await approvalFile(repo);
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify({ task_id: match.task_id, digest: await contentHash(match.output), decision: decision?.kind, reviewer: decision?.reviewer }));
-  say(`approved as ${match.task_id} by ${decision?.reviewer ?? "a reviewer"} (${decision?.kind ?? "approve"})`);
+  await writeFile(file, JSON.stringify(note));
+  const approvers = [...new Set(note.decisions.filter((d) => d.method !== "decide.reject").map((d) => d.reviewer))];
+  say(`approved as ${match.task_id} by ${approvers.join(" and ")} (${note.decision.method === "decide.override" ? "with an edit" : note.rule})`);
   return 0;
 }
 
+async function readApproval(repo) {
+  try { return JSON.parse(await readFile(await approvalFile(repo), "utf8")); } catch { return null; }
+}
+
 async function commitMsg(repo, gate, messageFile) {
-  const file = await approvalFile(repo);
-  let approval;
-  try { approval = JSON.parse(await readFile(file, "utf8")); } catch { say("no approval recorded by pre-commit; the message gets no trailers"); return 0; }
-  const ev = await evidence(gate, approval.task_id);
-  if (!ev) { say(`the gate no longer knows ${approval.task_id}`); return 1; }
-  const note = buildNote(ev, gate.url);
+  const note = await readApproval(repo);
+  if (!note) { say("no approval recorded by pre-commit; the message gets no trailers"); return 0; }
   await addTrailersToFile(repo, messageFile, await trailersFor(note));
   return 0;
 }
 
-async function postCommit(repo, gate) {
-  const file = await approvalFile(repo);
-  let approval;
-  try { approval = JSON.parse(await readFile(file, "utf8")); } catch { return 0; }
-  await rm(file, { force: true });
+async function postCommit(repo) {
+  const note = await readApproval(repo);
+  if (!note) return 0;
+  await rm(await approvalFile(repo), { force: true });
   const sha = await head(repo);
-  const ev = await evidence(gate, approval.task_id);
-  if (!ev) { say(`the gate no longer knows ${approval.task_id}; no note written`); return 0; }
-  const note = buildNote(ev, gate.url);
   await writeNote(repo, sha, JSON.stringify(note, null, 2) + "\n");
-  say(`${sha.slice(0, 12)} carries ${approval.task_id}; the evidence is in refs/notes/chap. Push it with: git push origin refs/notes/chap`);
+  say(`${sha.slice(0, 12)} carries ${note.task_id}; the evidence is in refs/notes/chap. Push it with: git push origin refs/notes/chap`);
   return 0;
 }
 
@@ -107,7 +113,7 @@ export async function hook(stage, argv, repo = process.cwd()) {
   const gate = await loadGate(here);
   if (stage === "pre-commit") return preCommit(repo, gate);
   if (stage === "commit-msg") return commitMsg(repo, gate, argv[0]);
-  if (stage === "post-commit") return postCommit(repo, gate);
+  if (stage === "post-commit") return postCommit(repo);
   say(`unknown hook ${stage}`);
   return 1;
 }

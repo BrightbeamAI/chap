@@ -25,7 +25,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,7 +38,7 @@ if sys.version_info < (3, 10):
     raise SystemExit("chap-analytics needs Python 3.10 or newer.")
 
 try:
-    from chap_analytics import briefs, export, frames, from_sqlite, report
+    from chap_analytics import briefs, export, frames, from_json, report
 except ModuleNotFoundError as exc:  # pragma: no cover - import guard
     if exc.name and exc.name.split(".")[0] in ("chap_analytics", "pandas", "numpy"):
         raise SystemExit("chap-analytics is not installed. Run: pip install chap-analytics") from exc
@@ -46,6 +48,51 @@ except ModuleNotFoundError as exc:  # pragma: no cover - import guard
 def load_config() -> dict:
     path = HERE / "chap.config.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def patch_sections(patch) -> dict[str, str]:
+    """A unified diff split into its files: path -> that file's section."""
+    out: dict[str, str] = {}
+    if not isinstance(patch, str):
+        return out
+    current = None
+    for line in patch.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            parts = line.rstrip("\n").split(" b/", 1)
+            current = parts[1] if len(parts) == 2 else line
+            out[current] = ""
+        if current is not None:
+            out[current] += line
+    return out
+
+
+def code_sections(f) -> list[str]:
+    """For code changes: the files reviewers edited, with their rationales."""
+    o = f.overrides
+    if o.empty:
+        return []
+    files: dict[str, list[str]] = {}
+    for r in o.itertuples(index=False):
+        before = (r.based_on or {}).get("patch") if isinstance(r.based_on, dict) else None
+        after = (r.result or {}).get("patch") if isinstance(r.result, dict) else None
+        if before is None or after is None:
+            continue
+        a, b = patch_sections(before), patch_sections(after)
+        for path in sorted(set(a) | set(b)):
+            if a.get(path) != b.get(path):
+                files.setdefault(path, []).append(r.rationale if isinstance(r.rationale, str) and r.rationale else "no rationale")
+    if not files:
+        return []
+    lines = ["## Files reviewers edited", "", "| File | Edits |", "|---|---|"]
+    for path, notes in sorted(files.items(), key=lambda kv: -len(kv[1])):
+        lines.append(f"| `{path}` | {len(notes)} |")
+    lines.append("")
+    for path, notes in sorted(files.items(), key=lambda kv: -len(kv[1])):
+        lines.append(f"**`{path}`:**")
+        lines.append("")
+        lines += [f"- {n}" for n in notes[:5]]
+        lines.append("")
+    return lines
 
 
 def refine_markdown(f, workspace: str, cases_count: int) -> str:
@@ -71,6 +118,7 @@ def refine_markdown(f, workspace: str, cases_count: int) -> str:
             for e in r.examples:
                 lines.append(f"- {e}")
             lines.append("")
+    lines += code_sections(f)
     rejections = f.decisions[f.decisions["kind"] == "reject"] if not f.decisions.empty else f.decisions
     lines += ["## What reviewers sent back", ""]
     if rejections is None or rejections.empty:
@@ -93,8 +141,45 @@ def refine_markdown(f, workspace: str, cases_count: int) -> str:
     return "\n".join(lines)
 
 
+# The collections a workspace snapshot holds, and the field each is keyed by.
+# The Python coordinator stores them as objects keyed by that field and the
+# TypeScript coordinator as lists; chap-analytics 0.2.1 reads the first, so
+# a list is keyed here before the snapshot is handed over.
+KEYED = {"tasks": "id", "overrides": "id", "whispers": "id", "deliberations": "id",
+         "handoffs": "id", "snapshots": "id", "route_decisions": "id", "members": "uri"}
+
+
+def load_chain(store: str, workspace: str | None):
+    """The workspace's chain and state from the store, whichever coordinator wrote it."""
+    con = sqlite3.connect(f"file:{store}?mode=ro", uri=True)
+    try:
+        rows = con.execute("SELECT id, data FROM chap_workspaces").fetchall()
+    finally:
+        con.close()
+    available = [r[0] for r in rows]
+    if not rows:
+        raise SystemExit(f"{store} holds no workspace yet.")
+    if workspace is None:
+        if len(rows) > 1:
+            raise SystemExit(f"{store} holds {', '.join(available)}; name one with --workspace.")
+        workspace = available[0]
+    data = next((d for w, d in rows if w == workspace), None)
+    if data is None:
+        raise SystemExit(f"{store} holds {', '.join(available)}, not {workspace}.")
+    snapshot = json.loads(data)
+    for name, key in KEYED.items():
+        if isinstance(snapshot.get(name), list):
+            snapshot[name] = {x[key]: x for x in snapshot[name] if isinstance(x, dict) and isinstance(x.get(key), str)}
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "snapshot.json"
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        chain = from_json(str(path), workspace=workspace)
+    chain.source = f"sqlite:{store}"
+    return chain
+
+
 def write_pages(store: str, workspace: str | None, out: Path, rationales: bool = True) -> dict:
-    chain = from_sqlite(store, workspace=workspace)
+    chain = load_chain(store, workspace)
     f = frames(chain)
     out.mkdir(parents=True, exist_ok=True)
     report.write(f, str(out / "report.html"), rationales=rationales)
