@@ -80,9 +80,14 @@ export async function reviewsFor(g, who) {
   return (await (await fetch(`${g.base}/api/reviews?reviewer=${encodeURIComponent(who.from)}`)).json()).reviews;
 }
 
-/** A decision as the desk sends it, with the digest of the artefact shown. */
+/**
+ * A decision as the desk sends it: with the digest of the artefact shown and
+ * the digest of the submission that opened the round. `round` names another
+ * submission, for a test that mixes rounds.
+ */
 export async function decide(who, method, review, extra = {}) {
-  return who.call(method, { task_id: review.task_id, approved_artefact_digest: await contentHash(review.artefact), ...extra });
+  const round = review.submission?.envelope ? await contentHash(review.submission.envelope) : undefined;
+  return who.call(method, { task_id: review.task_id, approved_artefact_digest: await contentHash(review.artefact), ...(round ? { round } : {}), ...extra });
 }
 
 /** git commit -am in a repository, through its hooks, with the gate in the environment. */

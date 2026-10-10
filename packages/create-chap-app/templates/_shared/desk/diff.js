@@ -75,7 +75,7 @@ export function parsePatch(patch) {
     if (minus !== null || plus !== null) {
       const wantMinus = file.status === "added" ? "/dev/null" : `a/${file.path}`;
       const wantPlus = file.status === "deleted" ? "/dev/null" : `b/${file.path}`;
-      if (minus !== wantMinus || plus !== wantPlus) anomalies.push(`${file.path}: its --- and +++ lines name ${minus} and ${plus}, which git would apply instead`);
+      if (minus !== wantMinus || plus !== wantPlus) anomalies.push(`${file.path}: its --- and +++ lines name ${minus} and ${plus}, and git would apply those`);
     }
     while (i < lines.length && lines[i].startsWith("@@")) {
       const h = lines[i].match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/);

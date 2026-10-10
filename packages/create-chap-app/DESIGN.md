@@ -86,7 +86,11 @@ Ed25519 key it generates and keeps in the browser's storage. The public key
 is registered at `participant.join`. The private key never leaves the
 browser. Every decision carries `approved_artefact_digest`, the hash of the
 artefact the desk showed, so the coordinator refuses a decision on an
-artefact the reviewer did not see.
+artefact the reviewer did not see, and `round`, the hash of the submission
+that opened the review round, which the coordinator records with the call. A
+code change whose patch the desk cannot show as git would apply it, or that
+lists a file twice, can be rejected or sent back and offers no approval;
+characters a reader cannot see in a changed line are shown as markers.
 
 A `human:` URI in the desk is a label: it says who is deciding and does not
 authenticate them. The desk and its read API have no login of their own;
@@ -119,17 +123,26 @@ repository is proposed as a patch, reviewed as a diff in the desk, decided
 and signed by a person, and committed only then. The repository's hooks
 refuse a commit unless the staged tree is an approved change: approved
 against the commit's parent, read by the desk as the change git makes with
-it, not committed before, and approved by reviewers a trust policy names.
-The commit carries `CHAP-*` trailers and is signed with the agent's key
-through git's SSH signing; a note under `refs/notes/chap` carries the
+it, unused by any earlier commit, and approved by reviewers a trust policy
+names. The commit carries `CHAP-*` trailers and is signed with the agent's
+key through git's SSH signing; a note under `refs/notes/chap` carries the
 agent's signed proposal, each reviewer's signed decision, the artefact as
 proposed and as approved, and the chain head. The trust policy,
 `chap-trust.json` in the governed repository, pins the reviewers' and
-agents' keys and the rule; `verify.mjs` checks a range of commits against
-it from the repository alone, and a workflow runs the base branch's
-verifier and policy on every pull request. Claude Code, Cursor or any agent
-that can run a command proposes with `propose.mjs`; a built-in agent and
-`npm run demo` show the whole path with nothing else installed.
+agents' keys and the rule; `verify.mjs` checks a range of commits against it
+from the repository alone, and a workflow runs the base branch's verifier
+and policy on every pull request. The hooks are the guardrail on a
+developer's machine, where they can be switched off; the pull request check,
+required by branch protection, is the boundary. It asks of a pull request
+that its commits be one line from where they leave the base branch, each
+approved on the commit it sits on, with no approval used in the base
+branch's history already. Every git command that reads a change runs with
+the repository's attributes and configuration set aside, so a
+`.gitattributes` in the change cannot alter what the reviewer is shown, and
+the contents the desk shows beside a patch are checked against the
+repository's blobs. Claude Code, Cursor or any agent that can run a command
+proposes with `propose.mjs`; a built-in agent and `npm run demo` show the
+whole path with nothing else installed.
 
 **MCP gate** (TypeScript). One process serves the desk, `POST /chap`, and an
 MCP server over streamable HTTP at `/mcp`. Claude Desktop, Cursor or Claude
@@ -163,16 +176,19 @@ enforces.
 
 A review opened on `task.complete` is addressed to the human members other
 than the producer under `any_one_approves`. A template that needs more than
-one approval opens each round with `review.request` and the rule, so a
-round starts with no decisions: in the coordinators, a resubmission through
+one approval opens each round with `review.request` and the rule, so a round
+starts with no decisions: in the coordinators, a resubmission through
 `task.complete` after `request_revision` keeps the earlier round's
 decisions, which would let a quorum be met across two versions. And because
 `decide.override` settles a review whatever its rule, the desk offers no
 edit under a multi-approval rule, and the code gate's checks refuse an
 override there. The code gate applies its own rule, from the trust policy
 and `chap.config.json`, to the approvals on record, whatever rule the review
-ran under, so an agent that opens a one-approval review gains nothing. Both
-coordinator behaviours are noted for the coordinators.
+ran under, so an agent that opens a one-approval review gains nothing, and
+it counts an approval only in the round the approval names, so approvals
+from two rounds of one change never add up to a quorum, whatever a
+coordinator kept. Both coordinator behaviours are noted for the
+coordinators.
 
 ## Analytics
 

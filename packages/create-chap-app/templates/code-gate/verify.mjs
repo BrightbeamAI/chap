@@ -11,6 +11,10 @@
 //                             key the trust policy lists under people (SSH signatures)
 //   --allow-clean-merges      let a merge commit through when its tree is the clean merge of its
 //                             parents (git 2.38 or later); otherwise every merge commit fails
+//   --base <sha>              the commit a pull request merges into: the range is then one
+//                             line of commits from the point where it leaves <sha>'s history,
+//                             with no merge in it, and no approval in it was used in <sha>'s
+//                             history already (in CI, the pull request's base)
 //   --allow-unsigned          accept decisions with no signature (where signatures are off)
 //   --json                    print the results as JSON
 //
@@ -34,19 +38,20 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildNote, checkApproval, checkChange, contentHash, evidence, loadGate, onlinePolicy, readTrustFile, served, trustAtRef } from "./lib/gate.mjs";
-import { cleanMergeTree, commitInfo, commitSignature, emptyTree, parseTrailers, readNote, repoRoot, revList, treeOf, verifySshSignature } from "./lib/git.mjs";
+import { cleanMergeTree, commitInfo, commitSignature, commitsWithTrailer, emptyTree, git, parseTrailers, readNote, repoRoot, revList, treeOf, verifySshSignature } from "./lib/git.mjs";
 import { opensshPublicKey } from "./keys.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
 export function parseArgs(argv) {
-  const out = { range: "HEAD", repo: process.cwd(), trust: null, trustRef: null, coordinator: null, requireSignedCommit: false, allowPeople: false, allowCleanMerges: false, allowUnsigned: false, json: false };
+  const out = { range: "HEAD", repo: process.cwd(), trust: null, trustRef: null, coordinator: null, base: null, requireSignedCommit: false, allowPeople: false, allowCleanMerges: false, allowUnsigned: false, json: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--repo") out.repo = argv[++i];
     else if (a === "--trust") out.trust = argv[++i];
     else if (a === "--trust-ref") out.trustRef = argv[++i];
     else if (a === "--coordinator") out.coordinator = argv[++i];
+    else if (a === "--base") out.base = argv[++i];
     else if (a === "--require-signed-commit") out.requireSignedCommit = true;
     else if (a === "--allow-people") out.allowPeople = true;
     else if (a === "--allow-clean-merges") out.allowCleanMerges = true;
@@ -105,6 +110,10 @@ export async function verifyCommit(repo, sha, { policy = null, gate = null, seen
   }
   const problems = [];
   if (seen.has(taskId)) problems.push(`${taskId} was used already by ${seen.get(taskId).slice(0, 12)}; an approval covers one commit`);
+  else if (seen.base) {
+    const before = await commitsWithTrailer(repo, "CHAP-Task", taskId, [seen.base]);
+    if (before.length) problems.push(`${taskId} was used already by ${before[0].slice(0, 12)} in the base's history; an approval covers one commit`);
+  }
   seen.set(taskId, sha);
 
   // The note: from the repository, and, with a gate, rebuilt from its records.
@@ -177,8 +186,38 @@ export async function verifyRange(repoPath, range, options = {}) {
     }
   }
   const seen = new Map();
+  const shas = await revList(repo, range);
   const results = [];
-  for (const sha of await revList(repo, range)) results.push(await verifyCommit(repo, sha, { ...options, policy, gate, seen }));
+  let anchored = null;
+  if (options.base) {
+    // A pull request against its base: one line of commits from the point
+    // where it leaves the base's history, with no merge in it. Each commit
+    // was approved on the commit it sits on, so a pull request behind its
+    // base passes as it is, and the merge brings it onto the newer base. An
+    // approval already used anywhere in the base's history counts for
+    // nothing here, so an approved change that landed and was reverted
+    // cannot come back on an older commit.
+    const base = (await git(repo, ["rev-parse", "--verify", `${options.base}^{commit}`])).trim();
+    seen.base = base;
+    if (shas.length) {
+      const fork = await git(repo, ["merge-base", base, shas.at(-1)]).then((o) => o.trim(), () => "");
+      if (!fork) anchored = `the range shares no history with ${base.slice(0, 12)}`;
+      let expected = fork;
+      for (const sha of fork ? shas : []) {
+        const info = await commitInfo(repo, sha);
+        if (info.parents.length !== 1 || info.parents[0] !== expected) {
+          anchored = `${sha.slice(0, 12)} does not sit on ${expected.slice(0, 12)}: a pull request is one line of commits from where it leaves ${base.slice(0, 12)}, with no merge in it`;
+          break;
+        }
+        expected = sha;
+      }
+    }
+  }
+  for (const sha of shas) {
+    const r = await verifyCommit(repo, sha, { ...options, policy, gate, seen });
+    if (anchored) { r.status = "FAIL"; r.detail = anchored + (r.detail ? `; ${r.detail}` : ""); }
+    results.push(r);
+  }
   return results;
 }
 

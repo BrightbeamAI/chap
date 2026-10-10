@@ -3,7 +3,7 @@
 // pre-commit   refuses the commit unless the staged change is exactly an
 //              approved change: one approved against the commit's parent,
 //              whose patch is git's own diff of the change it makes and
-//              gives the tree being committed, not committed before, and
+//              gives the tree being committed, unused by any earlier commit, and
 //              whose approvals hold under the trust policy: the
 //              repository's chap-trust.json at HEAD when it has one, or
 //              the reviewers chap.config.json names with the keys the
@@ -17,27 +17,33 @@
 // verifier fails such a commit, so the bypass is visible where it matters.
 // CHAP_URL names the gate when it is not at the address in chap.config.json.
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { approvedChanges, buildNote, checkApproval, checkChange, evidence, loadGate, onlinePolicy, reviewRule, served, strictestRule, trailersFor, trustAtRef } from "./lib/gate.mjs";
-import { commitInfo, commitsWithTrailer, emptyTree, gitPath, head, mergeInProgress, setTrailers, stagedTree, treeOf, writeNote } from "./lib/git.mjs";
+import { commitInfo, commitsWithTrailer, emptyTree, git, head, mergeInProgress, setTrailers, stagedTree, treeOf, writeNote } from "./lib/git.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const say = (line) => process.stderr.write(`chap: ${line}\n`);
 
-const approvalFile = (repo) => gitPath(repo, "chap/approval.json");
+/** Where pre-commit leaves the approval for the hooks after it: in this worktree's own git directory. */
+const approvalFile = async (repo) => join((await git(repo, ["rev-parse", "--absolute-git-dir"])).trim(), "chap-approval.json");
 
 async function readApproval(repo) {
   try { return JSON.parse(await readFile(await approvalFile(repo), "utf8")); } catch { return null; }
 }
 
-/** The approved changes whose patch, applied to the parent, gives the staged tree. */
-export async function matchApprovals(gate, repo, { parent, parentTree, tree }) {
+/**
+ * The approved changes whose patch, applied to the parent, gives the staged
+ * tree. Each approved change on the same parent that does not match goes
+ * into `near` with what kept it out.
+ */
+export async function matchApprovals(gate, repo, { parent, parentTree, tree }, near = []) {
   const out = [];
   for (const t of await approvedChanges(gate, { base: parent })) {
     const problems = await checkChange(repo, { parent, parentTree, tree, approved: t.output });
     if (!problems.length) out.push(t);
+    else near.push([t.task_id, problems]);
   }
   return out;
 }
@@ -57,9 +63,11 @@ async function preCommit(repo, gate) {
     say("the commit changes nothing, so there is nothing an approval could cover. CHAP_GATE=off commits it anyway.");
     return 1;
   }
-  const matches = await matchApprovals(gate, repo, { parent, parentTree, tree });
+  const near = [];
+  const matches = await matchApprovals(gate, repo, { parent, parentTree, tree }, near);
   if (!matches.length) {
     say("no approved change matches what is staged on this commit's parent.");
+    for (const [id, problems] of near.slice(0, 3)) say(`  ${id}, approved on this parent: ${problems[0]}`);
     say(`propose it from the repository with: node ${join(here, "propose.mjs")} "what the change does"`);
     say(`then decide at ${gate.base}/ and commit again. CHAP_GATE=off commits without an approval.`);
     return 1;
@@ -89,9 +97,7 @@ async function preCommit(repo, gate) {
     return 1;
   }
   const { note, policy } = chosen;
-  const file = await approvalFile(repo);
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, JSON.stringify({ note, tree, parent }));
+  await writeFile(await approvalFile(repo), JSON.stringify({ note, tree, parent }));
   const approvers = [...new Set(note.decisions.filter((d) => d.method !== "decide.reject").map((d) => d.reviewer))];
   say(`approved as ${note.task_id} by ${approvers.join(" and ")} (${note.decision.method === "decide.override" ? "with an edit" : policy.rule}), checked against ${policy.source}`);
   return 0;
@@ -99,7 +105,7 @@ async function preCommit(repo, gate) {
 
 async function commitMsg(repo, messageFile) {
   const approval = await readApproval(repo);
-  if (!approval) { say("no approval recorded by pre-commit; the message gets no trailers"); return 0; }
+  if (!approval) { say("pre-commit recorded no approval for this commit; commit again"); return 1; }
   if (approval.tree !== (await stagedTree(repo))) {
     say("the change staged now is not the one pre-commit approved; commit again");
     return 1;

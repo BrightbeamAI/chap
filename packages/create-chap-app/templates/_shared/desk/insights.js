@@ -172,7 +172,7 @@ export function renderInsights(tasks, { chain = null, analytics = null, onOpenTa
     stat("Sent back", String(s.sent_back), `${s.revisions} revision request${s.revisions === 1 ? "" : "s"} in all`),
     stat("Rejected", String(s.rejected), s.decided ? `${pct(s.rejected, s.decided)} of decided` : ""),
     stat("Time to decision", minutes(s.median_time_ms), "median, first decision"),
-    stat("Chain", chain ? String(chain.entries) : "off", chain ? (chain.verified === true ? "entries, verified" : chain.verified === false ? "entries, not verified" : "entries") : "the chain is off"),
+    stat("Chain", chain ? String(chain.entries) : "off", chain ? (chain.verified === true ? "entries, verified" : chain.verified === false ? "entries, verification failed" : "entries") : "the chain is off"),
   ));
   const legend = el("div", { class: "legend" }, el("span", {}, el("i", { style: "background:var(--ok)" }), "approve"), el("span", {}, el("i", { style: "background:var(--warn)" }), "approve with an edit"), el("span", {}, el("i", { style: "background:var(--bad)" }), "reject or send back"));
   const modelTable = s.models.length ? el("table", { class: "table" },

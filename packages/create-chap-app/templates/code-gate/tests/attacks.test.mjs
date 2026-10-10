@@ -162,7 +162,7 @@ test("a merge commit fails unless it is a clean merge, and a person's own signed
   const withPeople = join(dir, "chap-trust.json");
   await writeFile(withPeople, JSON.stringify(trust));
   assert.equal((await verifyRange(repo, "HEAD", { trust: withPeople, allowPeople: true }))[0].status, "ok");
-  assert.equal((await verifyRange(repo, "HEAD", { trust: trustFile, allowPeople: true }))[0].status, "FAIL", "not listed, not passed");
+  assert.equal((await verifyRange(repo, "HEAD", { trust: trustFile, allowPeople: true }))[0].status, "FAIL", "a person the policy does not list fails");
   // The agent's own key does not pass a commit without an approval.
   const agentSsh = await sshKeyFiles(g.config.agent.uri, g.keyPath);
   await appendTo(repo, "README.md", "\nby the agent, unapproved\n");

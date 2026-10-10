@@ -172,6 +172,7 @@ export async function bootstrap(coord, config) {
 export function openReviews(coord, workspace, reviewer) {
   const ws = coord.getWorkspace(workspace);
   if (!ws) return [];
+  const log = decisionLog(ws);
   const out = [];
   for (const task of ws.tasks.values()) {
     if (task.state !== "review_requested" || !task.review) continue;
@@ -187,6 +188,7 @@ export function openReviews(coord, workspace, reviewer) {
       rule: task.review.rule,
       requested_at: task.review.requested_at,
       decisions: task.review.decisions,
+      submission: log.submissions.get(task.id) ?? null,
     });
   }
   return out.sort((a, b) => a.requested_at.localeCompare(b.requested_at));
@@ -209,19 +211,28 @@ export function taskView(coord, workspace, taskId) {
  */
 function decisionLog(ws) {
   const byTask = new Map();
+  const submissions = new Map();
   for (const entry of ws.audit) {
     const call = entry.envelope;
-    if (!call || typeof call.method !== "string" || !call.method.startsWith("decide.")) continue;
+    if (!call || typeof call.method !== "string") continue;
     const p = call.params ?? {};
     if (typeof p.task_id !== "string") continue;
+    if (call.method === "task.complete" || call.method === "review.request") {
+      // The latest submission opens the current review round. A reviewer's
+      // decision names it, so an approval cannot be counted in another round.
+      submissions.set(p.task_id, { seq: entry.seq, arrived: entry.arrived, envelope: call });
+      continue;
+    }
+    if (!call.method.startsWith("decide.")) continue;
     const row = {
       seq: entry.seq, ts: entry.arrived, reviewer: p.from, kind: call.method.slice("decide.".length),
       comment: p.comment ?? null, rationale: p.rationale ?? null, tags: Array.isArray(p.tags) ? p.tags : [],
-      request_revision: p.request_revision === true,
+      request_revision: p.request_revision === true, round: p.round ?? null,
     };
     if (!byTask.has(p.task_id)) byTask.set(p.task_id, []);
     byTask.get(p.task_id).push(row);
   }
+  byTask.submissions = submissions;
   return byTask;
 }
 
@@ -244,7 +255,8 @@ function viewOf(ws, task, log = null) {
     task_id: task.id, kind: task.kind, state: task.state, assignee: task.assignee, mode: task.mode,
     created_at: task.created_at, updated_at: task.updated_at, input: task.input,
     output: task.output ?? null, artefact: task.pending_artefact ?? task.output ?? null,
-    review, decision_log: log ? (log.get(task.id) ?? []) : undefined, history: task.history,
+    review, decision_log: log ? (log.get(task.id) ?? []) : undefined,
+    submission: log?.submissions?.get(task.id) ?? null, history: task.history,
   };
 }
 

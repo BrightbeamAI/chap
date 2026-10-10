@@ -33,10 +33,10 @@ function gitEnv(extra) {
   return env;
 }
 
-/** Run git in `repo`. Returns stdout. A failure throws with git's message. */
-export async function git(repo, args, { env = {}, input } = {}) {
+/** Run git in `repo`. Returns stdout, or a Buffer with `buffer`. A failure throws with git's message. */
+export async function git(repo, args, { env = {}, input, buffer = false } = {}) {
   try {
-    const child = run("git", args, { cwd: repo, env: gitEnv(env), maxBuffer: MAX });
+    const child = run("git", args, { cwd: repo, env: gitEnv(env), maxBuffer: MAX, ...(buffer ? { encoding: "buffer" } : {}) });
     if (input !== undefined) child.child.stdin.end(input);
     const { stdout } = await child;
     return stdout;
@@ -44,6 +44,30 @@ export async function git(repo, args, { env = {}, input } = {}) {
     const detail = (err.stderr || err.stdout || err.message || "").toString().trim();
     throw Object.assign(new Error(`git ${args.join(" ")}: ${detail}`), { stderr: detail });
   }
+}
+
+/**
+ * Run git on a repository's objects with no attributes in play: from an
+ * empty directory as the working tree, with an empty index unless one is
+ * given, and no attributes file. A .gitattributes in the repository, the
+ * change's own included, then decides nothing about how a diff is written
+ * or which files are binary: git looks at the content alone.
+ */
+async function neutral(repo, args, { env = {}, input, buffer = false } = {}) {
+  const gitDir = (await git(repo, ["rev-parse", "--absolute-git-dir"])).trim();
+  const dir = await mkdtemp(join(tmpdir(), "chap-neutral-"));
+  try {
+    return await git(dir, ["-c", "core.attributesFile=/dev/null", `--git-dir=${gitDir}`, `--work-tree=${dir}`, ...args], {
+      env: { GIT_INDEX_FILE: join(dir, "index"), GIT_ATTR_NOSYSTEM: "1", ...env }, input, buffer,
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/** Whether content is binary as git decides it with no attributes: a NUL byte in its first 8000 bytes. */
+export function isBinary(buf) {
+  return buf !== null && buf.subarray(0, 8000).includes(0);
 }
 
 /** The top of the working tree that holds `path`, or null when it is not in a repository. */
@@ -105,12 +129,12 @@ const DIFF_FLAGS = [
 
 /** The canonical patch from one tree to another. */
 export async function treeDiff(repo, fromTree, toTree) {
-  return git(repo, [...DIFF_CONFIG, "diff", ...DIFF_FLAGS, fromTree, toTree]);
+  return neutral(repo, [...DIFF_CONFIG, "diff", ...DIFF_FLAGS, fromTree, toTree]);
 }
 
 /** What a change touches, from tree to tree: one row per file, lines added and removed (null for binary). */
 export async function numstat(repo, fromTree, toTree) {
-  const out = await git(repo, [...DIFF_CONFIG, "diff", "--numstat", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", "--no-relative", "-O/dev/null", fromTree, toTree]);
+  const out = await neutral(repo, [...DIFF_CONFIG, "diff", "--numstat", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", "--no-relative", "-O/dev/null", fromTree, toTree]);
   const rows = [];
   for (const record of out.split("\0")) {
     if (!record) continue;
@@ -173,14 +197,14 @@ export async function stagedPatch(repo) {
 /** The tree that results from applying `patch` to `baseTree`. Throws when the patch does not apply. */
 export async function treeAfterPatch(repo, baseTree, patch) {
   return withTempIndex(repo, baseTree, async (env) => {
-    if (patch.trim()) await git(repo, ["apply", "--cached", "--binary", "--whitespace=nowarn", "-"], { env, input: patch });
+    if (patch.trim()) await neutral(repo, ["apply", "--cached", "--binary", "--whitespace=nowarn", "-"], { env, input: patch });
     return (await git(repo, ["write-tree"], { env })).trim();
   });
 }
 
 /** The files that differ between two trees: [{ path, oldMode, newMode, oldId, newId, status }]. */
 export async function rawDiff(repo, fromTree, toTree) {
-  const out = await git(repo, ["diff", "--raw", "-z", "--no-renames", "--abbrev=40", "--ignore-submodules=none", "--no-relative", fromTree, toTree]);
+  const out = await neutral(repo, ["diff", "--raw", "-z", "--no-renames", "--abbrev=40", "--ignore-submodules=none", "--no-relative", fromTree, toTree]);
   const parts = out.split("\0");
   const rows = [];
   for (let i = 0; i + 1 < parts.length; i += 2) {
@@ -213,8 +237,8 @@ export async function faithfulCheck(repo, baseTree, patch) {
   if (files.anomalies.length) return fail(files.anomalies[0]);
   const sections = new Map(files.map((f) => [f.path, f]));
   const changes = await rawDiff(repo, baseTree, tree);
-  const binary = new Set((await numstat(repo, baseTree, tree)).filter((r) => r.added === null).map((r) => r.path));
   if (changes.length !== sections.size) return fail(`it shows ${sections.size} file${sections.size === 1 ? "" : "s"} and changes ${changes.length}`);
+  const bytes = async (id) => (/^0+$/.test(id) ? null : git(repo, ["cat-file", "blob", id], { buffer: true }));
   const blob = async (id) => (/^0+$/.test(id) ? null : git(repo, ["cat-file", "blob", id]));
   for (const c of changes) {
     const f = sections.get(c.path);
@@ -226,11 +250,12 @@ export async function faithfulCheck(repo, baseTree, patch) {
     if (kind === "deleted" && f.mode !== c.oldMode) return fail(`${c.path} is deleted with mode ${c.oldMode} and shown with ${f.mode}`);
     if (kind === "modified" && c.oldMode !== c.newMode && (f.oldMode !== c.oldMode || f.newMode !== c.newMode)) return fail(`${c.path} changes mode from ${c.oldMode} to ${c.newMode}, which it does not show`);
     if (kind === "modified" && c.oldMode === c.newMode && (f.oldMode || f.newMode)) return fail(`${c.path} is shown with a mode change git does not make`);
+    const binary = isBinary(await bytes(c.oldId)) || isBinary(await bytes(c.newId));
     if (f.binary) {
-      if (!binary.has(c.path)) return fail(`${c.path} is shown as binary, and is a text file`);
+      if (!binary) return fail(`${c.path} is shown as binary, and its content is text`);
       continue;
     }
-    if (binary.has(c.path)) return fail(`${c.path} is a binary file shown as text`);
+    if (binary) return fail(`${c.path} is a binary file shown as text`);
     const before = kind === "added" ? null : await blob(c.oldId);
     const after = kind === "deleted" ? "" : await blob(c.newId);
     const shown = applyFile(before, { ...f, status: kind === "deleted" ? "modified" : f.status });

@@ -42,6 +42,30 @@ export function renderJson(value) {
 
 // -- the diff -----------------------------------------------------------------
 
+// Characters a reader cannot see, or that change how the line around them
+// reads: carriage returns, line and paragraph separators, zero-width
+// characters and bidirectional controls. Each is shown as a marker.
+const INVISIBLE = /[\r\u2028\u2029\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF\u061C]/g;
+
+/** Whether a line holds an invisible character other than a carriage return that ends it. */
+export const hasInvisible = (text) => [...text.matchAll(INVISIBLE)].some((m) => !(m[0] === "\r" && m.index === text.length - 1));
+
+/** A line's text with each invisible character shown as a marker. */
+function showText(text) {
+  const parts = [];
+  let last = 0;
+  for (const m of text.matchAll(INVISIBLE)) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const ch = m[0];
+    const eol = ch === "\r" && m.index === text.length - 1;
+    const label = ch === "\r" ? "CR" : `U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+    parts.push(el("span", { class: eol ? "invisible eol" : "invisible", title: eol ? "a carriage return ending the line" : `an invisible character, ${label}`, text: eol ? "\u21b5" : `\u27e8${label}\u27e9` }));
+    last = m.index + 1;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
 function diffTable(file) {
   const table = el("table", { class: "diff-table" });
   for (const h of file.hunks) {
@@ -53,7 +77,7 @@ function diffTable(file) {
         el("td", { class: "ln", text: l.type === "+" ? "" : String(o) }),
         el("td", { class: "ln", text: l.type === "-" ? "" : String(n) }),
         el("td", { class: "sign", text: l.type === " " ? "" : l.type }),
-        el("td", {}, l.text, l.noNewline ? el("span", { class: "nonl", text: "  (no newline at end of file)" }) : null)));
+        el("td", {}, showText(l.text), l.noNewline ? el("span", { class: "nonl", text: "  (no newline at end of file)" }) : null)));
       if (l.type !== "+") o++;
       if (l.type !== "-") n++;
     }
@@ -117,11 +141,26 @@ export function renderDiff(patch, { files = [], editable = false, onEdit = null,
   return root;
 }
 
+/** What the desk cannot show faithfully of a code change: the patch's own anomalies, and a file listed twice. */
+export function codeAnomalies(artefact) {
+  const anomalies = [...parsePatch(artefact.patch).anomalies];
+  const seen = new Set();
+  for (const f of artefact.files ?? []) { if (seen.has(f.path)) anomalies.push(`${f.path} is listed twice`); seen.add(f.path); }
+  return anomalies;
+}
+
 /** The banner for a patch the desk cannot show faithfully, or null. */
-export function anomalyBanner(patch) {
-  const anomalies = parsePatch(patch).anomalies;
+export function anomalyBanner(artefact) {
+  const anomalies = codeAnomalies(artefact);
   if (!anomalies.length) return null;
   return el("div", { class: "alert" }, el("b", { text: "Do not approve this patch. " }), "The desk cannot show it as git would apply it: ", anomalies.join("; "), ".");
+}
+
+/** A warning for a patch with invisible characters in its changed lines, or null. */
+function invisibleBanner(patch) {
+  const files = parsePatch(patch).filter((f) => f.hunks.some((h) => h.lines.some((l) => l.type !== " " && hasInvisible(l.text))));
+  if (!files.length) return null;
+  return el("div", { class: "alert warn" }, el("b", { text: "Invisible characters. " }), `The changed lines of ${files.map((f) => f.path).join(", ")} hold characters a reader cannot see, shown as markers. Read those lines as the code will.`);
 }
 
 // -- shapes -------------------------------------------------------------------
@@ -148,8 +187,10 @@ export function renderArtefact(artefact, { editing = null } = {}) {
   const shape = shapeOf(artefact);
   if (shape === "code") {
     const head = el("div", { class: "stack", style: "margin-bottom:12px" });
-    const banner = anomalyBanner(artefact.patch);
+    const banner = anomalyBanner(artefact);
     if (banner) head.append(banner);
+    const hidden = invisibleBanner(artefact.patch);
+    if (hidden) head.append(hidden);
     if (artefact.summary) head.append(el("div", {}, el("b", { text: artefact.summary })));
     const facts = [];
     if (artefact.branch) facts.push(["branch", artefact.branch]);

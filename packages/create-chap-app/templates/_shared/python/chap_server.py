@@ -193,6 +193,7 @@ def open_reviews(coord: Coordinator, workspace: str, reviewer: str | None = None
     ws = coord.get_workspace(workspace)
     if ws is None:
         return []
+    submissions = decision_log(ws)["\0submissions"]
     out = []
     for task in ws.tasks.values():
         if task.state != "review_requested" or not task.review:
@@ -212,6 +213,7 @@ def open_reviews(coord: Coordinator, workspace: str, reviewer: str | None = None
             "rule": review["rule"],
             "requested_at": review["requested_at"],
             "decisions": review["decisions"],
+            "submission": submissions.get(task.id),
         })
     return sorted(out, key=lambda r: r["requested_at"])
 
@@ -223,19 +225,29 @@ def decision_log(ws: Any) -> dict[str, list[dict]]:
     the note, the rationale, the tags and whether a revision was asked for.
     One scan of the log per request."""
     by_task: dict[str, list[dict]] = {}
+    submissions: dict[str, dict] = {}
     for entry in ws.audit:
         call = getattr(entry, "envelope", None)
-        if not isinstance(call, dict) or not str(call.get("method", "")).startswith("decide."):
+        if not isinstance(call, dict):
             continue
         p = call.get("params") or {}
+        method = str(call.get("method", ""))
         if not isinstance(p.get("task_id"), str):
+            continue
+        if method in ("task.complete", "review.request"):
+            # The latest submission opens the current review round. A reviewer's
+            # decision names it, so an approval cannot be counted in another round.
+            submissions[p["task_id"]] = {"seq": entry.seq, "arrived": entry.arrived, "envelope": call}
+            continue
+        if not method.startswith("decide."):
             continue
         by_task.setdefault(p["task_id"], []).append({
             "seq": entry.seq, "ts": entry.arrived, "reviewer": p.get("from"),
-            "kind": call["method"][len("decide."):], "comment": p.get("comment"),
+            "kind": method[len("decide."):], "comment": p.get("comment"),
             "rationale": p.get("rationale"), "tags": p.get("tags") if isinstance(p.get("tags"), list) else [],
-            "request_revision": p.get("request_revision") is True,
+            "request_revision": p.get("request_revision") is True, "round": p.get("round"),
         })
+    by_task["\0submissions"] = submissions  # type: ignore[assignment]
     return by_task
 
 
@@ -264,6 +276,7 @@ def _view_of(ws: Any, task: Any, log: dict | None = None) -> dict:
         "mode": task.mode, "created_at": task.created_at, "updated_at": task.updated_at,
         "input": task.input, "output": task.output, "artefact": artefact, "review": review,
         "decision_log": (log or {}).get(task.id, []) if log is not None else None,
+        "submission": ((log or {}).get("\0submissions") or {}).get(task.id),
         "history": [_as_dict(h) for h in task.history],
     }
 

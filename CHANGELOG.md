@@ -52,9 +52,13 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   keeps in the repository pins whose approvals count and the rule;
   `verify.mjs` checks a range of commits against it from the repository
   alone, and a workflow runs the base branch's verifier and policy on every
-  pull request. `npm run demo` runs the whole path with a built-in agent,
-  and Claude Code, Cursor or any agent that can run a command proposes
-  through `propose.mjs`.
+  pull request: its commits must be one line from where they leave the base
+  branch, each approved on the commit it sits on, and no approval may be
+  used twice in the base branch's history. Each approval names the review
+  round it was made in, so approvals from before and after a revision never
+  add up to a quorum. `npm run demo` runs the whole path with a built-in
+  agent, and Claude Code, Cursor or any agent that can run a command
+  proposes through `propose.mjs`.
 - **The desk, rebuilt.** Every template's desk shows the artefact by its
   shape (a diff for code, editable a file at a time; a letter for a
   message), lets a reviewer request changes as well as approve, edit or

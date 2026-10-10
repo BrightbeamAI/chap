@@ -9,7 +9,7 @@
 // what happened.
 
 import { contentHash, deepEqual, generateSigner, jsonPatch, makeClient, signerFromJwk } from "./chap-client.mjs";
-import { ago, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
+import { ago, codeAnomalies, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
 import { parsePatch } from "./diff.js";
 import { decisionsOf, outcomeOf, renderInsights, renderMarkdown } from "./insights.js";
 
@@ -312,8 +312,8 @@ function renderReview() {
 /** Whether a task's review needs more than one approval, so an edit would settle it alone. */
 const multiRule = (t) => !!t.review?.rule && t.review.rule !== "any_one_approves";
 
-/** What the desk cannot show faithfully of a code change's patch. */
-const anomaliesOf = (t) => (shapeOf(t.artefact) === "code" ? parsePatch(t.artefact.patch).anomalies : []);
+/** What the desk cannot show faithfully of a code change. */
+const anomaliesOf = (t) => (shapeOf(t.artefact) === "code" ? codeAnomalies(t.artefact) : []);
 
 function toggleEdit() {
   const t = selected();
@@ -333,7 +333,10 @@ async function decide(kind) {
   if (!t || !mine(t) || state.busy) return;
   const comment = $("comment").value.trim();
   const artefact = t.artefact;
-  const base = { task_id: t.task_id, approved_artefact_digest: await contentHash(artefact), ...(tags().length ? { tags: tags() } : {}) };
+  // Every decision names the artefact it was made on and the submission that
+  // opened this review round, so it counts in this round and no other.
+  const round = t.submission?.envelope ? { round: await contentHash(t.submission.envelope) } : {};
+  const base = { task_id: t.task_id, approved_artefact_digest: await contentHash(artefact), ...round, ...(tags().length ? { tags: tags() } : {}) };
   if ((kind === "approve" || kind === "override") && anomaliesOf(t).length) { notice("This patch cannot be shown faithfully. Reject it, or request changes.", "bad"); return; }
   if (kind === "override" && multiRule(t)) { notice(`Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.`, "bad"); return; }
   let call;
@@ -449,7 +452,7 @@ async function loadAllTasks() {
 }
 
 async function renderInsightsView({ force = false } = {}) {
-  try { await loadAllTasks(); } catch { /* the queue's tasks are counted instead */ }
+  try { await loadAllTasks(); } catch { /* Insights then counts the queue's tasks */ }
   const tasks = state.allTasks ?? state.tasks;
   const key = JSON.stringify([tasks.length, tasks.map((t) => t.updated_at).sort().at(-1), state.health?.audit, state.chain.verified, state.analytics.summary?.written]);
   if (!force && key === state.insightsKey) return;

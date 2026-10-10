@@ -23,7 +23,7 @@
 // path with nothing else installed.
 
 import { lstat, readFile, mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeProvider } from "./lib/providers.mjs";
 import { agentClient, agentSigningKey, api, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "./lib/gate.mjs";
@@ -118,9 +118,15 @@ export function buildPrompt(task, context, { revision = null, previousPatch = nu
  * file there would change git's own configuration).
  */
 export function safePath(path) {
-  if (typeof path !== "string" || !path || path.includes("\0") || path.includes("\\") || path.startsWith("/")) return false;
+  if (typeof path !== "string" || !path || path.includes("\0") || path.includes("\\") || path.includes(":") || path.startsWith("/")) return false;
   const parts = path.split("/");
-  return parts.every((s) => s && s !== "." && s !== ".." && s.toLowerCase() !== ".git");
+  return parts.every((s) => {
+    if (!s || s === "." || s === "..") return false;
+    // .git in any letter case, and the names a Windows or macOS file system
+    // takes for it: trailing dots or spaces, and the 8.3 short name.
+    const bare = s.replace(/[. ]+$/, "").toLowerCase();
+    return bare !== ".git" && !/^git~\d+$/i.test(s);
+  });
 }
 
 /** The JSON object in a model's answer, with or without code fences. */
@@ -150,8 +156,16 @@ async function noLinkOnTheWay(repo, path) {
   }
 }
 
+/** Refuse a path inside the gate project, when it lives in the repository: the hooks run from it. */
+function outsideGate(repo, path) {
+  const gateDir = relative(repo, here);
+  if (!gateDir || gateDir.startsWith("..") || isAbsolute(gateDir)) return;
+  if (path === gateDir || path.startsWith(`${gateDir}/`)) throw new Error(`${path} is inside the gate project at ${gateDir}; the agent does not change the gate`);
+}
+
 /** Write the answer into the working tree. */
 export async function applyAnswer(repo, answer) {
+  for (const f of [...answer.files.map((x) => x.path), ...answer.delete]) outsideGate(repo, f);
   for (const f of answer.files) {
     await noLinkOnTheWay(repo, f.path);
     await mkdir(dirname(join(repo, f.path)), { recursive: true });

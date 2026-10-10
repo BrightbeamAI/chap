@@ -111,6 +111,15 @@ Under `security-signed/1.0` each call is signed with the agent's key;
 desk reads as the change git makes: write it with `git diff --binary
 --full-index --no-renames`, as `lib/git.mjs` does.
 
+**The environment.** The hooks and the commands read `chap.config.json`
+beside them, or the file `CHAP_CONFIG` names. `CHAP_URL` is the gate's
+`POST /chap` address (by default `http://127.0.0.1:8791/chap`, from
+`CHAP_HOST` and `PORT`); `CHAP_AGENT_URI` replaces the agent's URI from the
+configuration, and `CHAP_AGENT_KEY` the path of its key (by default under
+`keys/`). A commit made by `propose.mjs` or the built-in agent passes
+`CHAP_URL` and `CHAP_CONFIG` to its hooks, so they ask the gate the command
+asked.
+
 ## The trust policy
 
 Whose approvals count, and which agents may commit, is a file the team keeps
@@ -139,6 +148,40 @@ the reviewers `chap.config.json` names and the keys the workspace records.
 A URI is held by whoever joined the workspace first under it, unless the
 deployment ties joins to a login (OIDC, below). Pinning keys in the policy,
 after confirming their fingerprints, is what closes that.
+
+## Where the gate holds
+
+The hooks run on the developer's machine, and whoever controls that machine
+can switch them off: `CHAP_GATE=off`, `git commit --no-verify`, or another
+`core.hooksPath`. They stop an agent working there from committing a change
+nobody approved, and they record the evidence while the decision is fresh.
+The boundary is the check on every pull request (step 6 below): the verifier
+and the trust policy from the base branch, run over the commits the pull
+request adds, with branch protection that requires the check to pass. A
+commit made around the hooks fails there.
+
+Beyond each commit's approval, the check asks three things of a pull
+request:
+
+- Its commits are one line from the point where they leave the base branch,
+  with no merge among them. Each was approved on the commit it sits on, so a
+  pull request behind its base passes as it is. A rebase puts each commit on
+  a new parent, which no approval names, so a rebased change is proposed
+  again.
+- No approval in it was used anywhere in the base branch's history, so an
+  approved change that landed and was reverted cannot return on an older
+  commit with its old approval.
+- Each approval names the review round it was made in, by the digest of the
+  submission that opened the round, so approvals from before and after a
+  revision do not add up to a quorum.
+
+Merge pull requests with a merge commit. It keeps the agent's commits, their
+signatures and their notes as the check verified them; a squash or rebase
+merge writes new commits that carry none of them. Branch protection's
+"require branches to be up to date" asks for a rebase before each merge,
+which means a fresh review of every change behind its base; teams that want
+each change reviewed against the code it lands on turn it on, and others
+leave it off.
 
 ## Rolling it out to a team
 
@@ -172,7 +215,8 @@ after confirming their fingerprints, is what closes that.
    a required check in the branch protection. It runs on
    `pull_request_target`, reads the pull request's commits as data, and runs
    the verifier and the policy from the base branch, so a pull request that
-   edits them cannot pass its own check. Push the notes with the commits:
+   edits them cannot pass its own check. Merge with a merge commit, as
+   above. Push the notes with the commits:
    `node tools/chap-gate/push-notes.mjs` fetches the notes already on the
    server, merges them with yours and pushes. Agent branches are pushed to
    the repository itself; a fork cannot push notes there.
@@ -211,13 +255,17 @@ checks every commit in the range with nothing but the repository and the
 policy: the commit's approvals come from reviewers the policy names, verify
 against their pinned keys, and sign the digest of what the agent proposed;
 the agent's submission is signed by an agent the policy names; the policy's
-rule is met, and an edit counts only where one approval is enough; an
-override's operations lead from the proposed artefact to the approved one;
+rule is met, and an edit counts only where one approval is enough; each
+approval names the round it was made in and the workspace the policy covers;
+an override's operations lead from the proposed artefact to the approved one;
 the commit's parent is the commit the change was approved against; the desk
 reads the approved patch as the change git makes, and it gives the commit's
 tree; no other commit in the range uses the same approval; and the commit's
-signature verifies against the agent's pinned key. `--trust-ref <ref>` reads
-the policy as the repository holds it at a revision. With no policy given,
+signature verifies against the agent's pinned key. `--base <commit>` checks
+the range as a pull request into that commit, as the workflow does: one line
+of commits from where it leaves the base's history, and no approval used in
+that history already. `--trust-ref <ref>` reads the policy as the repository
+holds it at a revision. With no policy given,
 the verifier asks the gate in `chap.config.json` (or `--coordinator <url>`),
 and checks against the reviewers the configuration names and the keys the
 workspace records.
@@ -225,9 +273,11 @@ workspace records.
 `--allow-people` lets a commit with no approval through when it is signed
 by a person's SSH key that the policy lists under `people` (an
 `allowed_signers` file given to `trust.mjs --people`); the agent's key never
-passes that way. A merge commit fails: rebase agent branches onto their
-target. `--allow-clean-merges` passes a merge whose tree is the clean merge
-of its parents, with git 2.38 or later.
+passes that way. A merge commit fails unless `--allow-clean-merges` is
+given, which passes a merge whose tree is the clean merge of its parents
+(git 2.38 or later): the merge commits the host writes on the base branch,
+when its history is audited with `node verify.mjs <from>..main --trust
+chap-trust.json --allow-clean-merges`.
 
 ## The desk
 
@@ -239,13 +289,18 @@ file, change it whole, look at the patch your edit makes, and approve that
 version with a rationale. A file is offered for editing only when the
 contents that came with it agree with its patch. A patch the desk cannot
 show as git would apply it (text before the first file, names that differ
-between its header lines, a binary section for a text file) is marked, and
-can be rejected but not approved. Every decision carries the digest of the
-artefact you saw, so a decision on a draft that changed under you is
-refused. Under a multi-approval rule the queue shows the approvals so far,
-and a change you have approved leaves your queue until the next round.
-Activity reads the chain, with what each call did. `j` and `k` move through
-the queue, `a`, `r` and `x` decide, `e` edits, and `?` lists the keys.
+between its header lines, a binary section for a text file), or a change
+that lists a file twice, is marked, and the desk offers to reject it or
+request changes. Characters a reader cannot see in a changed line
+(bidirectional controls, zero-width characters, a carriage return inside a
+line) are shown as markers, with a warning above the diff. Every decision
+carries the digest of the artefact you saw and of the submission that opened
+the round, so a decision on a draft that changed under you is refused, and
+the verifier counts it in its own round only. Under a multi-approval rule
+the queue shows the approvals so far, and a change you have approved leaves
+your queue until the next round. Activity reads the chain, with what each
+call did. `j` and `k` move through the queue, `a`, `r` and `x` decide, `e`
+edits, and `?` lists the keys.
 
 ## Insights and analytics
 
@@ -274,18 +329,20 @@ the cluster shrink on the next run.
 ## The built-in agent
 
 `agent.mjs` takes each row of `tasks.csv` (`title`, `brief`, and a `files`
-hint, semicolon separated) as one task, on one branch, one at a time: it asks
-the model for the files to change, writes them into the working tree,
+hint, semicolon separated) as one task, on one branch, one at a time: it
+asks the model for the files to change, writes them into the working tree,
 proposes the patch, waits, and commits an approved change through the hooks,
 signed with its key. A rejection that asks for a revision has it draft again
 with the note; a rejection takes the change back out. It writes only real
-files inside the repository: nothing under `.git` in any letter case, and
-nothing through a symbolic link. The model comes from `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY` or `OLLAMA_URL`, with `CHAP_MODEL_PROVIDER` choosing when
-more than one is set; with none, a scripted drafter handles the three sample
-tasks and leaves a note in `NOTES.md` for any other. A restarted agent finds
-its tasks by their idempotency keys, carries on with a change that was still
-waiting, and commits what was approved and not yet committed.
+files inside the repository: nothing under `.git` in any letter case or
+under a name a file system takes for it (`.git.`, `GIT~1`), nothing inside
+the gate project when the repository holds it, and nothing through a
+symbolic link. The model comes from `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or
+`OLLAMA_URL`, with `CHAP_MODEL_PROVIDER` choosing when more than one is set;
+with none, a scripted drafter handles the three sample tasks and leaves a
+note in `NOTES.md` for any other. A restarted agent finds its tasks by their
+idempotency keys, carries on with a change that was still waiting, and
+commits what was approved and not yet committed.
 
 It shows the whole path with nothing else installed. An assistant with its
 own tools, like Claude Code, is the agent for real work; the gate is the
@@ -317,8 +374,9 @@ its outcome under both.
 
 ## Limits
 
-- A merge commit carries no approval: rebase agent branches. An amended
-  commit is not the approved one: propose the change again.
+- A merge commit carries no approval, so a pull request holds no merges.
+  An amended or rebased commit is a new change on its parent: propose it
+  again.
 - A binary file is shown as binary, without its content. A submodule change,
   or a text file that is not UTF-8, cannot be proposed.
 - Each approval covers one commit on the commit it was approved against;

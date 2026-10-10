@@ -287,3 +287,6 @@ svg.chart { width: 100%; height: 160px; display: block; }
 .help > .card.wide { width: min(980px, 94vw); max-height: 88vh; display: flex; flex-direction: column; }
 .help > .card.wide > .card-body { overflow: auto; }
 .alert { border: 1px solid color-mix(in srgb, var(--bad) 45%, var(--line)); background: var(--bad-soft); color: var(--bad); border-radius: var(--radius-s); padding: 10px 12px; font-size: 13px; }
+.alert.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: var(--warn-soft); color: var(--warn); }
+.invisible { display: inline-block; padding: 0 3px; margin: 0 1px; border-radius: 3px; background: var(--bad-soft); color: var(--bad); font-weight: 700; font-size: 11px; }
+.invisible.eol { background: none; color: var(--muted); font-weight: 400; }

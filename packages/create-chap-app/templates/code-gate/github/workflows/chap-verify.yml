@@ -9,6 +9,15 @@
 # cannot change its own check; protect those paths with CODEOWNERS so the
 # edits get a person's review when they land.
 #
+# The pull request's commits must be one line from the point where they
+# leave the base branch, with no merge among them. Each was approved on the
+# commit it sits on, so a pull request behind its base passes as it is; a
+# rebased commit sits on a new parent and is proposed again. An approval
+# already used anywhere in the base branch's history does not count again.
+# Merge with a merge commit, which keeps the agent's commits, their
+# signatures and their notes as they were verified; a squash or rebase merge
+# writes new commits that carry none of them.
+#
 # Copy this file into the governed repository's .github/workflows/, commit
 # the gate project at CHAP_GATE_DIR and chap-trust.json at the root, and
 # make the job a required status check in the branch protection. Push the
@@ -58,5 +67,6 @@ jobs:
         run: |
           node "base/$CHAP_GATE_DIR/verify.mjs" "$BASE_SHA..$HEAD_SHA" \
             --repo head \
+            --base "$BASE_SHA" \
             --trust base/chap-trust.json \
             --require-signed-commit

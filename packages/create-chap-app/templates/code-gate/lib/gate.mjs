@@ -175,12 +175,22 @@ export async function revisionTarget(gate, client, artefact) {
   return (r?.tasks ?? []).find((t) => same(t) && lastDecision(t)?.kind === "reject") ?? null;
 }
 
+/** Whether a rule is one review/1.0 has: any_one_approves, all_approve or quorum:<n>. */
+export function validRule(rule) {
+  return rule === "any_one_approves" || rule === "all_approve" || (typeof rule === "string" && /^quorum:[1-9][0-9]*$/.test(rule));
+}
+
 /** The review rule in chap.config.json: { rule, to }. any_one_approves when none is set. */
-export const reviewRule = (gate) => ({ rule: gate?.config?.review?.rule ?? "any_one_approves", to: gate?.config?.review?.to ?? null });
+export function reviewRule(gate) {
+  const rule = gate?.config?.review?.rule ?? "any_one_approves";
+  if (!validRule(rule)) throw new Error(`review.rule in chap.config.json is ${JSON.stringify(rule)}; it is any_one_approves, all_approve or quorum:<n>`);
+  return { rule, to: gate?.config?.review?.to ?? null };
+}
 
 /** How many distinct approvals a rule needs, given the reviewers it covers. */
 export function approvalsNeeded(rule, reviewers = []) {
-  if (String(rule).startsWith("quorum:")) return Math.max(1, parseInt(String(rule).slice("quorum:".length), 10) || 1);
+  if (!validRule(rule)) throw new Error(`An unknown review rule: ${JSON.stringify(rule)}`);
+  if (rule.startsWith("quorum:")) return Number(rule.slice("quorum:".length));
   if (rule === "all_approve") return Math.max(1, reviewers.length);
   return 1;
 }
@@ -338,13 +348,37 @@ export function applyJsonPatch(doc, ops) {
  *   people: [allowed_signers line] }. The keys are pinned, so a note signed
  * with any other key does not verify, whatever the note itself carries.
  */
+const PROTOTYPE_NAMES = new Set(["__proto__", "constructor", "prototype", "toString", "valueOf", "hasOwnProperty"]);
+
+/** Whether a value is a public Ed25519 JWK. */
+const isKey = (k) => !!k && typeof k === "object" && k.kty === "OKP" && k.crv === "Ed25519" && typeof k.x === "string" && /^[A-Za-z0-9_-]{43}$/.test(k.x);
+
+/** A map from participant URI to keys, with no prototype, checked key by key. */
+function keyMap(value, what, source) {
+  const out = Object.create(null);
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${source}: ${what} is not an object of URI to keys`);
+  for (const [uri, keys] of Object.entries(value)) {
+    if (PROTOTYPE_NAMES.has(uri) || !/^[a-z][a-z0-9+.-]*:/.test(uri)) throw new Error(`${source}: ${what} names ${JSON.stringify(uri)}, which is not a participant URI`);
+    if (!Array.isArray(keys) || !keys.length || !keys.every(isKey)) throw new Error(`${source}: ${what}[${uri}] is not a list of Ed25519 public keys`);
+    out[uri] = keys;
+  }
+  return out;
+}
+
 export function policyFromTrust(json, source) {
   if (!json || json.chap_trust !== 1) throw new Error(`${source} is not a CHAP trust file (chap_trust: 1)`);
+  const rule = json.rule ?? "any_one_approves";
+  if (!validRule(rule)) throw new Error(`${source}: rule is ${JSON.stringify(rule)}; it is any_one_approves, all_approve or quorum:<n>`);
+  const people = json.people ?? [];
+  if (!Array.isArray(people) || !people.every((l) => typeof l === "string")) throw new Error(`${source}: people is not a list of allowed_signers lines`);
   return {
-    source, workspace: json.workspace ?? null, rule: json.rule ?? "any_one_approves",
-    reviewers: json.reviewers ?? {}, agents: json.agents ?? {}, people: json.people ?? [],
+    source, workspace: json.workspace ?? null, rule,
+    reviewers: keyMap(json.reviewers ?? {}, "reviewers", source), agents: keyMap(json.agents ?? {}, "agents", source), people,
   };
 }
+
+/** An own property of a null-prototype or plain map, or undefined. */
+const own = (map, key) => (map && typeof key === "string" && Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined);
 
 /** The trust policy in a file. */
 export async function readTrustFile(path) {
@@ -365,11 +399,13 @@ export async function trustAtRef(repo, ref, name = TRUST_FILE) {
  */
 export function onlinePolicy(gate, ev) {
   const configured = new Set((gate.config.humans ?? []).map((h) => h.uri));
-  const reviewers = {};
-  const agents = {};
+  const reviewers = Object.create(null);
+  const agents = Object.create(null);
   for (const [uri, m] of Object.entries(ev.members ?? {})) {
-    if (m.type === "human" && configured.has(uri)) reviewers[uri] = m.keys ?? [];
-    if (m.type === "agent") agents[uri] = m.keys ?? [];
+    if (PROTOTYPE_NAMES.has(uri)) continue;
+    const keys = (m.keys ?? []).filter(isKey);
+    if (m.type === "human" && configured.has(uri)) reviewers[uri] = keys;
+    if (m.type === "agent") agents[uri] = keys;
   }
   return { source: `the gate at ${gate.base}`, workspace: ev.workspace, rule: reviewRule(gate).rule, reviewers, agents, people: [] };
 }
@@ -442,14 +478,18 @@ export async function checkApproval(note, policy, { taskId = note.task_id, allow
   if (!proposed) problems.push("the note holds no proposed artefact");
   const proposedDigest = proposed ? await contentHash(proposed) : null;
 
-  const agentKeys = policy.agents?.[note.agent];
+  const workspace = policy.workspace ?? note.workspace;
+  const agentKeys = own(policy.agents, note.agent);
   if (!agentKeys) problems.push(`${note.agent} is not an agent ${policy.source} names`);
   const sub = note.submission?.envelope;
+  let roundDigest = null;
   if (!sub) problems.push("the note holds no submission from the agent");
   else {
     const p = sub.params ?? {};
     const artefact = sub.method === "review.request" ? p.artefact : p.output;
+    roundDigest = await contentHash(sub);
     if (!["task.complete", "review.request"].includes(sub.method) || p.task_id !== taskId) problems.push("the submission in the note is not one for this task");
+    else if (p.workspace !== workspace) problems.push(`the submission was made in ${p.workspace}, and ${policy.source} covers ${workspace}`);
     else if (p.from !== note.agent) problems.push(`the submission was made by ${p.from}, and the note names ${note.agent}`);
     else if (!proposedDigest || (await contentHash(artefact)) !== proposedDigest) problems.push("the submission is not the proposed artefact");
     else if (sub.sig) {
@@ -465,14 +505,18 @@ export async function checkApproval(note, policy, { taskId = note.task_id, allow
     if (!["decide.approve", "decide.override"].includes(env.method)) continue;
     const from = p.from;
     if (p.task_id !== taskId) { problems.push(`an approval by ${from} names another task`); continue; }
-    if (from === note.agent || policy.agents?.[from]) { problems.push(`${from} approved the change, and is an agent`); continue; }
-    const keys = policy.reviewers?.[from];
+    if (p.workspace !== workspace) { problems.push(`the approval by ${from} was made in ${p.workspace}, and ${policy.source} covers ${workspace}`); continue; }
+    if (from === note.agent || own(policy.agents, from)) { problems.push(`${from} approved the change, and is an agent`); continue; }
+    const keys = own(policy.reviewers, from);
     if (!keys) { problems.push(`${from} approved the change, and is not a reviewer ${policy.source} names`); continue; }
-    if (p.approved_artefact_digest !== proposedDigest) { problems.push(`the approval by ${from} does not sign the digest of the proposed artefact`); continue; }
     if (env.sig) {
       const v = envelopeVerifies(env, keys);
       if (!v.ok) { problems.push(`the signature of ${from}: ${v.reason}`); continue; }
     } else if (!allowUnsigned) { problems.push(`the approval by ${from} is unsigned (pass --allow-unsigned where signatures are off)`); continue; }
+    if (p.approved_artefact_digest !== proposedDigest) { problems.push(`the approval by ${from} does not sign the digest of the proposed artefact`); continue; }
+    // The approval names the submission that opened its round, so an approval
+    // from one round cannot be counted with approvals from another.
+    if (!roundDigest || p.round !== roundDigest) { problems.push(`the approval by ${from} does not name the submission of this review round`); continue; }
     if (env.method === "decide.override") {
       overridden = true;
       try {
@@ -503,8 +547,17 @@ export async function checkChange(repo, { parent, parentTree, tree, approved }) 
     return problems;
   }
   const c = await faithfulCheck(repo, parentTree, approved.patch);
-  if (!c.ok) problems.push(c.reason);
-  else if (c.tree !== tree) problems.push("the approved patch applied to the parent does not give this commit's tree");
+  if (!c.ok) { problems.push(c.reason); return problems; }
+  if (c.tree !== tree) problems.push("the approved patch applied to the parent does not give this commit's tree");
+  // The whole-file contents the desk showed travel in the artefact the
+  // reviewers signed; each must be the file as the repository holds it.
+  const seen = new Set();
+  for (const f of approved.files ?? []) {
+    if (seen.has(f.path)) { problems.push(`the artefact lists ${f.path} twice`); continue; }
+    seen.add(f.path);
+    if (typeof f.before === "string" && f.before !== (await blobAt(repo, parentTree, f.path))) problems.push(`the content of ${f.path} the desk showed as it was is not the file at the parent`);
+    if (typeof f.after === "string" && f.after !== (await blobAt(repo, c.tree, f.path))) problems.push(`the content of ${f.path} the desk showed as it becomes is not the file the patch gives`);
+  }
   return problems;
 }
 
