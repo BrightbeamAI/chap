@@ -17,6 +17,6 @@
     "analytics": "python3 analytics.py"
   },
   "dependencies": {
-    "@brightbeamai/chap-coordinator": "^0.3.0"
+    "@brightbeamai/chap-coordinator": "^0.3.1"
   }
 }

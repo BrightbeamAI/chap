@@ -22,15 +22,15 @@ another team is welcome: see [Wanted](#wanted).
 
 | Name | Language | Specification | Package | Surface | Tested with | Status | Licence | Authors |
 |---|---|---|---|---|---|---|---|---|
-| `@brightbeamai/chap-coordinator` | TypeScript | 0.3 | 0.3.0 | Core and every profile. Identity profiles as verifier hooks. Methods marked spec-only or reserved are not built. | Package tests and the differential fuzzer. No recorded harness run against this package. | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-coordinator` | Python 3.10+ | 0.3 | 0.3.0 | As the TypeScript coordinator, with MCP and A2A transports as modules. | Package tests and the differential fuzzer. Harness (Core and review) through `reference/python/server.py`, passing at v0.3.0. | Beta | Apache-2.0 | Brightbeam AI |
-| `@brightbeamai/chap-coordinator-mcp` | TypeScript | 0.3 | 0.3.0 | Every method the coordinator implements, as MCP tools. | Package tests. No harness run over MCP. | Beta | Apache-2.0 | Brightbeam AI |
-| `@brightbeamai/chap-coordinator-a2a` | TypeScript | 0.3 | 0.3.0 | Every method the coordinator implements, as skills on an A2A 0.3 Agent Card. | Package tests. No harness run over A2A. | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-langgraph` | Python 3.10+ | 0.3 | 0.3.0 | Records approve, reject and override decisions from LangGraph. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-pydantic-ai` | Python 3.10+ | 0.3 | 0.3.0 | Records approve, reject and override decisions from Pydantic AI. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-ag2` | Python 3.10+ | 0.3 | 0.3.0 | Records approve, reject and override decisions from AG2 (AutoGen). | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-llama-index` | Python 3.10+ | 0.3 | 0.3.0 | Records approve, reject and override decisions from LlamaIndex Workflows. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-google-adk` | Python 3.10+ | 0.3 | 0.3.0 | Records approve, reject and override decisions from Google ADK. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/chap-coordinator` | TypeScript | 0.3 | 0.3.1 | Core and every profile. Identity profiles as verifier hooks. Methods marked spec-only or reserved are not built. | Package tests and the differential fuzzer. No recorded harness run against this package. | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-coordinator` | Python 3.10+ | 0.3 | 0.3.1 | As the TypeScript coordinator, with MCP and A2A transports as modules. | Package tests and the differential fuzzer. Harness (Core and review) through `reference/python/server.py`, passing at v0.3.0. | Beta | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/chap-coordinator-mcp` | TypeScript | 0.3 | 0.3.1 | Every method the coordinator implements, as MCP tools. | Package tests. No harness run over MCP. | Beta | Apache-2.0 | Brightbeam AI |
+| `@brightbeamai/chap-coordinator-a2a` | TypeScript | 0.3 | 0.3.1 | Every method the coordinator implements, as skills on an A2A 0.3 Agent Card. | Package tests. No harness run over A2A. | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-langgraph` | Python 3.10+ | 0.3 | 0.3.1 | Records approve, reject and override decisions from LangGraph. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-pydantic-ai` | Python 3.10+ | 0.3 | 0.3.1 | Records approve, reject and override decisions from Pydantic AI. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-ag2` | Python 3.10+ | 0.3 | 0.3.1 | Records approve, reject and override decisions from AG2 (AutoGen). | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-llama-index` | Python 3.10+ | 0.3 | 0.3.1 | Records approve, reject and override decisions from LlamaIndex Workflows. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-google-adk` | Python 3.10+ | 0.3 | 0.3.1 | Records approve, reject and override decisions from Google ADK. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
 
 "Specification" is the CHAP version an entry implements, and "Package" is
 the release of the package. Every package here is Beta: CHAP 0.3 is a draft,

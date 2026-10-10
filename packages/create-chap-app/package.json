@@ -1,6 +1,6 @@
 {
   "name": "create-chap-app",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Generate a CHAP project that runs against your own agent and data, with a review desk, one profile setting and a diff-profiles command.",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,13 +12,15 @@
     "index.mjs",
     "templates",
     "README.md",
-    "DESIGN.md"
+    "DESIGN.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "test": "node --test tests/generate.test.mjs",
+    "prepublishOnly": "npm test",
     "build:explorer": "node scripts/build-explorer.mjs",
     "check:explorer": "node scripts/build-explorer.mjs --check"
   },

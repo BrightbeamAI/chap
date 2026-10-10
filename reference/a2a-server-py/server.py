@@ -62,7 +62,7 @@ def build_app(base_url: str = "http://localhost:9090") -> FastAPI:
     app = FastAPI(
         title="CHAP A2A Reference Server",
         description="CHAP Coordinator exposed as an A2A 1.0 agent.",
-        version="0.3.0",
+        version="0.3.1",
     )
     add_a2a_routes_to_fastapi(
         app,

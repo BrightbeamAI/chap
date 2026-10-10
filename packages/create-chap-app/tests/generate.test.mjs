@@ -42,10 +42,13 @@ test("every template generates with its placeholders filled", async () => {
 
 test("the package ships what a generated project needs", async () => {
   // npm leaves .gitignore out of a tarball, so the templates ship it as
-  // `gitignore`, and the files list carries the bin, the templates and the
-  // generator. This reads the files list the way npm pack does.
+  // `gitignore`, and the files list carries the bin, the templates, the
+  // generator and the licence. This reads the files list the way npm pack does.
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-  assert.deepEqual(pkg.files, ["bin", "index.mjs", "templates", "README.md", "DESIGN.md"]);
+  assert.deepEqual(pkg.files, ["bin", "index.mjs", "templates", "README.md", "DESIGN.md", "LICENSE"]);
+  assert.match(await readFile(new URL("../LICENSE", import.meta.url), "utf8"), /Apache License\s+Version 2\.0/);
+  assert.equal(pkg.license, "Apache-2.0");
+  assert.equal(pkg.scripts.prepublishOnly, "npm test", "a failing generator does not publish");
   assert.equal(pkg.bin["create-chap-app"], "bin/create-chap-app.mjs");
   const templates = await listTemplates();
   for (const t of templates) {

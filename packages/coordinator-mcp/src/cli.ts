@@ -32,7 +32,7 @@ import { Coordinator } from "@brightbeamai/chap-coordinator";
 import type { Store } from "@brightbeamai/chap-coordinator";
 import { makeChapMcpServer } from "./index.js";
 
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 
 /**
  * Chaining is on by default because it costs almost nothing and the

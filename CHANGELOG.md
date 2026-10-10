@@ -21,7 +21,12 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
 
 ---
 
-## Unreleased
+## 0.3.1: create-chap-app, and a gate for every commit a coding agent makes
+
+The protocol packages move together to 0.3.1 and behave as in 0.3.0; the
+release brings `create-chap-app` to npm. `chap-analytics` 0.2.2, on its own
+track, reads the store of the TypeScript coordinator, which the Node templates
+run.
 
 ### Added
 
@@ -86,6 +91,11 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OLLAMA_URL` and drafts with a
   scripted agent when none is set, so it runs on a fresh machine without a
   model download. `CHAP_NO_LLM=1` still selects the scripted agent.
+
+### Changed
+
+- **`@brightbeamai/chap-coordinator-mcp` needs `@modelcontextprotocol/sdk`
+  1.32.1 or later.**
 
 ## 0.3.0: documents that match the code, refused calls on the record, and review that holds
 

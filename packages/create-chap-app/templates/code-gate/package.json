@@ -26,8 +26,8 @@
     "push-notes": "node push-notes.mjs"
   },
   "dependencies": {
-    "@brightbeamai/chap-coordinator": "^0.3.0",
-    "@brightbeamai/chap-coordinator-mcp": "^0.3.0",
+    "@brightbeamai/chap-coordinator": "^0.3.1",
+    "@brightbeamai/chap-coordinator-mcp": "^0.3.1",
     "@modelcontextprotocol/sdk": "^1.30.0"
   }
 }

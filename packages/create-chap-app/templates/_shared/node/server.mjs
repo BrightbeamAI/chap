@@ -456,7 +456,7 @@ export async function makeServer(config, coord) {
     // Stateless: one server and transport per request, over the shared
     // coordinator. The MCP client keeps no session with this process.
     mcp = async (req, res, body) => {
-      const server = makeChapMcpServer(coord, { name: config.workspace, version: "0.3.0" });
+      const server = makeChapMcpServer(coord, { name: config.workspace, version: "0.3.1" });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { transport.close(); server.close(); });
       await server.connect(transport);

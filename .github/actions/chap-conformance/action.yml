@@ -12,7 +12,7 @@ inputs:
   ref:
     description: "Git ref of the BrightbeamAI/chap repository to source the harness from. Defaults to the release this action ships in."
     required: false
-    default: 'v0.3.0'
+    default: 'v0.3.1'
   core-only:
     description: "Set to 'true' to run the Core vectors alone, for a coordinator that does not implement review/1.0. By default the harness runs the Core and review/1.0 vectors."
     required: false
