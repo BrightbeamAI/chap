@@ -10,8 +10,9 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 import { exportLine, main as sessionHook } from "../claude-session.mjs";
 import { CLAUDE_SESSION_HOOK, installClaudeHook } from "../install-hooks.mjs";
-import { git } from "../lib/git.mjs";
+import { git, setTrailers } from "../lib/git.mjs";
 import { branchModel, commitModel, sessionModel, withoutAttribution } from "../lib/model.mjs";
+import { describeRange } from "../lib/range.mjs";
 import { modelName } from "../lib/providers.mjs";
 
 test("a commit's own Co-Authored-By line names its model and leaves the message; a person's line stays", () => {
@@ -23,6 +24,42 @@ test("a commit's own Co-Authored-By line names its model and leaves the message;
   assert.equal(commitModel("x\n\nCo-Authored-By: Claude Code <noreply@anthropic.com>"), null);
   assert.equal(commitModel("x\n\nCo-Authored-By: Ada Lovelace <ada@example.org>"), null);
   assert.equal(withoutAttribution("x\n\nCo-Authored-By: Ada Lovelace <ada@example.org>"), "x\n\nCo-Authored-By: Ada Lovelace <ada@example.org>");
+});
+
+test("a commit may name its model in a Drafted-by line instead, and Claude Code's line comes first", () => {
+  assert.equal(commitModel("Fix the parser\n\nDrafted-by: Claude Fable 5.1"), "Claude Fable 5.1");
+  assert.equal(commitModel("Fix the parser\n\nDrafted-by: agent:claude-cowork"), null, "an agent's URI names no model");
+  assert.equal(commitModel("Fix\n\nDrafted-by: Claude Opus 5.5\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"), "Claude Sonnet 5.5");
+});
+
+test("a branch's commits name their models in Drafted-by lines, which leave the messages the reviewers see", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "chap-drafted-"));
+  const sh = (args) => git(repo, ["-c", "user.name=Dev", "-c", "user.email=dev@example.com", ...args]);
+  await git(repo, ["init", "-q"]);
+  await writeFile(join(repo, "a.txt"), "a\n");
+  await sh(["add", "-A"]);
+  await sh(["commit", "-q", "-m", "Start"]);
+  const base = (await git(repo, ["rev-parse", "HEAD"])).trim();
+  await writeFile(join(repo, "b.txt"), "b\n");
+  await sh(["add", "-A"]);
+  await sh(["commit", "-q", "-m", "Add b\n\nDrafted-by: Claude Fable 5.1"]);
+  const artefact = await describeRange(repo, { base, head: "HEAD" });
+  assert.equal(artefact.commits[0].model, "Claude Fable 5.1");
+  assert.equal(artefact.commits[0].message, "Add b");
+  assert.equal(artefact.model, "Claude Fable 5.1");
+  assert.equal(artefact.model_source, "commits");
+});
+
+test("a commit made through the hooks carries no Co-Authored-By line with Anthropic's address", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "chap-msg-"));
+  await git(repo, ["init", "-q"]);
+  const file = join(repo, "MSG");
+  await writeFile(file, "Fix the parser\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nCo-Authored-By: Ada Lovelace <ada@example.org>\n");
+  await setTrailers(repo, file, [["Drafted-by", "Claude Opus 5.5"], ["CHAP-Approval", "tsk_1"]]);
+  const text = await readFile(file, "utf8");
+  assert.doesNotMatch(text, /noreply@anthropic\.com/);
+  assert.match(text, /^Co-Authored-By: Ada Lovelace <ada@example\.org>$/m, "a person's line stays");
+  assert.match(text, /^Drafted-by: Claude Opus 5\.5$/m);
 });
 
 test("a model id reads as its name, in a provider's form or with a context suffix too", () => {

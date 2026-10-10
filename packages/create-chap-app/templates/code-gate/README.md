@@ -385,7 +385,10 @@ harness, so nobody types it:
   keeps that model, the line leaves the message the reviewers see, and the
   sealed commit names the model in `Drafted-by`. Each commit of a branch
   names its own model, so a branch written partly by one model and partly
-  by another says which wrote which.
+  by another says which wrote which. A governed commit never carries that
+  address: the hooks drop the line from a commit they make, too.
+- Another agent may end a commit with `Drafted-by: <model>`, which the gate
+  reads the same way.
 - `install-hooks.mjs --claude` adds a SessionStart hook to the
   repository's `.claude/settings.local.json` (kept out of git): as each
   Claude Code session starts, `claude-session.mjs` hands its model to the
@@ -393,8 +396,8 @@ harness, so nobody types it:
   `propose-branch.mjs` for commits that carry no line of their own. A model
   chosen with `/model` partway through a session reaches the commits it
   makes, through their own line, and not `CHAP_MODEL`.
-- `--model` names the model where neither says, and the command says when
-  no model is named.
+- `--model` names the model where none of these says, and the command says
+  when no model is named.
 
 The desk shows where the name came from beside it. Each of these is a
 record of what the harness or the agent said: the agent writes its own

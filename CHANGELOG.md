@@ -48,7 +48,7 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   only an approved change, on the commit it was approved against, with four
   trailers (the model that drafted it, read from the agent's own harness,
   each approving reviewer by name and email, the committer's sign-off, and
-  the approval it carries), signed as
+  the approval it carries) and no agent attribution line, signed as
   the committer signs their own commits, and a note under `refs/notes/chap`
   holding the agent's signed proposal, each reviewer's signed decision and
   the chain head. A trust policy the team keeps in the repository pins whose

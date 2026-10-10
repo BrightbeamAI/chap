@@ -61,9 +61,10 @@ screen, and waits for their decision. The rules:
    unrelated change in the diff will send it back.
 8. **When this gate reviews at push** (`"review_at": "push"` in its
    chap.config.json), you may commit as you go, with a message that says
-   what each commit does. Keep the Co-Authored-By line naming your model
-   that you add to a commit: the gate reads the model from it. Never push
-   yourself. When the work is ready, write
+   what each commit does, and name your model in it: in the Co-Authored-By
+   line Claude Code adds, or else in a last line `Drafted-by: <your model>`.
+   The gate reads the model from there and writes the public lines itself.
+   Never push yourself. When the work is ready, write
    the context note as in rule 3 and propose the branch, which the reviewer
    reads commit by commit:
 

@@ -333,6 +333,13 @@ export async function parseTrailers(repo, message) {
 /** A line the gate writes in a commit's trailers: Drafted-by, Reviewed-by, Signed-off-by and its own CHAP-* lines. */
 export const GATE_TRAILER = /^(CHAP-[A-Za-z-]+|Reviewed-by|Drafted-by|Signed-off-by):/;
 
+/**
+ * The attribution line Claude Code writes on a commit it makes,
+ * "Co-Authored-By: <model> <noreply@anthropic.com>". A governed commit
+ * carries none: Drafted-by names the model.
+ */
+export const AGENT_ATTRIBUTION = /^co-authored-by:\s*(.*?)\s*<noreply@anthropic\.com>\s*$/i;
+
 /** Who commits here, as git would record it: "Name <email>", from git config and the environment. */
 export async function committerIdent(repo, env = {}) {
   const out = (await git(repo, ["var", "GIT_COMMITTER_IDENT"], { env })).trim();
@@ -349,7 +356,7 @@ export async function committerIdent(repo, env = {}) {
 export async function setTrailers(repo, file, pairs) {
   const { readFile, writeFile } = await import("node:fs/promises");
   const text = await readFile(file, "utf8");
-  await writeFile(file, text.split("\n").filter((l) => !GATE_TRAILER.test(l)).join("\n"));
+  await writeFile(file, text.split("\n").filter((l) => !GATE_TRAILER.test(l) && !AGENT_ATTRIBUTION.test(l)).join("\n"));
   const args = ["interpret-trailers", "--in-place", "--if-exists", "add", "--if-missing", "add"];
   for (const [token, value] of pairs) args.push("--trailer", `${token}: ${value}`);
   await git(repo, [...args, file]);
