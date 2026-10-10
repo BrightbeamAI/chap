@@ -132,7 +132,7 @@ export async function readKeyFile(uri, path = process.env.CHAP_AGENT_KEY ?? keyP
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const argv = process.argv.slice(2);
   const flag = argv.indexOf("--uri");
-  let uri = flag >= 0 ? argv[flag + 1] : undefined;
+  let uri = flag >= 0 ? argv[flag + 1] : process.env.CHAP_AGENT_URI;
   if (!uri) {
     const config = JSON.parse(await readFile(join(here, "chap.config.json"), "utf8"));
     uri = config.agent?.uri;

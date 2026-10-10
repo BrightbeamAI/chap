@@ -56,6 +56,7 @@ a reviewer sees what they are signing.
 | You want | Go to |
 | --- | --- |
 | A project that runs against your own agent and data | `npx create-chap-app`, from [`packages/create-chap-app/`](./packages/create-chap-app/) |
+| Every commit your coding agent makes reviewed, signed and verifiable | The code gate: `npx create-chap-app my-gate`, then `npm run demo` |
 | To see the envelopes themselves | [`examples/00-five-minute-start.md`](./examples/00-five-minute-start.md) |
 | CHAP as MCP tools in Claude Desktop or Cursor | [`examples/drive-chap-from-claude-desktop.md`](./examples/drive-chap-from-claude-desktop.md) |
 | A bridge for the framework you already use | [`IMPLEMENTATIONS.md`](./IMPLEMENTATIONS.md), for LangGraph, Pydantic AI, LlamaIndex, AG2 and Google ADK |

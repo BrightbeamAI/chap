@@ -132,6 +132,7 @@ The harness can write an [in-toto attestation](https://github.com/in-toto/attest
 | Evaluating whether CHAP fits             | [`README.md`](./README.md) → [`IN_PRACTICE.md`](./IN_PRACTICE.md) → [`HANDBOOK.md`](./HANDBOOK.md) → [`FAQ.md`](./FAQ.md) |
 | Looking for your use case                | [`IN_PRACTICE.md`](./IN_PRACTICE.md): twelve worked scenarios |
 | Starting a project on your own agent     | `npx create-chap-app` ([`packages/create-chap-app/`](./packages/create-chap-app/)): a desk, one profile setting, `diff-profiles`, and [`docs/profile-explorer.md`](./docs/profile-explorer.md) for what each profile changes |
+| Governing a coding agent's commits       | The code gate template: changes reviewed as diffs, commits signed and carrying their evidence, `verify.mjs` for CI, insights on what reviewers correct |
 | Seeing it run                            | [`START_HERE.md`](./START_HERE.md) (one command, a real decision) → [`demo/index.html`](./demo/index.html) (static, offline) → [`reference/playground/`](./reference/playground/) (TypeScript, two humans + local LLM) → [`reference/python/`](./reference/python/) (Python; every profile) |
 | Implementing in TypeScript               | [`core/SPEC.md`](./core/SPEC.md) → [`packages/coordinator/`](./packages/coordinator/) → [`reference/core/`](./reference/core/) (minimal Core, weekend-buildable) or [`reference/core-plus-review/`](./reference/core-plus-review/) (Core + review) |
 | Implementing in Python                   | [`core/SPEC.md`](./core/SPEC.md) → [`packages/coordinator-py/`](./packages/coordinator-py/) → [`reference/python/`](./reference/python/) |
@@ -216,7 +217,7 @@ chap/
 │   ├── chap-llama-index/                Bridge for LlamaIndex Workflows (Python).
 │   ├── chap-google-adk/                 Bridge for Google ADK (Python).
 │   ├── chap-analytics/                  Reads logs back as tables and charts (Python).
-│   └── create-chap-app/                 npx create-chap-app: project templates with a desk and diff-profiles.
+│   └── create-chap-app/                 npx create-chap-app: project templates, the code gate first, with a desk and diff-profiles.
 │
 ├── conformance/                         Test suite for implementers.
 │   ├── conformance-checklist.md

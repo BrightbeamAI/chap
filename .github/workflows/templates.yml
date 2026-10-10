@@ -2,8 +2,10 @@ name: Templates
 
 # Every template is generated, installed from the published packages it
 # pins, tested and run through diff-profiles, so a template never claims
-# something the released coordinators do not do. The profile explorer is
-# rebuilt the same way and must match the committed file.
+# something the released coordinators do not do. chap-analytics is installed
+# beside each, so the analytics script is tested on a store a template
+# wrote. The profile explorer is rebuilt the same way and must match the
+# committed file.
 
 on:
   push:
@@ -48,13 +50,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        template: [mcp-gate, production]
+        template: [code-gate, mcp-gate, production]
         node: ['20', '22']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install chap-analytics for the analytics test
+        run: python -m pip install chap-analytics
+      - name: Git and OpenSSH for the code gate
+        run: |
+          git --version
+          ssh -V
+          git config --global user.name "CHAP templates CI"
+          git config --global user.email "templates-ci@example.invalid"
       - name: Generate
         run: node packages/create-chap-app/index.mjs "my-${{ matrix.template }}" --template "${{ matrix.template }}" --yes --dir "${RUNNER_TEMP}/project"
       - name: Install the published packages
@@ -90,7 +103,7 @@ jobs:
         working-directory: ${{ runner.temp }}/project
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pytest
+          python -m pip install -r requirements.txt pytest chap-analytics
       - name: Prove the checkout is not on the import path
         working-directory: ${{ runner.temp }}/project
         run: |

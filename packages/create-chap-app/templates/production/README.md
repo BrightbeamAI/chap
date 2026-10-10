@@ -140,6 +140,24 @@ the file the coordinator writes. The checks:
   `:memory:`);
 - with an issuer set, a join with a garbage token is refused with `-32403`.
 
+## The desk, insights and analytics
+
+The desk has three views. Review shows each artefact by its shape, with
+Approve, Request changes, Reject, and Edit, which approves your version and
+records it as an override with your rationale. Activity reads the chain with
+what each call did. Insights counts what you did with the agent's work: how
+often it was accepted as written, edited, sent back and rejected, the time
+to a first decision, and your own notes and rationales, each linked to its
+task. `j` and `k` move through the queue, `a`, `r` and `x` decide, and `?`
+lists the keys.
+
+`npm run analytics` goes further with `chap-analytics`, the package that
+reads a CHAP chain into documented tables. It reads the store under `data/`
+and writes the package's interactive report, the evaluation cases and a
+refinement page with the corrections ranked to `analytics/`, which the desk
+links from Insights. It needs Python 3.10 or later and `pip install
+chap-analytics`; `--watch 300` keeps the pages current.
+
 ## What each profile changes here
 
 - `core/1.0`: the workspace, the members, the tasks and the chain they are

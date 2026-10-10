@@ -19,9 +19,14 @@ export const TASK_KIND = "code_change";
 export const NOTE_VERSION = 1;
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** The gate directory, its configuration, and where the coordinator answers. */
+/**
+ * The gate directory, its configuration, and where the coordinator answers.
+ * CHAP_URL names a gate elsewhere, and CHAP_AGENT_URI the agent this
+ * developer's proposals come from, when a team shares one gate.
+ */
 export async function loadGate(dir = dirname(here)) {
   const config = JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8"));
+  if (process.env.CHAP_AGENT_URI) config.agent = { ...(config.agent ?? {}), uri: process.env.CHAP_AGENT_URI };
   const host = process.env.CHAP_HOST ?? config.host ?? "127.0.0.1";
   const port = process.env.PORT ?? config.port ?? 8791;
   const url = process.env.CHAP_URL ?? `http://${host}:${port}/chap`;

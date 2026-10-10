@@ -75,6 +75,26 @@ output from `GET /api/tasks/<id>` when the state is no longer
 `review_requested`. The other bridges (`chap-pydantic-ai`, `chap-llama-index`,
 `chap-ag2`, `chap-google-adk`) take the same object in place of a coordinator.
 
+## The desk, insights and analytics
+
+The desk has three views. Review shows each draft as a letter, with Approve,
+Request changes (the agent drafts again with your note), Reject, and Edit,
+which approves your version and records it as an override with your
+rationale. Activity reads the chain with what each call did. Insights counts
+what you did with the agent's work: how often it was accepted as written,
+edited, sent back and rejected, the time to a first decision, and your own
+notes and rationales, each linked to its task. `j` and `k` move through the
+queue, `a`, `r` and `x` decide, and `?` lists the keys.
+
+`python analytics.py` goes further with `chap-analytics`, the package that
+reads a CHAP chain into documented tables. It reads the store under `data/`
+and writes the package's interactive report, the evaluation cases (each
+corrected draft with the agent's version and yours) and a refinement page
+with the corrections ranked to `analytics/`, which the desk links from
+Insights. Run `pip install chap-analytics` first; `--watch 300` keeps the
+pages current. A correction that recurs is a rule for the agent's prompt in
+`agent.py`.
+
 ## What each profile changes in this project
 
 The profile list in `chap.config.json` is the one the workspace advertises.

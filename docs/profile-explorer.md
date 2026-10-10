@@ -111,4 +111,4 @@ The whole workload under Core alone and under every profile together.
 | The agent asks the coordinator to choose an assignee | refused `-32601` | accepted |
 | Anyone verifies the chain | refused `-32602` | accepted |
 
-Templates: mcp-gate, outbound-approval.
+Templates: code-gate, outbound-approval.

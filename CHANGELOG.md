@@ -31,9 +31,10 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   separate process attached through an MCP client, a framework bridge or
   the HTTP endpoint, the profiles are one setting in `chap.config.json`,
   and `diff-profiles` runs the project's workload under two profile sets
-  and prints each call's outcome under both. Four templates: an MCP gate for
-  Claude Desktop, Cursor and Claude Code; a support desk and an outbound
-  approval gate in Python; and the Handbook's production set with signed
+  and prints each call's outcome under both. Five templates: the code gate
+  below; an MCP gate for Claude Desktop, Cursor and Claude Code; a support
+  desk and an outbound approval gate in Python; and the Handbook's
+  production set with signed
   calls, a token presented at join verified against its issuer, the chain
   on, and a `doctor`. Each template's agent waits for a reviewer on a read,
   drafts again after a rejection that asks for a revision, and finds its
@@ -41,6 +42,25 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   packages it pins from npm or PyPI, and runs its tests, so a template is
   held to what the released coordinators do.
   `packages/create-chap-app/DESIGN.md` is the design.
+- **The code gate.** A `create-chap-app` template that puts every commit a
+  coding agent makes behind a person's decision. The agent's change is
+  proposed as a patch and reviewed as a diff; the repository's hooks commit
+  only an approved patch, with `CHAP-*` trailers, a signature by the agent's
+  key in git's SSH format, and a note under `refs/notes/chap` holding the
+  artefact as proposed and as approved, each reviewer's signed decision and
+  the chain head. `verify.mjs` checks a range of commits from the
+  repository alone, a workflow runs it on pull requests, a review rule sets
+  how many reviewers a change needs, and `npm run demo` runs the whole path
+  with a built-in agent. Claude Code, Cursor or any agent that can run a
+  command proposes through `propose.mjs`.
+- **The desk, rebuilt.** Every template's desk shows the artefact by its
+  shape (a diff for code, editable a file at a time; a letter for a
+  message), lets a reviewer request changes as well as approve, edit or
+  reject, reads the chain as activity, and counts in an Insights view what
+  reviewers accept, edit and send back, by model and, for code, by file.
+- **Analytics in every project.** `analytics.py` writes the
+  `chap-analytics` report, the evaluation cases and a refinement page from
+  the project's store, and the desk links them.
 - **The profile explorer.** `docs/profile-explorer.md` shows, for each
   profile, the calls whose outcome changes when the profile is added, built
   from the templates' workload in both languages and checked in CI.

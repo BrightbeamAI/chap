@@ -311,10 +311,14 @@ pip install chap-coordinator
 
 ```bash
 npx create-chap-app my-gate
+cd my-gate && npm install && npm run demo
 ```
 
 generates a project with a review desk, one profile setting and a
-`diff-profiles` command ([`packages/create-chap-app/`](./packages/create-chap-app/));
+`diff-profiles` command ([`packages/create-chap-app/`](./packages/create-chap-app/)).
+The default template is the code gate: every change a coding agent makes in
+a git repository is reviewed as a diff, signed and committed only once a
+person approves it, with the evidence beside the commit for CI to verify.
 [`docs/profile-explorer.md`](./docs/profile-explorer.md) shows what each
 profile changes.
 

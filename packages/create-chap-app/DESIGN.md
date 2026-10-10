@@ -53,17 +53,33 @@ those run.
 
 ## The desk
 
-One HTML page, the same in every template, served by the process that owns
-the store. It lists the reviews addressed to the reviewer, shows the artefact
-under review, and sends `decide.approve`, `decide.reject` or
-`decide.override` as CHAP calls to `POST /chap`. The patch for an override is
-computed in the browser as RFC 6902 operations. The page also shows the chain
-as `audit.read` returns it.
+One page, the same in every template, served by the process that owns the
+store, with no build step and no dependency: `desk/index.html`, a stylesheet
+and four modules. It has three views.
 
-The list of open reviews comes from the owning process, which reads its own
-workspace state at `GET /api/reviews`. The chain records the calls, and the
-coordinator answers the caller who asked; which reviews a person is shown is
-the deployment's decision, as SPECIFICATION §15.1 says.
+- **Review.** The queue lists what waits for the reviewer, what is in
+  progress and what was decided. The artefact is shown by its shape: a code
+  change as a diff, file by file, with line numbers; a message as a letter;
+  anything else as JSON. The reviewer approves as written, requests changes
+  with a note (`decide.reject` with `request_revision`), rejects, or edits
+  the artefact and approves the edit (`decide.override`, with the RFC 6902
+  operations computed in the browser). A code change is edited a file at a
+  time, whole, and the desk writes that file's part of the patch again in
+  the form `git apply` takes.
+- **Activity.** The chain as `audit.read` returns it, a page at a time, with
+  what each call did, filters and the refusals on their own.
+- **Insights.** What the workspace's tasks say, counted in the browser: how
+  often work is accepted as written, edited, sent back and rejected; the
+  time to a first decision; agents, models and reviewers; for code changes,
+  the files reviewers edit or send back; and the reviewers' own words. It
+  links the pages `chap-analytics` writes, below.
+
+Keyboard shortcuts, light and dark, and a layout that folds on a narrow
+screen. The task lists come from the owning process, which reads its own
+workspace state at `GET /api/reviews` and `GET /api/tasks`, with each task's
+decisions across review rounds read from the chain. The chain records the
+calls, and the coordinator answers the caller who asked; which reviews a
+person is shown is the deployment's decision, as SPECIFICATION §15.1 says.
 
 Under `security-signed/1.0` the desk signs each call in the browser with an
 Ed25519 key it generates and keeps in the browser's storage. The public key
@@ -98,6 +114,21 @@ a read until it is resumed.
 
 ## The templates
 
+**Code gate** (TypeScript). Every change a coding agent makes in a git
+repository is proposed as a patch, reviewed as a diff in the desk, decided
+and signed by a person, and committed only then. The repository's hooks
+refuse a commit unless the staged tree is an approved patch applied to the
+commit's parent, and check the evidence as the verifier will. The commit
+carries `CHAP-*` trailers and is signed with the agent's key through git's
+SSH signing; a note under `refs/notes/chap` carries the artefact as
+proposed and as approved, each reviewer's signed decision, the keys on
+record and the chain head. `verify.mjs` checks a range of commits from the
+repository alone, and a workflow runs it on pull requests. A review rule in
+`chap.config.json` sets how many reviewers a change needs. Claude Code,
+Cursor or any agent that can run a command proposes with `propose.mjs`; a
+built-in agent and `npm run demo` show the whole path with nothing else
+installed.
+
 **MCP gate** (TypeScript). One process serves the desk, `POST /chap`, and an
 MCP server over streamable HTTP at `/mcp`. Claude Desktop, Cursor or Claude
 Code connects to it, and every tool call the assistant makes is recorded. A
@@ -125,6 +156,30 @@ verification checks a token against the issuer's keys when an issuer is
 configured. `doctor` checks that the store persists, the chain verifies,
 signatures are required, and the workspace advertises what the coordinator
 enforces.
+
+## Review rules and rounds
+
+A review opened on `task.complete` is addressed to the human members other
+than the producer under `any_one_approves`. A template that needs more than
+one approval opens each round with `review.request` and the rule, so a
+round starts with no decisions: in the coordinators, a resubmission through
+`task.complete` after `request_revision` keeps the earlier round's
+decisions, which would let a quorum be met across two versions. And because
+`decide.override` settles a review whatever its rule, the desk offers no
+edit under a multi-approval rule, and the code gate's checks refuse an
+override there. Both behaviours are noted for the coordinators.
+
+## Analytics
+
+`analytics.py`, shipped with every template, reads the project's store with
+`chap-analytics` and writes three pages under `analytics/`: the package's
+interactive report, the evaluation cases (each corrected task with the
+agent's output and the reviewer's) and a refinement page with the
+correction clusters ranked, the files reviewers edited for code changes,
+the rejection notes and the briefs. The server serves them under
+`/analytics/`, and the desk's Insights view links them. It reads a store
+either coordinator wrote. The loop it serves: a correction that recurs is a
+rule for the agent's instructions, and the next run shows whether it held.
 
 ## Model providers
 
@@ -173,7 +228,8 @@ the coordinator's operator cannot change (SECURITY.md).
 ## CI
 
 A workflow generates every template, installs the published packages the
-template pins, runs its tests and `diff-profiles`, and rebuilds the explorer.
-A template that claims something the coordinators do not do fails here. The
-templates ship with the release they were generated against and are
-regenerated when the coordinators change.
+template pins, runs its tests and `diff-profiles`, runs the analytics script
+against a store a template wrote, and rebuilds the explorer. A template that
+claims something the coordinators do not do fails here. The templates ship
+with the release they were generated against and are regenerated when the
+coordinators change.

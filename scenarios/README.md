@@ -122,9 +122,11 @@ separate process attached through an MCP client, a framework bridge or
 what each profile changes. The contract is in
 [`DESIGN.md`](../packages/create-chap-app/DESIGN.md); copy
 `support-desk` for a Python template or `mcp-gate` for a TypeScript one.
+The `code-gate` template is scenario 5, sixty engineers and a code-review
+bot, as a project a team runs on its own repositories.
 CI generates every template, installs the published packages it pins and
 runs its tests, so a template is held to what the released coordinators do.
-Scenarios 4, 5, 7 and 9 are the ones most ready to become templates.
+Scenarios 4, 7 and 9 are the ones most ready to become templates.
 
 ### Definition of done
 

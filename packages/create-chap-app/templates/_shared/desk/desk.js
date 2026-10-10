@@ -2,8 +2,8 @@
 // the same in every template. It lists what waits for the reviewer, shows
 // the artefact under review in the form its shape calls for, and sends
 // decide.approve, decide.reject or decide.override as CHAP calls to
-// POST /chap, each carrying the digest of the artefact shown so a draft
-// that changed under the reviewer is refused rather than approved. Under
+// POST /chap, each carrying the digest of the artefact shown, so a decision
+// on a draft that changed under the reviewer is refused. Under
 // security-signed/1.0 it signs in the browser with a key it generates and
 // keeps in the browser's storage. Activity reads the chain; Insights counts
 // what happened.
@@ -284,7 +284,7 @@ function renderReview() {
   const multi = !!t.review?.rule && t.review.rule !== "any_one_approves";
   $("r-edit").hidden = !(mine(t) && artefact !== null && !multi);
   $("r-edit-hint").hidden = !(mine(t) && multi);
-  $("r-edit-hint").textContent = multi ? `Under ${t.review.rule} an edit would settle the review alone, so request changes instead.` : "";
+  $("r-edit-hint").textContent = multi ? `Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.` : "";
   $("r-edit").textContent = state.editing ? "Editing" : "Edit";
   $("override").hidden = !state.editing;
   $("cancel-edit").hidden = !state.editing;

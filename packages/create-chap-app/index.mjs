@@ -18,6 +18,8 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const TEMPLATES_DIR = join(here, "templates");
+/** The template generated when none is named. */
+export const DEFAULT_TEMPLATE = "code-gate";
 
 export async function listTemplates(dir = TEMPLATES_DIR) {
   const names = (await readdir(dir, { withFileTypes: true }))
@@ -193,11 +195,12 @@ export async function main(argv = process.argv.slice(2)) {
   try {
     let template = args.template;
     if (!template) {
-      if (!rl) template = templates[0].name;
+      const fallback = templates.find((t) => t.name === DEFAULT_TEMPLATE) ?? templates[0];
+      if (!rl) template = fallback.name;
       else {
         console.log("Which template?");
         templates.forEach((t, i) => console.log(`  ${i + 1}. ${t.name.padEnd(20)} ${t.description}`));
-        const pick = await ask(rl, "Template (number or name)", "1");
+        const pick = await ask(rl, "Template (number or name)", String(templates.indexOf(fallback) + 1));
         template = /^\d+$/.test(pick) ? templates[Number(pick) - 1]?.name : pick;
       }
     }

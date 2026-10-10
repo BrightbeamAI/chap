@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generate, listTemplates, parseArgs } from "../index.mjs";
+import { DEFAULT_TEMPLATE, generate, listTemplates, parseArgs } from "../index.mjs";
 
 async function walk(dir, prefix = "") {
   const out = [];
@@ -70,4 +70,26 @@ test("the flags are parsed", () => {
   assert.equal(a.yes, true);
   assert.equal(a.dir, "/tmp/x");
   assert.throws(() => parseArgs(["--bogus"]), /Unknown option/);
+});
+
+test("the code gate's hooks stay executable and its workflow lands under .github", async () => {
+  const { stat } = await import("node:fs/promises");
+  const dir = await mkdtemp(join(tmpdir(), "cca-gate-"));
+  await rm(dir, { recursive: true });
+  const t = (await listTemplates()).find((x) => x.name === "code-gate");
+  const { written } = await generate({ name: "my-gate", template: "code-gate", profiles: t.default_profiles }, { targetDir: dir });
+  for (const hook of ["pre-commit", "commit-msg", "post-commit"]) {
+    assert.ok(written.includes(`hooks/${hook}`), hook);
+    assert.ok((await stat(join(dir, "hooks", hook))).mode & 0o100, `${hook} is executable`);
+  }
+  assert.ok(written.includes(".github/workflows/chap-verify.yml"));
+  assert.ok(!written.some((w) => w.startsWith("github/")));
+  const instructions = await readFile(join(dir, "AGENT_INSTRUCTIONS.md"), "utf8");
+  assert.ok(instructions.includes(`${dir}/propose.mjs`), "the instructions name this project's propose.mjs");
+  await rm(dir, { recursive: true });
+});
+
+test("with no template named, the code gate is the one generated", async () => {
+  assert.equal(DEFAULT_TEMPLATE, "code-gate");
+  assert.ok((await listTemplates()).some((t) => t.name === DEFAULT_TEMPLATE));
 });

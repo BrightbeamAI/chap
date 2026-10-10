@@ -165,7 +165,7 @@ def load_chain(store: str, workspace: str | None):
         workspace = available[0]
     data = next((d for w, d in rows if w == workspace), None)
     if data is None:
-        raise SystemExit(f"{store} holds {', '.join(available)}, not {workspace}.")
+        raise SystemExit(f"{workspace} is not in {store}, which holds {', '.join(available)}.")
     snapshot = json.loads(data)
     for name, key in KEYED.items():
         if isinstance(snapshot.get(name), list):
