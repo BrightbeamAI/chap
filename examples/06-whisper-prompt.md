@@ -126,8 +126,11 @@ T+60s the Coordinator would emit:
 ```
 
 The agent proceeds with the default. The lapse is recorded as a
-first-class evidence entry, so the auditor can see exactly when a
-human declined to be reachable for a given decision.
+first-class evidence entry, so the auditor can see exactly when no
+answer arrived before the deadline and which default was applied. It
+does not say why: the chain cannot tell a person who saw the question
+and let it lapse from one who was never notified, because delivery is
+left to the deployment (see [`profiles/whisper.md`](../profiles/whisper.md) §4).
 
 ---
 
@@ -157,9 +160,10 @@ task's `complete`.
   responsiveness.
 - **Whisper analytics.** "What fraction of cancellations involve a
   whisper?" is a single audit query.
-- **Visible accountability for non-response.** A lapsed whisper is
-  recorded with the timestamp and the default applied; nothing
-  silently disappears.
+- **Visible lapses.** A lapsed whisper is recorded with the
+  timestamp and the default applied, so nothing silently disappears.
+  The record shows that no answer arrived in time, not that the
+  person chose not to answer.
 
 Move on to [`07-handoff-shift-change.md`](./07-handoff-shift-change.md)
 for transferring an in-progress task between humans.

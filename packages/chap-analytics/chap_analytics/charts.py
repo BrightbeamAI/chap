@@ -629,7 +629,8 @@ def whispers(w: pd.DataFrame, by: str = "asker") -> Chart:
     """Lapse rate per asker with intervals. Takes :func:`stats.whispers` output."""
     name = "whispers"
     q = "How often do agents have to ask, and does anyone answer in time?"
-    d = "A high lapse rate is a question the task input should have answered, or a reviewer who is never at the desk."
+    d = ("A high lapse rate is a question the task input should have answered, or one that did not reach "
+         "anyone in time. The chain records that no answer arrived before the deadline, not why.")
     if w.empty:
         return _empty(name, "Whispers that lapsed", q, d, "No whispers in this chain.")
     key = by if by in w.columns else None

@@ -125,8 +125,19 @@ no human input) is visible on an `audit.read` filtered by task:
 ```
 
 The asker proceeds with the default. A lapsed whisper is itself
-audit data, "this human was unreachable for this decision" is now
-queryable.
+audit data: "no answer was recorded before the deadline, and this
+default was applied" is now queryable by task.
+
+**What a lapse does and does not show.** The lapse record shows who
+asked whom, when, the deadline, that no `whisper.answer` was recorded
+before the lapse check ran, and which default was applied. It does not
+show that the addressed humans were notified, that they saw the
+question, or that they chose not to answer. CHAP leaves delivery to the
+deployment and no reference Coordinator implements a delivery layer, so
+a person who was never told and a person who saw the question and let
+it pass produce the same record. Read a lapse as "no answer in time",
+not as a decision by a person. A deployment that needs to tell the two
+apart has to record delivery itself.
 
 ---
 

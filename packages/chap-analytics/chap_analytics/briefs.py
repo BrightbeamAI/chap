@@ -301,7 +301,7 @@ def whispers(f: Frames) -> Brief:
     if not r["sufficient"]:
         decision = "Too few resolved questions to judge; the lapse rate will settle as more are asked."
     elif r["lapse_rate"] > 0.25:
-        decision = "More than a quarter lapse: the default answer is deciding those questions. Put the answer in the task input, or route whispers to whoever is at the desk."
+        decision = "More than a quarter lapse: the default answer is deciding those questions. Put the answer in the task input, check the question reaches someone, or route whispers to whoever is at the desk."
     else:
         decision = "Questions are being answered in time."
     return Brief("whispers", "Whether agents get answers", head, text, decision, bool(r["sufficient"]), w)
