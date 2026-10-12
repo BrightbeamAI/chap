@@ -1354,22 +1354,31 @@ outright, because there is no chain to ask about.
 
 A Coordinator is a **single-writer** component. Its dispatch is serial, it
 holds workspace state in memory, and it computes each chain link from the
-head it holds. The store interface is a persistence mechanism, not a
-concurrency-control mechanism: `Store.save` is an unconditional write.
+head it holds. Running two or more Coordinator instances that write one
+workspace is **not supported**.
 
-Running two or more Coordinator instances against one shared store is
-therefore **not supported**. A stale instance's write replaces a newer one
-wholesale, so entries written by the other instance are lost, the chain is
-re-linked from the surviving instance's head, and `audit.verify_chain`
-reports `ok` on the result. The loss is silent and CHAP's own verification
-will not reveal it.
+A write through `Store.apply` carries the new audit entries and names the
+number of entries the Coordinator expects the store to hold for the
+workspace already. The reference stores refuse a write that does not match,
+and write nothing. With such a store a second writer is detected: the stale
+instance's write is refused and reported, the entries the other instance
+wrote are kept, and each later write by the stale instance is refused in
+turn until it is restarted and reloads. The calls it answered in the
+meantime took effect in its memory alone, and are lost when it stops.
+
+A store that implements only `Store.save` makes no such check: `save`
+replaces the stored workspace wholesale. With such a store a stale
+instance's write replaces a newer one, the entries the other instance wrote
+are lost, the chain is re-linked from the surviving instance's head, and
+`audit.verify_chain` reports `ok` on the result. The loss is silent, and
+CHAP's own verification will not reveal it.
 
 Deployments needing more than one instance MUST serialise writes above the
 Coordinator, by partitioning workspaces across instances so that no
-workspace is ever written by two, or by an external lock. Enforcing this in
-the protocol, by making `Store.save` a compare-and-swap and dispatch
-re-runnable against reloaded state, is a larger change than it appears and
-is left to a later milestone.
+workspace is ever written by two, or by an external lock. Detecting a second
+writer at the store guards against a misconfiguration; recovering from one,
+by re-running dispatch against reloaded state, is left to a later
+milestone.
 
 ### 10.4 Checkpoints
 

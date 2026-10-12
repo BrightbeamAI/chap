@@ -290,9 +290,11 @@ head. It does not show that the log is complete. Whoever can write to the
 store can rewrite or remove entries and recompute every later link and the
 head, and the result still passes. A head that has been published, or
 anchored where that writer cannot change it, pins the log up to that point.
-Two or more coordinator instances writing one store lose entries without any
-error and re-link the chain, which then passes too, so each workspace needs a
-single writer (SPECIFICATION.md §10.3).
+Two or more coordinator instances writing one workspace lose entries, so each
+workspace needs a single writer (SPECIFICATION.md §10.3). The stores the
+coordinators ship refuse and report the second writer's writes. A store that
+implements only `save` loses entries without any error and re-links the chain,
+which then passes too.
 
 **Anchoring.** With `audit-scitt/1.0`, `audit.submit_to_scitt` builds one
 statement for each entry in the range it is given, the whole log by default,

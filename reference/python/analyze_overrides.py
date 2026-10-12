@@ -40,24 +40,36 @@ def call(url: str, method: str, **params) -> dict:
 def load_audit_from_sqlite(db_path: str, workspace: str) -> list[dict]:
     """Read the audit log straight from a SqliteStore database.
 
-    Mirrors the TypeScript `--db` path. No coordinator needed.
+    Mirrors the TypeScript `--db` path. No coordinator needed. Reads the
+    tables chap-coordinator 0.3.2 and later write, one row per audit entry,
+    and the single snapshot table earlier releases wrote.
     """
     import sqlite3
     conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
     try:
-        row = conn.execute(
-            "SELECT data FROM chap_workspaces WHERE id = ?",
-            (workspace,),
-        ).fetchone()
+        conn.execute("BEGIN")  # one consistent read
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")}
+        if "chap_meta" in tables:
+            found = conn.execute("SELECT 1 FROM chap_meta WHERE workspace = ?",
+                                 (workspace,)).fetchone()
+            audit = [json.loads(d) for (d,) in conn.execute(
+                "SELECT data FROM chap_entries WHERE workspace = ? ORDER BY seq",
+                (workspace,))]
+        else:
+            row = conn.execute(
+                "SELECT data FROM chap_workspaces WHERE id = ?",
+                (workspace,),
+            ).fetchone()
+            found = row
+            audit = (json.loads(row[0]).get("audit") or []) if row else []
     finally:
         conn.close()
-    if row is None:
+    if found is None:
         print(f"Workspace {workspace!r} not found in {db_path}",
               file=sys.stderr)
         sys.exit(1)
-    data = json.loads(row["data"])
-    return data.get("audit") or []
+    return audit
 
 
 def bar(n: int, max_n: int, width: int = 20) -> str:

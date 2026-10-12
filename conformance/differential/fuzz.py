@@ -23,6 +23,11 @@ what it received: a handler that writes into the request makes the recorded
 envelope differ from the signed one, and would otherwise be replayed into the
 other reference as though both had produced it.
 
+Each seed is also replayed into both references on a SQLite file. Each call
+writes only what it changed, so the check is that nothing was missed: a
+coordinator restarted on the file holds what the one that wrote it held, and
+the two references wrote the same audit entries.
+
 Action selection reads the workspace as it stands: decisions go to tasks under
 review and to reviewers the review named, resumes go to paused tasks, handoffs
 are resolved by the participant they were offered to, votes come from
@@ -42,12 +47,16 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sqlite3
 import subprocess
 import sys
+import tempfile
 from collections import Counter
+from dataclasses import asdict
 from pathlib import Path
 
 from chap_coordinator import Coordinator, CoordinatorOptions
+from chap_coordinator.storage.sqlite import SqliteStore
 
 _ROOT = Path(__file__).resolve().parents[2]
 _REPLAY = _ROOT / "conformance" / "differential" / "replay.ts"
@@ -480,15 +489,81 @@ class Recorder:
         return self.coord.get_workspace("w").chain_head
 
 
-def _replay_ts(envelopes: list[dict]) -> dict:
+# Past every deadline the fuzzer sets, so a store replay lapses each whisper
+# still pending, outside any call.
+_LAPSE_AT = "2100-01-01T00:00:00.000Z"
+
+
+def _replay_ts(envelopes: list[dict], store: str | None = None) -> dict:
     payload = json.dumps({"options": {"defaultProfiles": PROFILES},
-                          "workspace": "w", "envelopes": envelopes})
+                          "workspace": "w", "envelopes": envelopes,
+                          **({"store": store, "lapse_at": _LAPSE_AT} if store else {})})
     proc = subprocess.run(
         ["npx", "tsx", str(_REPLAY)],
         input=payload, capture_output=True, text=True, cwd=str(_ROOT))
     if proc.returncode != 0:
         raise RuntimeError(f"replay.ts failed:\n{proc.stderr}")
     return json.loads(proc.stdout)
+
+
+def _plain(coord: Coordinator) -> str:
+    out = {}
+    for ws_id, ws in coord.workspaces.items():
+        data = asdict(ws)
+        data["audit"] = [e.to_dict() for e in ws.audit]
+        out[ws_id] = data
+    return json.dumps(out, sort_keys=True, default=str)
+
+
+def _replay_py(envelopes: list[dict], store: str) -> tuple[list[dict], list[str], bool]:
+    """The Python reference on a SQLite file: responses, store errors, restart."""
+    options = dict(deterministic_ids=True, deterministic_clock=True,
+                   enable_chain=True, default_profiles=PROFILES)
+    errors: list[str] = []
+    sq = SqliteStore(store)
+    coord = Coordinator(CoordinatorOptions(
+        **options, store=sq, on_store_error=lambda e, r: errors.append(str(e))))
+    responses = [coord.dispatch(json.loads(json.dumps(e))) for e in envelopes]
+    coord.check_whisper_lapses("w", _LAPSE_AT)
+    before = _plain(coord)
+    sq.close()
+    reopened = SqliteStore(store)
+    after = _plain(Coordinator(CoordinatorOptions(**options, store=reopened)))
+    reopened.close()
+    return responses, errors, before == after
+
+
+def _entries(path: str) -> list:
+    con = sqlite3.connect(path)
+    try:
+        return [(seq, json.loads(data)) for seq, data in con.execute(
+            "SELECT seq, data FROM chap_entries WHERE workspace = 'w' ORDER BY seq")]
+    finally:
+        con.close()
+
+
+def check_stores(seed: int, rec: "Recorder") -> tuple[bool, str]:
+    """Both references on a SQLite file: nothing missed, the same entries."""
+    with tempfile.TemporaryDirectory() as tmp:
+        py_path, ts_path = str(Path(tmp) / "py.db"), str(Path(tmp) / "ts.db")
+        responses, errors, same = _replay_py(rec.envelopes, py_path)
+        if responses != rec.responses:
+            return False, f"seed {seed}: the Python store changed a response"
+        if errors or not same:
+            return False, (f"seed {seed}: the Python store "
+                           f"{'failed: ' + errors[0] if errors else 'lost state across a restart'}")
+        ts = _replay_ts(rec.envelopes, ts_path)
+        if ts["errors"] or not ts["restart_same"]:
+            return False, (f"seed {seed}: the TypeScript store "
+                           f"{'failed: ' + ts['errors'][0] if ts['errors'] else 'lost state across a restart'}")
+        py_entries, ts_entries = _entries(py_path), _entries(ts_path)
+        if py_entries != ts_entries:
+            at = next((i for i, (a, b) in enumerate(zip(py_entries, ts_entries)) if a != b),
+                      min(len(py_entries), len(ts_entries)))
+            return False, (f"seed {seed}: the stores hold different audit entries from seq {at}\n"
+                           f"  python: {json.dumps(py_entries[at][1]) if at < len(py_entries) else '<none>'}\n"
+                           f"  ts:     {json.dumps(ts_entries[at][1]) if at < len(ts_entries) else '<none>'}")
+    return True, ""
 
 
 def _first_divergence(py: list[dict], ts: list[dict]) -> int | None:
@@ -528,6 +603,9 @@ def check_seed(seed: int, steps: int,
             f"seed {seed}: chain heads diverge after {len(rec.envelopes)} envelopes\n"
             f"  python: {rec.chain_head()}\n"
             f"  ts:     {ts['chain_head']}")
+    stored, msg = check_stores(seed, rec)
+    if not stored:
+        return False, msg
     return True, f"seed {seed}: ok ({len(rec.envelopes)} envelopes)"
 
 

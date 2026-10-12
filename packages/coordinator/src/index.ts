@@ -42,8 +42,8 @@ export type {
 
 export { entryCall, entryRecord, isRefusal, linkHash } from "./audit.js";
 
-export { MemoryStore } from "./storage/store.js";
-export type { Store, WorkspaceRecord } from "./storage/store.js";
+export { MemoryStore, StoreConflictError } from "./storage/store.js";
+export type { Store, StoreChange, WorkspaceRecord } from "./storage/store.js";
 
 export * from "./types.js";
 export * from "./jsonrpc.js";

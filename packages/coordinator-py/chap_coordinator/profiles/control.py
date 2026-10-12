@@ -156,7 +156,8 @@ def register_control(coord: "Coordinator") -> None:
         state: dict = {}
         if "members" in include:
             members = []
-            for member in ws.members.values():
+            # Read-only projections: read without recording a change.
+            for member in dict.values(ws.members):
                 item = {"uri": member.uri, "type": member.type}
                 if member.role:
                     item["role"] = member.role
@@ -167,7 +168,7 @@ def register_control(coord: "Coordinator") -> None:
                 state["members"] = members
         if "open_tasks" in include:
             tasks = []
-            for task in ws.tasks.values():
+            for task in dict.values(ws.tasks):
                 if task.state in ("completed", "declined", "cancelled", "superseded"):
                     continue
                 item = {"id": task.id, "kind": task.kind, "state": task.state}

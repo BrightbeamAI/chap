@@ -27,8 +27,9 @@ import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
 import { entryCall, entryRecord, isSigned, linkHash, refusalIsRecorded, signedDigest } from "./audit.js";
 import { applyJsonPatch } from "./patch.js";
-import type { Store, WorkspaceRecord } from "./storage/store.js";
-import { MemoryStore } from "./storage/store.js";
+import type { Store, StoreChange, WorkspaceRecord } from "./storage/store.js";
+import { COLLECTIONS, IDEMPOTENCY_KEYS, MemoryStore } from "./storage/store.js";
+import { TrackedMap, rawEntries, rawValues, type Tracker } from "./tracked.js";
 import { makeApi, type CoordinatorApi } from "./api.js";
 import type {
   ArtefactId,
@@ -141,6 +142,12 @@ export interface CoordinatorOptions {
   maxEnvelopeBytes?: number;
   onAudit?: AuditListener;
   onAutoEscalate?: (task: Task, to: ParticipantUri) => void;
+  /**
+   * Called when a write to the store fails, with the workspace and the
+   * version the write would have reached. When unset, the failure is written
+   * to stderr. The call itself has already succeeded in memory; the next
+   * write to the workspace carries what this one did not.
+   */
   onStoreError?: (err: unknown, record: { id: string; version: number }) => void;
   verifyOidcToken?: TokenVerifier;
   verifyVc?: CredentialVerifier;
@@ -154,8 +161,9 @@ export interface CoordinatorOptions {
    * Persistence backend. Defaults to MemoryStore (no persistence).
    * Pass SqliteStore or any other Store implementation to persist
    * workspaces between process restarts. The Coordinator calls
-   * `store.load()` once during `start()` and `store.save()` after
-   * every successful mutation.
+   * `store.load()` once when it starts, and after each call that adds to a
+   * workspace's log it calls `store.apply()` with what changed, or
+   * `store.save()` with the whole workspace when the store has no `apply`.
    */
   store?: Store;
 }
@@ -238,10 +246,35 @@ export type Handler = (params: Record<string, unknown>) => { result?: unknown; e
 //   Coordinator
 // ============================================================
 
+function isThenable(value: unknown): value is PromiseLike<void> {
+  return typeof (value as PromiseLike<void> | undefined)?.then === "function";
+}
+
+/** A deep copy where the value can be cloned, else the value itself. */
+function ownCopy<T>(value: T): T {
+  try {
+    return structuredClone(value);
+  } catch {
+    return value;
+  }
+}
+
 // States in which a task has been deliberately stopped. review.request and
 // task.complete both refuse these, so neither can revive a terminated task nor
 // bypass a pause.
 const REVIEW_REQUEST_STOPPED: string[] = ["cancelled", "superseded", "paused"];
+
+/** What the store holds of one workspace, as far as a Coordinator knows. */
+interface Persisted {
+  /** Audit entries the store holds. */
+  seq: number;
+  /** Write the whole workspace next: the store's copy is unknown. */
+  replace: boolean;
+  /** Idempotency keys written or removed since the last write. */
+  keys: Set<string>;
+  /** The time to stamp on the next write. */
+  updatedAt?: string;
+}
 
 export class Coordinator {
   readonly workspaces = new Map<WorkspaceId, Workspace>();
@@ -250,6 +283,14 @@ export class Coordinator {
   readonly store: Store;
   private wsVersions = new Map<WorkspaceId, number>();
   private saveChains = new Map<WorkspaceId, Promise<void>>();
+  /** Records which objects change, for stores that implement `apply`. */
+  private readonly tracker: Tracker;
+  /** What the store holds of each workspace, as far as this instance knows. */
+  private persisted = new WeakMap<Workspace, Persisted>();
+  /** Workspaces with entries not yet written in the call being handled. */
+  private unflushed = new Set<Workspace>();
+  /** Workspaces with a write queued behind an async write in flight. */
+  private flushQueued = new Set<Workspace>();
   private clockMs?: number;
   private frozenNow?: string;
   private auditListeners: AuditListener[] = [];
@@ -271,6 +312,7 @@ export class Coordinator {
   constructor(options: CoordinatorOptions = {}) {
     this.options = options;
     this.store = options.store ?? new MemoryStore();
+    this.tracker = { enabled: typeof this.store.apply === "function", depth: 0 };
     this.ids = new IdFactory(!!options.deterministicIds, 0n, 1_700_000_000_000);
     if (options.deterministicClock) this.clockMs = 1_700_000_000_000;
     if (options.onAudit) this.auditListeners.push(options.onAudit);
@@ -294,8 +336,8 @@ export class Coordinator {
     // synchronous Memory/Sqlite path with no async setup needed.
     try {
       const loaded = this.store.load();
-      if (!(loaded instanceof Promise)) {
-        this.applyRecords(loaded);
+      if (!isThenable(loaded)) {
+        this.applyRecords(loaded as WorkspaceRecord[]);
       }
     } catch {
       /* fall through; caller must invoke start() */
@@ -317,18 +359,198 @@ export class Coordinator {
     this.wsVersions.clear();
     this.restore(records.map(r => r.data));
     for (const r of records) this.wsVersions.set(r.id, r.version);
+    // What was just loaded is what the store holds.
+    for (const ws of this.workspaces.values()) this.markWritten(ws);
   }
 
-  /** Persist the current snapshot of one workspace to the store. */
+  /** A map for a workspace collection, tracked for stores that implement `apply`. */
+  private newMap<K, V>(): Map<K, V> {
+    return new TrackedMap<K, V>(this.tracker);
+  }
+
+  /** Record that the store holds this workspace exactly as it is in memory. */
+  private markWritten(ws: Workspace): void {
+    for (const name of COLLECTIONS) {
+      const map = ws[name];
+      if (map instanceof TrackedMap) map.dirty.clear();
+    }
+    this.persisted.set(ws, { seq: ws.audit.length, replace: false, keys: new Set() });
+  }
+
+  /**
+   * What the store holds of a workspace. A workspace this instance did not
+   * create or load, such as one an application put in `workspaces` itself,
+   * or one whose maps an application replaced, is tracked from here on and
+   * written whole once.
+   */
+  private persistedOf(ws: Workspace): Persisted {
+    let p = this.persisted.get(ws);
+    let untracked = false;
+    for (const name of COLLECTIONS) {
+      const map = ws[name] as Map<string, unknown>;
+      if (map instanceof TrackedMap && map.tracker === this.tracker) continue;
+      untracked = true;
+      const tracked = new TrackedMap<string, unknown>(this.tracker);
+      for (const [key, value] of Map.prototype.entries.call(map) as IterableIterator<[string, unknown]>) {
+        tracked.set(key, value);
+      }
+      (ws as unknown as Record<string, unknown>)[name] = tracked;
+    }
+    if (!p || untracked) {
+      p = { seq: p?.seq ?? 0, replace: true, keys: new Set(), updatedAt: p?.updatedAt };
+      this.persisted.set(ws, p);
+    }
+    return p;
+  }
+
+  /** Record that a task.create idempotency key was written or removed. */
+  private markKey(ws: Workspace, key: string): void {
+    if (this.tracker.enabled) this.persistedOf(ws).keys.add(key);
+  }
+
+  /** After an entry is appended: write now, or when the call being handled ends. */
   private persist(ws: Workspace): void {
+    if (!this.tracker.enabled) {
+      this.persistSnapshot(ws);
+      return;
+    }
+    // One clock reading per entry, where earlier releases read it to stamp
+    // the snapshot, so a deterministic clock gives the same times as before.
+    this.persistedOf(ws).updatedAt = this.now();
+    if (this.tracker.depth > 0) this.unflushed.add(ws);
+    else this.flush(ws);
+  }
+
+  private flushUnflushed(): void {
+    if (!this.unflushed.size) return;
+    const list = [...this.unflushed];
+    this.unflushed.clear();
+    for (const ws of list) this.flush(ws);
+  }
+
+  /** Write what changed in one workspace since its last write. */
+  private flush(ws: Workspace): void {
+    const pending = this.saveChains.get(ws.id);
+    if (pending) {
+      // An async write is in flight. One more write follows it, built when it
+      // runs, so it carries everything that changed until then.
+      if (this.flushQueued.has(ws)) return;
+      this.flushQueued.add(ws);
+      this.chainWrite(ws.id, pending.then(() => {
+        this.flushQueued.delete(ws);
+        return this.writeChange(ws);
+      }));
+      return;
+    }
+    const result = this.writeChange(ws);
+    if (result) this.chainWrite(ws.id, result);
+  }
+
+  private chainWrite(id: WorkspaceId, work: Promise<void>): void {
+    // writeChange reports its own failures; this only keeps the chain alive.
+    const guarded = work.catch(() => undefined);
+    this.saveChains.set(id, guarded);
+    void guarded.then(() => {
+      if (this.saveChains.get(id) === guarded) this.saveChains.delete(id);
+    });
+  }
+
+  private writeChange(ws: Workspace): Promise<void> | void {
+    const p = this.persistedOf(ws);
+    let change: StoreChange | undefined;
+    try {
+      change = this.takeChange(ws, p);
+    } catch (err) {
+      // What was taken is unknown, so the next write carries the whole workspace.
+      p.replace = true;
+      this.reportStoreError(err, { id: ws.id, version: ws.audit.length });
+      return;
+    }
+    if (!change) return;
+    const taken = change;
+    const done = () => {
+      p.seq = taken.version;
+      if (taken.replace) p.replace = false;
+    };
+    const failed = (err: unknown) => {
+      this.giveBack(ws, p, taken);
+      this.reportStoreError(err, { id: taken.id, version: taken.version });
+    };
+    let result: PromiseLike<void> | void;
+    try {
+      result = this.store.apply!(taken);
+    } catch (err) {
+      failed(err);
+      return;
+    }
+    if (isThenable(result)) return Promise.resolve(result).then(done, failed);
+    done();
+  }
+
+  /** The change since the last write, taking the recorded keys with it. */
+  private takeChange(ws: Workspace, p: Persisted): StoreChange | undefined {
+    const replace = p.replace;
+    const objects: Record<string, Record<string, unknown>> = {};
+    for (const name of COLLECTIONS) {
+      const map = ws[name] as unknown as TrackedMap<string, unknown>;
+      if (replace) {
+        const all: Record<string, unknown> = {};
+        for (const [key, value] of Map.prototype.entries.call(map) as IterableIterator<[string, unknown]>) {
+          all[key] = value;
+        }
+        objects[name] = all;
+      } else if (map.dirty.size) {
+        const changed: Record<string, unknown> = {};
+        for (const key of map.dirty) changed[key] = map.peek(key) ?? null;
+        objects[name] = changed;
+      }
+      map.dirty.clear();
+    }
+    if (replace) {
+      objects[IDEMPOTENCY_KEYS] = { ...ws.idempotency_keys };
+    } else if (p.keys.size) {
+      const changed: Record<string, unknown> = {};
+      for (const key of p.keys) changed[key] = ws.idempotency_keys[key] ?? null;
+      objects[IDEMPOTENCY_KEYS] = changed;
+    }
+    p.keys.clear();
+    const entries = ws.audit.slice(replace ? 0 : p.seq);
+    if (!replace && !entries.length && !Object.keys(objects).length) return undefined;
+    return {
+      id: ws.id,
+      base: replace ? 0 : p.seq,
+      version: ws.audit.length,
+      updated_at: p.updatedAt ?? ws.audit[ws.audit.length - 1]?.arrived ?? ws.created,
+      meta: this.metaOf(ws),
+      entries,
+      objects,
+      ...(replace ? { replace: true } : {}),
+    };
+  }
+
+  /** A failed write's keys go back, so the next write carries them again. */
+  private giveBack(ws: Workspace, p: Persisted, change: StoreChange): void {
+    if (change.replace) {
+      p.replace = true;
+      return;
+    }
+    for (const [name, items] of Object.entries(change.objects)) {
+      if (name === IDEMPOTENCY_KEYS) {
+        for (const key of Object.keys(items)) p.keys.add(key);
+        continue;
+      }
+      const map = (ws as unknown as Record<string, unknown>)[name];
+      if (map instanceof TrackedMap) for (const key of Object.keys(items)) map.dirty.add(key);
+    }
+  }
+
+  /** Persist the whole workspace, for a store that implements only `save`. */
+  private persistSnapshot(ws: Workspace): void {
     const next = (this.wsVersions.get(ws.id) ?? 0) + 1;
     this.wsVersions.set(ws.id, next);
     let record: WorkspaceRecord;
     try {
-      const all = this.snapshot() as Array<Record<string, unknown>>;
-      const data = all.find(w => w.id === ws.id);
-      if (!data) return;
-      record = { id: ws.id, data, version: next, updated_at: this.now() };
+      record = { id: ws.id, data: this.snapshotOf(ws), version: next, updated_at: this.now() };
     } catch {
       return;
     }
@@ -338,15 +560,15 @@ export class Coordinator {
       this.trackSave(pending.then(() => this.store.save(record)), record);
       return;
     }
-    let result: Promise<void> | void;
+    let result: PromiseLike<void> | void;
     try {
       result = this.store.save(record);
     } catch (err) {
       this.reportStoreError(err, record);
       return;
     }
-    if (result instanceof Promise) {
-      this.trackSave(result, record);
+    if (isThenable(result)) {
+      this.trackSave(Promise.resolve(result), record);
     }
   }
 
@@ -360,14 +582,17 @@ export class Coordinator {
     });
   }
 
-  private reportStoreError(err: unknown, record: WorkspaceRecord): void {
+  private reportStoreError(err: unknown, record: { id: string; version: number }): void {
     if (this.options.onStoreError) {
       try {
         this.options.onStoreError(err, { id: record.id, version: record.version });
       } catch {
         void 0;
       }
+      return;
     }
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`chap coordinator: writing workspace ${record.id} to the store failed: ${message}`);
   }
 
   async drainSaves(): Promise<void> {
@@ -461,131 +686,168 @@ export class Coordinator {
   /** Serialise all workspaces to a JSON-safe structure for persistence. */
   snapshot(): unknown {
     const out: Array<Record<string, unknown>> = [];
-    for (const ws of this.workspaces.values()) {
-      out.push({
-        id:           ws.id,
-        created:      ws.created,
-        state:        ws.state,
-        profiles:     ws.profiles,
-        mode:         ws.mode,
-        mode_ceiling: ws.mode_ceiling,
-        routing_policy_uri: ws.routing_policy_uri,
-        step_up_window_sec: ws.step_up_window_sec,
-        min_acr:         ws.min_acr,
-        members:         Array.from(ws.members.values()),
-        tasks:           Array.from(ws.tasks.values()),
-        overrides:       Array.from(ws.overrides.values()),
-        whispers:        Array.from(ws.whispers.values()),
-        deliberations:   Array.from(ws.deliberations.values()),
-        handoffs:        Array.from(ws.handoffs.values()),
-        snapshots:       Array.from(ws.snapshots.values()),
-        route_decisions: Array.from(ws.route_decisions.values()),
-        idempotency_keys: ws.idempotency_keys,
-        audit:           ws.audit,
-        chain_head:      ws.chain_head,
-        chain_enabled:   ws.chain_enabled,
-      });
-    }
+    for (const ws of this.workspaces.values()) out.push(this.snapshotOf(ws));
     return out;
+  }
+
+  /** The workspace's own fields: everything except its collections and log. */
+  private metaOf(ws: Workspace): Record<string, unknown> {
+    return {
+      id:           ws.id,
+      created:      ws.created,
+      state:        ws.state,
+      profiles:     ws.profiles,
+      mode:         ws.mode,
+      mode_ceiling: ws.mode_ceiling,
+      routing_policy_uri: ws.routing_policy_uri,
+      step_up_window_sec: ws.step_up_window_sec,
+      min_acr:      ws.min_acr,
+      chain_head:   ws.chain_head,
+      chain_enabled: ws.chain_enabled,
+    };
+  }
+
+  /** One workspace as `snapshot()` holds it. Reads nothing as a change. */
+  private snapshotOf(ws: Workspace): Record<string, unknown> {
+    const { chain_head, chain_enabled, ...own } = this.metaOf(ws);
+    return {
+      ...own,
+      members:         Array.from(rawValues(ws.members)),
+      tasks:           Array.from(rawValues(ws.tasks)),
+      overrides:       Array.from(rawValues(ws.overrides)),
+      whispers:        Array.from(rawValues(ws.whispers)),
+      deliberations:   Array.from(rawValues(ws.deliberations)),
+      handoffs:        Array.from(rawValues(ws.handoffs)),
+      snapshots:       Array.from(rawValues(ws.snapshots)),
+      route_decisions: Array.from(rawValues(ws.route_decisions)),
+      idempotency_keys: { ...ws.idempotency_keys },
+      audit:           ws.audit,
+      chain_head,
+      chain_enabled,
+    };
   }
 
   /** Restore from a snapshot produced by ``snapshot()``. Replaces
    *  any existing in-memory workspaces. */
   restore(data: unknown): void {
     this.workspaces.clear();
+    this.unflushed.clear();
     if (!Array.isArray(data)) return;
     for (const w of data as Array<Record<string, unknown>>) {
-      const ws: Workspace = {
-        id: w.id as WorkspaceId,
-        created: w.created as string,
-        state: (w.state as Workspace["state"]) ?? "active",
-        profiles: (w.profiles as string[]) ?? [],
-        mode: (w.mode as Mode) ?? "trial",
-        mode_ceiling: (w.mode_ceiling as Mode) ?? "production",
-        routing_policy_uri: w.routing_policy_uri as string | undefined,
-        step_up_window_sec: (w.step_up_window_sec as number) ?? 300,
-        min_acr: w.min_acr as string | undefined,
-        members: new Map(),
-        tasks: new Map(),
-        overrides: new Map(),
-        whispers: new Map(),
-        deliberations: new Map(),
-        handoffs: new Map(),
-        snapshots: new Map(),
-        route_decisions: new Map(),
-        idempotency_keys: (w.idempotency_keys as Record<string, string>) ?? {},
-        audit: (w.audit as AuditEntry[]) ?? [],
-        chain_head: w.chain_head as string | undefined,
-        chain_enabled: !!w.chain_enabled,
-      };
-      for (const m of (w.members as Member[]) ?? []) {
-        // Defensive: ensure required collections exist even on older snapshots.
-        if (!Array.isArray(m.keys)) m.keys = [];
-        if (m.paused === undefined) m.paused = false;
-        ws.members.set(m.uri, m);
+      // One workspace that cannot be rebuilt is skipped, with a warning, so
+      // the others still load.
+      let ws: Workspace;
+      try {
+        ws = this.rebuild(w);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`chap coordinator: workspace ${String(w?.id)} could not be restored: ${message}`);
+        continue;
       }
-      for (const t of (w.tasks as Task[]) ?? []) ws.tasks.set(t.id, t);
-      for (const o of (w.overrides as OverrideArtefact[]) ?? []) ws.overrides.set(o.id, o);
-      // The dynamic profile collections may not be present on legacy snapshots.
-      for (const x of (w.whispers as Array<{ id: string } & Record<string, unknown>>) ?? [])
-        ws.whispers.set(x.id, x as never);
-      for (const x of (w.deliberations as Array<{ id: string } & Record<string, unknown>>) ?? [])
-        ws.deliberations.set(x.id, x as never);
-      for (const x of (w.handoffs as Array<{ id: string } & Record<string, unknown>>) ?? [])
-        ws.handoffs.set(x.id, x as never);
-      for (const x of (w.snapshots as Array<{ id: string } & Record<string, unknown>>) ?? []) {
-        // Normalize the former flat store representation only on restore.
-        // New snapshots are stored and emitted in the canonical wire shape.
-        const content = structuredClone((x.content ?? {
-          workspace: x.workspace, audit_seq: x.audit_seq,
-          include: x.include, state: x.state,
-          ...(x.label ? { label: x.label } : {}),
-        }) as SnapshotArtefact["content"]);
-        if (!x.content) {
-          // Legacy in-memory projections can contain undefined optional
-          // fields; full bodies from older stores are not snapshot slices.
-          const oldState = content.state;
-          const state: Record<string, unknown> = {};
-          for (const key of ["mode_ceiling", "routing_policy_uri", "audit_seq"]) {
-            if (oldState[key] != null && oldState[key] !== "") state[key] = oldState[key];
-          }
-          for (const [key, fields] of [
-            ["members", ["uri", "type", "role", "scopes"]],
-            ["open_tasks", ["id", "kind", "state", "assignee"]],
-          ] as const) {
-            const items = oldState[key];
-            if (Array.isArray(items) && items.length) {
-              state[key] = items.map(item => Object.fromEntries(fields
-                .filter(field => item[field] != null && item[field] !== ""
-                  && (!Array.isArray(item[field]) || item[field].length > 0))
-                .map(field => [field, item[field]])));
-            }
-          }
-          content.state = state;
-        }
-        ws.snapshots.set(x.id, {
-          id: x.id, kind: "snapshot",
-          produced_by: (x.produced_by ?? x.by) as string,
-          produced_at: (x.produced_at ?? x.ts) as string,
-          content_hash: (x.content_hash as string | undefined) ?? contentHash(content),
-          content,
-        });
-      }
-      for (const x of (w.route_decisions as Array<{ id: string } & Record<string, unknown>>) ?? [])
-        ws.route_decisions.set(x.id, x as never);
       this.workspaces.set(ws.id, ws);
+      // Restored from data the store may not hold: the next write replaces
+      // the store's copy whole. Loading from the store marks it written.
+      for (const name of COLLECTIONS) (ws[name] as TrackedMap<unknown, unknown>).dirty.clear();
+      this.persisted.set(ws, { seq: 0, replace: true, keys: new Set() });
     }
+  }
+
+  /** One workspace from a snapshot entry, its maps tracked. */
+  private rebuild(w: Record<string, unknown>): Workspace {
+    const ws: Workspace = {
+      id: w.id as WorkspaceId,
+      created: w.created as string,
+      state: (w.state as Workspace["state"]) ?? "active",
+      profiles: (w.profiles as string[]) ?? [],
+      mode: (w.mode as Mode) ?? "trial",
+      mode_ceiling: (w.mode_ceiling as Mode) ?? "production",
+      routing_policy_uri: w.routing_policy_uri as string | undefined,
+      step_up_window_sec: (w.step_up_window_sec as number) ?? 300,
+      min_acr: w.min_acr as string | undefined,
+      members: this.newMap(),
+      tasks: this.newMap(),
+      overrides: this.newMap(),
+      whispers: this.newMap(),
+      deliberations: this.newMap(),
+      handoffs: this.newMap(),
+      snapshots: this.newMap(),
+      route_decisions: this.newMap(),
+      idempotency_keys: (w.idempotency_keys as Record<string, string>) ?? {},
+      audit: (w.audit as AuditEntry[]) ?? [],
+      chain_head: w.chain_head as string | undefined,
+      chain_enabled: !!w.chain_enabled,
+    };
+    for (const m of (w.members as Member[]) ?? []) {
+      // Defensive: ensure required collections exist even on older snapshots.
+      if (!Array.isArray(m.keys)) m.keys = [];
+      if (m.paused === undefined) m.paused = false;
+      ws.members.set(m.uri, m);
+    }
+    for (const t of (w.tasks as Task[]) ?? []) ws.tasks.set(t.id, t);
+    for (const o of (w.overrides as OverrideArtefact[]) ?? []) ws.overrides.set(o.id, o);
+    // The dynamic profile collections may not be present on legacy snapshots.
+    for (const x of (w.whispers as Array<{ id: string } & Record<string, unknown>>) ?? [])
+      ws.whispers.set(x.id, x as never);
+    for (const x of (w.deliberations as Array<{ id: string } & Record<string, unknown>>) ?? [])
+      ws.deliberations.set(x.id, x as never);
+    for (const x of (w.handoffs as Array<{ id: string } & Record<string, unknown>>) ?? [])
+      ws.handoffs.set(x.id, x as never);
+    for (const x of (w.snapshots as Array<{ id: string } & Record<string, unknown>>) ?? []) {
+      // Normalize the former flat store representation only on restore.
+      // New snapshots are stored and emitted in the canonical wire shape.
+      const content = structuredClone((x.content ?? {
+        workspace: x.workspace, audit_seq: x.audit_seq,
+        include: x.include, state: x.state,
+        ...(x.label ? { label: x.label } : {}),
+      }) as SnapshotArtefact["content"]);
+      if (!x.content) {
+        // Legacy in-memory projections can contain undefined optional
+        // fields; full bodies from older stores are not snapshot slices.
+        const oldState = content.state;
+        const state: Record<string, unknown> = {};
+        for (const key of ["mode_ceiling", "routing_policy_uri", "audit_seq"]) {
+          if (oldState[key] != null && oldState[key] !== "") state[key] = oldState[key];
+        }
+        for (const [key, fields] of [
+          ["members", ["uri", "type", "role", "scopes"]],
+          ["open_tasks", ["id", "kind", "state", "assignee"]],
+        ] as const) {
+          const items = oldState[key];
+          if (Array.isArray(items) && items.length) {
+            state[key] = items.map(item => Object.fromEntries(fields
+              .filter(field => item[field] != null && item[field] !== ""
+                && (!Array.isArray(item[field]) || item[field].length > 0))
+              .map(field => [field, item[field]])));
+          }
+        }
+        content.state = state;
+      }
+      ws.snapshots.set(x.id, {
+        id: x.id, kind: "snapshot",
+        produced_by: (x.produced_by ?? x.by) as string,
+        produced_at: (x.produced_at ?? x.ts) as string,
+        content_hash: (x.content_hash as string | undefined) ?? contentHash(content),
+        content,
+      });
+    }
+    for (const x of (w.route_decisions as Array<{ id: string } & Record<string, unknown>>) ?? [])
+      ws.route_decisions.set(x.id, x as never);
+    return ws;
   }
 
   // -- dispatch ------------------------------------------------------
 
   dispatch(envelope: Envelope): Envelope {
     this.frozenNow = this.advanceClock();
+    this.tracker.depth++;
     try {
       const response = this._dispatch(envelope);
       if (response.error) this.recordRefusal(envelope, response.error);
       return response;
     } finally {
+      // One write per call, with everything the call changed, made before
+      // dispatch returns.
+      if (--this.tracker.depth === 0) this.flushUnflushed();
       this.frozenNow = undefined;
     }
   }
@@ -734,7 +996,12 @@ export class Coordinator {
 
     let out: { result?: unknown; error?: { code: number; message: string; data?: unknown } };
     try {
-      out = handler(params);
+      // The handler works on its own copy of what the caller sent, and the
+      // caller gets a copy of the result, so no object is shared between the
+      // workspace and the caller. A caller that reused or changed one later
+      // would change the workspace outside any call, where no change is
+      // recorded for the store.
+      out = handler(ownCopy(params));
     } catch (e) {
       // Keep the wire message generic; a handler exception may carry internal
       // detail that should not be disclosed to callers. Specifics stay in the
@@ -751,7 +1018,7 @@ export class Coordinator {
       const ws = this.workspaces.get(wsId);
       if (ws) this.recordAudit(ws, envelope);
     }
-    return reply(envelope, { result: out.result });
+    return reply(envelope, { result: ownCopy(out.result) });
   }
 
   // -- audit ---------------------------------------------------------
@@ -817,8 +1084,6 @@ export class Coordinator {
     for (const l of this.auditListeners) {
       try { l(ws, entry); } catch { /* listeners never break dispatch */ }
     }
-    // Persistence: only meaningful when a non-Memory store is configured;
-    // MemoryStore.save() is a no-op for the dispatcher's perspective.
     this.persist(ws);
   }
 
@@ -1052,20 +1317,22 @@ export class Coordinator {
       routing_policy_uri: p.routing_policy_uri as string | undefined,
       step_up_window_sec: typeof p.step_up_window_sec === "number" ? p.step_up_window_sec : 300,
       min_acr: p.min_acr as string | undefined,
-      members: new Map(),
-      tasks: new Map(),
-      overrides: new Map(),
-      whispers: new Map(),
-      deliberations: new Map(),
-      handoffs: new Map(),
-      snapshots: new Map(),
-      route_decisions: new Map(),
+      members: this.newMap(),
+      tasks: this.newMap(),
+      overrides: this.newMap(),
+      whispers: this.newMap(),
+      deliberations: this.newMap(),
+      handoffs: this.newMap(),
+      snapshots: this.newMap(),
+      route_decisions: this.newMap(),
       idempotency_keys: {},
       audit: [],
       chain_enabled: chainEnabled,
       chain_head: chainEnabled ? ZERO_HASH : undefined,
     };
     this.workspaces.set(id, ws);
+    // New here, so the store holds nothing of it yet.
+    this.persisted.set(ws, { seq: 0, replace: false, keys: new Set() });
     return { result: { workspace: id, created: ws.created } };
   }
 
@@ -1087,7 +1354,7 @@ export class Coordinator {
       max_envelope_bytes: this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES,
       step_up_window_sec: ws.step_up_window_sec,
       profiles: ws.profiles,
-      members: Array.from(ws.members.values()).map(memberToDict),
+      members: Array.from(rawValues(ws.members)).map(memberToDict),
       audit_count: ws.audit.length,
       task_count: ws.tasks.size,
       override_count: ws.overrides.size,
@@ -1292,8 +1559,12 @@ export class Coordinator {
     ws.tasks.set(taskId, task);
     if (typeof p.idempotency_key === "string") {
       ws.idempotency_keys[p.idempotency_key] = taskId;
+      this.markKey(ws, p.idempotency_key);
       const keys = Object.keys(ws.idempotency_keys);
-      if (keys.length > MAX_IDEMPOTENCY_KEYS) delete ws.idempotency_keys[keys[0]];
+      if (keys.length > MAX_IDEMPOTENCY_KEYS) {
+        delete ws.idempotency_keys[keys[0]];
+        this.markKey(ws, keys[0]);
+      }
     }
     return { result: { task_id: taskId, state: "created" } };
   }
@@ -1371,7 +1642,7 @@ export class Coordinator {
         // own `to`, so a deliberate agent-reviews-agent flow is still
         // available.
         const producer = p.from as string;
-        const eligible = [...ws.members.entries()]
+        const eligible = [...rawEntries(ws.members)]
           .filter(([uri, member]) => uri !== producer && uri !== task.assignee && member.type === "human")
           .map(([uri]) => uri);
         if (eligible.length === 0) {

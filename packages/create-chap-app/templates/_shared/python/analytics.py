@@ -33,6 +33,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 HERE = Path(__file__).resolve().parent
 
@@ -159,24 +160,50 @@ KEYED = {"tasks": "id", "overrides": "id", "whispers": "id", "deliberations": "i
          "handoffs": "id", "snapshots": "id", "route_decisions": "id", "members": "uri"}
 
 
+def read_store(con: sqlite3.Connection) -> dict[str, Callable[[], dict]]:
+    """Each workspace in the store, as a function that reads its snapshot.
+
+    chap-coordinator 0.3.2 and later write a row per audit entry and per
+    object; earlier releases wrote one snapshot per workspace in chap_workspaces.
+    Both are read.
+    """
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "chap_meta" not in tables:
+        rows = con.execute("SELECT id, data FROM chap_workspaces").fetchall()
+        return {w: (lambda d=d: json.loads(d)) for w, d in rows}
+
+    def snapshot(workspace: str) -> dict:
+        (meta,) = con.execute("SELECT data FROM chap_meta WHERE workspace = ?", (workspace,)).fetchone()
+        snap = json.loads(meta)
+        snap["audit"] = [json.loads(d) for (d,) in con.execute(
+            "SELECT data FROM chap_entries WHERE workspace = ? ORDER BY seq", (workspace,))]
+        for collection, key, data in con.execute(
+                "SELECT collection, id, data FROM chap_objects WHERE workspace = ? ORDER BY rowid", (workspace,)):
+            snap.setdefault(collection, {})[key] = json.loads(data)
+        return snap
+    return {w: (lambda w=w: snapshot(w)) for (w,) in con.execute("SELECT workspace FROM chap_meta ORDER BY rowid")}
+
+
 def load_chain(store: str, workspace: str | None):
     """The workspace's chain and state from the store, whichever coordinator wrote it."""
     con = sqlite3.connect(f"file:{store}?mode=ro", uri=True)
     try:
-        rows = con.execute("SELECT id, data FROM chap_workspaces").fetchall()
+        # One read transaction, so the gate writing the file meanwhile cannot
+        # leave the log and the objects out of step.
+        con.execute("BEGIN")
+        workspaces = read_store(con)
+        available = list(workspaces)
+        if not available:
+            raise SystemExit(f"{store} holds no workspace yet.")
+        if workspace is None:
+            if len(available) > 1:
+                raise SystemExit(f"{store} holds {', '.join(available)}; name one with --workspace.")
+            workspace = available[0]
+        if workspace not in workspaces:
+            raise SystemExit(f"{workspace} is not in {store}, which holds {', '.join(available)}.")
+        snapshot = workspaces[workspace]()
     finally:
         con.close()
-    available = [r[0] for r in rows]
-    if not rows:
-        raise SystemExit(f"{store} holds no workspace yet.")
-    if workspace is None:
-        if len(rows) > 1:
-            raise SystemExit(f"{store} holds {', '.join(available)}; name one with --workspace.")
-        workspace = available[0]
-    data = next((d for w, d in rows if w == workspace), None)
-    if data is None:
-        raise SystemExit(f"{workspace} is not in {store}, which holds {', '.join(available)}.")
-    snapshot = json.loads(data)
     for name, key in KEYED.items():
         if isinstance(snapshot.get(name), list):
             snapshot[name] = {x[key]: x for x in snapshot[name] if isinstance(x, dict) and isinstance(x.get(key), str)}

@@ -12,6 +12,7 @@
 import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
 import { contentHash } from "../canonical.js";
+import { rawValues } from "../tracked.js";
 import { modeLE } from "../types.js";
 import type { Mode, SnapshotArtefact, Task, TaskState } from "../types.js";
 
@@ -110,7 +111,8 @@ export function registerControl(coord: Coordinator): void {
       : ["members", "open_tasks", "mode_ceiling"];
     const state: Record<string, unknown> = {};
     if (include.includes("members")) {
-      const members = Array.from(ws.members.values()).map(m => ({
+      // Read-only projections: read without recording a change.
+      const members = Array.from(rawValues(ws.members)).map(m => ({
         uri: m.uri, type: m.type,
         ...(m.role ? { role: m.role } : {}),
         ...(m.scopes?.length ? { scopes: m.scopes } : {}),
@@ -118,7 +120,7 @@ export function registerControl(coord: Coordinator): void {
       if (members.length) state.members = members;
     }
     if (include.includes("open_tasks")) {
-      const tasks = Array.from(ws.tasks.values())
+      const tasks = Array.from(rawValues(ws.tasks))
         .filter(t => t.state !== "completed" && t.state !== "declined" && t.state !== "cancelled" && t.state !== "superseded")
         .map(t => ({ id: t.id, kind: t.kind, state: t.state,
           ...(t.assignee ? { assignee: t.assignee } : {}),

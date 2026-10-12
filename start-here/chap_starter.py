@@ -70,7 +70,7 @@ class StorageError(RuntimeError):
 
 
 class _CheckedStore:
-    """Surface save errors that the reference coordinator otherwise swallows."""
+    """Surface write errors, which the coordinator reports without raising."""
 
     def __init__(self, path):
         # Check the file is a database before the store opens it. A store that
@@ -100,6 +100,15 @@ class _CheckedStore:
     def save(self, record):
         try:
             return self.inner.save(record)
+        except Exception as exc:
+            self.failure = exc
+            raise
+
+    def apply(self, change):
+        # Called by chap-coordinator 0.3.2 and later with only what a call
+        # changed, so a write costs the same however long the log grows.
+        try:
+            return self.inner.apply(change)
         except Exception as exc:
             self.failure = exc
             raise

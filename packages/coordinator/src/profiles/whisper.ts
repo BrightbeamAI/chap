@@ -131,6 +131,9 @@ export function registerWhisper(coord: Coordinator): void {
       if (cutoff < deadline) continue;
       prompt.state = "lapsed";
       prompt.default_applied = prompt.default_if_lapsed;
+      // Set again so the change is written: a lapse check runs outside any
+      // call, where reading the prompt records nothing.
+      ws.whispers.set(prompt.id, prompt);
       const notify: Envelope = {
         jsonrpc: "2.0",
         method: "notify.message",

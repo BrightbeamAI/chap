@@ -1,8 +1,7 @@
-// analytics.py on a store the TypeScript coordinator wrote. The workspace is
-// driven in-process, its snapshot written to a SQLite file in the shape the
-// coordinator's SqliteStore writes (a chap_workspaces row holding the
-// snapshot as JSON), and the script run on it. Skipped where python3 has no
-// chap-analytics; PYTHON names another interpreter.
+// analytics.py on a store the TypeScript coordinator wrote. The gate runs on
+// a SQLite file, so the coordinator's own SqliteStore writes it as the
+// workspace is driven, and the script is run on that file. Skipped where
+// python3 has no chap-analytics; PYTHON names another interpreter.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
@@ -24,8 +23,10 @@ const python = process.env.PYTHON ?? "python3";
 const ready = spawnSync(python, ["-c", "import chap_analytics"], { stdio: "ignore" }).status === 0;
 
 test("analytics.py reads the gate's store and writes the report, the cases and the refinement page", { skip: ready ? false : `${python} has no chap-analytics` }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "chap-analytics-"));
+  const store = join(dir, "chap.db");
   const config = await loadConfig();
-  config.store = ":memory:";
+  config.store = store;
   config.workspace = `${config.workspace}_analytics`;
   const coord = await makeCoordinator(config);
   const server = await makeServer(config, coord);
@@ -54,17 +55,6 @@ test("analytics.py reads the gate's store and writes the report, the cases and t
     const second = await propose(agent, await describeChange(repo, { summary: "Rewrite the README", drafted_by: "the test" }));
     await decide("decide.reject", second.task_id, { comment: "keep the function list", tags: ["docs"] });
 
-    const dir = await mkdtemp(join(tmpdir(), "chap-analytics-"));
-    const store = join(dir, "chap.db");
-    const snapshot = JSON.stringify(coord.snapshot().find((w) => w.id === config.workspace));
-    const write = spawnSync(python, ["-c", [
-      "import sqlite3, sys",
-      "con = sqlite3.connect(sys.argv[1])",
-      "con.execute('CREATE TABLE chap_workspaces (id TEXT PRIMARY KEY, version INTEGER NOT NULL, data TEXT NOT NULL, updated_at TEXT NOT NULL)')",
-      "con.execute('INSERT INTO chap_workspaces VALUES (?, 1, ?, ?)', (sys.argv[2], sys.stdin.read(), '2026-01-01T00:00:00Z'))",
-      "con.commit()",
-    ].join("\n"), store, config.workspace], { input: snapshot });
-    assert.equal(write.status, 0, String(write.stderr));
     const out = join(dir, "analytics");
     const { stdout } = await run(python, [join(projectDir, "analytics.py"), "--store", store, "--workspace", config.workspace, "--out", out]);
     assert.match(stdout, /2 tasks, 2 decisions, 1 overrides/);
@@ -86,5 +76,6 @@ test("analytics.py reads the gate's store and writes the report, the cases and t
     assert.equal((await fetch(`${base}/analytics/..%2Fchap.config.json`)).status, 404);
   } finally {
     await new Promise((r) => server.close(r));
+    coord.store.close?.();
   }
 });

@@ -538,7 +538,9 @@ release. Size from measurements of your own workload.
 ### 9.4 High availability
 
 The Coordinator is a single writer that holds state in memory; two
-instances writing one workspace lose entries silently
+instances writing one workspace lose entries. With the stores the
+coordinators ship, the second writer's writes are refused and reported;
+with a store that implements only `save`, the loss is silent
 ([SPECIFICATION.md §10.3](./SPECIFICATION.md#103-single-writer-requirement)).
 Run one active instance per workspace, partition workspaces or lock
 writes externally, and start a standby from the store on failover.

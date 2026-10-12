@@ -23,7 +23,9 @@ Coverage:
 from __future__ import annotations
 
 import copy
+import dataclasses
 import datetime as _dt
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -32,6 +34,7 @@ from .audit import (
 )
 from .canonical import ZERO_HASH, canonicalize, content_hash
 from .ids import IdFactory
+from .tracked import Scope, TrackedDict
 from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
 from .jsonrpc import E, is_valid_envelope, make_response, rpc_error
 from .patch import PatchError, apply_json_patch
@@ -203,7 +206,17 @@ class CoordinatorOptions:
     store: Any = None
     """Optional persistence store (see chap_coordinator.storage).
     Default is in-memory (no persistence). Pass a `SqliteStore` or any
-    object satisfying the `Store` Protocol to persist workspaces."""
+    object satisfying the `Store` Protocol to persist workspaces. After each
+    call that adds to a workspace's log the Coordinator calls `apply` with
+    what changed, or `save` with the whole workspace when the store has no
+    `apply`."""
+
+    on_store_error: Callable[[Exception, dict], None] | None = None
+    """Called when a write to the store fails, with the error and
+    ``{"id": workspace, "version": version}``. When unset, the failure is
+    logged as an error on the ``chap_coordinator`` logger. The call itself has
+    already succeeded in memory; the next write to the workspace carries what
+    this one did not."""
 
 
 # ============================================================
@@ -216,6 +229,35 @@ def _now_iso(clock_ms: int | None = None) -> str:
     else:
         dt = _dt.datetime.fromtimestamp(clock_ms / 1000, tz=_dt.timezone.utc)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
+
+
+_log = logging.getLogger("chap_coordinator")
+
+#: The Workspace collections kept object by object, idempotency keys included.
+_TRACKED = ("members", "tasks", "overrides", "whispers", "deliberations",
+            "handoffs", "snapshots", "route_decisions", "idempotency_keys")
+
+#: Workspace fields a store keeps as the workspace's own: all but these.
+_NOT_META = frozenset((*_TRACKED, "audit"))
+
+
+@dataclass
+class _Persisted:
+    """What the store holds of one workspace, as far as a Coordinator knows."""
+
+    seq: int = 0
+    """Audit entries the store holds."""
+    replace: bool = False
+    """Write the whole workspace next: the store's copy is unknown."""
+    updated_at: str | None = None
+    """The time to stamp on the next write."""
+
+
+def _plain(value: Any) -> Any:
+    """An object as a store keeps it: dataclasses as dicts, copied."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return dataclasses.asdict(value)
+    return copy.deepcopy(value)
 
 
 def _missing(params: dict, fields: list[str]) -> str | None:
@@ -386,6 +428,13 @@ class Coordinator:
         )
         self._frozen_now: str | None = None
         self.workspaces: dict[str, Workspace] = {}
+        # Change tracking, for a store that implements `apply`: reads made
+        # while a call is handled are recorded (see tracked.py), and each
+        # call's changes are written once, when it ends.
+        store = self.options.store
+        self._tracking = store is not None and callable(getattr(store, "apply", None))
+        self._scope = Scope()
+        self._unflushed: dict[int, Workspace] = {}
         self._audit_listeners: list[AuditListener] = []
         if self.options.on_audit:
             self._audit_listeners.append(self.options.on_audit)
@@ -496,6 +545,7 @@ class Coordinator:
     def dispatch(self, envelope: dict) -> dict:
         """Process one JSON-RPC envelope; return the response."""
         self._frozen_now = self._advance_clock()
+        self._scope.depth += 1
         try:
             response = self._dispatch(envelope)
             error = response.get("error")
@@ -503,6 +553,11 @@ class Coordinator:
                 self._record_refusal(envelope, error)
             return response
         finally:
+            # One write per call, with everything the call changed, made
+            # before dispatch returns.
+            self._scope.depth -= 1
+            if self._scope.depth == 0 and self._unflushed:
+                self._flush_unflushed()
             self._frozen_now = None
 
     def _dispatch(self, envelope: dict) -> dict:
@@ -659,7 +714,12 @@ class Coordinator:
                         "task_id": existing_id, "state": task.state})
 
         try:
-            out = handler(params)
+            # The handler works on its own copy of what the caller sent, and
+            # the caller gets a copy of the result, so no object is shared
+            # between the workspace and the caller. A caller that reused or
+            # changed one later would change the workspace outside any call,
+            # where no change is recorded for the store.
+            out = handler(copy.deepcopy(params))
         except Exception as exc:
             # Keep the wire message generic; a handler exception may carry
             # internal detail that should not be disclosed to callers. The
@@ -681,7 +741,7 @@ class Coordinator:
             if ws is not None:
                 self._record_audit(ws, envelope)
 
-        return make_response(env_id, result=out.get("result"))
+        return make_response(env_id, result=copy.deepcopy(out.get("result")))
 
     # -- audit recording -----------------------------------------------
 
@@ -758,21 +818,132 @@ class Coordinator:
                 listener(ws.id, entry)
             except Exception:
                 pass
-        # Persist the updated workspace to the configured store, if any.
-        # Failures are deliberately swallowed: the in-memory state is
-        # authoritative within the process, and audit listeners are the
-        # documented escape hatch for must-persist workloads.
-        self._persist(ws)
+        # Persist to the configured store, if any. A failed write never
+        # breaks dispatch: the in-memory state is authoritative within the
+        # process. It is reported, and the next write carries it again.
+        if self.options.store is None:
+            return
+        if not self._tracking:
+            self._persist(ws)
+            return
+        # One clock reading per entry, where earlier releases read it to stamp
+        # the snapshot, so a deterministic clock gives the same times as before.
+        self._persisted_of(ws).updated_at = self.now_iso()
+        if self._scope.depth > 0:
+            self._unflushed[id(ws)] = ws
+        else:
+            self._flush(ws)
 
     def _persist(self, ws: Workspace) -> None:
+        """Save the whole workspace, for a store that implements only `save`."""
         if self.options.store is None:
             return
         try:
             record = self._snapshot_workspace(ws)
             self.options.store.save(record)
-        except Exception:
+        except Exception as err:
             # Persistence failures must not break dispatch. See above.
-            pass
+            self._report_store_error(err, ws.id, len(ws.audit))
+
+    def _report_store_error(self, err: Exception, ws_id: str, version: int) -> None:
+        if self.options.on_store_error is not None:
+            try:
+                self.options.on_store_error(err, {"id": ws_id, "version": version})
+            except Exception:
+                pass
+            return
+        _log.error("writing workspace %s to the store failed: %s", ws_id, err)
+
+    # -- change tracking, for a store that implements `apply` -----------
+
+    def _track(self, ws: Workspace, persisted: _Persisted) -> None:
+        """Track this workspace's collections from here on."""
+        for name in _TRACKED:
+            d = getattr(ws, name)
+            if not (isinstance(d, TrackedDict) and d.scope is self._scope):
+                setattr(ws, name, TrackedDict.bound(dict.items(d), self._scope))
+            else:
+                d.dirty.clear()
+        object.__setattr__(ws, "_persisted", persisted)
+
+    def _persisted_of(self, ws: Workspace) -> _Persisted:
+        """What the store holds of a workspace.
+
+        A workspace this instance did not create or load, such as one an
+        application put in ``workspaces`` itself, is tracked from here on and
+        written whole once.
+        """
+        p = getattr(ws, "_persisted", None)
+        if p is None or any(not (isinstance(getattr(ws, n), TrackedDict)
+                                 and getattr(ws, n).scope is self._scope)
+                            for n in _TRACKED):
+            p = _Persisted(seq=0, replace=True)
+            self._track(ws, p)
+        return p
+
+    def _flush_unflushed(self) -> None:
+        pending = list(self._unflushed.values())
+        self._unflushed.clear()
+        for ws in pending:
+            self._flush(ws)
+
+    def _flush(self, ws: Workspace) -> None:
+        """Write what changed in one workspace since its last write."""
+        p = self._persisted_of(ws)
+        try:
+            change = self._take_change(ws, p)
+        except Exception as err:
+            # What was taken is unknown, so the next write carries the whole
+            # workspace.
+            p.replace = True
+            self._report_store_error(err, ws.id, len(ws.audit))
+            return
+        if change is None:
+            return
+        try:
+            self.options.store.apply(change)
+        except Exception as err:
+            self._give_back(ws, p, change)
+            self._report_store_error(err, change.id, change.version)
+            return
+        p.seq = change.version
+        if change.replace:
+            p.replace = False
+
+    def _take_change(self, ws: Workspace, p: _Persisted):
+        """The change since the last write, taking the recorded keys with it."""
+        from .storage.store import StoreChange
+        replace = p.replace
+        objects: dict[str, dict] = {}
+        for name in _TRACKED:
+            d: TrackedDict = getattr(ws, name)
+            if replace:
+                objects[name] = {k: _plain(v) for k, v in dict.items(d)}
+            elif d.dirty:
+                objects[name] = {
+                    k: (_plain(dict.__getitem__(d, k)) if dict.__contains__(d, k) else None)
+                    for k in d.dirty}
+            d.dirty.clear()
+        entries = [e.to_dict() for e in ws.audit[0 if replace else p.seq:]]
+        if not replace and not entries and not objects:
+            return None
+        meta = {f.name: copy.deepcopy(getattr(ws, f.name))
+                for f in dataclasses.fields(ws) if f.name not in _NOT_META}
+        updated_at = p.updated_at or (ws.audit[-1].arrived if ws.audit else ws.created)
+        return StoreChange(id=ws.id, base=0 if replace else p.seq,
+                           version=len(ws.audit), updated_at=updated_at,
+                           meta=meta, entries=entries, objects=objects,
+                           replace=replace)
+
+    def _give_back(self, ws: Workspace, p: _Persisted, change) -> None:
+        """A failed write's keys go back, so the next write carries them."""
+        if change.replace:
+            p.replace = True
+            return
+        for name, items in change.objects.items():
+            d = getattr(ws, name, None)
+            if isinstance(d, TrackedDict):
+                d.dirty.update(items.keys())
 
     def _snapshot_workspace(self, ws: Workspace) -> "WorkspaceRecord":
         """JSON-safe snapshot of one workspace, plus a version counter."""
@@ -823,10 +994,14 @@ class Coordinator:
             try:
                 ws = _rehydrate_workspace(r.data)
                 self.workspaces[ws.id] = ws
-            except Exception:
-                # Skip records we can't parse; future schema migrations
-                # should handle this explicitly.
+            except Exception as err:
+                # One workspace that cannot be rebuilt is skipped, with a
+                # warning, so the others still load.
+                _log.warning("workspace %s could not be restored: %s", r.id, err)
                 continue
+            if self._tracking:
+                # What was just loaded is what the store holds.
+                self._track(ws, _Persisted(seq=len(ws.audit)))
 
     # -- signature verification (security-signed/1.0) ----------------
 
@@ -1054,6 +1229,9 @@ class Coordinator:
             ws.chain_enabled = True
             ws.chain_head = ZERO_HASH
         self.workspaces[ws_id] = ws
+        if self._tracking:
+            # New here, so the store holds nothing of it yet.
+            self._track(ws, _Persisted(seq=0))
         return {"result": {"workspace": ws_id, "created": ws.created}}
 
     def _op_workspace_describe(self, p: dict) -> dict:
@@ -1076,7 +1254,7 @@ class Coordinator:
             "max_envelope_bytes": self.options.max_envelope_bytes,
             "step_up_window_sec": ws.step_up_window_sec,
             "profiles": ws.profiles,
-            "members": [m.to_dict() for m in ws.members.values()],
+            "members": [m.to_dict() for m in dict.values(ws.members)],
             "audit_count": len(ws.audit),
             "task_count": len(ws.tasks),
             "override_count": len(ws.overrides),
@@ -1391,7 +1569,7 @@ class Coordinator:
                 others = [uri for uri in ws.members
                           if uri != producer and uri != task.assignee]
                 eligible = [uri for uri in others
-                            if ws.members[uri].type == "human"]
+                            if dict.__getitem__(ws.members, uri).type == "human"]
                 if not eligible:
                     return {"error": rpc_error(
                         E.NOT_AUTHORISED,
