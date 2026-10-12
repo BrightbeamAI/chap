@@ -1,6 +1,6 @@
 {
   "name": "create-chap-app",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Generate a CHAP project that runs against your own agent and data, with a review desk, one profile setting and a diff-profiles command.",
   "license": "Apache-2.0",
   "type": "module",

@@ -21,6 +21,73 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
 
 ---
 
+## 0.3.2: a store that writes each call once
+
+The protocol packages move together to 0.3.2. Each call now writes what it
+changed to the store, so a long run no longer slows as its log grows.
+`chap-analytics` 0.2.3, on its own track, reads the new store.
+
+### Fixed
+
+- **Writes that slowed as the log grew.** `SqliteStore`, in both
+  coordinators, wrote the whole workspace, its log included, as one JSON
+  document after every call. The cost of a call grew with the length of the
+  log, and a long run slowed with the square of its length. Each call now
+  writes its own audit entries, the objects it changed and the workspace's
+  own fields, in one transaction, so the cost of a call no longer grows with
+  the log. It grows with the objects the call changes, such as a task with a
+  long history.
+- **Objects shared with the caller.** A call's handler now works on its own
+  copy of the call's params, and the caller receives a copy of the result.
+  Before, an object the caller passed in or got back stayed part of the
+  workspace: a reviewer list passed to two `review.request` calls in
+  TypeScript was shared by both tasks, so widening one review widened the
+  other, and changing a result changed the workspace.
+- **`SqliteStore` from CommonJS.** Loaded with `require`, `SqliteStore`
+  reported `better-sqlite3` missing when it was installed: the CommonJS build
+  looked for the driver relative to `import.meta.url`, which CommonJS does
+  not define. It now looks relative to the module's own file.
+
+### Changed
+
+- **The tables in a SQLite file.** A file holds `chap_meta`, each
+  workspace's own fields; `chap_entries`, one row for each audit entry; and
+  `chap_objects`, one row for each member, task, override and other object. Opening a file an earlier release wrote
+  moves each workspace into these tables in one transaction, and keeps the
+  old table, unchanged, as `chap_workspaces_v1`. A view named
+  `chap_workspaces` takes the old table's place, so a script that read the
+  old table reads the current state, with each collection keyed by id. An
+  earlier release then refuses to open the file, with the error "views may
+  not be indexed", since it could not write to it.
+- **A second writer is refused.** Each write names the number of audit
+  entries the coordinator expects the store to hold. `SqliteStore` and
+  `MemoryStore` refuse a write that does not match with a
+  `StoreConflictError`, and write nothing. A second coordinator writing the
+  same workspace is reported, and the entries already stored are kept.
+  Before, a stale coordinator's write replaced the store's copy, and the
+  entries the other had written were lost without a word. SPECIFICATION.md
+  section 10.3 describes both.
+- **A failed write is reported.** Without `onStoreError` in TypeScript, or
+  `on_store_error` in Python, which is new, a failed write is printed to
+  stderr or logged as an error on the `chap_coordinator` logger. Before, it
+  was dropped without a word. The next write to the workspace carries what
+  the failed one did not.
+- **A workspace that cannot be restored is named.** A coordinator starting
+  on a store skips it with a warning and loads the others. Before, the
+  TypeScript coordinator stopped loading at that workspace, and the Python
+  coordinator skipped it, both without a word.
+- **`Store.apply`.** A store may implement `apply(change)`, which receives
+  what a call changed. The coordinator calls it where it exists, and calls
+  `save` with the whole workspace where it does not, so a store written for
+  an earlier release works as before, at the old cost. `StoreChange` and
+  `StoreConflictError` are exported.
+- **`load()` returns the snapshot shape.** `SqliteStore` and `MemoryStore`
+  return each workspace with every collection present, in the shape the
+  coordinator restores from. `MemoryStore` keeps a copy of what it is given,
+  as a database does.
+- **`create-chap-app`.** The generated `analytics.py` reads the new tables,
+  and a file from an earlier release.
+
 ## 0.3.1: create-chap-app, and a gate for every commit a coding agent makes
 
 The protocol packages move together to 0.3.1 and behave as in 0.3.0; the
