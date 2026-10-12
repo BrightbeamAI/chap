@@ -271,41 +271,73 @@ def from_json(path: str, *, workspace: str | None = None, redact: Redactor | Non
     )
 
 
+def _store_snapshot(con: sqlite3.Connection, workspace: str) -> dict:
+    """One workspace from the tables chap-coordinator 0.3.2 and later write.
+
+    The workspace's own fields, its log in seq order, and each collection as
+    objects keyed by id.
+    """
+    row = con.execute("SELECT data FROM chap_meta WHERE workspace = ?", (workspace,)).fetchone()
+    snap = json.loads(row[0])
+    for name in (*_KEYED_COLLECTIONS, "idempotency_keys"):
+        snap[name] = {}
+    snap["audit"] = [json.loads(d) for (d,) in con.execute(
+        "SELECT data FROM chap_entries WHERE workspace = ? ORDER BY seq", (workspace,))]
+    for collection, key, data in con.execute(
+            "SELECT collection, id, data FROM chap_objects WHERE workspace = ? ORDER BY rowid",
+            (workspace,)):
+        snap.setdefault(collection, {})[key] = json.loads(data)
+    return snap
+
+
 def from_sqlite(path: str, *, workspace: str | None = None, redact: Redactor | None = None) -> Chain:
     """
     Load from a SqliteStore file.
 
-    The richest source: the store holds the whole workspace snapshot, so
-    server-computed values are available alongside the envelopes. Opens the
+    The richest source: the store holds the whole workspace, so server-computed
+    values are available alongside the envelopes. Reads the tables
+    chap-coordinator 0.3.2 and later write, one row per audit entry and per
+    object, and the single snapshot table earlier releases wrote. Opens the
     file read-only, so it is safe against a database a coordinator is using.
     """
     uri = f"file:{path}?mode=ro"
     con = sqlite3.connect(uri, uri=True)
     try:
-        rows = con.execute("SELECT id, data FROM chap_workspaces").fetchall()
-    except sqlite3.OperationalError as exc:  # pragma: no cover - depends on the file
-        raise ValueError(
-            f"{path} lacks the chap_workspaces table a CHAP SqliteStore has: {exc}"
-        ) from exc
+        # One read transaction, so a coordinator writing the file meanwhile
+        # cannot leave the log and the objects out of step.
+        con.execute("BEGIN")
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        if "chap_meta" in tables:
+            available = [r[0] for r in con.execute("SELECT workspace FROM chap_meta ORDER BY rowid")]
+            rows = None
+        elif "chap_workspaces" in tables:
+            rows = con.execute("SELECT id, data FROM chap_workspaces").fetchall()
+            available = [r[0] for r in rows]
+        else:
+            raise ValueError(
+                f"{path} lacks the tables a CHAP SqliteStore writes: chap_meta, or "
+                "chap_workspaces before chap-coordinator 0.3.2."
+            )
+
+        if not available:
+            raise ValueError(f"{path} holds an empty workspace table.")
+        if workspace is None:
+            if len(available) > 1:
+                raise ValueError(
+                    f"{path} holds {len(available)} workspaces; name one with "
+                    f"workspace=. Available: {', '.join(available)}"
+                )
+            workspace = available[0]
+        if workspace not in available:
+            raise ValueError(f"{path} holds {', '.join(available)}. Pass one of those as workspace= "
+                             f"({workspace!r} was given).")
+        if rows is None:
+            snap = _store_snapshot(con, workspace)
+        else:
+            snap = json.loads(next(data for ws_id, data in rows if ws_id == workspace))
     finally:
         con.close()
-
-    if not rows:
-        raise ValueError(f"{path} holds an empty workspace table.")
-    available = [r[0] for r in rows]
-    if workspace is None:
-        if len(rows) > 1:
-            raise ValueError(
-                f"{path} holds {len(rows)} workspaces; name one with "
-                f"workspace=. Available: {', '.join(available)}"
-            )
-        workspace = available[0]
-    for ws_id, data in rows:
-        if ws_id == workspace:
-            snap = json.loads(data)
-            return _chain(ws_id, snap.get("audit", []), snap, f"sqlite:{path}", redact)
-    raise ValueError(f"{path} holds {', '.join(available)}. Pass one of those as workspace= "
-                     f"({workspace!r} was given).")
+    return _chain(workspace, snap.get("audit", []), snap, f"sqlite:{path}", redact)
 
 
 def from_url(url: str, workspace: str, *, actor: str = "service:analytics",

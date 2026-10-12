@@ -4,6 +4,16 @@
 so a protocol release moves the coordinator packages together and leaves this
 one where it is until the tables or the analyses change.
 
+## 0.2.3
+
+Reads the store of `chap-coordinator` 0.3.2 and later.
+
+### Fixed
+
+- **The 0.3.2 store.** `from_sqlite` reads the tables `chap-coordinator`
+  0.3.2 and later write, one row for each audit entry and each object. A
+  file an earlier release wrote reads as before.
+
 ## 0.2.2
 
 Reads the store of the TypeScript coordinator, which the Node templates of
