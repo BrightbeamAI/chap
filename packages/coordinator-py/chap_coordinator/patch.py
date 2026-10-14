@@ -129,6 +129,29 @@ def _get(doc: Any, path: str) -> Any:
     return parent[key]
 
 
+def _json_equal(a: Any, b: Any) -> bool:
+    """JSON-type-aware deep equality for the RFC 6902 ``test`` operation.
+
+    Python's ``==`` treats ``True == 1`` and ``False == 0`` as equal because
+    ``bool`` is a subclass of ``int``.  JSON distinguishes them: ``true`` is a
+    boolean, ``1`` is a number.  The TypeScript reference's ``deepEqual``
+    handles this via ``typeof``; this function is the Python equivalent.
+    """
+    if isinstance(a, bool) != isinstance(b, bool):
+        return False
+    if a is None or b is None:
+        return a is b
+    if isinstance(a, dict):
+        if not isinstance(b, dict) or len(a) != len(b):
+            return False
+        return all(k in b and _json_equal(a[k], b[k]) for k in a)
+    if isinstance(a, list):
+        if not isinstance(b, list) or len(a) != len(b):
+            return False
+        return all(_json_equal(x, y) for x, y in zip(a, b))
+    return a == b
+
+
 def _apply_one(doc: Any, op: dict) -> Any:
     """Apply a single op in place, returning the document."""
     kind = op.get("op")
@@ -212,7 +235,7 @@ def _apply_one(doc: Any, op: dict) -> Any:
         if "value" not in op:
             raise PatchError("'test' requires 'value'")
         actual = _get(doc, path)
-        if actual != op["value"]:
+        if not _json_equal(actual, op["value"]):
             raise PatchError(f"'test' failed at {path}")
         return doc
 
