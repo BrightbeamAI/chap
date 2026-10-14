@@ -124,20 +124,20 @@ no human input) is visible on an `audit.read` filtered by task:
 }
 ```
 
-The asker proceeds with the default. A lapsed whisper is itself
-audit data: "no answer was recorded before the deadline, and this
-default was applied" is now queryable by task.
+The asker proceeds with the default. The lapse is recorded against the
+whisper's task, so an `audit.read` filtered by task returns the question
+and its lapse together.
 
-**What a lapse does and does not show.** The lapse record shows who
-asked whom, when, the deadline, that no `whisper.answer` was recorded
-before the lapse check ran, and which default was applied. It does not
-show that the addressed humans were notified, that they saw the
-question, or that they chose not to answer. CHAP leaves delivery to the
-deployment and no reference Coordinator implements a delivery layer, so
-a person who was never told and a person who saw the question and let
-it pass produce the same record. Read a lapse as "no answer in time",
-not as a decision by a person. A deployment that needs to tell the two
-apart has to record delivery itself.
+**What a lapse does and does not show.** The `whisper.ask` entry records
+who asked whom, when, and the deadline. The lapse notification records
+that no `whisper.answer` arrived before the lapse check ran, and the
+default applied. Neither records whether the participants asked were
+notified, saw the question or chose not to answer. Delivery is left to
+the deployment, and neither reference implementation provides it
+([SPECIFICATION.md §15.1](../SPECIFICATION.md#151-mandatory-protections),
+item 10). A person who was never told and a person who saw the question
+and let it pass therefore leave the same record. A deployment that needs
+to tell them apart has to record delivery itself.
 
 ---
 
