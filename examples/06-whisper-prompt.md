@@ -65,9 +65,11 @@ options.
 }
 ```
 
-The Coordinator routes this with the **`whisper` channel**: typically
-an interrupt-style notification in the human's client, distinct from
-normal review queues. The deadline starts ticking.
+The Coordinator records the whisper, and its 60-second deadline runs
+from this ask. Getting the question in front of Alice, for example as a
+notification in her client, is up to the deployment: a Coordinator has
+no delivery layer of its own (see
+[SPECIFICATION.md §15.1](../SPECIFICATION.md#151-mandatory-protections)).
 
 ---
 
@@ -102,8 +104,8 @@ whisper and the answer are recorded in the chain.
 
 ## 6.4 What if no one answers?
 
-Whispers are deadline-bound. If Alice had been away from her desk, at
-T+60s the Coordinator would emit:
+Whispers are deadline-bound. If no answer is recorded within 60
+seconds, the first lapse check after the deadline records:
 
 ```json
 {
@@ -125,9 +127,12 @@ T+60s the Coordinator would emit:
 }
 ```
 
-The agent proceeds with the default. The lapse is recorded as a
-first-class evidence entry, so the auditor can see exactly when a
-human declined to be reachable for a given decision.
+The agent proceeds with the default. The lapse is an entry on the
+chain, so an auditor can see that no answer came in time and which
+default was applied. It does not say why: a person
+who saw the question and let it lapse and a person who was never
+notified leave the same record, because delivery is left to the
+deployment (see [`profiles/whisper.md`](../profiles/whisper.md) §4).
 
 ---
 
@@ -157,9 +162,9 @@ task's `complete`.
   responsiveness.
 - **Whisper analytics.** "What fraction of cancellations involve a
   whisper?" is a single audit query.
-- **Visible accountability for non-response.** A lapsed whisper is
-  recorded with the timestamp and the default applied; nothing
-  silently disappears.
+- **Visible lapses.** A lapsed whisper is recorded with its time and
+  the default applied, so an unanswered question stays on the record.
+  The record shows only that no answer arrived in time.
 
 Move on to [`07-handoff-shift-change.md`](./07-handoff-shift-change.md)
 for transferring an in-progress task between humans.
