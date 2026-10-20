@@ -20,7 +20,7 @@ inputs:
   node-version:
     description: "Node version to use."
     required: false
-    default: '20'
+    default: '24'
 
 outputs:
   passed:
@@ -34,12 +34,12 @@ runs:
   using: 'composite'
   steps:
     - name: Set up Node
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: ${{ inputs.node-version }}
 
     - name: Check out CHAP conformance harness
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         repository: BrightbeamAI/chap
         ref: ${{ inputs.ref }}

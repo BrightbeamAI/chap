@@ -2,7 +2,8 @@
 
 Reusable GitHub Action that runs the CHAP conformance harness against
 your CHAP coordinator endpoint and fails the job if any vector does
-not match. The "credibility currency" for new implementations.
+not match. A new implementation can run it in its own CI and link the
+result from its entry in IMPLEMENTATIONS.md.
 
 ## Usage
 
@@ -16,7 +17,7 @@ jobs:
   conformance:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Start your CHAP coordinator however you usually do.
       - run: npm install && npm start &
@@ -41,7 +42,7 @@ jobs:
 | `url`          | yes      | (required)   | JSON-RPC endpoint of your coordinator.                                                       |
 | `ref`          | no       | `v0.3.2`     | Tag or branch of the CHAP repository to source the harness from: the release of this action. |
 | `core-only`    | no       | `false`      | `true` runs the Core vectors alone, for a coordinator without `review/1.0`.                  |
-| `node-version` | no       | `20`         | Node version for the harness.                                                                |
+| `node-version` | no       | `24`         | Node version for the harness.                                                                |
 
 ## Outputs
 
