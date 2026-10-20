@@ -4,6 +4,22 @@
 so a protocol release moves the coordinator packages together and leaves this
 one where it is until the tables or the analyses change.
 
+## 0.2.4
+
+### Fixed
+
+- **A patch `test` that compares a boolean with a number.** `chap-analytics`
+  applies each override's patch to rebuild the corrected artefact, and the
+  patch's `test` operation counted `true` as equal to `1` and `false` as
+  equal to `0`, as Python does. It now tells a boolean from a number, as
+  RFC 6902 and both coordinators do.
+- **What a lapse rate says.** The whispers chart and brief read a high lapse
+  rate as a reviewer who is away from the desk. A lapse records only that
+  no answer arrived before the lapse check ran. The chart now points at
+  questions the task input should have answered and at questions that reach
+  no one in time, and the brief suggests checking that the questions reach
+  the people asked.
+
 ## 0.2.3
 
 Reads the store of `chap-coordinator` 0.3.2 and later.
