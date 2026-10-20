@@ -34,8 +34,8 @@ keywords:
 license:
   - Apache-2.0
   - CC-BY-4.0
-version: 0.3.2
-date-released: '2026-10-08'
+version: 0.3.3
+date-released: '2026-10-20'
 preferred-citation:
   type: report
   title: >-

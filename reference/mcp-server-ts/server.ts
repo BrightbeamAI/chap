@@ -44,7 +44,7 @@ const coord = new Coordinator({
 
 const server = makeChapMcpServer(coord, {
   name:    "chap",
-  version: "0.3.2",
+  version: "0.3.3",
 });
 
 // Log to stderr only; stdout is reserved for the MCP protocol stream.

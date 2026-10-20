@@ -21,8 +21,8 @@ for both unless it says otherwise. A differential fuzzer in CI sends both the
 same generated calls and fails the build if their answers or their chain heads
 differ. It does not yet send signed calls, modes or calls to the SCITT profile.
 
-The latest release is 0.3.0, and this document marks each behaviour that is
-new in it with **(0.3.0)**. Where the specification describes something
+This document describes the 0.3 releases, and marks each behaviour that is
+new in 0.3.0 with **(0.3.0)**. Where the specification describes something
 neither coordinator builds, this document says so. [ROADMAP.md](./ROADMAP.md) names the milestone
 that closes each gap.
 
@@ -580,7 +580,7 @@ advisory within 90 days where feasible.
 | Version | Security fixes |
 |---|---|
 | main | Unreleased. Fixes land here first. |
-| 0.3.0 | Yes. |
+| 0.3, at its latest patch release | Yes. |
 | 0.2.13 and earlier | No. Upgrade to the latest release. |
 
 Fixes land on main, and on the latest release line as a patch release, for

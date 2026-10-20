@@ -21,6 +21,50 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
 
 ---
 
+## 0.3.3: a patch `test` that tells `true` from `1`
+
+The protocol packages move together to 0.3.3. The Python coordinator now
+tells a JSON boolean from a number when a patch tests a value, as the
+TypeScript coordinator does, and the TypeScript coordinator reports one more
+kind of failed write. `chap-analytics` 0.2.4, on its own track, tells a
+boolean from a number when it rebuilds a corrected artefact.
+
+### Fixed
+
+- **A patch `test` that compares a boolean with a number, in Python.**
+  Python counts `True` as equal to `1` and `False` as equal to `0`, so the
+  RFC 6902 `test` operation passed in the Python coordinator where the
+  TypeScript coordinator failed it. A `decide.override` carrying such a test
+  completed in Python and was refused with `-32012` in TypeScript. The
+  Python coordinator now refuses it too, and the shared JSON Patch vectors
+  hold both coordinators to the rule.
+- **A workspace that cannot be serialised, with a store that has only
+  `save`.** The TypeScript coordinator builds a snapshot of the workspace
+  for such a store, and when building it failed, skipped the save without a
+  word. It now reports the failure to `onStoreError`, or prints it to
+  stderr, as it does any other failed write. The next save carries the
+  whole workspace. The Python coordinator already reported it.
+
+### Changed
+
+- **The conformance Action runs on Node 24 by default.** Its `node-version`
+  input defaulted to 20, which reached its end of life in April 2026.
+
+### Documentation
+
+- **What a lapsed whisper shows.** `profiles/whisper.md` section 4 says which
+  entry records what. The `whisper.ask` entry records who asked whom, when,
+  and the deadline. The lapse records that no answer arrived before the
+  lapse check ran, and the default applied. Neither shows whether the
+  people asked were notified, since delivery is left to the deployment.
+  Example 06 no longer says the Coordinator routes the question.
+- **A review's `deadline`.** `profiles/review.md` says the deadline is
+  recorded and has no effect in this version of the profile. `-32013` stays
+  reserved for a lapsed review.
+- **Failed writes in ROADMAP.md.** The gap on calls answered before they are
+  stored now says that both coordinators report a failed write, as they have
+  since 0.3.2.
+
 ## 0.3.2: a store that writes each call once
 
 The protocol packages move together to 0.3.2. Each call now writes what it

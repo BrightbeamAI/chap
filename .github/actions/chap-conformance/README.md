@@ -30,7 +30,7 @@ jobs:
           done
 
       # Run the harness against it.
-      - uses: BrightbeamAI/chap/.github/actions/chap-conformance@v0.3.2
+      - uses: BrightbeamAI/chap/.github/actions/chap-conformance@v0.3.3
         with:
           url: http://localhost:8080/chap
 ```
@@ -40,7 +40,7 @@ jobs:
 | Input          | Required | Default      | Description                                                                                  |
 | -------------- | -------- | ------------ | -------------------------------------------------------------------------------------------- |
 | `url`          | yes      | (required)   | JSON-RPC endpoint of your coordinator.                                                       |
-| `ref`          | no       | `v0.3.2`     | Tag or branch of the CHAP repository to source the harness from: the release of this action. |
+| `ref`          | no       | `v0.3.3`     | Tag or branch of the CHAP repository to source the harness from: the release of this action. |
 | `core-only`    | no       | `false`      | `true` runs the Core vectors alone, for a coordinator without `review/1.0`.                  |
 | `node-version` | no       | `24`         | Node version for the harness.                                                                |
 
