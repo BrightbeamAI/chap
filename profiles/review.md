@@ -78,6 +78,11 @@ or step around a pause.
 }
 ```
 
+`deadline` is recorded with the request. This version of the profile
+gives it no effect: when it passes, the review stays open, and a decision
+that arrives later is accepted like any other. `-32013` is reserved for a
+lapsed review (§5).
+
 Supported `rule` values: `any_one_approves` (the default), `all_approve`
 and `quorum:<n>`, where `n` is a positive integer. Under `all_approve`
 every named reviewer must approve; a review addressed only to

@@ -1,10 +1,9 @@
 # Example 06: Whisper prompt
 
-**Scenario.** Mid-task, an agent hits an ambiguity it cannot resolve
-on its own, a customer reply that could mean two different things.
-Rather than guess or abstain, it sends a *whisper*: a quick,
-deadline-bound, interrupt-style question to a nominated human. The
-human answers in seconds. The agent finishes the task.
+**Scenario.** Mid-task, an agent meets an ambiguity it cannot resolve
+on its own: a customer message that could mean two different things.
+It sends a *whisper*, a short question with a deadline, to a nominated
+human. The human answers in seconds, and the agent finishes the task.
 
 This example shows:
 
@@ -12,9 +11,9 @@ This example shows:
 - `whisper.answer` from the human.
 - What happens when no one answers in time.
 
-Whispers are intentionally lightweight. They are not reviews. They
-exist for "I need a one-bit answer, fast" situations that don't justify
-the full review machinery.
+A whisper asks one short question, usually with a fixed set of
+answers, for a decision the agent needs within seconds. A decision on finished work,
+with an artefact to approve or edit, is a review (see 6.5).
 
 ---
 
@@ -32,8 +31,9 @@ options:
 2. Reply asking for confirmation about both.
 3. Send a whisper to the on-duty human.
 
-The agent picks (3), the whisper costs little and beats both other
-options.
+The agent picks (3). Option 1 may leave an order the customer wanted
+cancelled, option 2 adds a round trip with the customer, and a whisper
+costs the on-duty human a few seconds.
 
 ---
 
@@ -146,25 +146,27 @@ deployment (see [`profiles/whisper.md`](../profiles/whisper.md) §4).
 | The agent will continue working after.      | The task is essentially done.               |
 | No artefact is needed.                      | An artefact is the unit of approval.        |
 
-Whispers compose with reviews. An agent can whisper to disambiguate
-early, complete the task, and then have the result go through a normal
-review. The whisper appears in the audit chain immediately before the
-task's `complete`.
+Whispers and reviews work together. An agent can whisper to settle an
+ambiguity early, complete the task, and send the result to a review.
+The whisper and its answer appear in the audit chain before the
+`task.complete` entry.
 
 ---
 
 ## What this gives you
 
-- **A bounded-latency interrupt channel** that is part of the protocol,
-  not a side-channel.
-- **Defaults that fail safely.** Every whisper carries an explicit
-  fallback so the agent never blocks indefinitely on human
-  responsiveness.
-- **Whisper analytics.** "What fraction of cancellations involve a
-  whisper?" is a single audit query.
-- **Visible lapses.** A lapsed whisper is recorded with its time and
-  the default applied, so an unanswered question stays on the record.
-  The record shows only that no answer arrived in time.
+- **The question and its outcome on the record.** The ask, and then
+  the answer or the lapse with the default applied, are entries in the
+  audit log.
+- **A default for every whisper.** `default_if_lapsed` names the answer
+  that applies when a lapse check finds the deadline passed. The
+  deployment schedules that check, so it sets how long the agent can
+  wait.
+- **Whispers you can query.** "What fraction of cancellations involve a
+  whisper?" can be answered from the audit log by matching each
+  `whisper.ask` to its task.
+- **What a lapse shows.** It records that no answer arrived before the
+  lapse check ran, and gives no reason.
 
 Move on to [`07-handoff-shift-change.md`](./07-handoff-shift-change.md)
 for transferring an in-progress task between humans.

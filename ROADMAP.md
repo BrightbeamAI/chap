@@ -114,7 +114,7 @@ where it starts and where it closes.
 | Two lists of Core methods | core/SPEC.md and the catalogue list different sets of methods as Core. | 0.5 |
 | No maturity labels | Every profile name ends in `/1.0`, such as `review/1.0`, and none says how stable it is. | 0.5 |
 | Safe retries cover one method | `task.create` is the one method that takes an idempotency key. A client that retries another call after a timeout cannot tell whether the first attempt took effect. | 0.5 |
-| A call can be answered and never stored | Both coordinators answer a call whether or not its write to storage succeeds. The TypeScript coordinator can report a failed write to the application that hosts it, and the Python coordinator ignores it. | 0.5 |
+| A call can be answered and never stored | Both coordinators answer a call whether or not its write to storage succeeds. Each reports a failed write to the application that hosts it, or logs it when the application sets no handler, and the next write to that workspace carries what the failed one missed. A call can still be lost if the process stops while its write is in flight, or after the write fails and before a later write to that workspace succeeds. | 0.5 |
 | The A2A adapter speaks A2A 0.3 | The TypeScript A2A adapter implements A2A 0.3, and A2A has since reached 1.0. | 0.5 |
 | No written patent commitment | GOVERNANCE.md §5.4 states that CHAP should be implementable royalty-free. The formal patent policy it refers to has yet to be written. | 0.5 |
 | Specified methods still unbuilt | Some methods that the rest of the specification relies on, such as closing a workspace, exporting a log and redacting an entry, have no implementation yet. | Decided in 0.5, closed in 0.6 |
