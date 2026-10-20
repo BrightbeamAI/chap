@@ -551,7 +551,9 @@ export class Coordinator {
     let record: WorkspaceRecord;
     try {
       record = { id: ws.id, data: this.snapshotOf(ws), version: next, updated_at: this.now() };
-    } catch {
+    } catch (err) {
+      // Nothing was written. The next save builds the whole workspace again.
+      this.reportStoreError(err, { id: ws.id, version: next });
       return;
     }
 

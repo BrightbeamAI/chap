@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Coordinator } from "../src/coordinator.ts";
-import { MemoryStore, StoreConflictError, type StoreChange } from "../src/storage/store.ts";
+import { MemoryStore, StoreConflictError, type Store, type StoreChange, type WorkspaceRecord } from "../src/storage/store.ts";
 
 const PROFILES = ["core/1.0", "review/1.0", "control/1.0", "handoff/1.0",
   "whisper/1.0", "deliberation/1.0", "routing/1.0"];
@@ -243,6 +243,28 @@ describe("failed writes", () => {
     }
     assert.equal(lines.length, 1);
     assert.match(lines[0], /workspace w .*disk full/);
+  });
+
+  test("a store with only save is told when the workspace cannot be serialised", () => {
+    const saved: WorkspaceRecord[] = [];
+    const store: Store = { load: () => [], save: (r) => { saved.push(r); }, delete: () => {} };
+    const seen: Array<{ id: string; version: number }> = [];
+    const c = new Coordinator({ ...OPTIONS, store, onStoreError: (_e, r) => { seen.push(r); } });
+    const send = driver(c);
+    ok(send("workspace.create", "human:a"));
+    const internals = c as unknown as { snapshotOf: (ws: unknown) => unknown };
+    internals.snapshotOf = () => { throw new Error("cannot serialise"); };
+    try {
+      ok(send("participant.join", "human:a", { type: "human" }));
+    } finally {
+      delete (internals as { snapshotOf?: unknown }).snapshotOf;
+    }
+    assert.ok(seen.length > 0);
+    assert.ok(seen.every(r => r.id === "w"));
+    ok(send("participant.join", "agent:b", { type: "agent" }));
+    const last = saved.at(-1)!;
+    const restored = new Coordinator({ ...OPTIONS, store: { load: () => [last], save: () => {}, delete: () => {} } });
+    assert.deepEqual(plain(restored), plain(c));
   });
 });
 
