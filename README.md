@@ -29,6 +29,7 @@
   <a href="./IMPLEMENTATIONS.md">Implementations</a> ·
   <a href="https://github.com/BrightbeamAI/chap/wiki">Wiki</a> ·
   <a href="https://github.com/BrightbeamAI/chap/discussions">Discussions</a> ·
+  <a href="https://brightbeam.works/chap/">Website</a> ·
   <a href="https://arxiv.org/abs/2606.09751">Paper</a>
 </p>
 
