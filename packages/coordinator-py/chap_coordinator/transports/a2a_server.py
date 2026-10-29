@@ -130,7 +130,10 @@ def make_chap_agent_card(
         supported_interfaces=[
             AgentInterface(
                 url=base_url,
-                protocol_binding="jsonrpc",
+                # The value A2A defines, which a2a-sdk's ClientFactory matches
+                # exactly. With "jsonrpc" every SDK client given the card
+                # found no compatible transport.
+                protocol_binding="JSONRPC",
                 protocol_version="1.0",
             ),
         ],
