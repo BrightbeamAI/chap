@@ -21,6 +21,104 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
 
 ---
 
+## 0.3.4: review rounds, patch size and the MCP gate
+
+The protocol packages move together to 0.3.4. Four of the fixes close ways a
+member could put a decision on the record that nobody made, take over another
+member's object, or exhaust a coordinator; upgrade every coordinator, and
+every generated project that serves `/mcp`. `chap-analytics` 0.2.5,
+on its own track, reads a revised artefact as a new review pass, and applies
+the coordinators' patch limits with a size limit of 64 MiB.
+
+These fixes change what the review, whisper, deliberation and handoff
+profiles require. They are security fixes, so they ship as a patch release
+on the supported 0.3 line, as SECURITY.md sets out.
+
+### Security
+
+- **A revised artefact starts a new review round.** A task under review can
+  go back to `in_progress`, through `task.update` or a `decide.reject` with
+  `request_revision`. When it was completed again with a new artefact, the
+  review kept its earlier decisions, so under `all_approve` or `quorum:<n>`
+  an approval of the first artefact counted towards the rule on the second,
+  and the task could complete with an artefact one of its approvers never
+  saw. The completion now opens a new round of the same review: the
+  reviewers and the rule stay, and the decisions start empty. The earlier
+  round's decisions stay on the chain. The completer, the new artefact's
+  author, is left out of the round's named reviewers, and a completion that
+  would leave none is refused with `-32011`. A copy of a signed decision
+  sent again is evaluated again, as any accepted call is; one that carries
+  `approved_artefact_digest` is refused against any other artefact, so a
+  client that needs its decision tied to one artefact sends the digest. A
+  task completed again before the upgrade keeps the decisions it pooled
+  until it is next completed.
+- **A patch cannot grow an artefact without limit.** The patch engine
+  limited operations and values, and nothing limited size or depth. Each
+  `copy` of the root doubles the document, long strings included, so a
+  reviewer could send a `decide.override` that grew a 64 KiB artefact to
+  about 2 GiB. A patch that puts one value inside another could nest the
+  artefact without limit: a few hundred levels made the Python coordinator
+  answer with an internal error, and a few thousand left the TypeScript
+  coordinator unable to save the workspace or send its reply. A patch is now
+  refused with `-32012` when, after any of its operations, the artefact
+  holds more string and key text than `max_envelope_bytes` allows (1 MiB by
+  default, counted in UTF-8 bytes) or nests deeper than 64 levels, the limit
+  a request has. It is also refused when its copies, and its moves to a
+  deeper place or onto the whole artefact, carry more than three times the
+  value and size limits between them, which bounds the work one override
+  can ask of a coordinator. `applyJsonPatch` and `apply_json_patch` take the
+  size limit as an optional argument, 1 MiB when it is left out.
+- **The MCP gate's connection acts only as the assistant.** The `mcp-gate`
+  template served every tool on `/mcp`, and each call named its own `from`,
+  so the assistant could approve its own work in the human's name. The
+  templates' `/mcp` now makes every call as the agent, and offers only the
+  tools in `AGENT_MCP_TOOLS`: those the agent's own work needs, and the
+  decision tools, which the coordinator refuses and records when the agent
+  calls them on its own work. Every other tool is refused. This holds
+  wherever `/mcp` is on: the `mcp-gate` and `code-gate` templates, and the
+  production template with `CHAP_MCP` set, and the generated server refuses
+  to start when `mcp` is on and `agent.uri` is not set. `POST /chap` still
+  accepts a call in any member's name unless signatures are required, as the
+  template's README now says. A project generated before 0.3.4 keeps its
+  own `server.mjs`: copy the `/mcp` call and `AGENT_MCP_TOOLS` from the
+  template, and move its packages to 0.3.4.
+- **A supplied id cannot replace an existing whisper, deliberation or
+  handoff.** `whisper.ask`, `deliberate.open` and `handoff.propose` stored
+  the new object under a supplied id whatever it held, so a member could
+  open a closed deliberation again with its votes and outcome erased, reset
+  an answered whisper, or replace another member's pending handoff. An id
+  already in use, one that is not a string, or `__proto__`, `constructor`
+  or `prototype` is refused with `-32602`, a retry of the same call
+  included. The TypeScript coordinator lost an object stored under
+  `__proto__` when it saved the workspace.
+
+### Added
+
+- **`participant` on the MCP servers.** `makeChapMcpServer` and
+  `make_chap_mcp_server` take a `participant`: every call is made as that
+  participant, and a call that names another `from` is refused.
+- **A skill filter on the A2A executors.** `ChapAgentExecutor` takes
+  `skillFilter`, and the Python executor and `dispatch_a2a_message` take
+  `skill_filter`. Pass the Agent Card's filter: a skill it excludes is
+  refused with `-32601`.
+
+### Fixed
+
+- **The patch an override record keeps.** When one operation of a
+  `decide.override` changed a value an earlier operation had added, the
+  patch kept in the override record changed with it, and no longer matched
+  the one sent and recorded on the chain. The patch engine now puts in
+  copies of the values it is given.
+- **The MCP tool filter refuses what it excludes.** Both MCP servers left an
+  excluded tool out of `tools/list` and still ran it when it was called by
+  name.
+- **The MCP package under zod 3.** The package accepts zod `^3.25 || ^4.0`
+  and failed to import under zod 3, with "z.object(...).loose is not a
+  function".
+- **The Python A2A card's binding.** The card named its interface's binding
+  `jsonrpc`, and a2a-sdk clients, which look for the A2A value `JSONRPC`,
+  found no compatible transport.
+
 ## 0.3.3: a patch `test` that tells `true` from `1`
 
 The protocol packages move together to 0.3.3. The Python coordinator now

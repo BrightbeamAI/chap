@@ -16,10 +16,10 @@ is fine), and writes beside this file, under analytics/:
                   and the briefs' headlines
 
 The server serves them under /analytics/, and the desk's Insights view
-links them. Needs Python 3.10 or later and chap-analytics 0.2.2 or later,
+links them. Needs Python 3.10 or later and chap-analytics 0.2.5 or later,
 which reads the stores of both coordinators:
 
-    pip install "chap-analytics>=0.2.2"
+    pip install "chap-analytics>=0.2.5"
 """
 from __future__ import annotations
 
@@ -45,11 +45,11 @@ try:
     from chap_analytics import briefs, export, frames, from_json, report
 except ModuleNotFoundError as exc:  # pragma: no cover - import guard
     if exc.name and exc.name.split(".")[0] in ("chap_analytics", "pandas", "numpy"):
-        raise SystemExit('chap-analytics is not installed. Run: pip install "chap-analytics>=0.2.2"') from exc
+        raise SystemExit('chap-analytics is not installed. Run: pip install "chap-analytics>=0.2.5"') from exc
     raise
 
-if tuple(int(p) for p in re.findall(r"\d+", chap_analytics.__version__)[:3]) < (0, 2, 2):
-    raise SystemExit(f'chap-analytics {chap_analytics.__version__} cannot read every store this project writes. Run: pip install --upgrade "chap-analytics>=0.2.2"')
+if tuple(int(p) for p in re.findall(r"\d+", chap_analytics.__version__)[:3]) < (0, 2, 5):
+    raise SystemExit(f'chap-analytics {chap_analytics.__version__} cannot read every store this project writes. Run: pip install --upgrade "chap-analytics>=0.2.5"')
 
 
 def load_config() -> dict:

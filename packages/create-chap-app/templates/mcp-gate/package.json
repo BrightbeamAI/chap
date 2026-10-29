@@ -14,8 +14,8 @@
     "analytics": "python3 analytics.py"
   },
   "dependencies": {
-    "@brightbeamai/chap-coordinator": "^0.3.3",
-    "@brightbeamai/chap-coordinator-mcp": "^0.3.3",
+    "@brightbeamai/chap-coordinator": "^0.3.4",
+    "@brightbeamai/chap-coordinator-mcp": "^0.3.4",
     "@modelcontextprotocol/sdk": "^1.30.0"
   }
 }
