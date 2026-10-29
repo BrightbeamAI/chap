@@ -4,6 +4,39 @@
 so a protocol release moves the coordinator packages together and leaves this
 one where it is until the tables or the analyses change.
 
+## 0.2.5
+
+Reads the review rounds of `chap-coordinator` 0.3.4.
+
+### Changed
+
+- **A revised artefact is a new review pass.** A task that requires review
+  and is completed again after a revision now opens a new pass of the same
+  review, as `chap-coordinator` 0.3.4 does: the reviewers and the rule stay,
+  the completer leaves the reviewers, and the decisions start empty. Before,
+  the pass carried on with the decisions on the earlier artefact.
+  `n_reviews` and `review_index` count the new pass, in a chain any
+  coordinator wrote. In a chain written before 0.3.4, a task completed by
+  approvals of an earlier artefact now reads as open from the envelopes and
+  as completed bypassing review from state, which is what its chain shows.
+
+### Fixed
+
+- **A patch that grows the document past a size or depth limit.**
+  `chap-analytics` applies each override's patch to rebuild the corrected
+  artefact. Its copy of the patch engine limited operations and values, and
+  nothing limited size or depth, so a few `copy` operations of the root
+  could grow an artefact to gigabytes, and a patch that puts one value
+  inside another could nest it deeper than Python can follow. It now
+  refuses a patch when, after any of its operations, the artefact holds
+  more than 64 MiB of string and key text, counted in UTF-8 bytes, or nests
+  deeper than 64 levels, or when its copies, and its moves to a deeper
+  place or onto the whole artefact, carry more than three times the value
+  and size limits between them. The artefact's `result` is then empty. A
+  coordinator refuses an override past its own `max_envelope_bytes`, 1 MiB
+  by default, so every override a 0.3.4 coordinator accepted is rebuilt
+  while that limit is at most 64 MiB.
+
 ## 0.2.4
 
 ### Fixed

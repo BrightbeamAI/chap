@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "chap-analytics"
-version         = "0.2.4"
+version         = "0.2.5"
 description     = "The record of a collaboration between people and agents, measured and drawn: a CHAP audit chain as documented tables, statistics with their intervals, graphs, charts, briefs and a self-contained interactive report"
 readme          = "README.md"
 requires-python = ">=3.10"
@@ -43,7 +43,7 @@ viz         = ["altair>=5", "vl-convert-python>=1.0"]
 graph       = ["networkx>=3"]
 # Regenerating examples/chap_analytics_walkthrough.ipynb with its outputs.
 notebook    = ["nbformat>=5", "nbclient>=0.9", "ipykernel>=6"]
-dev         = ["pytest>=8", "chap-coordinator>=0.3.0", "nbformat>=5", "altair>=5", "networkx>=3"]
+dev         = ["pytest>=8", "chap-coordinator>=0.3.4", "nbformat>=5", "altair>=5", "networkx>=3"]
 
 [project.urls]
 Homepage      = "https://github.com/BrightbeamAI/chap/tree/main/packages/chap-analytics"
