@@ -1,11 +1,13 @@
 # About this repository
 
-This document is the reference companion to the [README](./README.md). README is where you decide whether CHAP is for you and ABOUT tells you what's in the repo, how the protocol relates to the rest of the agent stack, which standards it reuses, and how it evolves.
+This document is the reference companion to the [README](./README.md). The README is where you decide whether CHAP is for you, and it explains the concepts. ABOUT says what the override envelope's fields point at, what's in the repo, how the protocol relates to the rest of the agent stack, which standards it reuses, and how it evolves.
 
 ## Contents
 
 - [The shape of CHAP](#the-shape-of-chap)
+- [The override envelope](#the-override-envelope)
 - [Where CHAP sits in the stack](#where-chap-sits-in-the-stack)
+- [Reading the log back](#reading-the-log-back)
 - [Standards CHAP reuses](#standards-chap-reuses)
 - [What CHAP is not](#what-chap-is-not)
 - [Status](#status)
@@ -47,6 +49,15 @@ The common adoption path:
 
 Each profile is independent. You pay for what you use. The full profile catalogue is in [`profiles/PROFILES.md`](./profiles/PROFILES.md); a single combined reference for Core and every profile is in [`SPECIFICATION.md`](./SPECIFICATION.md).
 
+## The override envelope
+
+The override envelope, `decide.override`, records a reviewer's change to an agent's output: the change as an RFC 6902 JSON Patch, the reason for it, the tags, and who made it. The [README](./README.md#the-override-envelope) shows each field annotated. Two fields matter most for analysis:
+
+- **`intent_preserved`** tells a *refining* override, where the person kept the agent's decision and rewrote its wording, from a *substituting* one, where the person decided differently. Each points at a different fix: many refining overrides around one policy clause point at the agent's retrieval; many substituting ones point at an ambiguous policy, or at the agent's task context.
+- **`tags`** are the small, controlled vocabulary your team agrees on. They are what you will count by three months from now, to answer *which prompts need work?* and *which paths does the bot keep getting wrong?*
+
+The full definition is in [`profiles/review.md`](./profiles/review.md) §3.3.
+
 ## Where CHAP sits in the stack
 
 CHAP is the third pillar of the open agent-protocol stack. It composes with MCP and A2A; it does not replace either.
@@ -64,6 +75,10 @@ CHAP is the third pillar of the open agent-protocol stack. It composes with MCP 
 **CHAP-as-MCP-server and CHAP-as-A2A-agent.** A Coordinator can present itself as an MCP server or an A2A agent, with every CHAP method exposed as a tool or skill. Claude Desktop, Cursor, Claude Code, or any A2A-aware orchestrator can then drive a workspace directly. The transport adapter packages are [`packages/coordinator-mcp/`](./packages/coordinator-mcp/) and [`packages/coordinator-a2a/`](./packages/coordinator-a2a/); the runnable reference servers are under [`reference/mcp-server-{ts,py}/`](./reference/) and [`reference/a2a-server-{ts,py}/`](./reference/). Library helpers for the inward citation pattern ship with the Coordinator packages themselves, as `wrapMcpToolCall` / `wrapA2aMessageExchange` in TypeScript and `wrap_mcp_tool_call` / `wrap_a2a_message_exchange` in `chap_coordinator.transports.wrap`. Five-minute walkthroughs: [`examples/drive-chap-from-claude-desktop.md`](./examples/drive-chap-from-claude-desktop.md) and [`examples/drive-chap-from-an-a2a-orchestrator.md`](./examples/drive-chap-from-an-a2a-orchestrator.md).
 
 **Framework bridges.** Five thin Python adapters connect a framework's own human-in-the-loop mechanism to CHAP's `review` and `decide` methods, so an approval, edit, or denial in the framework lands on the audit chain as `decide.approve`, `decide.override`, or `decide.reject`: [`chap-langgraph`](./packages/chap-langgraph/) for LangGraph, [`chap-pydantic-ai`](./packages/chap-pydantic-ai/) for Pydantic AI, [`chap-ag2`](./packages/chap-ag2/) for AG2 / AutoGen, [`chap-llama-index`](./packages/chap-llama-index/) for LlamaIndex Workflows, and [`chap-google-adk`](./packages/chap-google-adk/) for Google ADK. Each bridge carries its own examples and tests, and each framework is an optional dependency.
+
+## Reading the log back
+
+[`chap-analytics`](./packages/chap-analytics/) (`pip install chap-analytics`) loads the whole chain into documented pandas tables, from a SQLite file, a JSON export, a live coordinator or an `audit.read`: overrides, decisions, reviewers, whispers and handoffs. A [notebook](./packages/chap-analytics/examples/chap_analytics_walkthrough.ipynb) works through a week of review data, and [`ANALYTICS_ROADMAP.md`](./ANALYTICS_ROADMAP.md) describes the planned work. For a quick look, the repository also ships an override analyser in both languages, which groups a workspace's overrides by tag, intent and reviewer; [`docs/tour.md`](./docs/tour.md#3-two-months-in) shows its report.
 
 ## Standards CHAP reuses
 
@@ -133,7 +148,7 @@ The harness can write an [in-toto attestation](https://github.com/in-toto/attest
 | Looking for your use case                | [`IN_PRACTICE.md`](./IN_PRACTICE.md): twelve worked scenarios |
 | Starting a project on your own agent     | `npx create-chap-app` ([`packages/create-chap-app/`](./packages/create-chap-app/)): a desk, one profile setting, `diff-profiles`, and [`docs/profile-explorer.md`](./docs/profile-explorer.md) for what each profile changes |
 | Governing a coding agent's commits       | The code gate template: changes reviewed as diffs, commits signed and carrying their evidence, `verify.mjs` for CI, insights on what reviewers correct |
-| Seeing it run                            | [`START_HERE.md`](./START_HERE.md) (one command, a real decision) → [`demo/index.html`](./demo/index.html) (static, offline) → [`reference/playground/`](./reference/playground/) (TypeScript, two humans + local LLM) → [`reference/python/`](./reference/python/) (Python; every profile) |
+| Seeing it run                            | [`START_HERE.md`](./START_HERE.md) (one command, a real decision) → [`docs/tour.md`](./docs/tour.md) (the 90-second tour, with its code) → [`demo/index.html`](./demo/index.html) (static, offline) → [`reference/playground/`](./reference/playground/) (TypeScript, two humans + local LLM) → [`reference/python/`](./reference/python/) (Python; every profile) |
 | Implementing in TypeScript               | [`core/SPEC.md`](./core/SPEC.md) → [`packages/coordinator/`](./packages/coordinator/) → [`reference/core/`](./reference/core/) (minimal Core, weekend-buildable) or [`reference/core-plus-review/`](./reference/core-plus-review/) (Core + review) |
 | Implementing in Python                   | [`core/SPEC.md`](./core/SPEC.md) → [`packages/coordinator-py/`](./packages/coordinator-py/) → [`reference/python/`](./reference/python/) |
 | Adding a profile                         | [`profiles/PROFILES.md`](./profiles/PROFILES.md) → the specific profile spec |
@@ -252,7 +267,9 @@ chap/
 ├── demo/                                Static single-file HTML walkthrough.
 │   └── index.html
 │
-├── docs/                                Supporting assets for the docs themselves.
+├── docs/                                Supporting pages and assets for the docs.
+│   ├── tour.md                          The 90-second tour: the clip, and its code in TypeScript and Python.
+│   ├── profile-explorer.md              What each profile changes, run through the templates.
 │   ├── img/                             SVG and PNG diagrams used in README.
 │   └── casts/                           vhs tape scripts for demo GIFs.
 │

@@ -51,7 +51,7 @@ coord.dispatch({
 });
 ```
 
-Wire it into your PR script. When Cursor produces a review, record it as a task's output and open a review on it, as the README tour does:
+Wire it into your PR script. When Cursor produces a review, record it as a task's output and open a review on it, as the [90-second tour](./docs/tour.md) does:
 
 ```ts
 const created = coord.dispatch({

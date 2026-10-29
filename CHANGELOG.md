@@ -119,6 +119,14 @@ on the supported 0.3 line, as SECURITY.md sets out.
   `jsonrpc`, and a2a-sdk clients, which look for the A2A value `JSONRPC`,
   found no compatible transport.
 
+### Documentation
+
+- **A shorter README.** It keeps what CHAP is for, the concepts, the
+  install lines, the override envelope, the status and the links. The
+  90-second tour moved to docs/tour.md, with its code in TypeScript and
+  Python, and what the override envelope's fields point at and reading the
+  log back moved to ABOUT.md.
+
 ## 0.3.3: a patch `test` that tells `true` from `1`
 
 The protocol packages move together to 0.3.3. The Python coordinator now
