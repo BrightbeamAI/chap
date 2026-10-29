@@ -1577,6 +1577,25 @@ class Coordinator:
                         "(needs a human member other than its assignee and completer)")}
                 task.review = ReviewState(requested_at=now,
                                           requested_to=list(eligible))
+            else:
+                # The task held a review already: it went back to in_progress
+                # through task.update or a reject with request_revision, and
+                # this completion submits a new artefact. A decision counts
+                # only for the artefact it was made on, so the new round starts
+                # with no decisions; kept, an approval of the earlier artefact
+                # would count towards the rule on this one. The reviewers and
+                # the rule stay, so a revision cannot weaken the review. The
+                # completer is the new artefact's author, so it is left out of
+                # the reviewers, as it is when the first review opens; where
+                # nobody remains, the completion is refused.
+                author = p.get("from", "")
+                reviewers = [r for r in task.review.requested_to if r != author]
+                if not reviewers:
+                    return {"error": rpc_error(
+                        E.NOT_AUTHORISED,
+                        "Task requires review but has no reviewer other than its completer")}
+                task.review = dataclasses.replace(
+                    task.review, requested_at=now, requested_to=reviewers, decisions=[])
             task.pending_artefact = p.get("output")
             task.state = "review_requested"
             task.updated_at = now

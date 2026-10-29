@@ -146,7 +146,10 @@ def test_replies_hold_only_what_the_human_approved(desk, tmp_path):
     revised = wait_for(lambda: next((r for r in open_reviews(base, human.uri)
                                      if r["task_id"] == second["task_id"]
                                      and "mention the order number" in r["artefact"]["body"]), None))
-    assert revised["decisions"][-1]["kind"] == "reject"
+    # The new draft opens a new round with no decisions, so the rejection
+    # counts only for the draft it was made on; the task's log keeps it.
+    assert revised["decisions"] == []
+    assert fetch(f"{base}/api/tasks/{second['task_id']}")["decision_log"][-1]["kind"] == "reject"
     overridden = human.call("decide.override", task_id=second["task_id"], rationale="no promise of a date",
                             diff=[{"op": "replace", "path": "/body", "value": "Edited reply"}],
                             intent_preserved=True)

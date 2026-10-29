@@ -650,13 +650,17 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
                 t.confidence, t.confidence_reported = conf, True
             if t.review_required:
                 # review/1.0 S3.1: completing a task that requires review opens
-                # a review. The coordinator reuses an existing review rather
-                # than replacing it, so decisions already cast stay in force;
-                # review.request is what starts a fresh pass.
+                # a review. Completed again after a revision, it opens a new
+                # pass of the same review: the reviewers and the rule stay, and
+                # the decisions start empty, because a decision counts only for
+                # the artefact it was made on (chap-coordinator 0.3.4). The
+                # completer, the new artefact's author, is not a reviewer of it.
                 r = t.review
                 if r is None:
                     r = t.open_review(ts, _implicit_reviewers(ix, actor, t.assignee),
                                       "any_one_approves", None)
+                else:
+                    r = t.open_review(ts, [x for x in r.requested_to if x != actor], r.rule, None)
                 r.artefact = p.get("output")
                 t.state, t.settled_at = "review_requested", None
             else:

@@ -132,7 +132,10 @@ def test_only_an_approved_message_reaches_the_outbox(desk, tmp_path):
                              request_revision=True)
     assert rejected["state"] == "in_progress"
     revised = wait_for(lambda: review_of(base, approver.uri, ids[1], holding="name the new price"))
-    assert revised["decisions"][-1]["kind"] == "reject"
+    # The new draft opens a new round with no decisions, so the rejection
+    # counts only for the draft it was made on; the task's log keeps it.
+    assert revised["decisions"] == []
+    assert fetch(f"{base}/api/tasks/{second['task_id']}")["decision_log"][-1]["kind"] == "reject"
     overridden = approver.call("decide.override", task_id=second["task_id"], rationale="shorter",
                                diff=[{"op": "replace", "path": "/body", "value": "Edited body"}],
                                intent_preserved=True)

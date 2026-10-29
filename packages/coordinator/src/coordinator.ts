@@ -1652,6 +1652,23 @@ export class Coordinator {
             "Task requires review but has no eligible human reviewer (needs a human member other than its assignee and completer)") };
         }
         task.review = { requested_at: now, requested_to: eligible as ParticipantUri[], rule: "any_one_approves", decisions: [] };
+      } else {
+        // The task held a review already: it went back to in_progress through
+        // task.update or a reject with request_revision, and this completion
+        // submits a new artefact. A decision counts only for the artefact it
+        // was made on, so the new round starts with no decisions; kept, an
+        // approval of the earlier artefact would count towards the rule on
+        // this one. The reviewers and the rule stay, so a revision cannot
+        // weaken the review. The completer is the new artefact's author, so
+        // it is left out of the reviewers, as it is when the first review
+        // opens; where nobody remains, the completion is refused.
+        const author = p.from as string;
+        const reviewers = task.review.requested_to.filter((r) => r !== author);
+        if (reviewers.length === 0) {
+          return { error: rpcError(E.NOT_AUTHORISED,
+            "Task requires review but has no reviewer other than its completer") };
+        }
+        task.review = { ...task.review, requested_at: now, requested_to: reviewers, decisions: [] };
       }
       task.pending_artefact = p.output;
       task.state = "review_requested";

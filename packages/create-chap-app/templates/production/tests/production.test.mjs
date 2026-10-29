@@ -308,7 +308,11 @@ describe("the agent's loop", () => {
     const rejected = await lhuman.call("decide.reject", { task_id: second.task_id, comment: "add the price", request_revision: true });
     assert.equal(rejected.state, "in_progress");
     const revised = await until(() => reviewOf(second.task_id, "add the price"));
-    assert.equal(revised.decisions.at(-1).kind, "reject");
+    // The new draft opens a new round with no decisions, so the rejection
+    // counts only for the draft it was made on; the task's log keeps it.
+    assert.deepEqual(revised.decisions, []);
+    const history = await (await fetch(`${lbase}/api/tasks/${second.task_id}`)).json();
+    assert.equal(history.decision_log.at(-1).kind, "reject");
     const overridden = await lhuman.call("decide.override", { task_id: second.task_id, rationale: "shorter", diff: [{ op: "replace", path: "/body", value: "Edited body" }], intent_preserved: true });
     assert.equal(overridden.state, "completed");
 

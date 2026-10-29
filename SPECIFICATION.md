@@ -896,8 +896,12 @@ below and refuses others with `-32602`:
 
 Under every rule one `decide.reject` ends the review: `declined`, or
 `in_progress` with `request_revision`. One `decide.override` completes
-it. Weighted rules belong to `deliberate.open` (`deliberation/1.0`),
-which takes weights and vetoes as parameters.
+it. When a task that requires review is completed again after a
+revision, the review opens a new round with the same rule, the same named
+reviewers less the completer, and no decisions, so a decision made in an
+earlier round does not count towards the new artefact (review/1.0 §3.1).
+Weighted rules belong to `deliberate.open` (`deliberation/1.0`), which
+takes weights and vetoes as parameters.
 
 ### 8.4 Routing hints (optional)
 

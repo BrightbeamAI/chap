@@ -116,11 +116,12 @@ def test_a_decision_is_never_earlier_than_the_review_it_answers():
             f"{label}: decisions must be attributed to the pass they were cast in")
 
 
-def test_a_review_re_opened_by_completing_again_keeps_its_decisions():
-    # The other direction, and the coordinator does pool here: completing a
-    # task that requires review reuses the open review rather than replacing
-    # it, so the pass carries on with the rejection still in it. Splitting
-    # these into two passes would be as wrong as merging the ones above.
+def test_a_review_re_opened_by_completing_again_starts_a_new_pass():
+    # Completing a task that requires review again, after a revision, opens a
+    # new pass of the same review with no decisions in it, so the rejection
+    # stays with the first artefact. Before chap-coordinator 0.3.4 the
+    # coordinator carried the open review on, and an approval of the first
+    # artefact could count towards the rule on the second.
     c, ok = build()
     t = ok("task.create", {"kind": "k", "input": {}, "assignee": "agent:drafter",
                            "review_required": True})["task_id"]
@@ -131,13 +132,13 @@ def test_a_review_re_opened_by_completing_again_keeps_its_decisions():
 
     task = c.get_workspace("w").tasks[t]
     assert task.state == "completed"
-    assert [d["kind"] for d in task.review.decisions] == ["reject", "approve"]
+    assert [d["kind"] for d in task.review.decisions] == ["approve"]
     for label, f in zip(("envelopes", "state"), both(c)):
         row = f.tasks.set_index("task_id").loc[t]
         assert row["state"] == "completed", f"{label} read"
         assert row["outcome"] == "approved"
-        assert row["n_reviews"] == 1, "completing again reuses the open review"
-        assert f.decisions.sort_values("seq")["review_index"].tolist() == [0, 0]
+        assert row["n_reviews"] == 2, "completing again opens a new pass"
+        assert f.decisions.sort_values("seq")["review_index"].tolist() == [0, 1]
 
 
 # -------------------------------------------- an outcome the chain contradicts

@@ -146,6 +146,29 @@ constrains what a second `review.request` may do.
   amendment to a review opened under anything but
   `any_one_approves`.
 
+**A revised artefact starts a new round.** A task under review returns to
+`in_progress` through `task.update`, or through a `decide.reject` with
+`request_revision`. When `task.complete` then submits a new artefact on a
+task that requires review, the Coordinator opens a new round of the same
+review: the reviewers and the rule stay as they were, and the decisions
+start empty, so a decision made in an earlier round does not count towards
+the rule on the new artefact. The earlier round's decisions stay on the
+chain. The completer is the new artefact's author and is left out of the
+round's named reviewers; a completion that would leave none is refused with
+`-32011`. The round's `requested_at` is the time of the completion.
+
+Three things the round leaves as they were. A copy of a decision sent again
+is a new call, evaluated like any other ([SECURITY.md, Envelope id
+replay](../SECURITY.md#envelope-id-replay)), and counts in the round it
+arrives in; a decision that carries `approved_artefact_digest` (§3.2) is
+refused against any artefact other than the one it names, so a client that
+needs its decision tied to one artefact sends the digest. A broadcast entry
+among the reviewers still lets any member decide, the completer included.
+And `review.request` still adds reviewers to an open review, as described
+above, and opens a review with new reviewers and a new rule on a task back
+in progress, so a deployment that must keep a completer from choosing its
+own reviewers withholds `review.request` from it.
+
 **Completing round the review.** `task.update` reaches `completed` by
 another route and carries no output, so a task requiring review MUST NOT
 be completed through it. The Coordinator refuses with `-32602` and names
@@ -250,7 +273,8 @@ membership floor alone applies.
 
 If `request_revision` is true, the task transitions back to
 `in_progress` rather than `declined`, giving the assignee
-a chance to revise.
+a chance to revise. The revised artefact opens a new round of the review
+(§3.1).
 
 ### 3.3 `decide.override`: the differentiator
 
