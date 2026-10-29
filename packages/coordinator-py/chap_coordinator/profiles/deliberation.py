@@ -28,6 +28,9 @@ from typing import TYPE_CHECKING
 from ..jsonrpc import E, rpc_error
 from ..types import Deliberation
 
+# Names a supplied id cannot take, as in the TypeScript coordinator.
+_RESERVED_IDS = frozenset({"__proto__", "constructor", "prototype"})
+
 if TYPE_CHECKING:
     from ..coordinator import Coordinator
 
@@ -131,6 +134,18 @@ def register_deliberation(coord: "Coordinator") -> None:
         except ValueError as exc:
             return {"error": rpc_error(E.DELIB_UNKNOWN_RULE, str(exc))}
 
+        # A supplied id names a new deliberation. One already in use was stored
+        # over the existing object, which reopened, reset or replaced it.
+        supplied_id = p.get("deliberation_id")
+        if supplied_id is not None and supplied_id != "":
+            if not isinstance(supplied_id, str):
+                return {"error": rpc_error(E.PARAMS, "deliberation_id must be a string")}
+            # Refused as in the TypeScript coordinator, where __proto__ as an
+            # object key is dropped when the workspace is saved.
+            if supplied_id in _RESERVED_IDS:
+                return {"error": rpc_error(E.PARAMS, f'deliberation_id cannot be "{supplied_id}"')}
+            if supplied_id in ws.deliberations:
+                return {"error": rpc_error(E.PARAMS, f"deliberation_id already in use: {supplied_id}")}
         # Client-supplied id or generate
         did = p.get("deliberation_id") or coord.ids.deliberation_id()
 

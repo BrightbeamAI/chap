@@ -45,6 +45,10 @@ human goes offline.
 }
 ```
 
+`handoff_id` is optional. One already in use, one that is not a string, or
+`__proto__`, `constructor` or `prototype` is refused with `-32602`. Without
+it, the Coordinator generates one.
+
 Ownership transfer is **not** atomic on propose. The proposer
 remains the assignee until the recipient accepts.
 

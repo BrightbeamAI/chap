@@ -24,6 +24,9 @@ from typing import TYPE_CHECKING
 from ..jsonrpc import E, rpc_error
 from ..types import Handoff, HandoffTask, TaskHistoryEntry
 
+# Names a supplied id cannot take, as in the TypeScript coordinator.
+_RESERVED_IDS = frozenset({"__proto__", "constructor", "prototype"})
+
 if TYPE_CHECKING:
     from ..coordinator import Coordinator
 
@@ -71,6 +74,18 @@ def register_handoff(coord: "Coordinator") -> None:
                 blockers=list(t.get("blockers") or []),
             ))
 
+        # A supplied id names a new handoff. One already in use was stored
+        # over the existing object, which reopened, reset or replaced it.
+        supplied_id = p.get("handoff_id")
+        if supplied_id is not None and supplied_id != "":
+            if not isinstance(supplied_id, str):
+                return {"error": rpc_error(E.PARAMS, "handoff_id must be a string")}
+            # Refused as in the TypeScript coordinator, where __proto__ as an
+            # object key is dropped when the workspace is saved.
+            if supplied_id in _RESERVED_IDS:
+                return {"error": rpc_error(E.PARAMS, f'handoff_id cannot be "{supplied_id}"')}
+            if supplied_id in ws.handoffs:
+                return {"error": rpc_error(E.PARAMS, f"handoff_id already in use: {supplied_id}")}
         hid = p.get("handoff_id") or coord.ids.handoff_id()
         ho = Handoff(
             id=hid,

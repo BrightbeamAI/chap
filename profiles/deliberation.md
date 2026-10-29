@@ -56,6 +56,11 @@ Custom rules MAY be supported by an implementation; clients MUST handle
 }
 ```
 
+`deliberation_id` is optional. One already in use, one that is not a
+string, or `__proto__`, `constructor` or `prototype` is refused with
+`-32602`, so a closed deliberation cannot be opened again under its id.
+Without it, the Coordinator generates one.
+
 Weights come from the `weights` map set at `deliberate.open`, 1.0 for a
 voter it omits. Only the participants named in `to` may vote. The
 `deadline` is recorded and never enforced.

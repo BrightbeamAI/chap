@@ -20,6 +20,10 @@ import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
 import type { Deliberation } from "../types.js";
 
+// Names a supplied id cannot take: JavaScript gives them special meaning as
+// object keys, and the patch engine refuses them as path segments too.
+const RESERVED_IDS = new Set(["__proto__", "constructor", "prototype"]);
+
 function parseRule(rule: string): { kind: string; params: Record<string, number> } {
   if (rule.includes(":")) {
     const [kind, arg] = rule.split(":", 2);
@@ -117,6 +121,22 @@ export function registerDeliberation(coord: Coordinator): void {
     catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return { error: rpcError(E.DELIB_UNKNOWN_RULE, msg) };
+    }
+    // A supplied id names a new deliberation. One already in use was stored
+    // over the existing object, which reopened, reset or replaced it.
+    const suppliedDeliberationId = p.deliberation_id;
+    if (suppliedDeliberationId !== undefined && suppliedDeliberationId !== null && suppliedDeliberationId !== "") {
+      if (typeof suppliedDeliberationId !== "string") {
+        return { error: rpcError(E.PARAMS, "deliberation_id must be a string") };
+      }
+      // The id is a key in the stored state, and a JavaScript object given
+      // the key __proto__ drops it, so the object would be lost on a restart.
+      if (RESERVED_IDS.has(suppliedDeliberationId)) {
+        return { error: rpcError(E.PARAMS, `deliberation_id cannot be ${JSON.stringify(suppliedDeliberationId)}`) };
+      }
+      if (ws.deliberations.has(suppliedDeliberationId)) {
+        return { error: rpcError(E.PARAMS, `deliberation_id already in use: ${suppliedDeliberationId}`) };
+      }
     }
     const id = (p.deliberation_id as string) || coord.ids.deliberationId();
     const delib: Deliberation = {

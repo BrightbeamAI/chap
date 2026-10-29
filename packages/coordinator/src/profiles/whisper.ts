@@ -19,6 +19,10 @@ import { canonicalize } from "../canonical.js";
 import { E, rpcError } from "../jsonrpc.js";
 import type { WhisperPrompt, Envelope } from "../types.js";
 
+// Names a supplied id cannot take: JavaScript gives them special meaning as
+// object keys, and the patch engine refuses them as path segments too.
+const RESERVED_IDS = new Set(["__proto__", "constructor", "prototype"]);
+
 function parseIso(ts: string): number { return new Date(ts).getTime(); }
 
 /**
@@ -47,6 +51,22 @@ export function registerWhisper(coord: Coordinator): void {
     }
     const to = p.to;
     const askee: string[] = Array.isArray(to) ? (to as string[]) : [to as string];
+    // A supplied id names a new whisper. One already in use was stored
+    // over the existing object, which reopened, reset or replaced it.
+    const suppliedWhisperId = p.whisper_id;
+    if (suppliedWhisperId !== undefined && suppliedWhisperId !== null && suppliedWhisperId !== "") {
+      if (typeof suppliedWhisperId !== "string") {
+        return { error: rpcError(E.PARAMS, "whisper_id must be a string") };
+      }
+      // The id is a key in the stored state, and a JavaScript object given
+      // the key __proto__ drops it, so the object would be lost on a restart.
+      if (RESERVED_IDS.has(suppliedWhisperId)) {
+        return { error: rpcError(E.PARAMS, `whisper_id cannot be ${JSON.stringify(suppliedWhisperId)}`) };
+      }
+      if (ws.whispers.has(suppliedWhisperId)) {
+        return { error: rpcError(E.PARAMS, `whisper_id already in use: ${suppliedWhisperId}`) };
+      }
+    }
     const id = (p.whisper_id as string) || coord.ids.artefactId();
     const prompt: WhisperPrompt = {
       id,

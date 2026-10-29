@@ -22,6 +22,9 @@ from ..canonical import canonicalize
 from ..jsonrpc import E, rpc_error
 from ..types import WhisperPrompt
 
+# Names a supplied id cannot take, as in the TypeScript coordinator.
+_RESERVED_IDS = frozenset({"__proto__", "constructor", "prototype"})
+
 if TYPE_CHECKING:
     from ..coordinator import Coordinator
 
@@ -63,6 +66,18 @@ def register_whisper(coord: "Coordinator") -> None:
             return {"error": rpc_error(E.PARAMS, "options must be a list")}
 
         askee = p["to"] if isinstance(p["to"], list) else [p["to"]]
+        # A supplied id names a new whisper. One already in use was stored
+        # over the existing object, which reopened, reset or replaced it.
+        supplied_id = p.get("whisper_id")
+        if supplied_id is not None and supplied_id != "":
+            if not isinstance(supplied_id, str):
+                return {"error": rpc_error(E.PARAMS, "whisper_id must be a string")}
+            # Refused as in the TypeScript coordinator, where __proto__ as an
+            # object key is dropped when the workspace is saved.
+            if supplied_id in _RESERVED_IDS:
+                return {"error": rpc_error(E.PARAMS, f'whisper_id cannot be "{supplied_id}"')}
+            if supplied_id in ws.whispers:
+                return {"error": rpc_error(E.PARAMS, f"whisper_id already in use: {supplied_id}")}
         prompt_id = p.get("whisper_id") or coord.ids.artefact_id()
         prompt = WhisperPrompt(
             id=prompt_id,

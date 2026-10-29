@@ -51,6 +51,7 @@ typed answer is expected).
 | `deadline_ms`       | Required. Time budget in milliseconds from the ask. Once it passes, the next lapse check applies the default. |
 | `default_if_lapsed` | Required. The option id used if no answer arrives in time. |
 | `urgency`           | `low` / `medium` / `high`. Hints UI prioritisation.    |
+| `whisper_id`        | Optional. An id for the new whisper. One already in use, one that is not a string, or `__proto__`, `constructor` or `prototype` is refused with `-32602`. Without it, the Coordinator generates one. |
 
 If no options are provided, the answer is free text, sent in `answer`
 (or its alias `answer_text`) on `whisper.answer`. This is discouraged

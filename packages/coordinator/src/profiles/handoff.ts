@@ -12,6 +12,10 @@ import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
 import type { Handoff, HandoffTaskItem } from "../types.js";
 
+// Names a supplied id cannot take: JavaScript gives them special meaning as
+// object keys, and the patch engine refuses them as path segments too.
+const RESERVED_IDS = new Set(["__proto__", "constructor", "prototype"]);
+
 export function registerHandoff(coord: Coordinator): void {
   coord.handlers.set("handoff.propose", (p) => {
     const ws = coord.workspaces.get(p.workspace as string);
@@ -49,6 +53,22 @@ export function registerHandoff(coord: Coordinator): void {
         next_action: t.next_action as string | undefined,
         blockers: (t.blockers as string[] | undefined) ?? [],
       });
+    }
+    // A supplied id names a new handoff. One already in use was stored
+    // over the existing object, which reopened, reset or replaced it.
+    const suppliedHandoffId = p.handoff_id;
+    if (suppliedHandoffId !== undefined && suppliedHandoffId !== null && suppliedHandoffId !== "") {
+      if (typeof suppliedHandoffId !== "string") {
+        return { error: rpcError(E.PARAMS, "handoff_id must be a string") };
+      }
+      // The id is a key in the stored state, and a JavaScript object given
+      // the key __proto__ drops it, so the object would be lost on a restart.
+      if (RESERVED_IDS.has(suppliedHandoffId)) {
+        return { error: rpcError(E.PARAMS, `handoff_id cannot be ${JSON.stringify(suppliedHandoffId)}`) };
+      }
+      if (ws.handoffs.has(suppliedHandoffId)) {
+        return { error: rpcError(E.PARAMS, `handoff_id already in use: ${suppliedHandoffId}`) };
+      }
     }
     const id = (p.handoff_id as string) || coord.ids.handoffId();
     const ho: Handoff = {
