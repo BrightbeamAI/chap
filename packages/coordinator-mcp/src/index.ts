@@ -90,7 +90,10 @@ const LIST_TTL_MS = 3_600_000;
  */
 export const ServerDiscoverRequestSchema = z.object({
   method: z.literal("server/discover"),
-  params: z.optional(z.object({ _meta: z.optional(z.record(z.string(), z.unknown())) }).loose()),
+  // `.passthrough()` keeps unknown keys under zod 3 and zod 4 alike, and the
+  // package accepts both majors. The zod 4 name for the same thing does not
+  // exist in zod 3, where it stopped the package at import.
+  params: z.optional(z.object({ _meta: z.optional(z.record(z.string(), z.unknown())) }).passthrough()),
 });
 
 export interface ChapMcpOptions {
