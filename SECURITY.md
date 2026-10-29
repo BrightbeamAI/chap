@@ -89,7 +89,7 @@ workspace's log.
 
 | Threat | What answers it | Conditions and gaps |
 |---|---|---|
-| A call made in another member's name | Signature verification against the member's registered keys | Needs `requireSignatures`, and control over who joins under which name (section 4) |
+| A call made in another member's name | Signature verification against the member's registered keys. An MCP server built with `participant` makes every call as that member **(0.3.4)**. | Needs `requireSignatures`, and control over who joins under which name (section 4) |
 | A captured call sent again | A signed copy of a recorded refusal is answered with that refusal **(0.3.0)**. A repeated `task.create` idempotency key returns the first task. Each entry carries the `seq` and `arrived` the coordinator assigns. | Any other copy of an accepted call is evaluated again ([Envelope id replay](#envelope-id-replay)) |
 | An entry altered after it was written | The hash chain, checked by `audit.verify_chain` | Needs the chain switched on, and a head kept where the writer cannot change it |
 | Entries removed and the chain re-linked | Nothing inside the log. A SCITT receipt, or an earlier head held elsewhere, shows it. | Needs `audit-scitt/1.0` with a submitter, or another anchor |

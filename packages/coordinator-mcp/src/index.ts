@@ -98,8 +98,18 @@ export interface ChapMcpOptions {
   name?: string;
   /** Server version. Default: "0.3.3". */
   version?: string;
-  /** Override the list of CHAP methods to expose. Default: all 39. */
+  /**
+   * Restrict the CHAP methods this server offers. Default: all 39. A tool the
+   * filter excludes is left out of the list and refused when called.
+   */
   toolFilter?: (toolName: string) => boolean;
+  /**
+   * Make every call as this participant. `from` is filled in on each call,
+   * and a call that names another `from` is refused. Use it where the server
+   * is one participant's connection, such as an agent's, so the connection
+   * cannot act in anyone else's name. Default: each call names its own `from`.
+   */
+  participant?: string;
   /** Optional id generator for the envelopes emitted by tool calls. */
   envelopeIdFactory?: () => string | number;
 }
@@ -218,10 +228,31 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
         content: [{ type: "text", text: `Unknown CHAP tool: ${toolName}` }],
       });
     }
+    // The filter decides what this server offers, so a tool it excludes is
+    // refused here as well as left out of the list. Hidden alone, it still ran
+    // for any client that called it by name.
+    if (!filter(toolName)) {
+      return terminal({
+        isError: true,
+        content: [{ type: "text", text: `CHAP tool not offered by this server: ${toolName}` }],
+      });
+    }
 
     // Normalise stringified-JSON arguments (a common MCP-client
     // behaviour) before they reach the protocol core. See coerceToolArgs.
-    const args = coerceToolArgs(toolName, rawArgs);
+    const args = { ...coerceToolArgs(toolName, rawArgs) };
+    if (options.participant !== undefined) {
+      if (args.from !== undefined && args.from !== options.participant) {
+        return terminal({
+          isError: true,
+          content: [{
+            type: "text",
+            text: `This server acts as ${options.participant}; a call cannot name another from (${JSON.stringify(args.from)}).`,
+          }],
+        });
+      }
+      args.from = options.participant;
+    }
 
     const envelope: Envelope = {
       jsonrpc: "2.0",

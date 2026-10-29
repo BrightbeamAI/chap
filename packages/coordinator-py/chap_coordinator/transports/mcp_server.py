@@ -130,6 +130,7 @@ def make_chap_mcp_server(
     version: str = "0.3.3",
     tool_filter: Optional[Callable[[str], bool]] = None,
     envelope_id_factory: Optional[Callable[[], Any]] = None,
+    participant: Optional[str] = None,
 ) -> Server:
     """Wrap a CHAP Coordinator as an MCP server.
 
@@ -146,11 +147,17 @@ def make_chap_mcp_server(
     version
         Server version string.
     tool_filter
-        Optional predicate to restrict which CHAP methods are exposed.
-        Default: expose all 39.
+        Optional predicate to restrict which CHAP methods are offered.
+        Default: all 39. A tool the predicate excludes is left out of the
+        list and refused when called.
     envelope_id_factory
         Optional callable returning a fresh envelope id per call.
         Default: a counter producing ``"mcp-1"``, ``"mcp-2"``, ...
+    participant
+        Make every call as this participant: ``from`` is filled in on each
+        call, and a call that names another ``from`` is refused. Use it where
+        the server is one participant's connection, such as an agent's.
+        Default: each call names its own ``from``.
     """
     if envelope_id_factory is None:
         counter = count(1)
@@ -203,12 +210,34 @@ def make_chap_mcp_server(
                 isError=True,
                 content=[TextContent(type="text", text=f"Unknown CHAP tool: {tool_name}")],
             )
+        # The filter decides what this server offers, so a tool it excludes is
+        # refused here as well as left out of the list. Hidden alone, it still
+        # ran for any client that called it by name.
+        if not filter_fn(tool_name):
+            return CallToolResult(
+                isError=True,
+                content=[TextContent(type="text",
+                                     text=f"CHAP tool not offered by this server: {tool_name}")],
+            )
+
+        params = dict(coerce_tool_args(tool_name, arguments))
+        if participant is not None:
+            if "from" in params and params["from"] != participant:
+                return CallToolResult(
+                    isError=True,
+                    content=[TextContent(
+                        type="text",
+                        text=(f"This server acts as {participant}; a call cannot name "
+                              f"another from ({json.dumps(params['from'], ensure_ascii=False)})."),
+                    )],
+                )
+            params["from"] = participant
 
         envelope = {
             "jsonrpc": "2.0",
             "id": next_id(),
             "method": method,
-            "params": coerce_tool_args(tool_name, arguments),
+            "params": params,
         }
 
         try:

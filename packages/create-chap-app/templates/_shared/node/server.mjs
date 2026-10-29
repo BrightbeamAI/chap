@@ -440,6 +440,20 @@ async function readDirectory(dir) {
   return files;
 }
 
+// What the agent's MCP connection offers. `participant` makes every call as
+// the agent, so the connection cannot act in another member's name, and the
+// tools are the ones the agent's own work needs. The decision tools stay:
+// called by the agent on its own work, the coordinator refuses them and
+// records the attempt. What would let the agent decide its own work, or end a
+// review it is under, is left out: review.request (an explicit review may name
+// its own author), escalate.raise (it ends the open review, and the
+// successor's review opens under the default rule), and every other tool.
+export const AGENT_MCP_TOOLS = new Set([
+  "chap.task.create", "chap.task.update", "chap.task.complete", "chap.whisper.ask",
+  "chap.decide.approve", "chap.decide.reject", "chap.decide.override",
+  "chap.workspace.describe", "chap.audit.read", "chap.audit.verify_chain",
+]);
+
 export async function makeServer(config, coord) {
   // When a desk last asked for the health of the gate: a command that opens
   // a review leaves an open desk to show it, and opens one otherwise.
@@ -450,13 +464,17 @@ export async function makeServer(config, coord) {
   // regenerated while the server runs is served as it is now.
   const analyticsDir = join(here, "analytics");
   let mcp = null;
+  if (config.mcp && !config.agent?.uri) {
+    throw new Error("chap.config.json turns on mcp, and /mcp acts as the agent: set agent.uri");
+  }
   if (config.mcp) {
     const { makeChapMcpServer } = await import("@brightbeamai/chap-coordinator-mcp");
     const { StreamableHTTPServerTransport } = await import("@modelcontextprotocol/sdk/server/streamableHttp.js");
     // Stateless: one server and transport per request, over the shared
     // coordinator. The MCP client keeps no session with this process.
     mcp = async (req, res, body) => {
-      const server = makeChapMcpServer(coord, { name: config.workspace, version: "0.3.3" });
+      const server = makeChapMcpServer(coord, { name: config.workspace, version: "0.3.3",
+        participant: config.agent.uri, toolFilter: (name) => AGENT_MCP_TOOLS.has(name) });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { transport.close(); server.close(); });
       await server.connect(transport);

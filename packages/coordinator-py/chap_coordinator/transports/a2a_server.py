@@ -142,6 +142,7 @@ def dispatch_a2a_message(
     message: Message,
     *,
     envelope_id_factory: Callable[[], Any] | None = None,
+    skill_filter: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
     """Translate an A2A Message into a CHAP envelope and dispatch it.
 
@@ -165,6 +166,15 @@ def dispatch_a2a_message(
                     f"Unknown CHAP skill: {skill_id!r}. "
                     "Expected an A2A skill id of the form 'chap.<method>'."
                 ),
+            },
+        }
+    if skill_filter is not None and not skill_filter(skill_id):
+        return {
+            "jsonrpc": "2.0",
+            "id": counter(),
+            "error": {
+                "code": -32601,
+                "message": f"CHAP skill not offered by this server: {skill_id}",
             },
         }
 
@@ -228,10 +238,14 @@ class ChapAgentExecutor(AgentExecutor):
         coord: Coordinator,
         *,
         envelope_id_factory: Callable[[], Any] | None = None,
+        skill_filter: Callable[[str], bool] | None = None,
     ) -> None:
         self._coord = coord
         self._next_id = envelope_id_factory or _default_id_factory()
         self._cancelled: set[str] = set()
+        # The card only lists skills; the executor is what runs them, so it
+        # takes the same filter as the card and refuses what it excludes.
+        self._skill_filter = skill_filter
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         if context.task_id and context.task_id in self._cancelled:
@@ -243,6 +257,7 @@ class ChapAgentExecutor(AgentExecutor):
         try:
             response = dispatch_a2a_message(
                 self._coord, context.message, envelope_id_factory=self._next_id,
+                skill_filter=self._skill_filter,
             )
         except Exception as exc:  # noqa: BLE001
             await self._publish_text(
@@ -311,6 +326,12 @@ def make_chap_agent_executor(
     coord: Coordinator,
     *,
     envelope_id_factory: Callable[[], Any] | None = None,
+    skill_filter: Callable[[str], bool] | None = None,
 ) -> ChapAgentExecutor:
-    """Convenience constructor mirroring ``make_chap_mcp_server``."""
-    return ChapAgentExecutor(coord, envelope_id_factory=envelope_id_factory)
+    """Convenience constructor mirroring ``make_chap_mcp_server``.
+
+    Pass the same ``skill_filter`` as :func:`make_chap_agent_card`: the card
+    only lists skills, and the executor refuses the ones the filter excludes.
+    """
+    return ChapAgentExecutor(coord, envelope_id_factory=envelope_id_factory,
+                             skill_filter=skill_filter)

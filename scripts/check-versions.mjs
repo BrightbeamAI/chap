@@ -113,7 +113,7 @@ const SITES = [
   ["packages/create-chap-app/templates/code-gate/package.json", /"@brightbeamai\/chap-coordinator-mcp": "\^([^"]+)"/, "template dependency pin"],
   ["packages/create-chap-app/templates/support-desk/requirements.txt", /^chap-coordinator\[crypto\]>=([^,\s]+)/m, "template dependency floor"],
   ["packages/create-chap-app/templates/outbound-approval/requirements.txt", /^chap-coordinator\[crypto\]>=([^,\s]+)/m, "template dependency floor"],
-  ["packages/create-chap-app/templates/_shared/node/server.mjs", /makeChapMcpServer\(coord, \{ name: config\.workspace, version: "([^"]+)" \}\)/, "version the template's MCP server reports"],
+  ["packages/create-chap-app/templates/_shared/node/server.mjs", /makeChapMcpServer\(coord, \{ name: config\.workspace, version: "([^"]+)",/, "version the template's MCP server reports"],
 
   // -- documentation tables ------------------------------------------------
   ["IMPLEMENTATIONS.md", /\| ([0-9]+\.[0-9]+\.[0-9]+) +\|/g, "implementations table", "all"],

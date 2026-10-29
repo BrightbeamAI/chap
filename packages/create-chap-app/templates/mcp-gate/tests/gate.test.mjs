@@ -4,7 +4,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { loadConfig, makeCoordinator, makeServer } from "../server.mjs";
+import { loadConfig, makeCoordinator, makeServer, AGENT_MCP_TOOLS } from "../server.mjs";
 import { makeClient } from "../desk/chap-client.mjs";
 
 let config, coord, server, base, mcp;
@@ -35,10 +35,38 @@ async function tool(name, args) {
   return { isError: !!r.isError, body: JSON.parse(text) };
 }
 
-test("the MCP server lists every CHAP method as a tool", async () => {
+async function rawTool(name, args) {
+  const r = await mcp.callTool({ name, arguments: { workspace: config.workspace, ...args } });
+  return { isError: !!r.isError, text: r.content.find((c) => c.type === "text")?.text ?? "" };
+}
+
+test("the MCP server offers the agent's tools, and none that would let it decide its own work", async () => {
   const { tools } = await mcp.listTools();
-  assert.ok(tools.length >= 39);
-  assert.ok(tools.some((t) => t.name === "chap.task.create"));
+  assert.deepEqual(new Set(tools.map((t) => t.name)), AGENT_MCP_TOOLS);
+  for (const name of ["chap.review.request", "chap.escalate.raise", "chap.participant.join",
+                      "chap.workspace.set_profiles", "chap.control.cancel", "chap.handoff.propose"]) {
+    assert.ok(!tools.some((t) => t.name === name), name);
+    const r = await rawTool(name, { from: agent() });
+    assert.equal(r.isError, true, name);
+    assert.match(r.text, /not offered by this server/, name);
+  }
+});
+
+test("the assistant cannot approve in the human's name", async () => {
+  const created = await tool("chap.task.create", { from: agent(), kind: "draft_reply", assignee: agent(), input: { ticket: "T-2" }, review_required: true });
+  const taskId = created.body.task_id;
+  await tool("chap.task.complete", { from: agent(), task_id: taskId, output: { body: "Draft" } });
+
+  const spoofed = await rawTool("chap.decide.approve", { from: human(), task_id: taskId });
+  assert.equal(spoofed.isError, true);
+  assert.match(spoofed.text, /acts as/);
+  const view = await (await fetch(`${base}/api/tasks/${taskId}`)).json();
+  assert.equal(view.state, "review_requested");
+
+  // Leaving `from` out does not help either: the connection fills in the agent.
+  const unnamed = await tool("chap.decide.approve", { task_id: taskId });
+  assert.equal(unnamed.isError, true);
+  assert.match(JSON.stringify(unnamed.body), /-32011|reviewer/);
 });
 
 test("a task the assistant completes waits for the human, and the assistant cannot approve it", async () => {

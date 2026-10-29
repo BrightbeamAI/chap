@@ -29,11 +29,19 @@ import { methodForTool } from "@brightbeamai/chap-coordinator-mcp/schemas";
 export interface ChapAgentExecutorOptions {
   /** Optional id generator for CHAP envelope ids. */
   envelopeIdFactory?: () => string;
+  /**
+   * Restrict the CHAP skills this executor runs. A skill the filter excludes
+   * is refused with -32601. Pass the same filter as the Agent Card's
+   * `skillFilter`: the card only lists skills, and the executor is what runs
+   * them. Default: all 39.
+   */
+  skillFilter?: (skillId: string) => boolean;
 }
 
 export class ChapAgentExecutor implements AgentExecutor {
   private readonly cancelled = new Set<string>();
   private readonly nextEnvelopeId: () => string;
+  private readonly skillFilter: (skillId: string) => boolean;
 
   constructor(
     private readonly coord: Coordinator,
@@ -41,6 +49,7 @@ export class ChapAgentExecutor implements AgentExecutor {
   ) {
     let counter = 0;
     this.nextEnvelopeId = options.envelopeIdFactory ?? (() => `a2a-${++counter}`);
+    this.skillFilter = options.skillFilter ?? (() => true);
   }
 
   async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
@@ -61,6 +70,15 @@ export class ChapAgentExecutor implements AgentExecutor {
         eventBus, taskId, contextId,
         `Unknown CHAP skill: ${skillId ?? "(missing)"}. ` +
         `Expected an A2A skill id of the form 'chap.<method>'.`,
+        -32601,
+      );
+      eventBus.finished();
+      return;
+    }
+    if (!this.skillFilter(skillId!)) {
+      this.publishErrorMessage(
+        eventBus, taskId, contextId,
+        `CHAP skill not offered by this server: ${skillId}`,
         -32601,
       );
       eventBus.finished();

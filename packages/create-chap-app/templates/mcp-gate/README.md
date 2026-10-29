@@ -4,8 +4,10 @@ One process runs the CHAP coordinator, the review desk and an MCP server
 over streamable HTTP. Claude Desktop, Cursor or Claude Code connects to it,
 and every call the assistant makes that changes state is recorded on the chain. A task the
 assistant completes with `review_required` opens a review that waits for you
-in the desk, and the assistant cannot approve its own work. No API key is
-needed: the assistant you already use is the agent.
+in the desk. The assistant's MCP connection acts only as the assistant, and
+offers no tool that would let it decide its own work, so it cannot approve
+its own work through MCP. No API key is needed: the assistant you already use
+is the agent.
 
 ## Run it
 
@@ -44,6 +46,12 @@ and override, or reject it. The assistant can read the decision with
 `chap.audit.read` and carry on with the decided output. If it tries
 `chap.decide.approve` on its own task, the coordinator refuses with `-32011`
 and records the attempt.
+
+The MCP connection makes every call as `__AGENT_URI__`: a call that names
+another `from` is refused. It offers the tools the assistant's own work
+needs, listed in `AGENT_MCP_TOOLS` in `server.mjs`, and leaves out the ones
+that would let it decide its own work, such as `chap.review.request`, which
+can name its own author as reviewer.
 
 ## Attach your own agent and data
 
@@ -122,7 +130,13 @@ addressed to the reviewer it is asked about, and delivering a review to the
 people named on it is the deployment's job (SPECIFICATION 15.1). The MCP
 endpoint, the desk, `POST /chap` and the read API under `/api/` have no
 login, and a `human:` URI in the desk is a label that says who is deciding;
-it does not authenticate them. The server listens on the loopback address,
+it does not authenticate them. `POST /chap` accepts a call in any member's
+name, so an assistant that can send HTTP requests itself, such as Claude
+Code with a shell, can still reach it and decide as you. Requiring a
+signature on every call (`require_signatures`) closes that route, and `/mcp`
+with it, because the MCP server's calls are unsigned: the assistant then
+needs a client that signs its calls, as the production template's agent
+does. The server listens on the loopback address,
 refuses a request from another origin or under a host name it was not
 given, and takes JSON only on `POST /chap`, so a page open elsewhere cannot
 decide as the reviewer; a deployment puts TLS and its own login in front,
