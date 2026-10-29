@@ -99,6 +99,7 @@ workspace's log.
 | Shadow output reaching production | Nothing in the coordinator | Needs the deployment's delivery layer |
 | An artefact that claims authority | Authority comes from the method and the caller's membership, role and review assignment. Artefact content grants nothing. | Roles are chosen by the joiner (section 6) |
 | Oversized or deeply nested requests | A size limit, 1 MiB by default, and a nesting limit of 64 levels **(0.3.0)** | Needs rate limits at the transport |
+| A patch that grows an artefact | A `decide.override` patch may carry 1,000 operations. After each, the artefact may hold 100,000 values and as much string and key text as `max_envelope_bytes` allows, and nest 64 levels. The patch's copies, and its moves to a deeper place or onto the whole artefact, may carry three times the value and size limits between them **(0.3.4)** | Needs rate limits at the transport |
 
 ### Out of scope
 
@@ -154,7 +155,12 @@ form, and the coordinator refuses it with `-32602`, signed or not.
 
 **Size.** A request whose canonical form is larger than the limit, 1 MiB by
 default and published as `max_envelope_bytes`, is refused with `-32600`. So is
-a request nested deeper than 64 levels **(0.3.0)**.
+a request nested deeper than 64 levels **(0.3.0)**. A `decide.override` whose
+patch would grow the artefact past the same size, counted as the UTF-8 bytes
+of its strings and keys, or nest it deeper than 64 levels, is refused with
+`-32012` **(0.3.4)**. So is one whose copies, and moves to a deeper place or
+onto the whole artefact, would carry more than three times the value limit
+or that size between them.
 
 **What is not checked.** Neither coordinator checks that a request `id` is new
 or that `ts` is in order. [Envelope id replay](#envelope-id-replay) and

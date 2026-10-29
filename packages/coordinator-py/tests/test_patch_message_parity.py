@@ -56,6 +56,15 @@ CASES: list[tuple[str, dict, list[dict]]] = [
      [{"op": "test", "path": "/a/-", "value": 2}]),
     ("copy from the position after the last element", {"a": [1, 2], "b": 0},
      [{"op": "copy", "from": "/a/-", "path": "/b"}]),
+    # Each copy of the root doubles the document, its strings included.
+    ("a copy that grows the document past the size limit", {"s": "x" * 1024},
+     [{"op": "copy", "from": "", "path": f"/c{i}"} for i in range(1, 12)]),
+    # A value 64 levels deep, under the document's own level.
+    ("a patch that nests the document past the depth limit", {},
+     [{"op": "add", "path": "/a", "value": json.loads("[" * 63 + "0" + "]" * 63)}]),
+    # Each copy of 1,001 values onto itself carries them again.
+    ("a patch whose copies carry more than their limit", {"a": [0] * 1000},
+     [{"op": "copy", "from": "/a", "path": "/a"}] * 1000),
 ]
 
 VECTORS = Path(__file__).resolve().parents[3] / "conformance" / "patch-message-vectors.json"

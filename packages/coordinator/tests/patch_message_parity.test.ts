@@ -52,6 +52,15 @@ const CASES: [string, unknown, unknown[]][] = [
    [{ op: "test", path: "/a/-", value: 2 }]],
   ["copy from the position after the last element", { a: [1, 2], b: 0 },
    [{ op: "copy", from: "/a/-", path: "/b" }]],
+  // Each copy of the root doubles the document, its strings included.
+  ["a copy that grows the document past the size limit", { s: "x".repeat(1024) },
+   Array.from({ length: 11 }, (_, i) => ({ op: "copy", from: "", path: `/c${i + 1}` }))],
+  // A value 64 levels deep, under the document's own level.
+  ["a patch that nests the document past the depth limit", {},
+   [{ op: "add", path: "/a", value: JSON.parse("[".repeat(63) + "0" + "]".repeat(63)) }]],
+  // Each copy of 1,001 values onto itself carries them again.
+  ["a patch whose copies carry more than their limit", { a: Array(1000).fill(0) },
+   Array.from({ length: 1000 }, () => ({ op: "copy", from: "/a", path: "/a" }))],
 ];
 
 const VECTORS = new URL("../../../conformance/patch-message-vectors.json", import.meta.url);

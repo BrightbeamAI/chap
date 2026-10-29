@@ -17,6 +17,9 @@
     "remove at the position after the last element": "Index out of range for remove: /a/-",
     "replace at the position after the last element": "Path not found for replace: /a/-",
     "test at the position after the last element": "Cannot read '-' position.",
-    "copy from the position after the last element": "Cannot read '-' position."
+    "copy from the position after the last element": "Cannot read '-' position.",
+    "a copy that grows the document past the size limit": "Patched document exceeds the size limit (1048576 bytes of strings and keys)",
+    "a patch that nests the document past the depth limit": "Patched document nests deeper than 64 levels",
+    "a patch whose copies carry more than their limit": "Patch copies or moves more than its limit (300000 values or 3145728 bytes of strings and keys)"
   }
 }

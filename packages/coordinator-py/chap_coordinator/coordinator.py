@@ -1871,7 +1871,8 @@ class Coordinator:
         if base is None:
             return {"error": rpc_error(E.PARAMS, "No base artefact for override")}
         try:
-            applied = apply_json_patch(base, p["diff"])
+            applied = apply_json_patch(
+                base, p["diff"], max_string_bytes=self.options.max_envelope_bytes)
         except PatchError as exc:
             return {"error": rpc_error(E.PATCH_FAILED, str(exc))}
 

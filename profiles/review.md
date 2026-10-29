@@ -310,6 +310,21 @@ ignores any `based_on_artefact` in `params`. If the patch does not
 apply, the Coordinator refuses with `-32012`, and the error message
 names the failure and, where one applies, the failing path.
 
+A patch also fails, with `-32012`, when it carries more than 1,000
+operations, or when, after any of its operations, the artefact would hold
+more than 100,000 values, or more string and key text than
+`max_envelope_bytes` allows (1 MiB by default, counted in UTF-8 bytes),
+or would nest deeper than 64 levels, counting the artefact itself as one,
+as a request's nesting is counted. The checks run after each operation,
+because a `copy` of the root doubles the document, and a patch can put one
+value inside another: the value count alone let a small patch grow a
+64 KiB artefact to about 2 GiB, or nest it thousands of levels deep.
+
+Each copy, and each move to a deeper place or onto the whole artefact,
+costs a pass over the value it carries. A patch whose copies and such
+moves carry more than three times the value and size limits between them
+also fails with `-32012`, which bounds the work one override can ask for.
+
 When the artefact under review carries a `logical_id`, the override
 SHOULD carry the same `logical_id` and SHOULD set `intent_preserved`:
 `true` if the override refines the *expression* of the same

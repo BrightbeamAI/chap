@@ -1920,7 +1920,9 @@ export class Coordinator {
     if (base === undefined) return { error: rpcError(E.PARAMS, "No base artefact for override") };
     let applied: unknown;
     try {
-      applied = applyJsonPatch(base, p.diff as never);
+      applied = applyJsonPatch(base, p.diff as never, {
+        maxStringBytes: this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return { error: rpcError(E.PATCH_FAILED, msg) };
