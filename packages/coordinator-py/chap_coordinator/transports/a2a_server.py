@@ -70,10 +70,16 @@ from .mcp_tools import TOOL_DESCRIPTIONS
 
 __all__ = [
     "ChapAgentExecutor",
+    "CHAP_MEDIA_TYPE",
     "make_chap_agent_executor",
     "make_chap_agent_card",
     "dispatch_a2a_message",
 ]
+
+#: The media type of every part a CHAP skill takes and returns: the call's
+#: params in, and its result or refusal out, as JSON data parts. A2A names
+#: input and output modes by media type.
+CHAP_MEDIA_TYPE = "application/json"
 
 
 # A2A skill ids reuse the MCP tool naming. The only difference is
@@ -99,6 +105,12 @@ def make_chap_agent_card(
 
     Every CHAP method becomes an :class:`AgentSkill` with id
     ``chap.<method>`` and description tuned for LLM consumption.
+
+    The card lists the JSON-RPC endpoint twice: at A2A 1.0, and at 0.3 for
+    a client that has not moved, which the server answers where its
+    JSON-RPC routes have ``enable_v0_3_compat`` set. The 0.3 entry is also
+    what gives the served card the fields a 0.3 client reads, ``url`` among
+    them. Both match the TypeScript card.
     """
     filter_fn = skill_filter or (lambda _name: True)
 
@@ -114,8 +126,8 @@ def make_chap_agent_card(
             name=tool_name,
             description=TOOL_DESCRIPTIONS.get(tool_name, f"CHAP method {method}."),
             tags=["chap", method.split(".")[0]],
-            input_modes=["data"],
-            output_modes=["data"],
+            input_modes=[CHAP_MEDIA_TYPE],
+            output_modes=[CHAP_MEDIA_TYPE],
         )
         skills.append(skill)
 
@@ -123,19 +135,16 @@ def make_chap_agent_card(
         name=name,
         description=description,
         version=version,
-        default_input_modes=["data"],
-        default_output_modes=["data"],
+        default_input_modes=[CHAP_MEDIA_TYPE],
+        default_output_modes=[CHAP_MEDIA_TYPE],
         capabilities=AgentCapabilities(streaming=False, push_notifications=False),
         skills=skills,
         supported_interfaces=[
-            AgentInterface(
-                url=base_url,
-                # The value A2A defines, which a2a-sdk's ClientFactory matches
-                # exactly. With "jsonrpc" every SDK client given the card
-                # found no compatible transport.
-                protocol_binding="JSONRPC",
-                protocol_version="1.0",
-            ),
+            # "JSONRPC" is the value A2A defines, which a2a-sdk's
+            # ClientFactory matches exactly. With "jsonrpc" every SDK client
+            # given the card found no compatible transport.
+            AgentInterface(url=base_url, protocol_binding="JSONRPC", protocol_version=version)
+            for version in ("1.0", "0.3")
         ],
     )
 
@@ -296,7 +305,7 @@ class ChapAgentExecutor(AgentExecutor):
     ) -> None:
         value = Value()
         ParseDict(payload if isinstance(payload, dict) else {"result": payload}, value)
-        part = Part(data=value)
+        part = Part(data=value, media_type=CHAP_MEDIA_TYPE)
         if is_error:
             # Mark error responses via metadata for clients that care.
             from google.protobuf.struct_pb2 import Struct

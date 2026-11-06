@@ -16,6 +16,7 @@ import json
 
 import pytest
 from a2a.server.agent_execution import RequestContext
+from a2a.server.request_handlers.response_helpers import agent_card_to_dict
 from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
 from a2a.types import Message, Part, Role, SendMessageRequest
@@ -104,6 +105,27 @@ def test_agent_card_lists_every_method() -> None:
     # Interface and version sanity
     assert card.supported_interfaces[0].url == "http://localhost:9000"
     assert card.supported_interfaces[0].protocol_version == "1.0"
+
+
+def test_agent_card_offers_the_endpoint_at_1_0_and_at_0_3_as_the_typescript_card_does() -> None:
+    card = make_chap_agent_card(base_url="http://localhost:9000")
+    assert [(i.url, i.protocol_binding, i.protocol_version) for i in card.supported_interfaces] == [
+        ("http://localhost:9000", "JSONRPC", "1.0"),
+        ("http://localhost:9000", "JSONRPC", "0.3"),
+    ]
+    # The card as served carries the 0.3 fields a 0.3 client reads.
+    served = agent_card_to_dict(card)
+    assert served["url"] == "http://localhost:9000"
+    assert served["preferredTransport"] == "JSONRPC"
+
+
+def test_agent_card_names_its_input_and_output_modes_by_media_type() -> None:
+    card = make_chap_agent_card(base_url="http://localhost:9000")
+    assert list(card.default_input_modes) == ["application/json"]
+    assert list(card.default_output_modes) == ["application/json"]
+    for skill in card.skills:
+        assert list(skill.input_modes) == ["application/json"], skill.id
+        assert list(skill.output_modes) == ["application/json"], skill.id
 
 
 def test_agent_card_descriptions_are_non_trivial() -> None:
