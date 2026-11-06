@@ -9,33 +9,53 @@ Spec target: **MCP 2026-07-28**, serving MCP 2025-11-25 clients as well · CHAP 
 
 ## Run it as a server
 
-The package ships a stdio server, so an MCP client can use CHAP without any
-code. Point the client at it:
+The package ships a stdio server, `chap-mcp-server`, so an MCP client can use
+CHAP without any code. It makes every call as one participant, by default the
+agent `agent:assistant@local`, and offers the tools an agent's own work needs.
+A person decides in a desk, never through the assistant, so the server
+refuses to act as a `human:` participant and refuses a call that names
+anyone else.
+
+The usual setup has a CHAP server with a desk, such as a project made with
+`npx create-chap-app my-gate --template mcp-gate`, and points the stdio server
+at that server's JSON-RPC endpoint. The assistant's work then waits for the
+person in the desk:
 
 ```json
 {
   "mcpServers": {
     "chap": {
       "command": "npx",
-      "args": ["-y", "@brightbeamai/chap-coordinator-mcp"],
-      "env": { "CHAP_DB_PATH": "~/chap.db" }
+      "args": ["-y", "@brightbeamai/chap-coordinator-mcp",
+               "--url", "http://127.0.0.1:8787/chap", "--as", "agent:assistant"]
     }
   }
 }
 ```
 
-All 39 methods arrive as tools named `chap.<method>`. Two environment
-variables configure it:
+| Option | Environment | Effect |
+|--------|-------------|--------|
+| `--as <uri>` | `CHAP_PARTICIPANT` | The participant every call is made as. Default `agent:assistant@local`. `from` is filled in, a call naming anyone else is refused, and a `human:` URI is refused at start. |
+| `--tools agent\|all` | | `agent`, the default, offers `AGENT_MCP_TOOLS` (below). `all` offers all 39 methods, still as the one participant. |
+| `--url <endpoint>` | | Forward every call to a running CHAP server's JSON-RPC endpoint, such as a desk server's `http://127.0.0.1:8787/chap`. That server keeps the workspaces, its store and its profiles. |
+| `--db <path>` | `CHAP_DB_PATH` | Keep the workspaces in this SQLite file. A leading `~` is the home directory. |
+| `--profiles <list>` | `CHAP_PROFILES` | Comma-separated profiles for new workspaces. Defaults to Core plus review, whisper, deliberation, handoff, control, routing, modes and audit-scitt, so the audit chain is on from the first entry. |
+| `--help` | | Print the options and exit. |
 
-| Variable | Effect |
-|----------|--------|
-| `CHAP_DB_PATH` | Path to a SQLite file. Without it the coordinator runs in memory and every workspace is lost when the client restarts. |
-| `CHAP_PROFILES` | Comma-separated profiles for new workspaces. Defaults to Core plus review, whisper, deliberation, handoff, control, routing, modes and audit-scitt, so the audit chain is on from the first entry. |
+An option takes its value as `--as agent:x` or `--as=agent:x`, and wins over
+its environment variable; an empty variable counts as unset.
+
+Without `--url` the server runs its own coordinator. With neither `--url` nor
+`--db` it keeps everything in memory, says so on stderr, and every workspace
+is lost when the client restarts. The agent tools create no workspace and
+join no one, so a coordinator of its own suits a store that already holds the
+workspace, or `--tools all`, where the assistant creates a workspace and
+joins it as itself.
 
 Persistence needs `better-sqlite3`, an optional native dependency of the
-coordinator. If `CHAP_DB_PATH` is set and it cannot be loaded the server says
-so and exits rather than starting in memory and discarding the decisions it
-was asked to keep.
+coordinator. If `--db` or `CHAP_DB_PATH` is set and it cannot be loaded the
+server says so and exits, so it never starts in memory and discards the
+decisions it was asked to keep.
 
 The server is also listed in the [MCP registry](https://registry.modelcontextprotocol.io)
 as `io.github.BrightbeamAI/chap`.
@@ -53,14 +73,18 @@ Node 20+ required. Runtime dependencies: `@brightbeamai/chap-coordinator`,
 
 ```typescript
 import { Coordinator } from "@brightbeamai/chap-coordinator";
-import { makeChapMcpServer } from "@brightbeamai/chap-coordinator-mcp";
+import { AGENT_MCP_TOOLS, makeChapMcpServer } from "@brightbeamai/chap-coordinator-mcp";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 const coord = new Coordinator({
   defaultProfiles: ["core/1.0", "review/1.0", "audit-scitt/1.0"],
 });
 
-const server = makeChapMcpServer(coord, { name: "chap", version: "0.3.4" });
+// The assistant's own connection: every call as the agent, with its tools.
+const server = makeChapMcpServer(coord, {
+  participant: "agent:assistant@local",
+  toolFilter: (name) => AGENT_MCP_TOOLS.has(name),
+});
 await server.connect(new StdioServerTransport());
 ```
 
@@ -68,8 +92,58 @@ The returned `Server` is the official MCP SDK's `Server` class with
 `tools/list` and `tools/call` handlers pre-registered. Attach any MCP
 transport (stdio, Streamable HTTP, etc.).
 
+`makeChapMcpServer(coord, options)` takes:
+
+| Option | Effect |
+|--------|--------|
+| `participant` | Make every call as this participant: `from` is filled in, and a call that names another `from` is refused. The tools list `from` as optional, with this URI in its description. |
+| `toolFilter` | `(toolName) => boolean`. A tool the filter excludes is left out of the list and refused when called by name. |
+| `name`, `version` | What the server reports to its client. |
+| `envelopeIdFactory` | The id of each envelope a tool call sends. |
+
+Without `participant` or `toolFilter`,
+`makeChapMcpServer(coord, { name: "chap", version: "0.3.4" })` serves all 39
+tools and each call names its own `from`. That suits a connection that stands
+for no one member, such as a service of your own that authenticates its
+callers and checks the `from` they send.
+
+`coord` is a `Coordinator`, or any object with the same
+`dispatch(envelope)`, returning the response or a promise of it.
+
+`AGENT_MCP_TOOLS` is the agent's set: `chap.task.create`, `chap.task.update`,
+`chap.task.complete`, `chap.whisper.ask`, `chap.decide.approve`,
+`chap.decide.reject`, `chap.decide.override`, `chap.workspace.describe`,
+`chap.audit.read` and `chap.audit.verify_chain`. The decision tools stay for
+work the agent is asked to review; on its own work the coordinator refuses
+them with `-32011` and records the attempt. It leaves out the tools that
+choose who reviews the agent's work or pass its review on:
+`chap.review.request`, whose `to` can name the agent itself,
+`chap.escalate.raise`, which ends the open review, and every workspace,
+membership and control method. `chap.task.update` stays, so the agent can
+take a task under review back to `in_progress`, which withdraws its draft.
+Its next completion opens a new review where the task has
+`review_required`, and completes the task where it does not, so set
+`review_required` on any task the agent must not finish alone.
+
 A runnable reference server is at
 [`reference/mcp-server-ts/`](../../reference/mcp-server-ts/).
+
+## What an unsigned local server trusts
+
+MCP calls carry no signature. `participant` keeps a connection to one name,
+and that is all it does: the stdio server trusts the process that started it,
+so whatever the client sends is made as the participant. The log records
+that the call came through this connection; it does not show that the
+participant signed it. Anything that can start the command, or reach a
+server's MCP endpoint, acts as that participant.
+
+With `--url`, the server at the other end applies its own rules to each call.
+One that requires a signature on every call refuses these with `-32070`; one
+that requires signatures from people only accepts the agent's unsigned calls.
+The pin covers this connection only. A CHAP server without signatures
+accepts a call in any member's name from any local process, so the record of
+a person's decision holds only where the server requires the desk's
+signature on it.
 
 ## What gets exposed
 

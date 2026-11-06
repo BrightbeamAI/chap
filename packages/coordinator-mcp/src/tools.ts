@@ -368,3 +368,24 @@ export const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = Object.fromEntr
     openWorldHint:   OPEN_WORLD.has(name),
   }]),
 );
+
+/**
+ * The tools an agent's own connection offers: what its work needs, and
+ * nothing that chooses who reviews that work or passes its review on. The
+ * decision tools stay for work the agent is asked to review; on its own work
+ * the coordinator refuses them and records the attempt. Left out are
+ * workspace and membership changes, review.request (an explicit review may
+ * name its own author), escalate.raise (it ends the open review, and the
+ * successor's review opens under the default rule), and every other tool.
+ * task.update stays, and can take a task under review back to in_progress,
+ * which withdraws the draft. The next completion opens a new review where
+ * the task has review_required, and completes the task where it does not.
+ *
+ * The stdio server offers this set by default. A server that gives an agent
+ * its own MCP connection, as the templates' /mcp does, imports it from here.
+ */
+export const AGENT_MCP_TOOLS: ReadonlySet<string> = new Set([
+  "chap.task.create", "chap.task.update", "chap.task.complete", "chap.whisper.ask",
+  "chap.decide.approve", "chap.decide.reject", "chap.decide.override",
+  "chap.workspace.describe", "chap.audit.read", "chap.audit.verify_chain",
+]);

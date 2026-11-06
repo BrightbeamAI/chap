@@ -71,3 +71,27 @@ test("without the new options every tool runs and each call names its own from",
   assert.equal((coord as any).workspaces.get("w").tasks.get(taskId).delegator, "human:a");
   await close();
 });
+
+test("with participant, the tools list from as optional and say whose name it carries", async () => {
+  const { client, close } = await connect({ participant: "agent:b" });
+  const { tools } = await client.listTools();
+  const update = tools.find((t) => t.name === "chap.task.update")!;
+  const schema = update.inputSchema as { required: string[]; properties: Record<string, { description: string }> };
+  assert.ok(!schema.required.includes("from"));
+  assert.ok(schema.required.includes("task_id"));
+  assert.match(schema.properties.from.description, /acts as agent:b/);
+  await close();
+});
+
+test("a dispatcher that answers with a promise is awaited", async () => {
+  const coord = new Coordinator({ deterministicIds: true });
+  const server = makeChapMcpServer({ dispatch: async (envelope) => coord.dispatch(envelope) });
+  const client = new Client({ name: "test", version: "1.0.0" });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(b), client.connect(a)]);
+  const r = await client.callTool({ name: "chap.workspace.create", arguments: { workspace: "w", from: "human:a" } }) as any;
+  assert.equal(r.isError, undefined, r.content[0].text);
+  assert.equal(JSON.parse(r.content[0].text).workspace, "w");
+  await client.close();
+  await server.close();
+});

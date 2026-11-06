@@ -30,6 +30,11 @@
  * - Tool naming follows "chap.<method>" so the prefix avoids
  *   collisions with other MCP servers a client might load.
  *
+ * - A server that is one participant's connection, such as an
+ *   agent's, takes `participant`: every call is made as that member,
+ *   and a call naming another `from` is refused. AGENT_MCP_TOOLS is
+ *   the tool set such a connection offers an agent.
+ *
  * - Tool inputs are described by JSON Schemas (not Zod) and are
  *   passed through to the Coordinator without re-validating at the
  *   MCP layer. The Coordinator's own dispatch validates params and
@@ -52,12 +57,13 @@ import {
 import { z } from "zod";
 import type { Coordinator, Envelope } from "@brightbeamai/chap-coordinator";
 
-import { SCHEMAS, TOOL_NAMES, methodForTool, coerceToolArgs } from "./schemas.js";
+import { SCHEMAS, TOOL_NAMES, methodForTool, coerceToolArgs, type JsonSchema } from "./schemas.js";
 import { TOOL_DESCRIPTIONS, TOOL_ANNOTATIONS } from "./tools.js";
 import { classifyEnvelope, ProtocolError, SUPPORTED_PROTOCOL_VERSIONS, type ProtocolEra } from "./envelope.js";
+import { ChapEndpointError } from "./remote.js";
 
 export { SCHEMAS, TOOL_NAMES, schemaFor, methodForTool, coerceToolArgs } from "./schemas.js";
-export { TOOL_DESCRIPTIONS, TOOL_ANNOTATIONS } from "./tools.js";
+export { TOOL_DESCRIPTIONS, TOOL_ANNOTATIONS, AGENT_MCP_TOOLS } from "./tools.js";
 export type { ToolAnnotations } from "./tools.js";
 export type { JsonSchema } from "./schemas.js";
 
@@ -96,6 +102,15 @@ export const ServerDiscoverRequestSchema = z.object({
   params: z.optional(z.object({ _meta: z.optional(z.record(z.string(), z.unknown())) }).passthrough()),
 });
 
+/**
+ * What the server dispatches each call through: a Coordinator, or anything
+ * with the same `dispatch`, such as a client that forwards the envelope to a
+ * running server. The answer may be returned or promised.
+ */
+export interface ChapDispatcher {
+  dispatch(envelope: Envelope): Envelope | Promise<Envelope>;
+}
+
 export interface ChapMcpOptions {
   /** Server name advertised to MCP clients. Default: "chap". */
   name?: string;
@@ -110,11 +125,32 @@ export interface ChapMcpOptions {
    * Make every call as this participant. `from` is filled in on each call,
    * and a call that names another `from` is refused. Use it where the server
    * is one participant's connection, such as an agent's, so the connection
-   * cannot act in anyone else's name. Default: each call names its own `from`.
+   * cannot act in anyone else's name. The tools then list `from` as optional,
+   * with this URI in its description. Default: each call names its own `from`.
    */
   participant?: string;
   /** Optional id generator for the envelopes emitted by tool calls. */
   envelopeIdFactory?: () => string | number;
+}
+
+/**
+ * A tool's input schema as a server that acts as `participant` advertises
+ * it. `from` is filled in, so a client need not send it, and the schema says
+ * whose name the calls carry.
+ */
+function pinnedSchema(schema: JsonSchema, participant: string): JsonSchema {
+  if (!schema.properties?.from) return schema;
+  return {
+    ...schema,
+    properties: {
+      ...schema.properties,
+      from: {
+        type: "string",
+        description: `This server acts as ${participant}: it fills this in, and refuses a call that names anyone else.`,
+      },
+    },
+    required: (schema.required ?? []).filter((key) => key !== "from"),
+  };
 }
 
 /**
@@ -123,7 +159,7 @@ export interface ChapMcpOptions {
  * CHAP method; pass it to a transport (stdio, Streamable HTTP) to
  * start serving.
  */
-export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = {}): Server {
+export function makeChapMcpServer(coord: ChapDispatcher, options: ChapMcpOptions = {}): Server {
   const serverInfo = {
     name:    options.name    ?? "chap",
     version: options.version ?? "0.3.4",
@@ -152,7 +188,9 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
         // not already see. The annotation carries a readable one.
         title: ann?.title ?? name,
         description: TOOL_DESCRIPTIONS[name] ?? `CHAP method ${methodForTool(name)}.`,
-        inputSchema: SCHEMAS[name] as Tool["inputSchema"],
+        inputSchema: (options.participant === undefined
+          ? SCHEMAS[name]
+          : pinnedSchema(SCHEMAS[name], options.participant)) as Tool["inputSchema"],
         // Behavioural hints. Without these a client has only the prose to go
         // on when deciding whether a call is safe to make or to retry.
         ...(ann ? { annotations: ann } : {}),
@@ -266,8 +304,13 @@ export function makeChapMcpServer(coord: Coordinator, options: ChapMcpOptions = 
 
     let response: Envelope;
     try {
-      response = coord.dispatch(envelope);
+      response = await coord.dispatch(envelope);
     } catch (e) {
+      // A forwarding dispatcher's own failures are written for the client:
+      // the server could not be reached, or did not answer in JSON-RPC.
+      if (e instanceof ChapEndpointError) {
+        return terminal({ isError: true, content: [{ type: "text", text: e.message }] });
+      }
       const msg = e instanceof Error ? e.message : String(e);
       return terminal({
         isError: true,
