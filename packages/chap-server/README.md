@@ -73,7 +73,8 @@ that rebinds its own name to this address gets nothing. It refuses a browser
 request from another origin (403), takes JSON only on `POST /chap` (415),
 and reads no body over the envelope limit (413).
 
-Every answer carries these headers (`SECURITY_HEADERS`):
+Every answer carries these headers, which the package exports as
+`SECURITY_HEADERS`, and the analytics pages' policy as `ANALYTICS_POLICY`:
 
 ```
 Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'

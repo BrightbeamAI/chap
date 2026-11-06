@@ -5,7 +5,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createChapServer } from "../index.mjs";
+import { ANALYTICS_POLICY, SECURITY_HEADERS, createChapServer } from "../index.mjs";
 import { makeClient } from "../desk/chap-client.mjs";
 import { openDesk } from "./desk-harness.mjs";
 import { AGENT, HUMAN, project } from "./helpers.mjs";
@@ -43,6 +43,8 @@ test("every answer carries the policy, and no page may frame the desk", async ()
     assert.equal(r.headers.get("x-frame-options"), "DENY", r.url);
     assert.equal(r.headers.get("x-content-type-options"), "nosniff", r.url);
     assert.equal(r.headers.get("referrer-policy"), "no-referrer", r.url);
+    // The exported constant is what goes out, so a server of the application's own can send the same.
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) assert.equal(r.headers.get(name), value, `${r.url} ${name}`);
   }
 });
 
@@ -52,6 +54,7 @@ test("a page dropped in analytics/ runs in a sandbox, away from the desk's origi
   const r = await fetch(`${base}/analytics/k.html`);
   assert.equal(r.status, 200);
   assert.equal(r.headers.get("content-security-policy"), "sandbox allow-scripts; frame-ancestors 'none'");
+  assert.equal(ANALYTICS_POLICY, "sandbox allow-scripts; frame-ancestors 'none'");
   assert.equal(r.headers.get("x-frame-options"), "DENY");
   // Its scripts get an opaque origin, so a call they make carries Origin: null, which is refused.
   const call = await fetch(`${base}/chap`, { method: "POST", headers: { "content-type": "application/json", origin: "null" }, body: "{}" });
