@@ -97,6 +97,17 @@ their scripts run in an origin of their own, cannot read what the desk
 keeps in the browser, and a call they make to the server carries a foreign
 origin and is refused.
 
+## Where it listens
+
+On the loopback address, the default, the server listens on 127.0.0.1 and
+on ::1 at one port, and prints the desk at `http://localhost:<port>/`. The
+desk may sign with a passkey, and WebAuthn takes a domain name for its
+relying party, never an IP address, so the desk is opened at `localhost`.
+That name resolves to either address first, so the server answers on both,
+and no other program can answer on the one it left free; a port taken on
+either is named at start. On a wildcard address the desk is printed at
+`localhost` too, and on any other host at that host.
+
 ## The reviewer's key
 
 Under `security-signed/1.0` the desk signs each call with an Ed25519 key it

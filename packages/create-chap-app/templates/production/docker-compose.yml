@@ -2,13 +2,14 @@
 #
 #   coordinator  owns the SQLite store on ./data, refuses unsigned calls,
 #                keeps the chain, and verifies OIDC tokens at participant.join
-#                when OIDC_ISSUER is set. The desk is at http://127.0.0.1:8790/
+#                when OIDC_ISSUER is set. The desk is at http://localhost:8790/
 #                and signs in the browser. The agent reaches it by the service
 #                name, which CHAP_ALLOWED_HOSTS tells it to answer to.
 #   agent        a second process with its own key, read from ./keys (run
 #                `npm run keys` first). Approved messages land in ./outbox.
 #
-# The port is published on 127.0.0.1 only. A production deployment puts TLS
+# The port is published on 127.0.0.1 only; a browser that tries ::1 first for
+# localhost finds nothing there and goes on to it. A production deployment puts TLS
 # and its own login in front of the coordinator, and delivers notifications
 # to the people named on a review (SPECIFICATION.md section 15.1, items 9
 # and 10). None of that is in this file.

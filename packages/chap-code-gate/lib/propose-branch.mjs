@@ -56,7 +56,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentClient, api, approvalOf, buildNote, checkApproval, commitSigning, contentHash, ensureGate, evidence, gateEnv, lastDecision, loadGate, onlinePolicy, reviewersReady, reviewRule, strictestRule, trustAtRef } from "./gate.mjs";
+import { agentClient, api, approvalOf, buildNote, checkApproval, commitSigning, contentHash, deskUrl, ensureGate, evidence, gateEnv, lastDecision, loadGate, onlinePolicy, reviewersReady, reviewRule, reviewUrl, strictestRule, trustAtRef } from "./gate.mjs";
 import { git, parseTrailers, rawCommit, repoRoot } from "./git.mjs";
 import { announce, commandAgain, printPrompt, promptAfter, readContext, reviewerName, waitWithin, withNote } from "./loop.mjs";
 import { MODEL_SOURCES, sessionModel } from "./model.mjs";
@@ -213,7 +213,7 @@ export async function main(argv, { log = console.log, gateDir } = {}) {
   const review = reviewRule(gate);
   let ready = await reviewersReady(client, review);
   if (!ready.ok) {
-    const advice = `${review.rule} needs ${ready.need} reviewer${ready.need === 1 ? "" : "s"} in the workspace and ${ready.have} ${ready.have === 1 ? "has" : "have"} joined. A reviewer joins by opening the desk at ${gate.base}/`;
+    const advice = `${review.rule} needs ${ready.need} reviewer${ready.need === 1 ? "" : "s"} in the workspace and ${ready.have} ${ready.have === 1 ? "has" : "have"} joined. A reviewer joins by opening the desk at ${deskUrl(gate)}`;
     if (!args.wait) throw new Error(`${advice}; propose again after that.`);
     log(`${advice}; waiting for that.`);
     while (!(ready = await reviewersReady(client, review)).ok) await new Promise((r) => setTimeout(r, args.poll));
@@ -238,7 +238,7 @@ export async function main(argv, { log = console.log, gateDir } = {}) {
   log(`  ${held.commits.length} commit${held.commits.length === 1 ? "" : "s"}${branch ? ` on ${branch}` : ""} since ${short(held.base)}, +${added} -${removed}${held.model ? `, written by ${held.model}${MODEL_SOURCES[held.model_source] ? ` (${MODEL_SOURCES[held.model_source]})` : ""}` : ""}`);
   for (const c of held.commits) log(`    ${short(c.sha)}  ${c.message.split("\n")[0]}`);
   if (state === "review_requested") await announce(gate, task_id, { open: args.open, log });
-  else log(`  review at ${gate.base}/#task=${encodeURIComponent(task_id)}`);
+  else log(`  review at ${reviewUrl(gate, task_id)}`);
   if (!args.wait) {
     log(`${state === "completed" ? "Run the same command with --wait to seal it." : "Run the same command with --wait to seal the branch once it is approved."}`);
     return 0;

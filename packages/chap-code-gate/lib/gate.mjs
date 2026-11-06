@@ -151,11 +151,26 @@ export function openBrowser(url) {
 }
 
 /**
+ * Where the desk of a gate is opened: localhost for a gate on this
+ * machine's loopback or wildcard address, since the desk may sign with a
+ * passkey and WebAuthn takes a domain name, never an IP address; the
+ * gate's own address otherwise.
+ */
+export function deskUrl(gate) {
+  const url = new URL(gate.base);
+  if (["127.0.0.1", "[::1]", "0.0.0.0", "[::]"].includes(url.hostname)) url.hostname = "localhost";
+  return `${url.origin}/`;
+}
+
+/** The desk's address for one review. */
+export const reviewUrl = (gate, taskId) => `${deskUrl(gate)}#task=${encodeURIComponent(taskId)}`;
+
+/**
  * Bring the reviewer to a review: an open desk shows it by itself; with no
  * desk open, the browser opens at it. Returns what was done, to say so.
  */
 export async function showReview(gate, taskId, { open: allowed = true } = {}) {
-  const url = `${gate.base}/#task=${encodeURIComponent(taskId)}`;
+  const url = reviewUrl(gate, taskId);
   if (await deskIsOpen(gate)) return { url, how: "desk" };
   if (allowed && openBrowser(url)) return { url, how: "browser" };
   return { url, how: "none" };

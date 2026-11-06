@@ -33,7 +33,7 @@
 
 import { join } from "node:path";
 import { submittedArtefact } from "@brightbeamai/chap-server/desk/followup.js";
-import { agentClient, changeSince, commitSigning, describeChange, ensureGate, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, revisionTarget, task } from "./gate.mjs";
+import { agentClient, changeSince, commitSigning, describeChange, deskUrl, ensureGate, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, reviewUrl, revisionTarget, task } from "./gate.mjs";
 import { announce, commandAgain, printPrompt, promptAfter, readContext, reviewerName, waitWithin, withNote } from "./loop.mjs";
 import { MODEL_SOURCES, sessionModel } from "./model.mjs";
 import { applyToWorkingTree, commitAll, patchApplies, repoRoot } from "./git.mjs";
@@ -103,7 +103,7 @@ export async function main(argv, { log = console.log, gateDir } = {}) {
   const review = reviewRule(gate);
   let ready = await reviewersReady(client, review);
   if (!ready.ok) {
-    const advice = `${review.rule} needs ${ready.need} reviewer${ready.need === 1 ? "" : "s"} in the workspace and ${ready.have} ${ready.have === 1 ? "has" : "have"} joined, so the review cannot open yet. A reviewer joins by opening the desk at ${gate.base}/`;
+    const advice = `${review.rule} needs ${ready.need} reviewer${ready.need === 1 ? "" : "s"} in the workspace and ${ready.have} ${ready.have === 1 ? "has" : "have"} joined, so the review cannot open yet. A reviewer joins by opening the desk at ${deskUrl(gate)}`;
     if (!args.wait) throw new Error(`${advice}; propose again after that.`);
     log(`${advice}; waiting for that.`);
     while (!(ready = await reviewersReady(client, review)).ok) await new Promise((r) => setTimeout(r, args.poll));
@@ -114,7 +114,7 @@ export async function main(argv, { log = console.log, gateDir } = {}) {
   log(`  ${artefact.files.length} file${artefact.files.length === 1 ? "" : "s"}: ${files}${artefact.model ? `, written by ${artefact.model}${MODEL_SOURCES[artefact.model_source] ? ` (${MODEL_SOURCES[artefact.model_source]})` : ""}` : ""}`);
   log(`  digest ${digest}`);
   if (state === "review_requested") await announce(gate, task_id, { open: args.open, log });
-  else log(`  review at ${gate.base}/#task=${encodeURIComponent(task_id)}`);
+  else log(`  review at ${reviewUrl(gate, task_id)}`);
   if (!args.wait) return 0;
 
   if (state === "review_requested") log(`Waiting for the decision at the desk${args.timeout ? `, for up to ${args.timeout} min` : ""}.`);

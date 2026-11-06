@@ -34,7 +34,7 @@
 
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { approvedChanges, buildNote, checkApproval, checkChange, evidence, loadGate, onlinePolicy, reviewRule, served, signaturesRequired, strictestRule, trailersFor, trustAtRef } from "./gate.mjs";
+import { approvedChanges, buildNote, checkApproval, checkChange, deskUrl, evidence, loadGate, onlinePolicy, reviewRule, served, signaturesRequired, strictestRule, trailersFor, trustAtRef } from "./gate.mjs";
 import { commitInfo, commitsWithApproval, committerIdent, emptyTree, git, head, mergeInProgress, objectExists, setTrailers, stagedTree, treeOf, writeNote } from "./git.mjs";
 
 const say = (line) => process.stderr.write(`chap: ${line}\n`);
@@ -114,7 +114,7 @@ async function preCommitChecked(repo, gate, atPush, letThrough) {
     say("no approved change matches what is staged on this commit's parent.");
     for (const [id, problems] of near.slice(0, 3)) say(`  ${id}, approved on this parent: ${problems[0]}`);
     say(`propose it from the repository with: ${command(gate, "propose.mjs")} "what the change does" --model "the model that wrote it"`);
-    say(`then decide at ${gate.base}/ and commit again. CHAP_GATE=off commits without an approval.`);
+    say(`then decide at ${deskUrl(gate)} and commit again. CHAP_GATE=off commits without an approval.`);
     return 1;
   }
   // Of the approvals that match the change, the first whose approval holds

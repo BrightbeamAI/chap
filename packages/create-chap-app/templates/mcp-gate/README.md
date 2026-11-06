@@ -17,7 +17,7 @@ npm install
 npm start                       # the desk, POST /chap and /mcp on port 8792
 ```
 
-Open <http://127.0.0.1:8792/> for the desk. Then connect your MCP client to
+Open <http://localhost:8792/> for the desk. Then connect your MCP client to
 `http://127.0.0.1:8792/mcp`:
 
 - **Claude Code:** `claude mcp add --transport http chap http://127.0.0.1:8792/mcp`

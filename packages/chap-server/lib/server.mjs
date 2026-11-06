@@ -793,14 +793,15 @@ async function prepare({ config, configPath, coordinator, basePath, enrol = [], 
 export async function createChapServer(options = {}) {
   const { config, coord, handler } = await prepare(options);
   const server = createServer(handler);
+  // On the loopback address a second server answers on ::1, and closes with this one.
+  let ipv6 = null;
+  server.on("close", () => ipv6?.close());
   return {
     config, coord, handler, server,
     async listen({ port = config.port, host = config.host, log = console.log } = {}) {
-      await new Promise((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(port, host, () => { server.off("error", reject); resolve(); });
-      }).catch((e) => { throw listenError(e, port, host); });
-      const base = `http://${host}:${server.address().port}`;
+      if (LOOPBACK.has(host)) ipv6 = await listenOnLoopback(server, handler, port);
+      else await listenOn(server, port, host).catch((e) => { throw listenError(e, port, host); });
+      const base = deskBase(host, server.address().port);
       log(`CHAP ${config.workspace} on ${base}`);
       log(`  desk     ${base}/`);
       log(`  calls    POST ${base}/chap`);
@@ -815,6 +816,56 @@ export async function createChapServer(options = {}) {
     },
     close: () => new Promise((resolve) => server.close(resolve)),
   };
+}
+
+/** The loopback address by the names a host setting gives it. */
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+/** The addresses that listen on every interface, the loopback one among them. */
+const WILDCARD = new Set(["0.0.0.0", "::", "[::]"]);
+
+/**
+ * Where the desk is opened, for a server listening on `host` and `port`.
+ * The desk may sign with a passkey, and WebAuthn takes a domain name for
+ * its relying party, never an IP address, so a server on this machine's
+ * loopback address, or on every address, is reached at localhost; any
+ * other host as it is given.
+ */
+export function deskBase(host, port) {
+  if (LOOPBACK.has(host) || WILDCARD.has(host)) return `http://localhost:${port}`;
+  return `http://${host.includes(":") && !host.startsWith("[") ? `[${host}]` : host}:${port}`;
+}
+
+/** Listen on one address; resolves once listening. */
+function listenOn(server, port, host) {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => { server.off("error", reject); resolve(); });
+  });
+}
+
+/**
+ * Listen on 127.0.0.1 and ::1 at one port, so localhost reaches the server
+ * whichever of the two the name resolves to first, and never another
+ * program listening on the other. `port` 0 takes a port free on both.
+ * Returns the server on ::1, or null on a machine with no IPv6 loopback
+ * address, where localhost can only be 127.0.0.1.
+ */
+async function listenOnLoopback(server, handler, port) {
+  for (let attempt = 1; ; attempt++) {
+    await listenOn(server, port, "127.0.0.1").catch((e) => { throw listenError(e, port, "127.0.0.1"); });
+    const taken = server.address().port;
+    const ipv6 = createServer(handler);
+    try {
+      await listenOn(ipv6, taken, "::1");
+      return ipv6;
+    } catch (e) {
+      if (e.code === "EADDRNOTAVAIL" || e.code === "EAFNOSUPPORT") return null;
+      await new Promise((resolve) => server.close(resolve));
+      if (e.code === "EADDRINUSE" && port === 0 && attempt < 5) continue;
+      if (e.code === "EADDRINUSE") throw new Error(`Port ${taken} on ::1 is in use, and localhost may reach that address first: another process answers there. Stop it, or give this one another port with PORT or "port" in chap.config.json.`);
+      throw listenError(e, taken, "::1");
+    }
+  }
 }
 
 /** Why the server could not listen, in a line that says what to do. */
@@ -838,15 +889,19 @@ export async function chapHandler(options = {}) {
 
 /**
  * Serve a project: its configuration from `configPath`, or from CHAP_CONFIG,
- * or from chap.config.json in `dir`. Returns { coord, server, base }.
+ * or from chap.config.json in `dir`. Returns { coord, server, base, close }.
  */
 export async function serve({ dir = process.cwd(), configPath } = {}) {
   return start(await loadConfig(configPath ?? process.env.CHAP_CONFIG ?? join(dir, "chap.config.json")));
 }
 
-/** Start the server for a config: the coordinator, the handler, and the port. Returns { coord, server, base }. */
+/**
+ * Start the server for a config: the coordinator, the handler, and the port.
+ * Returns { coord, server, base, close }; closing `server` closes the
+ * server on ::1 with it.
+ */
 export async function start(config) {
   const chap = await createChapServer({ config });
   const { base } = await chap.listen();
-  return { coord: chap.coord, server: chap.server, base };
+  return { coord: chap.coord, server: chap.server, base, close: chap.close };
 }

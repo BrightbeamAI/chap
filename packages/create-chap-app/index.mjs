@@ -262,7 +262,7 @@ function usage(templates) {
 export function nextSteps({ target, manifest, config }, { relative = true } = {}) {
   const dir = relative ? basename(target) : target;
   const lines = ["Next:", `  cd ${/^[\w./:\\-]+$/.test(dir) ? dir : `"${dir}"`}`, ...(manifest.run ?? []).map((step) => `  ${step}`)];
-  if (config?.port) lines.push("", `The desk is at http://127.0.0.1:${config.port}/ once it runs; open it in a browser.`);
+  if (config?.port) lines.push("", `The desk is at http://localhost:${config.port}/ once it runs; open it in a browser.`);
   lines.push("", "README.md says what each profile changes in this project and how to attach your own agent and data.");
   return lines.join("\n");
 }

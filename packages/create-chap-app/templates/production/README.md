@@ -19,7 +19,7 @@ npm start           # the coordinator, the desk and POST /chap on port 8790
 npm run agent       # in a second terminal: drafts, submits, waits
 ```
 
-Open <http://127.0.0.1:8790/>. The desk joins you with a key it generates in
+Open <http://localhost:8790/>. The desk joins you with a key it generates in
 the browser and lists the drafts waiting for you. Approve one as written,
 edit it and override, or reject it. The agent sees the decision and writes
 the approved message to `outbox/<task_id>.json`. Reject with "ask for a

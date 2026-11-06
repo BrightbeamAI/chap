@@ -34,7 +34,7 @@ test("the prompt says which templates run on Python, and what each profile adds"
   }
   const desk = (await listTemplates()).find((t) => t.name === "support-desk");
   for (const id of desk.profile_choices) assert.ok(text.includes(`  ${id.padEnd(20)} ${PROFILE_NOTES[id]}`), `${id} is explained`);
-  assert.match(text, /The desk is at http:\/\/127\.0\.0\.1:8788\/ once it runs; open it in a browser\./);
+  assert.match(text, /The desk is at http:\/\/localhost:8788\/ once it runs; open it in a browser\./);
   await rm(dir, { recursive: true });
 });
 
@@ -52,7 +52,7 @@ test("--list and --help say what each template needs installed", async () => {
   }
 });
 
-test("the next steps for a Node.js template are commands Windows has too, and name the desk's address", async () => {
+test("the next steps for a Node.js template are commands Windows has too, and name the desk's address at localhost, where a passkey can sign", async () => {
   for (const t of (await listTemplates()).filter((x) => x.language === "typescript")) {
     const dir = await mkdtemp(join(tmpdir(), `cca-next-${t.name}-`));
     await rm(dir, { recursive: true });
@@ -60,7 +60,7 @@ test("the next steps for a Node.js template are commands Windows has too, and na
     const steps = nextSteps(result);
     for (const step of t.run) assert.match(step, /^(npm|npx|node|docker) /, `${t.name}: ${step}`);
     assert.doesNotMatch(steps, /^ *(open|mkdir|xdg-open) /m, t.name);
-    assert.ok(steps.includes(`The desk is at http://127.0.0.1:${result.config.port}/`), t.name);
+    assert.ok(steps.includes(`The desk is at http://localhost:${result.config.port}/`), t.name);
     await rm(dir, { recursive: true });
   }
   const spaced = nextSteps({ target: "/home/Ada Lovelace/my-gate", manifest: { run: [] }, config: null }, { relative: false });

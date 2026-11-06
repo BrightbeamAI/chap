@@ -162,7 +162,7 @@ export function describe(plan, { dryRun = false } = {}) {
   if (changes.prepare) lines.push("", `prepare: ${changes.prepare}`, "husky points core.hooksPath at .husky/_ each time npm install runs it, so the gate's hooks are installed again after it, running husky's hooks after the gate's check.");
   if (changes.gitignore.length) lines.push("", `.gitignore: ${changes.gitignore.join(", ")}`);
   lines.push("", "Next:", ...plan.run.map((step) => `  ${step}`));
-  if (plan.config?.port) lines.push("", `The desk is at http://127.0.0.1:${plan.config.port}/ once it runs; open it in a browser.`);
+  if (plan.config?.port) lines.push("", `The desk is at http://localhost:${plan.config.port}/ once it runs; open it in a browser.`);
   if (plan.manifest.add.files.includes("AGENT_INSTRUCTIONS.md")) lines.push(`Paste ${plan.sub}/AGENT_INSTRUCTIONS.md into your agent's instructions, CLAUDE.md for Claude Code: it says who the agent is and how it asks for review.`);
   if (plan.manifest.add.hooks) lines.push(`The hooks come out with npx chap-code-gate install-hooks --gate ${plan.sub} --remove, which puts back the hooks the repository ran before${plan.prepared ? `; take the install out of prepare first, or npm install puts them in again` : ""}.`);
   if (dryRun) lines.push("", "Nothing was changed: --dry-run.");

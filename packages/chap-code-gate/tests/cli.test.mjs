@@ -34,3 +34,11 @@ test("stop names the gate project it looked in", async () => {
   const { stdout } = await run(process.execPath, [BIN, "stop", "--gate", dir]);
   assert.match(stdout, /No gate started in the background here/);
 });
+
+test("the desk a command opens or names is at localhost for a gate on this machine, where a passkey can sign", async () => {
+  const { deskUrl, reviewUrl } = await import("../lib/gate.mjs");
+  assert.equal(deskUrl({ base: "http://127.0.0.1:8791" }), "http://localhost:8791/");
+  assert.equal(deskUrl({ base: "http://[::1]:8791" }), "http://localhost:8791/");
+  assert.equal(deskUrl({ base: "https://gate.example.org" }), "https://gate.example.org/", "a gate elsewhere keeps its name");
+  assert.equal(reviewUrl({ base: "http://127.0.0.1:8791" }, "tsk_01"), "http://localhost:8791/#task=tsk_01");
+});

@@ -89,6 +89,43 @@ test("the bin says what it does", async () => {
   await assert.rejects(run(process.execPath, [BIN, "--bogus"]), (e) => /Unknown option --bogus/.test(e.stderr));
 });
 
+/** Whether this machine has the IPv6 loopback address; where it has none, the server listens on 127.0.0.1 alone. */
+const hasIpv6Loopback = await new Promise((resolve) => {
+  const probe = createServer();
+  probe.once("error", () => resolve(false));
+  probe.listen(0, "::1", () => probe.close(() => resolve(true)));
+});
+
+test("on the loopback address the server answers on 127.0.0.1 and ::1 at one port, prints the desk at localhost, and names a port taken on ::1", { skip: !hasIpv6Loopback && "this machine has no ::1" }, async () => {
+  const { configPath } = await project();
+  const lines = [];
+  const chap = await createChapServer({ configPath });
+  const { base } = await chap.listen({ port: 0, host: "127.0.0.1", log: (l) => lines.push(l) });
+  const port = chap.server.address().port;
+  try {
+    assert.equal(base, `http://localhost:${port}`);
+    assert.ok(lines.includes(`  desk     http://localhost:${port}/`), lines.join("\n"));
+    for (const address of ["127.0.0.1", "[::1]"]) {
+      const health = await (await fetch(`http://${address}:${port}/api/health`)).json();
+      assert.equal(health.workspace, "wsp_test", address);
+    }
+  } finally {
+    await chap.close();
+  }
+  await new Promise((r) => setTimeout(r, 50));
+  await assert.rejects(fetch(`http://[::1]:${port}/api/health`), "closing the server closes it on ::1 too");
+
+  const squatter = createServer(() => {});
+  await new Promise((r) => squatter.listen(0, "::1", r));
+  const taken = squatter.address().port;
+  try {
+    const other = await createChapServer({ configPath });
+    await assert.rejects(other.listen({ port: taken, host: "127.0.0.1", log: () => {} }), new RegExp(`^Error: Port ${taken} on ::1 is in use, and localhost may reach that address first`));
+  } finally {
+    await new Promise((r) => squatter.close(r));
+  }
+});
+
 test("a port in use is one line that says what to do", async () => {
   const busy = createServer(() => {});
   await new Promise((r) => busy.listen(0, "127.0.0.1", r));
