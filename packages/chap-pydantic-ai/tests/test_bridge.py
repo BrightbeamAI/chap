@@ -9,6 +9,7 @@ with the same attributes drive the same code path the real types would.
 """
 
 import sys
+import threading
 from pathlib import Path
 
 THIS = Path(__file__).resolve()
@@ -18,7 +19,7 @@ sys.path.insert(0, str(THIS.parents[2] / "coordinator-py"))
 import pytest
 
 from chap_coordinator import Coordinator, CoordinatorOptions
-from chap_pydantic_ai import ChapApprovalBridge, ChapBridgeError
+from chap_pydantic_ai import ChapApprovalBridge, ChapBridgeError, Decision
 
 
 # ---- Pydantic AI stand-ins -----------------------------------------
@@ -101,10 +102,14 @@ def last_params(bridge, method):
 # ---- setup ---------------------------------------------------------
 
 
-def test_bridge_joins_agent_and_reviewer(coord, bridge):
+def test_bridge_joins_the_agent_and_the_reviewer_when_it_records(coord, bridge):
     ws = coord.workspaces["wsp_pai_test"]
     assert "agent:assistant#v1" in ws.members
-    assert "human:alice@example.org" in ws.members
+    # A person who decides at a desk joins there, with their own key, so the
+    # bridge joins the reviewer only to record a decision in their name.
+    assert "human:alice@example.org" not in ws.members
+    bridge.record_decision(Call("send_email", {"to": "x@y.z"}, "c1"), ToolApproved())
+    assert ws.members["human:alice@example.org"].type == "human"
 
 
 def test_bridge_is_idempotent(coord, bridge):
@@ -112,7 +117,14 @@ def test_bridge_is_idempotent(coord, bridge):
         coord, workspace="wsp_pai_test",
         agent="agent:assistant#v1", reviewer="human:alice@example.org",
     )
-    assert len(coord.workspaces["wsp_pai_test"].members) == 2
+    assert len(coord.workspaces["wsp_pai_test"].members) == 1
+
+
+def test_the_agent_cannot_review_its_own_calls(coord):
+    with pytest.raises(ValueError, match="cannot be the agent"):
+        ChapApprovalBridge(coord, workspace="wsp_pai_self",
+                           agent="human:alice@example.org",
+                           reviewer="human:alice@example.org")
 
 
 # ---- the three decisions -------------------------------------------
@@ -200,6 +212,7 @@ def test_member_type_follows_the_uri_scheme(coord, bridge):
         Call("ship", {"env": "prod"}, "c1"), ToolApproved(),
         approver="service:autodeploy",
     )
+    bridge.record_decision(Call("ship", {"env": "prod"}, "c2"), ToolApproved())
     ws = coord.workspaces["wsp_pai_test"]
     assert ws.members["service:autodeploy"].type == "service"
     assert ws.members["agent:assistant#v1"].type == "agent"
@@ -254,6 +267,88 @@ def test_chain_is_hash_linked(bridge):
     audit = bridge.audit()
     assert len(audit) >= 8
     assert all("prev_hash" in e for e in audit)
+
+
+# ---- waiting for a decision made at a desk ---------------------------
+
+
+def desk_decides(coord, method, task_id, reviewer="human:alice@example.org", **params):
+    """A decision made outside the bridge, as a desk sharing the
+    coordinator would make it: the person joins, then decides."""
+    coord.dispatch({"jsonrpc": "2.0", "id": "join", "method": "participant.join",
+                    "params": {"workspace": "wsp_pai_test", "from": reviewer,
+                               "type": "human"}})
+    out = coord.dispatch({"jsonrpc": "2.0", "id": "desk", "method": method,
+                          "params": {"workspace": "wsp_pai_test", "from": reviewer,
+                                     "task_id": task_id, **params}})
+    assert "error" not in out, out
+    return out["result"]
+
+
+def open_review(bridge, args=None):
+    artefact = {"tool": "transfer", "args": args or {"amount": 100}, "tool_call_id": "c1"}
+    return bridge._submit(artefact, bridge.reviewer, review_required=True)
+
+
+def test_the_review_waits_for_a_person(coord, bridge):
+    seen = []
+    bridge.on_envelope = lambda m, p: seen.append(m)
+    task_id = open_review(bridge)
+    # The agent opens the review and records no decision; the task requires
+    # review, so only a person's decision completes it.
+    assert seen == ["task.create", "review.request"]
+    task = coord.workspaces["wsp_pai_test"].tasks[task_id]
+    assert (task.state, task.review_required) == ("review_requested", True)
+    assert task.review.requested_to == ["human:alice@example.org"]
+    assert "human:alice@example.org" not in coord.workspaces["wsp_pai_test"].members
+
+
+def test_wait_for_decision_reads_an_in_process_desk(coord, bridge):
+    task_id = open_review(bridge)
+    timer = threading.Timer(0.05, desk_decides, (coord, "decide.override", task_id),
+                            {"diff": [{"op": "replace", "path": "/args/amount", "value": 50}],
+                             "rationale": "capped", "tags": ["limit"]})
+    timer.start()
+    try:
+        decision = bridge.wait_for_decision(task_id, timeout=5, poll_seconds=0.01)
+    finally:
+        timer.join()
+    assert decision == Decision(
+        task_id=task_id, state="completed", kind="override",
+        reviewer="human:alice@example.org", comment="capped", tags=("limit",),
+        output={"tool": "transfer", "args": {"amount": 50}, "tool_call_id": "c1"})
+
+
+def test_wait_for_decision_reads_a_rejection(coord, bridge):
+    task_id = open_review(bridge)
+    desk_decides(coord, "decide.reject", task_id, comment="not this month")
+    decision = bridge.wait_for_decision(task_id, timeout=1)
+    assert (decision.approved, decision.kind, decision.comment, decision.output) == (
+        False, "reject", "not this month", None)
+
+
+def test_wait_for_decision_reads_a_client_with_task(coord):
+    class DeskClient:
+        def task(self, task_id):
+            return {"task_id": task_id, "state": "declined", "output": None,
+                    "review": {"decisions": [{"reviewer": "human:alice@example.org",
+                                              "kind": "reject", "comment": "no"}]}}
+
+    bridge = ChapApprovalBridge(coord, workspace="wsp_pai_test", agent="agent:assistant#v1",
+                                reviewer="human:alice@example.org", client=DeskClient())
+    decision = bridge.wait_for_decision("tsk_remote", timeout=1)
+    assert (decision.kind, decision.comment, decision.approved) == ("reject", "no", False)
+
+
+def test_wait_for_decision_times_out(bridge):
+    task_id = open_review(bridge)
+    with pytest.raises(TimeoutError):
+        bridge.wait_for_decision(task_id, timeout=0.05, poll_seconds=0.01)
+
+
+def test_wait_for_decision_on_an_unknown_task(bridge):
+    with pytest.raises(KeyError):
+        bridge.wait_for_decision("tsk_none", timeout=1)
 
 
 # ---- errors --------------------------------------------------------

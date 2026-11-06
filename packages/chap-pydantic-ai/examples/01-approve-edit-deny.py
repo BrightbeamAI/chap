@@ -8,8 +8,9 @@ Run (needs the optional Pydantic AI extra):
 
 It uses Pydantic AI's TestModel, so it runs offline with no API key. The
 model proposes a `transfer` call; each run pauses for approval, and the
-bridge records the human's decision -- approve, edited args, or denial --
-as decide.approve / decide.override / decide.reject.
+bridge records the decision this script makes for the human (approve,
+edited args, or denial) as decide.approve / decide.override /
+decide.reject, on a hash-linked chain.
 """
 
 import sys
@@ -35,13 +36,59 @@ def transfer(amount: int, to: str) -> str:
     return f"sent {amount} to {to}"
 
 
-def propose() -> DeferredToolRequests:
-    """Run the agent until it pauses for approval, return the requests."""
-    return agent.run_sync("move some money").output
+def decide(bridge: ChapApprovalBridge, resolve) -> None:
+    """Run the agent to its pause, let `resolve` make the decision, record
+    it, and resume the run with the same results, so what is recorded is
+    what runs."""
+    first = agent.run_sync("move some money")
+    requests = first.output
+    results = resolve(requests.approvals[0])
+    bridge.record_results(requests, results)
+    final = agent.run_sync("move some money", message_history=first.all_messages(),
+                           deferred_tool_results=results)
+    print(f"  the run ends with {final.output}")
+
+
+def approve(call) -> DeferredToolResults:
+    return DeferredToolResults(approvals={call.tool_call_id: ToolApproved()})
+
+
+def cap_the_amount(call) -> DeferredToolResults:
+    """Refining edit: same decision, capped amount. intent_preserved stays
+    true (the default), and the metadata carries the why."""
+    return DeferredToolResults(
+        approvals={call.tool_call_id: ToolApproved(
+            override_args={**call.args_as_dict(), "amount": 50})},
+        metadata={call.tool_call_id: {
+            "approver":  "human:sam@example.org",
+            "rationale": "over the desk limit; capped to 50",
+            "tags":      ["limit-exceeded"],
+        }},
+    )
+
+
+def redirect(call) -> DeferredToolResults:
+    """Substituting edit: the reviewer redirects the payment, a different
+    decision than the agent's, so intent_preserved=false."""
+    return DeferredToolResults(
+        approvals={call.tool_call_id: ToolApproved(
+            override_args={**call.args_as_dict(), "to": "acct-escrow"})},
+        metadata={call.tool_call_id: {
+            "approver":         "human:sam@example.org",
+            "rationale":        "wrong recipient; routed to escrow",
+            "tags":             ["wrong-recipient"],
+            "intent_preserved": False,
+        }},
+    )
+
+
+def deny(call) -> DeferredToolResults:
+    return DeferredToolResults(approvals={
+        call.tool_call_id: ToolDenied("recipient not on the allow-list")})
 
 
 def main() -> None:
-    coord = Coordinator()
+    coord = Coordinator(enable_chain=True)
     bridge = ChapApprovalBridge(
         coord,
         workspace="wsp_payments",
@@ -49,52 +96,10 @@ def main() -> None:
         reviewer="human:alice@example.org",
     )
 
-    # 1. Approve as proposed.
-    requests = propose()
-    results = DeferredToolResults()
-    results.approvals[requests.approvals[0].tool_call_id] = ToolApproved()
-    bridge.record_results(requests, results)
+    for resolve in (approve, cap_the_amount, redirect, deny):
+        decide(bridge, resolve)
 
-    # 2. Refining edit: same decision, capped amount. intent_preserved
-    #    stays true (the default), and the metadata carries the why.
-    requests = propose()
-    call = requests.approvals[0]
-    results = DeferredToolResults()
-    results.approvals[call.tool_call_id] = ToolApproved(
-        override_args={**call.args_as_dict(), "amount": 50},
-    )
-    results.metadata = {call.tool_call_id: {
-        "approver":  "human:sam@example.org",
-        "rationale": "over the desk limit; capped to 50",
-        "tags":      ["limit-exceeded"],
-    }}
-    bridge.record_results(requests, results)
-
-    # 3. Substituting edit: the reviewer redirects the payment, a
-    #    different decision than the agent's, so intent_preserved=false.
-    requests = propose()
-    call = requests.approvals[0]
-    results = DeferredToolResults()
-    results.approvals[call.tool_call_id] = ToolApproved(
-        override_args={**call.args_as_dict(), "to": "acct-escrow"},
-    )
-    results.metadata = {call.tool_call_id: {
-        "approver":         "human:sam@example.org",
-        "rationale":        "wrong recipient; routed to escrow instead",
-        "tags":             ["wrong-recipient"],
-        "intent_preserved": False,
-    }}
-    bridge.record_results(requests, results)
-
-    # 4. Deny.
-    requests = propose()
-    results = DeferredToolResults()
-    results.approvals[requests.approvals[0].tool_call_id] = ToolDenied(
-        "recipient not on the allow-list",
-    )
-    bridge.record_results(requests, results)
-
-    print("Audit chain")
+    print("\nAudit chain")
     print("===========")
     for entry in bridge.audit():
         # A refused call is recorded under "request", with its outcome.
@@ -110,6 +115,9 @@ def main() -> None:
         elif env["method"] in ("decide.approve", "decide.reject"):
             detail = f"  {params.get('comment', '')}"
         print(f"  seq={entry['seq']:<2} {env['method']:<16} {who}{detail}")
+    verified = coord.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
+                               "params": {"workspace": "wsp_payments"}})
+    print(f"\nChain verified: {verified['result']['ok']}")
 
 
 if __name__ == "__main__":

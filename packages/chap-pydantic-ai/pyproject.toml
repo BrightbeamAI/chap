@@ -28,10 +28,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Pydantic AI is only needed to run a live agent. The adapter reads the
-# resolution objects structurally, so the bridge and its tests work
-# without it installed.
-pydantic-ai = ["pydantic-ai>=1.0"]
+# Pydantic AI is only needed to run a live agent, and for request_results,
+# which builds the DeferredToolResults it returns (with the metadata field
+# Pydantic AI added in 1.19). record_results reads the resolution objects
+# structurally, so the bridge and its tests work without it installed.
+pydantic-ai = ["pydantic-ai>=1.19"]
 dev         = ["pytest>=8", "pytest-cov>=5"]
 
 [project.urls]
