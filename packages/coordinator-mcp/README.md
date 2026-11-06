@@ -128,6 +128,57 @@ Its next completion opens a new review where the task has
 A runnable reference server is at
 [`reference/mcp-server-ts/`](../../reference/mcp-server-ts/).
 
+## Serve it over HTTP
+
+`chapMcpHttpHandler` answers MCP on an HTTP endpoint such as `/mcp`, for a
+Node `http` request and response, in both protocol eras:
+
+```typescript
+function chapMcpHttpHandler(
+  coord: ChapDispatcher,
+  options?: ChapMcpHttpOptions,
+): (req: IncomingMessage, res: ServerResponse, parsedBody?: unknown) => Promise<void>;
+
+interface ChapMcpHttpOptions extends ChapMcpOptions {
+  maxBodyBytes?: number;   // default 1,114,112: 1 MiB, and 64 KiB of MCP around it
+}
+```
+
+`options` are those of `makeChapMcpServer`, so `participant` and
+`toolFilter` hold over HTTP as on stdio. Pass `parsedBody` when your server
+has read and parsed the body already; otherwise the handler reads it, up to
+`maxBodyBytes`.
+
+```typescript
+import { createServer } from "node:http";
+import { AGENT_MCP_TOOLS, chapMcpHttpHandler } from "@brightbeamai/chap-coordinator-mcp";
+
+const mcp = chapMcpHttpHandler(coord, {
+  participant: "agent:assistant",
+  toolFilter: (name) => AGENT_MCP_TOOLS.has(name),
+});
+createServer((req, res) => {
+  // Refuse a foreign Host and Origin here, before any route.
+  if (new URL(req.url ?? "/", "http://localhost").pathname === "/mcp") return mcp(req, res);
+  res.writeHead(404).end();
+}).listen(8787, "127.0.0.1");
+```
+
+A request with no `MCP-Protocol-Version` header, or a handshake-era version
+(2025-11-25 and earlier), goes to the SDK's Streamable HTTP transport, with
+a server and a transport for each request and no session. Any other version
+takes the 2026-07-28 binding: one POST carrying one JSON-RPC request,
+answered with one JSON object. Its headers are checked against its body, and
+an error carries that binding's status: 400 for a malformed request, a
+mismatched header (`-32020`) or an unsupported version (`-32022`), 404 for a
+method it does not serve, 405 for anything but POST. The SDK's transport
+alone refuses every 2026-07-28 request with 400.
+
+The handler checks neither `Host` nor `Origin`. Mount it behind the checks
+your server applies to every request, as the create-chap-app servers do: a
+foreign `Host` refused with 421 against DNS rebinding, and a foreign
+`Origin` with 403.
+
 ## What an unsigned local server trusts
 
 MCP calls carry no signature. `participant` keeps a connection to one name,
@@ -177,7 +228,9 @@ npm test
 
 The integration tests use the SDK's `InMemoryTransport.createLinkedPair()`
 to drive a wrapped Coordinator end-to-end, exercising every major
-profile.
+profile. `cli.test.ts` starts `chap-mcp-server` the way an MCP client does,
+with and without `--url`, and `http.test.ts` serves both protocol eras over
+HTTP.
 
 ## See also
 

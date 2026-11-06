@@ -17,7 +17,8 @@
  *   const server = makeChapMcpServer(coord, { name: "chap", version: "0.3.4" });
  *   await server.connect(new StdioServerTransport());
  *
- * Usage (Streamable HTTP): see reference/mcp-server-ts/server.ts.
+ * Usage (HTTP): chapMcpHttpHandler(coord, options) answers a Node `http`
+ * request on an MCP endpoint, in both protocol eras.
  *
  * Architecture notes:
  *
@@ -46,6 +47,7 @@
  *   per MCP's auth model.
  */
 
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
@@ -61,6 +63,7 @@ import { SCHEMAS, TOOL_NAMES, methodForTool, coerceToolArgs, type JsonSchema } f
 import { TOOL_DESCRIPTIONS, TOOL_ANNOTATIONS } from "./tools.js";
 import { classifyEnvelope, ProtocolError, SUPPORTED_PROTOCOL_VERSIONS, type ProtocolEra } from "./envelope.js";
 import { ChapEndpointError } from "./remote.js";
+import { DEFAULT_MAX_BODY_BYTES, mcpHttpHandler } from "./http.js";
 
 export { SCHEMAS, TOOL_NAMES, schemaFor, methodForTool, coerceToolArgs } from "./schemas.js";
 export { TOOL_DESCRIPTIONS, TOOL_ANNOTATIONS, AGENT_MCP_TOOLS } from "./tools.js";
@@ -368,4 +371,37 @@ export function dispatchToolCall(
     method,
     params: coerceToolArgs(toolName, args ?? {}),
   });
+}
+
+export interface ChapMcpHttpOptions extends ChapMcpOptions {
+  /**
+   * The largest request body read, when the caller has not read it. Default
+   * 1,114,112 bytes: the coordinator's default envelope limit of 1 MiB, and
+   * 64 KiB for the MCP request around it.
+   */
+  maxBodyBytes?: number;
+}
+
+/** Answers one HTTP request on the MCP endpoint. Pass `parsedBody` when the server has read and parsed the body already. */
+export type ChapMcpHttpHandler = (req: IncomingMessage, res: ServerResponse, parsedBody?: unknown) => Promise<void>;
+
+/**
+ * Serve MCP over HTTP: a handler for a Node `http` request and response,
+ * for an endpoint such as `/mcp`, with the version handling of the stdio
+ * server. A request with no MCP-Protocol-Version header, or a handshake-era
+ * one, is answered by the SDK's Streamable HTTP transport, statelessly; a
+ * 2026-07-28 request is answered as that revision's single exchange, one
+ * JSON-RPC request and one JSON answer. `options` are those of
+ * makeChapMcpServer, so `participant` and `toolFilter` hold over HTTP as on
+ * stdio.
+ *
+ * It checks neither Host nor Origin: mount it behind the checks the server
+ * applies to every request.
+ *
+ *   const mcp = chapMcpHttpHandler(coord, { participant: "agent:assistant", toolFilter: (n) => AGENT_MCP_TOOLS.has(n) });
+ *   createServer((req, res) => (req.url === "/mcp" ? mcp(req, res) : notFound(res)));
+ */
+export function chapMcpHttpHandler(coord: ChapDispatcher, options: ChapMcpHttpOptions = {}): ChapMcpHttpHandler {
+  const { maxBodyBytes = DEFAULT_MAX_BODY_BYTES, ...serverOptions } = options;
+  return mcpHttpHandler(() => makeChapMcpServer(coord, serverOptions), maxBodyBytes);
 }
