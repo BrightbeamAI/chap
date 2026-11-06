@@ -7,7 +7,7 @@ store and serves:
 |---|---|
 | `GET /` | the review desk, from this package's `desk/` |
 | `POST /chap` | CHAP calls as JSON-RPC, for any agent or client |
-| `GET /api/...` | what the desk reads that the protocol does not carry: the open reviews, the tasks, a task's evidence, the configuration and the server's health |
+| `GET /api/...` | what the desk reads: the open reviews, the tasks, a task's evidence, the members and their keys, the chain and its verification, the configuration and the server's health |
 | `GET /analytics/...` | the pages `chap-analytics` wrote into the project's `analytics/` |
 | `POST /mcp` | an MCP server over streamable HTTP for the project's agent, when `mcp` is on |
 
@@ -102,11 +102,20 @@ origin and is refused.
 Under `security-signed/1.0` the desk signs each call with an Ed25519 key it
 makes in the browser as a key that cannot be exported, kept in IndexedDB for
 the desk's address and named by its RFC 7638 thumbprint. Its signing badge
-opens a panel with the whole fingerprint. After joining, the desk asks the
-workspace with a signed `workspace.describe` whether it holds this key for
-the reviewer, and while another key holds the reviewer's URI it signs
-nothing and says so. A key an earlier desk kept in `localStorage` moves to
-IndexedDB on the first visit, under the id it was registered with.
+opens a panel with the whole fingerprint. The desk reads the members from
+`GET /api/members` to see whether the workspace holds this key for the
+reviewer, and joins only while it does not. A join under a URI that
+another key holds is refused with `-32011`, and the desk then signs
+nothing and says so; so it does when a decision is refused because the
+workspace holds the key no longer (`-32070` to `-32072`). A key an earlier
+desk kept in `localStorage` moves to IndexedDB on the first visit, under
+the id it was registered with.
+
+The desk reads the chain from `GET /api/chain?from_seq=&to_seq=` and its
+verification from `GET /api/chain/verify`, which run the coordinator's
+`audit.read` and `audit.verify_chain` in the server's process, so a read
+needs no signature and the desk signs only what it sends in the reviewer's
+name. Like the rest of `/api/`, they answer whoever reaches the server.
 
 A program running as the reviewer's own user can drive their browser and
 have it sign; a key that needs a gesture for each signature is what stops

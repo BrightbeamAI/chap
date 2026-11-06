@@ -40,6 +40,33 @@ test("a project's server serves the package's desk and the project's analytics p
   }
 });
 
+test("the read API lists the members with the keys they sign with now, and reads and verifies the chain, with no signature", async () => {
+  const { configPath } = await project({ require_signatures: "humans" });
+  const chap = await createChapServer({ configPath, log: () => {} });
+  const { base } = await chap.listen({ port: 0, host: "127.0.0.1", log: () => {} });
+  try {
+    const { generateSigner, makeClient } = await import("../desk/chap-client.mjs");
+    const signer = await generateSigner(HUMAN);
+    const desk = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, signer });
+    await desk.call("participant.join", { type: "human", role: "reviewer", display_name: "Rev Iewer", jwks: { keys: [signer.publicJwk] } });
+    const { members } = await (await fetch(`${base}/api/members`)).json();
+    assert.deepEqual(members, [{ uri: HUMAN, type: "human", role: "reviewer", display_name: "Rev Iewer", keys: [signer.publicJwk] }]);
+
+    const chain = await (await fetch(`${base}/api/chain?from_seq=1`)).json();
+    assert.deepEqual(chain.entries.map((e) => e.envelope.method), ["participant.join"]);
+    assert.equal(chain.next_seq, 2);
+    assert.equal((await fetch(`${base}/api/chain?from_seq=-1`)).status, 400);
+    const verified = await (await fetch(`${base}/api/chain/verify`)).json();
+    assert.equal(verified.result.status, "verified");
+    assert.equal(verified.result.ok, true);
+    // The same reads through POST /chap need the person's signature.
+    const unsigned = await (await fetch(`${base}/chap`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "audit.read", params: { workspace: "wsp_test", from: HUMAN } }) })).json();
+    assert.equal(unsigned.error.code, -32070);
+  } finally {
+    await chap.close();
+  }
+});
+
 test("the handler mounts in a Node http server of the caller's, which serves the paths it does not", async () => {
   const { configPath } = await project();
   const handler = await chapHandler({ configPath });

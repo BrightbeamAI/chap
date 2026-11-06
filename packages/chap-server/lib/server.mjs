@@ -592,7 +592,34 @@ async function readDirectory(dir) {
 export { AGENT_MCP_TOOLS };
 
 /** The paths under /api/ the desk reads. */
-const API_PATHS = new Set(["/api/config", "/api/reviews", "/api/tasks", "/api/health"]);
+const API_PATHS = new Set(["/api/config", "/api/reviews", "/api/tasks", "/api/health", "/api/members", "/api/chain", "/api/chain/verify"]);
+
+/**
+ * A read the coordinator answers from the workspace it holds: audit.read
+ * or audit.verify_chain, run with the coordinator's own handlers. They
+ * change nothing and are never recorded, so the read API asks them
+ * in-process, as it reads the tasks, and a reader needs no signature: the
+ * desk would otherwise sign each poll, and a key that asks for a gesture on
+ * every signature would ask for one each time. Returns { result } or { error }.
+ */
+function coordinatorRead(coord, method, params) {
+  return coord.handlers.get(method)(params);
+}
+
+/**
+ * The workspace's members and the keys each signs with now: the keys it
+ * joined or rotated to, less those revoked or rotated away. A member's
+ * public keys are no secret, and the desk reads them here to know whether
+ * the workspace holds its key for the reviewer, with no signed call.
+ */
+export function listMembers(coord, workspace) {
+  const ws = coord.getWorkspace(workspace);
+  if (!ws) return [];
+  return [...ws.members.values()].map((m) => ({
+    uri: m.uri, type: m.type, role: m.role, ...(m.display_name ? { display_name: m.display_name } : {}),
+    keys: (m.keys ?? []).filter((k) => !k.revoked_at && !k.valid_until).map((k) => k.jwk),
+  }));
+}
 
 /** A redirect, with the headers every answer carries. */
 function redirect(res, location) {
@@ -682,6 +709,19 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
         return reply(res, 200, coord.dispatch(envelope));
       }
       if (path === "/api/config") return reply(res, 200, publicConfig(config));
+      if (path === "/api/members") return reply(res, 200, { members: listMembers(coord, config.workspace) });
+      if (path === "/api/chain") {
+        const range = {};
+        for (const name of ["from_seq", "to_seq"]) {
+          const v = url.searchParams.get(name);
+          if (v === null) continue;
+          if (!/^\d+$/.test(v)) return reply(res, 400, { error: `${name} is a whole number` });
+          range[name] = Number(v);
+        }
+        const r = coordinatorRead(coord, "audit.read", { workspace: config.workspace, range });
+        return r.error ? reply(res, 400, { error: r.error.message }) : reply(res, 200, r.result);
+      }
+      if (path === "/api/chain/verify") return reply(res, 200, coordinatorRead(coord, "audit.verify_chain", { workspace: config.workspace }));
       if (path === "/api/reviews") return reply(res, 200, { reviews: openReviews(coord, config.workspace, url.searchParams.get("reviewer") || undefined) });
       if (path === "/api/tasks") {
         const rawLimit = url.searchParams.get("limit");

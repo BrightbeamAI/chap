@@ -78,7 +78,7 @@ test("the desk makes a key no script can read out, keeps it in IndexedDB under i
   }
 });
 
-test("when another key holds the reviewer's name, the desk signs nothing and says so", async () => {
+test("when the workspace refuses the desk's join because another key holds the name, the desk says so and signs nothing", async () => {
   const { chap, base, agent } = await signedGate();
   const squat = await generateSigner(HUMAN);
   await makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, signer: squat }).call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [squat.publicJwk] } });
@@ -86,13 +86,41 @@ test("when another key holds the reviewer's name, the desk signs nothing and say
   const desk = await openDesk(base, { hash: `#task=${task}` });
   try {
     assert.ok(await desk.until(() => !desk.$("key-alert").hidden), "the desk shows that another key holds the name");
-    assert.match(desk.text("key-alert"), new RegExp(`Another key holds ${HUMAN}`));
+    const join = desk.calls.find((c) => c.method === "participant.join");
+    assert.equal(join.reply.error.code, -32011, "the coordinator refuses the join");
+    assert.deepEqual(join.reply.error.data, { kids: [join.params.jwks.keys[0].kid] });
+    assert.match(desk.text("key-alert"), new RegExp(`The workspace refused this browser's key when the desk joined you, because another key already holds ${HUMAN} in wsp_test\\.`));
     assert.match(desk.text("signing"), /not signing/);
     assert.equal(desk.$("approve").disabled, true);
     desk.$("approve").click();
     desk.key("x");
     await desk.settle(300);
-    assert.deepEqual(desk.calls.filter((c) => c.method.startsWith("decide.")), [], "no decision is sent");
+    assert.deepEqual(desk.calls.map((c) => c.method), ["participant.join"], "nothing is signed: no read, no decision");
+    assert.equal(chap.coord.getWorkspace("wsp_test").tasks.get(task).state, "review_requested");
+  } finally {
+    desk.close();
+    await chap.close();
+  }
+});
+
+test("a key the workspace no longer holds: the decision is refused with -32072, and the desk reads the members again and stops", async () => {
+  const { chap, base, agent } = await signedGate();
+  const desk = await openDesk(base);
+  try {
+    assert.ok(await desk.until(() => desk.$("signing").classList.contains("good")), "the desk's key is on record");
+    const task = await waiting(agent, "approve me");
+    assert.ok(await desk.until(() => !desk.$("approve").disabled), "the review waits in the desk");
+    const kid = chap.coord.getWorkspace("wsp_test").members.get(HUMAN).keys[0].kid;
+    const adminSigner = await generateSigner("human:admin@example.org");
+    const admin = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: "human:admin@example.org", signer: adminSigner });
+    await admin.call("participant.join", { type: "human", role: "admin", jwks: { keys: [adminSigner.publicJwk] } });
+    await admin.call("participant.revoke_key", { target_uri: HUMAN, kid, reason: "suspected_compromise" });
+    desk.$("approve").click();
+    assert.ok(await desk.until(() => !desk.$("key-alert").hidden), "the desk says the workspace holds no key for the reviewer");
+    const refused = desk.calls.find((c) => c.method === "decide.approve");
+    assert.equal(refused.reply.error.code, -32072);
+    assert.match(desk.text("key-alert"), /The workspace holds no key for you now\. The key this browser signed with .* was revoked or rotated away/);
+    assert.equal(desk.$("approve").disabled, true);
     assert.equal(chap.coord.getWorkspace("wsp_test").tasks.get(task).state, "review_requested");
   } finally {
     desk.close();

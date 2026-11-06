@@ -78,9 +78,10 @@ IndexedDB for the desk's address, registers its public half at
 address can ask the browser to sign with it, and no script can read the key
 out to sign somewhere else. The key's id is its RFC 7638 thumbprint, and the
 signing badge opens a panel with its whole fingerprint, the form
-`npm run trust` prints. After joining, the desk asks the workspace, with a
-signed read, whether it holds this key for you; while another key holds
-your URI the desk signs nothing and says so. A desk from before 0.3.5 kept
+`npm run trust` prints. The desk reads the members the server lists to see
+whether the workspace holds this key for you, and joins you only while it
+does not; a join under a URI another key holds is refused (`-32011`), and
+the desk then signs nothing and says so. A desk from before 0.3.5 kept
 the key in `localStorage`; the first visit moves it into IndexedDB under the
 id it was registered with.
 

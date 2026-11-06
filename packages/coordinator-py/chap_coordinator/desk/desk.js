@@ -6,8 +6,9 @@
 // on a draft that changed under the reviewer is refused. Under
 // security-signed/1.0 it signs in the browser with a key it generates there
 // and keeps where no script can read it out (keystore.js), and signs only
-// once the workspace holds that key for the reviewer. Activity reads the
-// chain; Insights counts what happened.
+// once the workspace holds that key for the reviewer, which it reads from
+// the members the server lists. Activity reads the chain; Insights counts
+// what happened.
 
 import { contentHash, deepEqual, fingerprint, jsonPatch, makeClient } from "./chap-client.mjs";
 import { signerFor as heldSigner } from "./keystore.js";
@@ -31,8 +32,11 @@ const state = {
   // already seen waiting, so a new one is brought forward.
   comments: new Map(), waitingSeen: null,
   // The reviewer's signing key and whether the workspace holds it for them:
-  // "unchecked" until a signed read says, then "on record" or "another key".
-  key: { signer: null, fingerprint: null, status: "unchecked" },
+  // "unchecked" until the members are read, then "on record", "another key",
+  // "no key" or "not joined"; "unsigned" where signatures are off. `refused`
+  // says the workspace refused the key at the join because another key
+  // holds the name.
+  key: { signer: null, fingerprint: null, status: "unchecked", refused: false },
 };
 
 // -- helpers --------------------------------------------------------------------
@@ -163,9 +167,10 @@ async function boot() {
 // Under security-signed/1.0 the desk signs in the browser. The key is
 // generated here, kept where no script can read it out, and registered at
 // participant.join, which the coordinator accepts unsigned. Whoever joins
-// first under a URI holds it, and a join with another key is not a way in,
-// so after joining the desk asks the workspace, with a signed read, whether
-// it holds this key for the reviewer, and signs nothing until it does.
+// first under a URI holds it: a later join that brings another key is
+// refused with -32011, and the desk then signs nothing and says so. The
+// desk joins only while the workspace does not hold its key, and reads
+// that from the members the server lists, with no signed call.
 async function setReviewer(uri) {
   setHash({ reviewer: uri });
   let signer = null;
@@ -175,37 +180,60 @@ async function setReviewer(uri) {
     if (held.moved) toast("Your signing key was in this browser's local storage, where any page on this address could read it. It is now kept where no page can read it out.", "ok");
   }
   state.client = makeClient({ url: "chap", workspace: state.config.workspace, from: uri, signer });
-  state.key = { signer, fingerprint: signer ? await fingerprint(signer.publicJwk) : null, status: signer ? "unchecked" : "unsigned" };
+  state.key = { signer, fingerprint: signer ? await fingerprint(signer.publicJwk) : null, status: signer ? "unchecked" : "unsigned", refused: false };
   if (signer) {
-    const me = state.config.humans.find((h) => h.uri === uri);
-    try { await state.client.call("participant.join", { type: "human", role: me?.role ?? "reviewer", display_name: me?.display_name, jwks: { keys: [signer.publicJwk] } }); }
-    catch (e) { toast(`Could not join as ${uri}: ${e.message}`, "bad"); }
     await checkKey();
+    if (state.key.status !== "on record") await join();
   }
   showKey();
   state.chainShown = -1;
   await refresh().catch(lost);
 }
 
-/** The codes a signature the workspace cannot verify is refused with: the key is not the one on record for the sender. */
-const KEY_REFUSALS = new Set([-32070, -32071, -32072]);
+/**
+ * Join the reviewer with this browser's key. A refusal because the name is
+ * held by keys the member brought before (-32011) leaves the desk signing
+ * nothing; any other is shown, and the join is tried again when the
+ * reviewer is chosen again.
+ */
+async function join() {
+  const uri = state.client.from;
+  const me = state.config.humans.find((h) => h.uri === uri);
+  try {
+    await state.client.call("participant.join", { type: "human", role: me?.role ?? "reviewer", display_name: me?.display_name, jwks: { keys: [state.key.signer.publicJwk] } });
+  } catch (e) {
+    if (e.code === -32011) { state.key.status = "another key"; state.key.refused = true; return; }
+    toast(`Could not join as ${uri}: ${e.message}`, "bad");
+  }
+  await checkKey();
+}
 
 /**
- * Whether the workspace holds this browser's key for the reviewer, from a
- * signed workspace.describe: it verifies only under a key on record, and the
- * member's keys must include this one. A read that fails for another reason
- * leaves the question open, and the next poll asks again.
+ * The codes a signed call is refused with when the workspace cannot verify
+ * it under a key it holds for the sender: -32070 when the signature does not
+ * verify under the key its kid names, -32071 when the sender holds no key of
+ * that kid, or none any longer, and -32072 when the key is revoked.
+ */
+const KEY_REFUSALS = new Set([-32070, -32071, -32072]);
+
+/** Whether two public keys are one key. */
+const sameKey = (a, b) => !!a && !!b && a.kty === b.kty && a.crv === b.crv && a.x === b.x && (a.y ?? null) === (b.y ?? null);
+
+/**
+ * Whether the workspace holds this browser's key for the reviewer, from the
+ * members and keys the server lists: "on record"; "another key" where the
+ * member signs with other keys; "no key" where it holds none now, revoked
+ * or rotated away; or "not joined". A read that fails leaves the question
+ * open, and the next poll asks again.
  */
 async function checkKey() {
   const { signer } = state.key;
   if (!signer) return;
   try {
-    const ws = await state.client.call("workspace.describe", {});
-    const me = (ws.members ?? []).find((m) => m.uri === state.client.from);
-    state.key.status = me && (me.jwks?.keys ?? []).some((k) => k.x === signer.publicJwk.x) ? "on record" : "another key";
-  } catch (e) {
-    if (KEY_REFUSALS.has(e.code)) state.key.status = "another key";
-  }
+    const { members } = await getJson("api/members");
+    const me = members.find((m) => m.uri === state.client.from);
+    state.key.status = !me ? "not joined" : me.keys.some((k) => sameKey(k, signer.publicJwk)) ? "on record" : me.keys.length ? "another key" : "no key";
+  } catch { /* asked again on the next poll */ }
 }
 
 /** Whether decisions from this browser would count: signatures are off, or the workspace holds this key. */
@@ -221,6 +249,9 @@ function showKey() {
   } else if (status === "another key") {
     chip("signing", "not signing", "bad");
     $("signing").title = `Another key holds ${uri} in this workspace, so this browser signs nothing`;
+  } else if (status === "not joined" || status === "no key") {
+    chip("signing", status, "bad");
+    $("signing").title = status === "no key" ? `The workspace holds no key for ${uri} now, so this browser signs nothing` : `${uri} has not joined this workspace with this browser's key`;
   } else {
     chip("signing", `signed · ${print.slice(7, 15)}`, status === "on record" ? "good" : "");
     $("signing").title = `Decisions are signed in this browser as ${uri}, with the key whose fingerprint is ${print}`;
@@ -231,10 +262,19 @@ function showKey() {
   $("key-status").textContent = !signer ? "Decisions from this browser are not signed." : status === "on record"
     ? `The workspace holds this key for ${uri}, so decisions signed here count.`
     : status === "another key" ? `The workspace holds another key for ${uri}, so decisions signed here would not count.`
-      : "Not checked with the workspace yet.";
-  $("key-alert").hidden = status !== "another key";
+      : status === "not joined" ? `${uri} has not joined the workspace with this key, so decisions signed here would not count.`
+        : status === "no key" ? `The workspace holds no key for ${uri} now, so decisions signed here would not count.`
+          : "Not checked with the workspace yet.";
+  $("key-alert").hidden = status !== "another key" && status !== "no key";
   setDecisionButtons();
-  if (status === "another key") $("key-alert-text").textContent = `Another key holds ${uri} in ${state.config.workspace}. Decisions signed in this browser would not count, so the desk sends none. If that key is yours, in another browser or a profile since cleared, decide there. If it is not, someone joined under your name first: whoever runs the workspace must find out who, and a trust policy that pins your key keeps them out.`;
+  if (status === "another key") {
+    const how = state.key.refused ? `The workspace refused this browser's key when the desk joined you, because another key already holds ${uri} in ${state.config.workspace}.` : `Another key holds ${uri} in ${state.config.workspace}.`;
+    $("key-alert-title").textContent = "This browser's key is not the reviewer's.";
+    $("key-alert-text").textContent = `${how} Decisions signed in this browser would not count, so the desk sends none. If that key is yours, in another browser or a profile since cleared, decide there. If it is not, someone joined under your name first: whoever runs the workspace must find out who, and a trust policy that pins your key keeps them out.`;
+  } else if (status === "no key") {
+    $("key-alert-title").textContent = "The workspace holds no key for you now.";
+    $("key-alert-text").textContent = `The key this browser signed with for ${uri} in ${state.config.workspace} was revoked or rotated away, so decisions signed here would not count, and the desk sends none. Whoever runs the workspace can say why.`;
+  }
 }
 
 function lost(e) {
@@ -246,7 +286,7 @@ function lost(e) {
 // -- data -----------------------------------------------------------------------
 
 async function refresh() {
-  if (state.key.status === "unchecked") { await checkKey(); showKey(); }
+  if (state.key.signer && state.key.status !== "on record") { await checkKey(); showKey(); }
   // Every open task, and the most recent ones for the decided list.
   const [health, open, recent] = await Promise.all([getJson("api/health?desk=1"), getJson("api/tasks?state=created,in_progress,review_requested&brief=1"), getJson("api/tasks?limit=200&brief=1")]);
   if (state.lost) { state.lost = false; toast("Connected again", "ok"); }
@@ -309,7 +349,7 @@ async function loadChain({ earlier = false } = {}) {
   const from = earlier ? Math.max(0, (state.chain.from ?? total) - CHAIN_PAGE) : Math.max(0, total - CHAIN_PAGE);
   const to = earlier ? state.chain.from : total;
   try {
-    const { entries } = await state.client.call("audit.read", { range: { from_seq: from, ...(to !== undefined && to !== null && to < total ? { to_seq: to } : {}) } });
+    const { entries } = await getJson(`api/chain?from_seq=${from}${to !== undefined && to !== null && to < total ? `&to_seq=${to}` : ""}`);
     if (earlier) state.chain.entries = [...entries, ...state.chain.entries];
     else {
       // Keep the earlier pages already loaded, replace the tail.
@@ -323,9 +363,11 @@ async function loadChain({ earlier = false } = {}) {
   }
 }
 
+/** The chain, as the coordinator verifies it; a broken chain is the coordinator's refusal, with the reason. */
 async function verifyChain() {
   try {
-    const v = await state.client.call("audit.verify_chain", {});
+    const { result: v, error } = await getJson("api/chain/verify");
+    if (error) { state.chain.verified = false; chip("chain", "chain broken", "bad"); $("chain").title = error.message; return; }
     state.chain.verified = v.status === "verified" && v.ok === true;
     chip("chain", state.chain.verified ? `chain verified · ${v.entries_checked}` : `chain ${v.status}`, state.chain.verified ? "good" : "bad");
   } catch { state.chain.verified = false; chip("chain", "chain not verified", "bad"); }
@@ -564,7 +606,11 @@ const tags = () => $("tags").value.split(",").map((s) => s.trim()).filter(Boolea
 async function decide(kind) {
   const t = current();
   if (!t || !mine(t) || state.busy) return;
-  if (!canSign()) { notice(state.key.status === "another key" ? `Another key holds ${state.client.from} in this workspace; the desk sends no decision signed here.` : "The desk has not yet confirmed with the workspace that it holds this browser's key.", "bad"); return; }
+  if (!canSign()) {
+    const why = { "another key": `Another key holds ${state.client.from} in this workspace`, "no key": `The workspace holds no key for ${state.client.from} now`, "not joined": `${state.client.from} has not joined with this browser's key` }[state.key.status];
+    notice(why ? `${why}; the desk sends no decision signed here.` : "The desk has not yet confirmed with the workspace that it holds this browser's key.", "bad");
+    return;
+  }
   const comment = $("comment").value.trim();
   const artefact = t.artefact;
   // Every decision names the artefact it was made on and the submission that
@@ -618,6 +664,9 @@ async function decide(kind) {
     if (next) select_(next.task_id); else { state.selectedId = null; setHash({ task: null }); renderQueue(); renderReview(); }
   } catch (e) {
     notice(e.message, "bad");
+    // A refusal of the signature itself: the workspace may no longer hold
+    // this key, revoked or rotated away since it was last read.
+    if (KEY_REFUSALS.has(e.code)) { await checkKey(); showKey(); }
   } finally {
     state.busy = false;
     setDecisionButtons();

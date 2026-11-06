@@ -113,11 +113,15 @@ read whole from `GET /api/tasks/<id>`. The chain records the calls, and the
 coordinator answers the caller who asked; which reviews a person is shown
 is the deployment's decision, as SPECIFICATION §15.1 says.
 
-Under `security-signed/1.0` the desk signs each call in the browser with an
-Ed25519 key it generates there as a key that cannot be exported, kept in
-IndexedDB and named by its RFC 7638 thumbprint. The public key is
-registered at `participant.join`, and the desk signs only once a signed read
-shows the workspace holds that key for the reviewer. Every decision carries `approved_artefact_digest`, the hash of the
+Under `security-signed/1.0` the desk signs what it sends in the reviewer's
+name in the browser, with an Ed25519 key it generates there as a key that
+cannot be exported, kept in IndexedDB and named by its RFC 7638 thumbprint.
+The public key is registered at `participant.join`, and the desk signs only
+once the members the read API lists show the workspace holds that key for
+the reviewer. A join under a name another key holds is refused with
+`-32011`, and the desk then signs nothing and says so. It reads the chain
+and the members through the read API, so no read waits on a signature.
+Every decision carries `approved_artefact_digest`, the hash of the
 artefact the desk showed, so the coordinator refuses a decision on an
 artefact the reviewer did not see, and `round`, the hash of the submission
 that opened the review round, which the coordinator records with the call. A

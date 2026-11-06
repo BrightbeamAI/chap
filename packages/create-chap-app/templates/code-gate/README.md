@@ -309,8 +309,9 @@ pinned keys, before anyone else can join under those URIs. It reads
 `chap-trust.json` in this project, or the file `trust` in
 `chap.config.json` names (a path from this project), and it says at start
 when its store holds one of them under a key the policy does not pin. The desk checks it
-too: after joining it asks the workspace, with a signed read, whether it
-holds the browser's key for you, and while another key holds your URI it
+too: it reads the members the gate lists to see whether the workspace holds
+the browser's key for you, and joins you only while it does not. A join
+under a URI another key holds is refused (`-32011`), and the desk then
 signs nothing and says so.
 
 **The reviewer's key.** The desk makes it in the browser as a key that
