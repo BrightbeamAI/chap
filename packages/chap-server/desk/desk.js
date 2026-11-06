@@ -278,10 +278,10 @@ async function makeKey() {
 /**
  * Join the reviewer with this browser's key, and with `token`, an ID token,
  * where people sign in. A refusal because the name is held by keys the
- * member brought before (-32011) leaves the desk signing nothing; a token
- * refused (-32403, -32404) is said in the sign-in banner; any other
- * refusal is shown, and the join is tried again when the reviewer is chosen
- * again.
+ * member brought before, or by a member who joined with none and so takes
+ * none later (-32011), leaves the desk signing nothing; a token refused
+ * (-32403, -32404) is said in the sign-in banner; any other refusal is
+ * shown, and the join is tried again when the reviewer is chosen again.
  */
 async function join(token = null) {
   const uri = state.client.from;
@@ -289,7 +289,12 @@ async function join(token = null) {
   try {
     await state.client.call("participant.join", { type: "human", role: me?.role ?? "reviewer", display_name: me?.display_name, jwks: { keys: [state.key.signer.publicJwk] }, ...(token ? { oidc_token: token } : {}) });
   } catch (e) {
-    if (e.code === -32011) { state.key.status = "another key"; state.key.refused = true; return; }
+    if (e.code === -32011) {
+      state.key.refused = true;
+      await checkKey();
+      if (state.key.status !== "no key") state.key.status = "another key";
+      return;
+    }
     if (token && (e.code === -32403 || e.code === -32404)) { state.key.setup = { need: "sign in", error: `The workspace refused the sign-in: ${e.message}` }; return; }
     toast(`Could not join as ${uri}: ${e.message}`, "bad");
   }
@@ -407,6 +412,9 @@ function showKey() {
     // key made there for that address alone.
     const before = location.hostname === "localhost" ? ` Desks before 0.3.5 were opened at http://127.0.0.1${location.port ? `:${location.port}` : ""}/, and this browser keeps a key it made there for that address alone: if you decided there, open the desk there.` : "";
     $("key-alert-text").textContent = `${how} Decisions signed in this browser would not count, so the desk sends none. If that key is yours, in another browser or a profile since cleared, decide there.${before} If that key is not yours, someone joined under your name first: whoever runs the workspace must find out who, and a trust policy that pins your key keeps them out.`;
+  } else if (status === "no key" && state.key.refused) {
+    $("key-alert-title").textContent = "The workspace takes no key for you.";
+    $("key-alert-text").textContent = `The workspace refused this browser's key when the desk joined you: ${uri} is a member of ${state.config.workspace} with no key, and a member with no key takes none later. Decisions signed in this browser would not count, so the desk sends none. If this workspace was made while signatures were off, it joined you that way, and a new store lets the desk join you with this key; if not, someone joined under your name first, and whoever runs the workspace must find out who.`;
   } else if (status === "no key") {
     $("key-alert-title").textContent = "The workspace holds no key for you now.";
     $("key-alert-text").textContent = `The key this browser signed with for ${uri} in ${state.config.workspace} was revoked or rotated away, so decisions signed here would not count, and the desk sends none. Whoever runs the workspace can say why.`;

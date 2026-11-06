@@ -103,6 +103,30 @@ test("when the workspace refuses the desk's join because another key holds the n
   }
 });
 
+test("a member who joined under the reviewer's name with no key takes none, and the desk says so and signs nothing", async () => {
+  const { chap, base, agent } = await signedGate();
+  const bare = await fetch(`${base}/chap`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: "bare", method: "participant.join", params: { workspace: "wsp_test", from: HUMAN, type: "human", role: "reviewer" } }) });
+  assert.deepEqual((await bare.json()).result, { joined: true, as: HUMAN });
+  const task = await waiting(agent, "approve me");
+  const desk = await openDesk(base, { hash: `#task=${task}` });
+  try {
+    assert.ok(await desk.until(() => !desk.$("key-alert").hidden), "the desk shows that the name takes no key");
+    assert.equal(desk.calls.find((c) => c.method === "participant.join").reply.error.code, -32011, "the coordinator refuses the join");
+    const said = new RegExp(`^The workspace takes no key for you\\. The workspace refused this browser's key when the desk joined you: ${HUMAN} is a member of wsp_test with no key, and a member with no key takes none later\\.`);
+    assert.match(desk.text("key-alert"), said);
+    assert.match(desk.text("signing"), /no key/);
+    await desk.settle(4500);
+    assert.match(desk.text("key-alert"), said, "the next poll, which reads the members again, says the same");
+    assert.equal(desk.$("approve").disabled, true);
+    assert.deepEqual(desk.calls.map((c) => c.method), ["participant.join"], "nothing is signed");
+    assert.equal(chap.coord.getWorkspace("wsp_test").tasks.get(task).state, "review_requested");
+  } finally {
+    desk.close();
+    await chap.close();
+  }
+});
+
 test("a key the workspace no longer holds: the decision is refused with -32072, and the desk reads the members again and stops", async () => {
   const { chap, base, agent } = await signedGate();
   const desk = await openDesk(base);

@@ -152,10 +152,14 @@ signs.
 The desk reads the members from `GET /api/members` to see whether the
 workspace holds its key for the reviewer, and joins only while it does
 not. A join under a URI that another key holds is refused with `-32011`,
-and the desk then signs nothing and says so; so it does when a decision is
-refused because the workspace holds the key no longer (`-32070` to
-`-32072`). A key an earlier desk kept in `localStorage` moves to IndexedDB
-on the first visit, under the id it was registered with.
+and so is one under a URI a member holds with no key, since such a member
+takes no key later; the desk then signs nothing and says which. A
+workspace made with signatures off joined the configured people with no
+key, so a store from then is replaced before the desk can sign there. The
+desk stops signing, too, when a decision is refused because the workspace
+no longer holds its key (`-32070` to `-32072`). A key an earlier desk kept
+in `localStorage` moves to IndexedDB on the first visit, under the id it
+was registered with.
 
 The desk reads the chain from `GET /api/chain?from_seq=&to_seq=` and its
 verification from `GET /api/chain/verify`, which run the coordinator's

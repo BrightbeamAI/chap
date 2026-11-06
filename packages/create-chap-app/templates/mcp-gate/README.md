@@ -162,8 +162,8 @@ refused (`-32070`). So an assistant that can send HTTP requests itself, such
 as Claude Code with a shell, cannot decide as you through `POST /chap`. The
 assistant's own calls need no signature, so `/mcp` works as it is: the
 server joins the assistant the first time `/mcp` is used. Whoever joins
-first under your URI holds it, and the desk says so when another key holds
-your name and then signs nothing. The key is one no script can read out of
+first under your URI holds it, with a key or with none, and the desk says
+so and then signs nothing. The key is one no script can read out of
 the browser; a program running as you on this machine can still have the
 browser sign with it. `"desk_signing": "webauthn"`, or `"auto"`, has the
 desk sign with a passkey, which asks for your fingerprint, face or PIN for
