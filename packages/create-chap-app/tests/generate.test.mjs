@@ -131,6 +131,16 @@ test("the code gate names its reviewer by name and email, and reviews at commit 
   await rm(dir, { recursive: true });
 });
 
+test("the code gate's workflow uses the action majors the repository's own CI uses, on Node 24", async () => {
+  const majors = (text) => Object.fromEntries([...text.matchAll(/uses: (actions\/[\w-]+)@(v\d+)/g)].map((m) => [m[1], m[2]]));
+  const ours = majors(await readFile(new URL("../../../.github/workflows/ci.yml", import.meta.url), "utf8"));
+  const workflow = await readFile(new URL("../templates/code-gate/github/workflows/chap-verify.yml", import.meta.url), "utf8");
+  const generated = majors(workflow);
+  assert.deepEqual(Object.keys(generated).sort(), ["actions/checkout", "actions/setup-node"]);
+  for (const [action, major] of Object.entries(generated)) assert.equal(major, ours[action], `${action} is on the major ci.yml uses`);
+  assert.match(workflow, /node-version: 24\n/);
+});
+
 test("the production image runs Node 24 and installs what package-lock.json pins", async () => {
   const dockerfile = await readFile(new URL("../templates/production/Dockerfile", import.meta.url), "utf8");
   const from = [...dockerfile.matchAll(/^FROM (\S+)/gm)].map((m) => m[1]);

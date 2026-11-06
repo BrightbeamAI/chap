@@ -41,13 +41,13 @@ jobs:
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: The base branch, which holds the verifier and the trust policy
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
           persist-credentials: false
       - name: The pull request's commits, read as data
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
@@ -65,9 +65,9 @@ jobs:
           AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
           git -c "http.extraheader=$AUTH" fetch --no-tags "$UPSTREAM" "$BASE_SHA"
           git -c "http.extraheader=$AUTH" fetch --no-tags "$UPSTREAM" "+refs/notes/chap:refs/notes/chap" || echo "no notes pushed yet"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       # The verifier is @brightbeamai/chap-code-gate at the version the base
       # branch's lock file pins. No package's install script runs.
       - name: The verifier, as the base branch pins it
