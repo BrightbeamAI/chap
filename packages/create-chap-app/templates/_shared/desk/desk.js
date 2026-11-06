@@ -14,7 +14,7 @@ import { signerFor as heldSigner } from "./keystore.js";
 import { ago, artefactAnomalies, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
 import { parsePatch } from "./diff.js";
 import { decisionsOf, outcomeOf, renderInsights, renderMarkdown } from "./insights.js";
-import { followUpPrompt } from "./followup.js";
+import { followUpPrompt, proposeAgainCommand } from "./followup.js";
 
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 4000;
@@ -486,25 +486,12 @@ function countComments() {
   $("comment-count").textContent = n ? `${n} comment${n === 1 ? "" : "s"} on lines go with your decision` : "";
 }
 
-/** The command that proposes a task's work again, as the agent would run it. */
-function commandFor(t) {
-  const a = t.output ?? t.artefact ?? {};
-  const dir = state.config?.gate_dir;
-  if (!dir) return null;
-  const q = (s) => (/^[A-Za-z0-9_./:=@%+,-]+$/.test(s) ? s : `"${String(s).replace(/(["\\$`])/g, "\\$1")}"`);
-  // --model only where the agent's word named the model: the commits or the session name it otherwise.
-  const said = a.model && (a.model_source === "agent" || !a.model_source);
-  const flags = [a.drafted_by ? `--by ${q(a.drafted_by)}` : null, said ? `--model ${q(a.model)}` : null].filter(Boolean).join(" ");
-  if (Array.isArray(a.commits)) return `node ${q(`${dir}/propose-branch.mjs`)} ${String(a.base ?? "").slice(0, 12)}..${a.branch ?? "HEAD"} ${flags} --wait`;
-  return `node ${q(`${dir}/propose.mjs`)} ${q(a.summary ?? "what the change does")} ${flags} --wait --commit`;
-}
-
 /** The prompt the last decision on a task makes for the agent, or null. */
 function promptFor(t) {
   const decision = (t.decision_log ?? []).at(-1);
   if (!decision) return null;
   const name = state.config?.humans?.find((h) => h.uri === decision.reviewer)?.display_name ?? decision.reviewer;
-  return followUpPrompt({ task: t, decision, reviewer: name, command: commandFor(t) });
+  return followUpPrompt({ task: t, decision, reviewer: name, command: proposeAgainCommand(t, state.config?.gate_dir) });
 }
 
 /** The agent's own note, what changed since the last look, and the decision as a prompt. */

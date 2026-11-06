@@ -4,7 +4,7 @@
 // decision turned into a prompt the agent acts on.
 
 import { readFile } from "node:fs/promises";
-import { followUpPrompt } from "@brightbeamai/chap-server/desk/followup.js";
+import { followUpPrompt, shellWord } from "@brightbeamai/chap-server/desk/followup.js";
 import { api, showReview, waitForDecision } from "./gate.mjs";
 
 /** The most text an agent's context note may be. */
@@ -29,8 +29,7 @@ export async function readContext(source) {
 
 /** The command line that ran, as a shell can run it again. */
 export function commandAgain(script, argv) {
-  const q = (s) => (/^[A-Za-z0-9_./:=@%+,-]+$/.test(s) ? s : `"${s.replace(/(["\\$`])/g, "\\$1")}"`);
-  return ["node", q(script), ...argv.map(q)].join(" ");
+  return ["node", script, ...argv].map(shellWord).join(" ");
 }
 
 /** Bring the review to the reviewer, and say how. */
