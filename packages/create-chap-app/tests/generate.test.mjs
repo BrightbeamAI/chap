@@ -150,6 +150,15 @@ test("the production image runs Node 24 and installs what package-lock.json pins
   assert.doesNotMatch(dockerfile, /^RUN npm install/m);
 });
 
+test("no template listens on 8787, where Cursor's desktop app takes its OAuth callback", async () => {
+  for (const t of await listTemplates()) {
+    const config = await readFile(new URL(`../templates/${t.name}/chap.config.json`, import.meta.url), "utf8");
+    assert.match(config, /"port": \d+,/, `${t.name} names its port`);
+    assert.doesNotMatch(config, /"port": 8787,/, t.name);
+    for (const step of t.run ?? []) assert.doesNotMatch(step, /:8787\b/, `${t.name}: ${step}`);
+  }
+});
+
 test("with no template named, the code gate is the one generated", async () => {
   assert.equal(DEFAULT_TEMPLATE, "code-gate");
   assert.ok((await listTemplates()).some((t) => t.name === DEFAULT_TEMPLATE));

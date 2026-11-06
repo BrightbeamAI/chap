@@ -13,19 +13,23 @@ is the agent.
 
 ```bash
 npm install
-npm start                       # the desk, POST /chap and /mcp on port 8787
-open http://127.0.0.1:8787/     # the desk
+npm start                       # the desk, POST /chap and /mcp on port 8792
+open http://127.0.0.1:8792/     # the desk
 ```
 
-Then connect your MCP client to `http://127.0.0.1:8787/mcp`:
+Then connect your MCP client to `http://127.0.0.1:8792/mcp`:
 
-- **Claude Code:** `claude mcp add --transport http chap http://127.0.0.1:8787/mcp`
+- **Claude Code:** `claude mcp add --transport http chap http://127.0.0.1:8792/mcp`
 - **Cursor:** add to `.cursor/mcp.json`:
-  `{ "mcpServers": { "chap": { "url": "http://127.0.0.1:8787/mcp" } } }`
+  `{ "mcpServers": { "chap": { "url": "http://127.0.0.1:8792/mcp" } } }`
 - **Claude Desktop:** custom connectors are reached from Anthropic's servers,
   so a server on your machine needs a local bridge. Add to
   `claude_desktop_config.json`:
-  `{ "mcpServers": { "chap": { "command": "npx", "args": ["-y", "mcp-remote", "http://127.0.0.1:8787/mcp"] } } }`
+  `{ "mcpServers": { "chap": { "command": "npx", "args": ["-y", "mcp-remote", "http://127.0.0.1:8792/mcp"] } } }`
+
+The port is 8792, clear of 8787, where Cursor's desktop app takes the
+sign-in callback for an MCP server that uses OAuth. `PORT`, or `"port"` in
+`chap.config.json`, moves it.
 
 Paste `AGENT_INSTRUCTIONS.md` into the assistant's project instructions, or
 `CLAUDE.md` for Claude Code, so it knows its participant URI and the
@@ -61,7 +65,7 @@ the client the desk uses and runs under Node too:
 
 ```js
 import { makeClient } from "@brightbeamai/chap-server/client";
-const agent = makeClient({ url: "http://127.0.0.1:8787/chap", workspace: "__WORKSPACE__", from: "__AGENT_URI__" });
+const agent = makeClient({ url: "http://127.0.0.1:8792/chap", workspace: "__WORKSPACE__", from: "__AGENT_URI__" });
 const { task_id } = await agent.call("task.create", { kind: "draft", assignee: "__AGENT_URI__", input: { ticket: "T-1" }, review_required: true });
 await agent.call("task.complete", { task_id, output: { body: "..." } });
 ```

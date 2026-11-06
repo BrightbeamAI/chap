@@ -2,7 +2,7 @@
   "workspace": "__WORKSPACE__",
   "profiles": __PROFILES_JSON__,
   "store": "./data/chap.db",
-  "port": 8787,
+  "port": 8792,
   "humans": [
     { "uri": "__HUMAN_URI__", "display_name": "__HUMAN_NAME__", "role": "reviewer" }
   ],

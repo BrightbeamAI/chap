@@ -59,7 +59,7 @@ export async function loadConfig(path = process.env.CHAP_CONFIG ?? "chap.config.
   const file = resolve(path);
   const config = JSON.parse(await readFile(file, "utf8"));
   config.dir = dirname(file);
-  config.port = Number(process.env.PORT ?? config.port ?? 8787);
+  config.port = Number(process.env.PORT ?? config.port ?? 8792);
   config.host = process.env.CHAP_HOST ?? config.host ?? "127.0.0.1";
   config.store = storePath(process.env.CHAP_DB_PATH ?? config.store ?? "./data/chap.db", config.dir);
   // A profile in the list is enforced. security-signed/1.0 requires

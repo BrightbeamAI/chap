@@ -1,5 +1,6 @@
 // The configuration as the server reads it: a relative store path is the
-// project's, whatever the working directory, ~ is the home directory, and
+// project's, whatever the working directory, ~ is the home directory, the
+// port with none configured is clear of Cursor's OAuth callback, and
 // require_signatures takes "humans" as well as true and false.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -15,11 +16,12 @@ import { project } from "./helpers.mjs";
 const run = promisify(execFile);
 const BIN = fileURLToPath(new URL("../bin/chap-server.mjs", import.meta.url));
 
-/** loadConfig with the environment given, put back afterwards. */
+/** Set the environment given, undefined unsetting a variable, and put it back afterwards. */
 async function withEnv(env, fn) {
   const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
-  Object.assign(process.env, env);
-  try { return await fn(); } finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
+  const set = (vars) => { for (const [k, v] of Object.entries(vars)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } };
+  set(env);
+  try { return await fn(); } finally { set(saved); }
 }
 
 test("a relative store path is taken from the project's directory, and ~ is the home directory", async () => {
@@ -40,6 +42,11 @@ test("a server started from another directory opens the project's store, and say
   assert.match(out.stdout, new RegExp(`store    ${join(dir, "data", "chap.db").replace(/[.]/g, "\\.")}`));
   assert.ok((await readdir(join(dir, "data"))).includes("chap.db"), "the store is in the project");
   assert.deepEqual(await readdir(elsewhere), [], "nothing is written where the server was started");
+});
+
+test("with no port configured the server takes 8792, clear of Cursor's OAuth callback on 8787", async () => {
+  const { configPath } = await project({ port: undefined });
+  assert.equal(await withEnv({ PORT: undefined }, async () => (await loadConfig(configPath)).port), 8792);
 });
 
 test("require_signatures \"humans\" asks for signatures with the humans policy, and true for every call", async () => {
