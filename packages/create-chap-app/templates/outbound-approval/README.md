@@ -46,6 +46,9 @@ python -m pip install -r requirements-dev.txt
 python -m pytest tests -q
 ```
 
+One test runs the desk's own client in Node, as the browser runs it, and
+is skipped where Node 20 or later is not installed.
+
 ## Attach your own agent and data
 
 **Your data.** Point `agent.py` at your own export: `python agent.py
@@ -68,30 +71,40 @@ JSON-RPC envelopes to `http://127.0.0.1:8789/chap` with `task.create`, then
 signature. Where every call is signed, it joins once with
 `participant.join`, registering a key of its own, and signs each call as
 `security-signed/1.0` describes. `chap_coordinator.client` does this for
-Python, as `connect` in `agent.py` shows. The agent's `Participant` answers
-`dispatch(envelope)` the way a `Coordinator` does, signing what the agent
-sends when it holds a key, so a framework bridge written against an
-in-process coordinator runs over HTTP unchanged:
+Python, as `connect` in `agent.py` shows. A `Participant` answers
+`dispatch(envelope)` the way a `Coordinator` does, and reads a task with
+`task(task_id)`, so a framework bridge written against an in-process
+coordinator runs over HTTP unchanged. With `chap-langgraph` the review
+opens in the desk, and the bridge waits for your decision:
 
 ```python
-from agent import connect, desk_url, load_config
-from chap_langgraph import ChapBridge, hil_review
+from chap_coordinator.client import HttpCoordinator, Participant
+from chap_langgraph import ChapBridge, ReviewRejected, hil_review
 
-config = load_config()
-agent = connect(config, desk_url(config))
-bridge = ChapBridge(agent, workspace=config["workspace"], agent=config["agent"]["uri"], reviewer=config["humans"][0]["uri"])
-chap_state = hil_review(bridge, draft, kind="outbound_message")
+agent = Participant(HttpCoordinator("http://127.0.0.1:8789/chap"), "__WORKSPACE__", "__AGENT_URI__")
+bridge = ChapBridge(agent, workspace="__WORKSPACE__", agent="__AGENT_URI__", reviewer="__HUMAN_URI__")
+state = hil_review(bridge, {"to": "kim.lau@example.com", "body": "Invoice 77 is paid."}, kind="outbound_message")
+decision = bridge.wait_for_decision(state["chap_task_id"])
+try:
+    print("decided:", bridge.apply_decision(state["chap_task_id"], decision, state["chap_artefact"]))
+except ReviewRejected as rejected:
+    print("not approved:", rejected.rationale)
 ```
 
-Open the desk before the bridge starts: a bridge joins the reviewer it
-names, and a reviewer joined without a key cannot add one by joining again.
-The review opens in the desk like any other; your graph reads the decided
-output from `GET /api/tasks/<id>` when the state is no longer
-`review_requested`. The other bridges (`chap-pydantic-ai`, `chap-llama-index`,
-`chap-ag2`, `chap-google-adk`) take the same object as their coordinator.
-Each one's README says whether it opens a review and waits for the desk, or
-records a decision made elsewhere, which this project refuses while people
-sign: the decision would carry no signature of theirs.
+`hil_review` opens the review, addressed to you whether or not you have
+opened the desk yet; the bridge joins only the agent. `wait_for_decision`
+reads the task every two seconds until you decide, and `apply_decision`
+returns the message as you approved or edited it, or raises
+`ReviewRejected`. In a graph, `hil_review` goes in the node that makes the
+draft and the wait in the next, as the chap-langgraph README shows. The
+other bridges take the same `Participant` as their coordinator, and each
+opens a review and waits for the desk in the same way: `request_results`
+in `chap-pydantic-ai`, `request_response` in `chap-llama-index`,
+`request_reply` in `chap-ag2` and `request_confirmation` in
+`chap-google-adk`, each with a `wait_for_decision` of its own. A bridge's
+recording mode writes a decision made in your own interface in your name,
+which this project refuses where people sign: the decision would carry no
+signature of yours.
 
 ## Signatures and the chain
 

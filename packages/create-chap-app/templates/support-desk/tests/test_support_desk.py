@@ -410,6 +410,32 @@ def test_where_every_call_is_signed_an_agent_with_another_key_is_told_why_it_can
         server.server_close()
 
 
+def test_the_readmes_bridge_example_runs_as_written(tmp_path, capsys):
+    pytest.importorskip("chap_langgraph", reason="the README's example runs chap-langgraph, which is not installed")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    [example] = [block for block in re.findall(r"```python\n(.*?)```", readme, re.S) if "hil_review" in block]
+    shipped = json.loads((ROOT / "chap.config.json").read_text(encoding="utf-8"))
+    server, desk = start_desk()
+    desk["keys"] = tmp_path / "keys"
+    try:
+        human = person(desk, desk["config"]["humans"][0]["uri"])
+
+        def decide():
+            review = wait_for(lambda: next(iter(open_reviews(desk["base"], human.uri)), None))
+            human.call("decide.reject", task_id=review["task_id"], comment="not this one")
+
+        threading.Thread(target=decide, daemon=True).start()
+        # As written, with this desk's address and a quicker poll.
+        quick = 'wait_for_decision(state["chap_task_id"], poll_seconds=0.05)'
+        runnable = (example.replace(f"http://127.0.0.1:{shipped['port']}/chap", desk["base"] + "/chap")
+                    .replace('wait_for_decision(state["chap_task_id"])', quick))
+        exec(runnable, {"__name__": "readme"})
+        assert capsys.readouterr().out.splitlines()[-1] == "not approved: not this one"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_the_project_ships_with_people_signing_and_the_chain_on():
     shipped = json.loads((ROOT / "chap.config.json").read_text(encoding="utf-8"))
     assert shipped["require_signatures"] == "humans" and shipped["chain"] is True
