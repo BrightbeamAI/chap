@@ -18,7 +18,7 @@ async function policyFor(dir, reviewer, agent) {
   }));
 }
 
-test("the gate joins the policy's reviewers with their pinned keys first, so a later join under the name holds nothing", async () => {
+test("the gate joins the policy's reviewers with their pinned keys first, so a later join under the name is refused", async () => {
   const { dir, configPath } = await gateProject();
   const reviewer = await generateSigner(HUMAN);
   const agent = await generateSigner(AGENT);
@@ -30,7 +30,8 @@ test("the gate joins the policy's reviewers with their pinned keys first, so a l
     const url = `${base}/chap`;
     const squat = await generateSigner(HUMAN);
     const squatter = makeClient({ url, workspace: "wsp_gate", from: HUMAN, signer: squat });
-    await squatter.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [squat.publicJwk] } });
+    await assert.rejects(squatter.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [squat.publicJwk] } }),
+      (e) => e.code === -32011, "a name the policy holds cannot be taken with another key");
     const coder = makeClient({ url, workspace: "wsp_gate", from: AGENT, signer: agent });
     const { task_id } = await coder.call("task.create", { kind: "code_change", assignee: AGENT, input: { summary: "x" }, review_required: true });
     await coder.call("task.complete", { task_id, output: { summary: "x" } });
