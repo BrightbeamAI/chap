@@ -163,7 +163,8 @@ a profile it does not pass.**
 
 ### Profile: `security-signed/1.0`
 
-- [ ] Envelopes carry a top-level `sig` field of the form `ed25519:<kid>:<base64-sig>`.
+- [ ] Envelopes carry a top-level `sig` field of the form `ed25519:<kid>:<base64-sig>`, or `webauthn:<kid>:<authenticatorData>.<clientDataJSON>.<signature>` for a WebAuthn key, and a tag of any other form is refused with `-32070`.
+- [ ] A WebAuthn assertion is verified as [`../profiles/security-signed.md`](../profiles/security-signed.md) §3 lists: client data type and challenge, origin, relying party, user presence and verification, and the ES256 signature. Verified by [`./webauthn-vectors.json`](./webauthn-vectors.json).
 - [ ] Signing canonicalises with RFC 8785 (JCS), with `sig` removed.
 - [ ] Signatures use RFC 8032 Ed25519.
 - [ ] Public keys are advertised at `participant.join` and validated on subsequent envelopes.

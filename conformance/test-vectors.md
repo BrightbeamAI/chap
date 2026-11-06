@@ -7,7 +7,8 @@ working Ed25519 and SHA-256 library can regenerate them.
 
 The vectors cover:
 
-1. **Ed25519 signing** (against RFC 8032 test vector 1).
+1. **Ed25519 signing** (against RFC 8032 test vector 1), and a **WebAuthn
+   assertion** signing a request (§1a).
 2. **JCS canonicalisation** of a sample CHAP envelope.
 3. **Review and audit behaviour**: the harness vectors `rv-09` to `rv-13`
    (§2a, §2c) and the `audit-scitt/1.0` vectors `av-01` to `av-05` (§2b).
@@ -49,6 +50,56 @@ ed25519:test-vector-rfc8032:5VZDAMNgrHKQhuLMgG6CioSHfx645dl02HPgZSJJAVVfuIIVkKM7
 
 If your `ed25519:` tag's base64 decodes to the 64-byte signature
 above, you're conformant on this vector.
+
+---
+
+## 1a. WebAuthn assertion (ES256)
+
+A key held by a browser's authenticator signs a request through WebAuthn
+(`profiles/security-signed.md` §3). The P-256 key, its private scalar
+included so the vector can be signed again, is
+
+```
+PRIVATE SCALAR (hex):
+  d634211b7a9f6c56f2fc88c363d7d47734b65aca3f4f5c0f433d34a0104192aa
+
+JWK:
+  {"kty": "EC", "crv": "P-256", "x": "CsYhYX2_Jqr0OdRW5ufv9GCHGOW14IP5YTd1Rn0aSWs", "y": "mi1Ydg9HoewqMjlM5wdMOCpW3sO2VHyhLT16qifo8sw", "alg": "ES256", "use": "sig", "webauthn": {"rp_id": "example.org", "origins": ["https://desk.example.org"]}, "kid": "-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8"}
+```
+
+Its `kid` is the key's RFC 7638 thumbprint. The request is the `task.create`
+under `accepted` in
+[`webauthn-vectors.json`](./webauthn-vectors.json). Its challenge, the
+base64url SHA-256 of the JCS form of the request without `sig`, is
+
+```
+EUZDL93TLwGVPMpRVRvqEtJdEWarVRIJU4xoX2lFgXA
+```
+
+and the assertion is
+
+```
+authenticatorData (hex):
+  bfabc37432958b063360d3ad6461c9c4735ae7f8edd46592a5e0f01452b2e4b50500000001
+
+clientDataJSON:
+  {"type":"webauthn.get","challenge":"EUZDL93TLwGVPMpRVRvqEtJdEWarVRIJU4xoX2lFgXA","origin":"https://desk.example.org","crossOrigin":false}
+
+signature (DER, hex):
+  3045022100e6daadfddf79831ada5415de7a164bd76908b0979539cd4b3ee6672ceb27e6f30220021ea28ae059eace0807ed45bc022e01c8f9ed61bcae758c75f99a256e424e0d
+```
+
+The tag carries the three parts, each unpadded base64url, after the key's
+`kid`:
+
+```
+webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEUCIQDm2q3933mDGtpUFd56FkvXaQiwl5U5zUs-5mcs6yfm8wIgAh6iiuBZ6s4IB-1FvAIuAcj57WG8rnWMdfmaJW5CTg0
+```
+
+A conformant Coordinator that requires signatures accepts the request, and
+answers each case under `refused` in the same file with its `-32070`
+message: one per check, a request changed after it was signed, and a
+`webauthn:` tag naming an Ed25519 key.
 
 ---
 

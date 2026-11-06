@@ -116,8 +116,8 @@
         },
         "sig": {
           "type": "string",
-          "description": "Ed25519 signature over the JCS canonicalisation of the envelope with this `sig` field removed. Optionally prefixed with key id: `ed25519:<kid>:<base64-sig>`.",
-          "pattern": "^ed25519:([A-Za-z0-9._-]+:)?[A-Za-z0-9+/=]+$"
+          "description": "Ed25519 signature over the JCS canonicalisation of the envelope with this `sig` field removed. Optionally prefixed with key id: `ed25519:<kid>:<base64-sig>`. A WebAuthn key signs `webauthn:<kid>:<authenticatorData>.<clientDataJSON>.<signature>`, each part unpadded base64url, with the SHA-256 of the same canonical bytes as the assertion's challenge (SPECIFICATION 5.2).",
+          "pattern": "^(ed25519:([A-Za-z0-9._-]+:)?[A-Za-z0-9+/=]+|webauthn:[A-Za-z0-9._-]+:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)$"
         }
       }
     },

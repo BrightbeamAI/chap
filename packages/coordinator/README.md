@@ -200,6 +200,12 @@ signature as a top-level `sig: "ed25519:<kid>:<base64>"` field. The
 Coordinator looks up the verifying key by `(from, kid, ts)`, so
 historical envelopes verify across key rotation.
 
+A key held by a browser's authenticator, a P-256 JWK with a `webauthn`
+member naming its `rp_id`, signs with a WebAuthn assertion whose challenge
+is the SHA-256 of those same bytes, tagged
+`webauthn:<kid>:<authenticatorData>.<clientDataJSON>.<signature>`
+([profiles/security-signed.md](../../profiles/security-signed.md) §3).
+
 A signed request takes effect once. The same signed call sent again, its
 `sig` re-encoded or not, is refused with `-32075` and
 `data.accepted_at_seq`, and a copy of a recorded refusal is answered with

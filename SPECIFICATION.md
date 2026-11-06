@@ -404,10 +404,23 @@ Verification reverses the procedure. The verifier MUST look up the
 public key for the claimed `from` Participant *as of the message's
 `ts`*, keys may have rotated since.
 
+A key held by a browser's authenticator signs through WebAuthn
+([WebAuthn]), with the base64url SHA-256 of the same canonical bytes as
+the assertion's challenge. The tag is
+`webauthn:<kid>:<authenticatorData>.<clientDataJSON>.<signature>`, and
+the Coordinator MUST verify it as a WebAuthn relying party does, with the
+checks [`profiles/security-signed.md`](./profiles/security-signed.md) §3
+lists, refusing a failure with `-32070`.
+
+[WebAuthn]: https://www.w3.org/TR/webauthn-3/
+
 ### 5.3 Key formats
 
 Public keys are represented as JWKs ([RFC 7517]) with `kty: "OKP"`,
-`crv: "Ed25519"`. They are advertised either:
+`crv: "Ed25519"`, or, for a WebAuthn key, `kty: "EC"`, `crv: "P-256"`,
+`alg: "ES256"` and a `webauthn` member naming the relying party's `rp_id`
+and, optionally, the `origins` it accepts (§5.2). They are advertised
+either:
 
 - In the workspace's participant descriptor (`participant.describe` result), or
 - Via a JWKS endpoint referenced by the participant descriptor's

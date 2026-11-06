@@ -2,8 +2,9 @@
 chap_coordinator.crypto
 
 Ed25519 signing for CHAP envelopes (RFC 8032), with deterministic
-demo keys derived from participant URIs. Production deployments
-supply real keys via the Keyring interface.
+demo keys derived from participant URIs, and verification of WebAuthn
+assertions, the signatures a browser's authenticator makes with a P-256
+key. Production deployments supply real keys via the Keyring interface.
 
 This module is required only for the ``security-signed/1.0`` profile.
 Core can run without it; the rest of the package is import-safe even
@@ -15,7 +16,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from typing import Any
+import json
+import re
+from typing import Any, NamedTuple
 
 from .canonical import canonicalize
 
@@ -26,6 +29,11 @@ def _b64(data: bytes) -> str:
 
 def _b64url_nopad(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+#: What a signature check without the ``cryptography`` package answers.
+CRYPTOGRAPHY_MISSING = ("Signature verification needs the cryptography package: "
+                        "pip install chap-coordinator[crypto]")
 
 
 def _require_cryptography():
@@ -82,6 +90,107 @@ def jwk_thumbprint(jwk: Any) -> str | None:
         return None
     members = {n: jwk[n] for n in names}
     return _b64url_nopad(hashlib.sha256(canonicalize(members)).digest())
+
+
+class WebAuthnAssertion(NamedTuple):
+    """A WebAuthn assertion, as the last part of a ``webauthn:`` tag carries it."""
+
+    authenticator_data: bytes
+    client_data_json: bytes
+    signature: bytes
+
+
+# Unpadded base64url. A length of 1 more than a multiple of 4 encodes no whole
+# byte, and is refused here, since Node and Python decode it apart.
+_B64URL = re.compile(r"[A-Za-z0-9_-]+")
+# A P-256 coordinate: 32 bytes, unpadded base64url.
+_COORDINATE = re.compile(r"[A-Za-z0-9_-]{43}")
+
+
+def _b64url_decode(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def parse_webauthn_assertion(part: str) -> WebAuthnAssertion | None:
+    """The assertion in ``<authenticatorData>.<clientDataJSON>.<signature>``,
+    each part unpadded base64url, or None where the part is not that."""
+    pieces = part.split(".")
+    if len(pieces) != 3 or any(not _B64URL.fullmatch(p) or len(p) % 4 == 1 for p in pieces):
+        return None
+    return WebAuthnAssertion(*(_b64url_decode(p) for p in pieces))
+
+
+def is_webauthn_key(jwk: Any) -> bool:
+    """Whether a JWK is a WebAuthn key: a P-256 key for ES256 with a
+    ``webauthn`` member naming its ``rp_id``, and, where it limits them, its
+    ``origins``."""
+    if not isinstance(jwk, dict):
+        return False
+    w = jwk.get("webauthn")
+    origins = w.get("origins") if isinstance(w, dict) else None
+    return (jwk.get("kty") == "EC" and jwk.get("crv") == "P-256"
+            and isinstance(jwk.get("x"), str) and _COORDINATE.fullmatch(jwk["x"]) is not None
+            and isinstance(jwk.get("y"), str) and _COORDINATE.fullmatch(jwk["y"]) is not None
+            and ("alg" not in jwk or jwk["alg"] == "ES256")
+            and isinstance(w, dict) and isinstance(w.get("rp_id"), str) and w["rp_id"] != ""
+            and ("origins" not in w
+                 or (isinstance(origins, list) and all(isinstance(o, str) for o in origins))))
+
+
+def _no_constant(name: str) -> Any:
+    # JSON has no NaN or Infinity, and JavaScript's parser refuses them.
+    raise ValueError(name)
+
+
+def webauthn_failure(canonical: bytes, assertion: WebAuthnAssertion, jwk: dict) -> str | None:
+    """Why a WebAuthn assertion does not sign a request, or None when it does.
+
+    ``canonical`` is the JCS form of the request without its ``sig``, and
+    ``jwk`` a key :func:`is_webauthn_key` accepts. The checks are the relying
+    party's in the WebAuthn assertion procedure: the client data says it is
+    an assertion, over this request, from an origin the key allows; the
+    authenticator data is for the key's relying party, with the user present
+    and verified; and the ES256 signature covers the authenticator data and
+    the hash of the client data.
+    """
+    try:
+        client = json.loads(assertion.client_data_json.decode("utf-8"), parse_constant=_no_constant)
+    except (ValueError, RecursionError):
+        client = None
+    if not isinstance(client, dict):
+        return "WebAuthn clientDataJSON is not a JSON object"
+    if client.get("type") != "webauthn.get":
+        return "WebAuthn clientDataJSON type is not webauthn.get"
+    if client.get("challenge") != _b64url_nopad(hashlib.sha256(canonical).digest()):
+        return "WebAuthn challenge is not the digest of this request"
+    w = jwk["webauthn"]
+    origins = w.get("origins") or []
+    if origins and client.get("origin") not in origins:
+        return "WebAuthn origin is not one the key allows"
+    auth = assertion.authenticator_data
+    if len(auth) < 37:
+        return "WebAuthn authenticatorData is too short"
+    if auth[:32] != hashlib.sha256(w["rp_id"].encode("utf-8")).digest():
+        return "WebAuthn rpIdHash does not match the key's rp_id"
+    # UP, user present, is bit 0 and UV, user verified, bit 2.
+    if auth[32] & 0x05 != 0x05:
+        return "WebAuthn assertion lacks user presence or verification"
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+    except ImportError:
+        return CRYPTOGRAPHY_MISSING
+    try:
+        key = ec.EllipticCurvePublicNumbers(
+            int.from_bytes(_b64url_decode(jwk["x"]), "big"),
+            int.from_bytes(_b64url_decode(jwk["y"]), "big"),
+            ec.SECP256R1()).public_key()
+        signed = auth + hashlib.sha256(assertion.client_data_json).digest()
+        key.verify(assertion.signature, signed, ec.ECDSA(hashes.SHA256()))
+        return None
+    except (InvalidSignature, ValueError):
+        return "Signature failed verification"
 
 
 def sign(canonical_bytes: bytes, key: Any, kid: str) -> str:

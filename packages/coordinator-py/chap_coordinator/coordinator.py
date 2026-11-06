@@ -36,7 +36,10 @@ from .audit import (
     entry_call, entry_record, is_signed, link_hash, refusal_is_recorded, signed_digest,
 )
 from .canonical import ZERO_HASH, canonicalize, content_hash, sha256_hex
-from .crypto import jwk_thumbprint
+from .crypto import (
+    CRYPTOGRAPHY_MISSING, is_webauthn_key, jwk_thumbprint, parse_webauthn_assertion,
+    webauthn_failure,
+)
 from .ids import IdFactory
 from .tracked import Scope, TrackedDict
 from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
@@ -1150,9 +1153,14 @@ class Coordinator:
         sig = envelope.get("sig")
         if not sig or not isinstance(sig, str):
             return rpc_error(E.SIG_VERIFY_FAILED, "Missing top-level `sig` field")
-        # Format: ed25519:<kid>:<b64>
-        parts = sig.split(":", 2)
-        if len(parts) != 3 or parts[0] != "ed25519":
+        # ed25519:<kid>:<base64>, or webauthn:<kid>:<assertion> for a key a
+        # browser's authenticator holds (security-signed/1.0 3).
+        parts = sig.split(":")
+        scheme = parts[0]
+        if len(parts) != 3 or scheme not in ("ed25519", "webauthn"):
+            return rpc_error(E.SIG_VERIFY_FAILED, "Malformed signature tag")
+        assertion = parse_webauthn_assertion(parts[2]) if scheme == "webauthn" else None
+        if scheme == "webauthn" and assertion is None:
             return rpc_error(E.SIG_VERIFY_FAILED, "Malformed signature tag")
         kid, sig_b64 = parts[1], parts[2]
 
@@ -1175,13 +1183,7 @@ class Coordinator:
         if raw_ts is not None and not isinstance(raw_ts, str):
             return rpc_error(E.SIG_VERIFY_FAILED,
                              "Cannot verify signature: ts must be a string")
-        envelope_ts = envelope.get("ts")
-        if raw_ts is not None:
-            ts = raw_ts
-        elif isinstance(envelope_ts, str) and envelope_ts:
-            ts = envelope_ts
-        else:
-            ts = self.now_iso()
+        ts = raw_ts if raw_ts is not None else self.now_iso()
 
         ws = self.workspaces.get(ws_id)
         if not ws:
@@ -1219,11 +1221,20 @@ class Coordinator:
         stripped.pop("sig", None)
         canonical = canonicalize(stripped)
 
+        if assertion is not None:
+            if not is_webauthn_key(key.jwk):
+                return rpc_error(E.SIG_VERIFY_FAILED, f"Key {kid} is not a WebAuthn key")
+            failure = webauthn_failure(canonical, assertion, key.jwk)
+            return None if failure is None else rpc_error(E.SIG_VERIFY_FAILED, failure)
+
         try:
-            import base64
             from cryptography.hazmat.primitives.asymmetric.ed25519 import (
                 Ed25519PublicKey,
             )
+        except ImportError:
+            return rpc_error(E.SIG_VERIFY_FAILED, CRYPTOGRAPHY_MISSING)
+        try:
+            import base64
             raw_x = key.jwk.get("x", "")
             pad = "=" * (-len(raw_x) % 4)
             pub_bytes = base64.urlsafe_b64decode(raw_x + pad)

@@ -202,6 +202,15 @@ signature as a top-level `sig: "ed25519:<kid>:<base64>"` field. The
 Coordinator looks up the verifying key by `(from, kid, ts)`, so
 historical envelopes verify across key rotation.
 
+A key held by a browser's authenticator, a P-256 JWK with a `webauthn`
+member naming its `rp_id`, signs with a WebAuthn assertion whose challenge
+is the SHA-256 of those same bytes, tagged
+`webauthn:<kid>:<authenticatorData>.<clientDataJSON>.<signature>`
+([profiles/security-signed.md](../../profiles/security-signed.md) §3).
+Both kinds are verified through the `cryptography` package, the `crypto`
+extra; without it a signed call is refused with `-32070` and a message
+that names the extra.
+
 Key lifecycle:
 
 - `participant.rotate_key` is signed with the old key; the Coordinator

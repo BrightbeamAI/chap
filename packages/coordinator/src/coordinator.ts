@@ -22,7 +22,9 @@
 
 import { canonicalize, contentHash, sha256Hex, ZERO_HASH } from "./canonical.js";
 import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "./catalogue.js";
-import { jwkThumbprint, publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
+import {
+  isWebAuthnKey, jwkThumbprint, parseWebAuthnAssertion, publicKeyFromJwk, verifyEnvelope, webAuthnFailure,
+} from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
 import { paramsError } from "./params.js";
@@ -1241,8 +1243,15 @@ export class Coordinator {
     if (!sig || typeof sig !== "string") {
       return rpcError(E.SIG_VERIFY_FAILED, "Missing top-level `sig` field");
     }
+    // ed25519:<kid>:<base64>, or webauthn:<kid>:<assertion> for a key a
+    // browser's authenticator holds (security-signed/1.0 3).
     const parts = sig.split(":");
-    if (parts.length !== 3 || parts[0] !== "ed25519") {
+    const scheme = parts[0];
+    if (parts.length !== 3 || (scheme !== "ed25519" && scheme !== "webauthn")) {
+      return rpcError(E.SIG_VERIFY_FAILED, "Malformed signature tag");
+    }
+    const assertion = scheme === "webauthn" ? parseWebAuthnAssertion(parts[2]) : undefined;
+    if (scheme === "webauthn" && !assertion) {
       return rpcError(E.SIG_VERIFY_FAILED, "Malformed signature tag");
     }
     const kid = parts[1];
@@ -1294,6 +1303,14 @@ export class Coordinator {
       const revoked = member.keys.find(k => k.kid === kid && k.revoked_at);
       if (revoked) return rpcError(E.SIG_KEY_REVOKED, `Key ${kid} is revoked`);
       return rpcError(E.SIG_KEY_NOT_FOUND, `No key ${kid} valid at ${ts} for ${sender}`);
+    }
+
+    if (assertion) {
+      if (!isWebAuthnKey(key.jwk)) return rpcError(E.SIG_VERIFY_FAILED, `Key ${kid} is not a WebAuthn key`);
+      const stripped: Envelope = JSON.parse(JSON.stringify(envelope));
+      delete stripped.sig;
+      const failure = webAuthnFailure(canonicalize(stripped), assertion, key.jwk as unknown as Record<string, unknown>);
+      return failure === null ? null : rpcError(E.SIG_VERIFY_FAILED, failure);
     }
 
     // Verify

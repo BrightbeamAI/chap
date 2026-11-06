@@ -1,0 +1,364 @@
+{
+  "description": "WebAuthn assertions as security-signed/1.0 signatures. Each case replays `setup` on a coordinator that requires signatures, with deterministic ids and clock, then sends one signed envelope. `accepted` takes effect; each case under `refused` is answered with `error` and changes nothing.",
+  "private_scalar_hex": "d634211b7a9f6c56f2fc88c363d7d47734b65aca3f4f5c0f433d34a0104192aa",
+  "jwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "CsYhYX2_Jqr0OdRW5ufv9GCHGOW14IP5YTd1Rn0aSWs",
+    "y": "mi1Ydg9HoewqMjlM5wdMOCpW3sO2VHyhLT16qifo8sw",
+    "alg": "ES256",
+    "use": "sig",
+    "webauthn": {
+      "rp_id": "example.org",
+      "origins": [
+        "https://desk.example.org"
+      ]
+    },
+    "kid": "-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8"
+  },
+  "setup": [
+    {
+      "jsonrpc": "2.0",
+      "id": "s1",
+      "method": "workspace.create",
+      "params": {
+        "workspace": "wsp_webauthn",
+        "from": "human:alice@example.org",
+        "profiles": [
+          "core/1.0",
+          "review/1.0",
+          "security-signed/1.0"
+        ]
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s2",
+      "method": "participant.join",
+      "params": {
+        "workspace": "wsp_webauthn",
+        "from": "human:alice@example.org",
+        "type": "human",
+        "role": "admin",
+        "jwks": {
+          "keys": [
+            {
+              "kty": "EC",
+              "crv": "P-256",
+              "x": "CsYhYX2_Jqr0OdRW5ufv9GCHGOW14IP5YTd1Rn0aSWs",
+              "y": "mi1Ydg9HoewqMjlM5wdMOCpW3sO2VHyhLT16qifo8sw",
+              "alg": "ES256",
+              "use": "sig",
+              "webauthn": {
+                "rp_id": "example.org",
+                "origins": [
+                  "https://desk.example.org"
+                ]
+              },
+              "kid": "-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s3",
+      "method": "participant.join",
+      "params": {
+        "workspace": "wsp_webauthn",
+        "from": "human:bob@example.org",
+        "type": "human",
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "kid": "7462aca275c321ba",
+              "use": "sig",
+              "alg": "EdDSA",
+              "x": "osbf9PbVNAnd8nupAd8WozNtrt37pc1JMp6dfn4SLc4"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "accepted": {
+    "envelope": {
+      "jsonrpc": "2.0",
+      "id": "wa-1",
+      "method": "task.create",
+      "params": {
+        "workspace": "wsp_webauthn",
+        "from": "human:alice@example.org",
+        "ts": "2026-11-06T12:00:00.000Z",
+        "kind": "review",
+        "input": {
+          "q": "?"
+        },
+        "assignee": "human:alice@example.org"
+      },
+      "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEUCIQDm2q3933mDGtpUFd56FkvXaQiwl5U5zUs-5mcs6yfm8wIgAh6iiuBZ6s4IB-1FvAIuAcj57WG8rnWMdfmaJW5CTg0"
+    },
+    "challenge": "EUZDL93TLwGVPMpRVRvqEtJdEWarVRIJU4xoX2lFgXA",
+    "authenticator_data_hex": "bfabc37432958b063360d3ad6461c9c4735ae7f8edd46592a5e0f01452b2e4b50500000001",
+    "client_data_json": "{\"type\":\"webauthn.get\",\"challenge\":\"EUZDL93TLwGVPMpRVRvqEtJdEWarVRIJU4xoX2lFgXA\",\"origin\":\"https://desk.example.org\",\"crossOrigin\":false}",
+    "signature_hex": "3045022100e6daadfddf79831ada5415de7a164bd76908b0979539cd4b3ee6672ceb27e6f30220021ea28ae059eace0807ed45bc022e01c8f9ed61bcae758c75f99a256e424e0d"
+  },
+  "refused": [
+    {
+      "name": "type-not-get",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEUCIHAP8RaecdUrJGiCqNuJ_yuO2Cw2nkyvjyQrNSaTvnzMAiEAoSft2m_zSbtQbA8poAFPYCliEJ-bOLmaCOxMu4Ety1c"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn clientDataJSON type is not webauthn.get"
+      }
+    },
+    {
+      "name": "challenge-of-another-request",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiVTNrWkdaSzBsVGdob1hNOTgtakVYdHVVQkdSMEFlLWpIMlk2YXdiQ0pZMCIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEUCIH6A3XwS8iXFosOzBNnvd5-Q3ciArbWV97XJ3NfAJ7tFAiEAgQ2xjHWw4YKHro4mYjTQ8VIEJWhqUtO5Nt1XKBlJmGs"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn challenge is not the digest of this request"
+      }
+    },
+    {
+      "name": "origin-not-allowed",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZWxzZXdoZXJlLmV4YW1wbGUiLCJjcm9zc09yaWdpbiI6ZmFsc2V9.MEUCIQCRqMUpkFDmkOmLpH6Eeq7kci2QMOHg9JwXleFmxu3lMwIgF9O1Ow8xeXGgv2iunKVIsnge17jkpj4srRfHW4bHHfw"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn origin is not one the key allows"
+      }
+    },
+    {
+      "name": "rp-id-hash-of-another-party",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:saZD368iOR7rSQsi8OgXALXyzntsCXKvHTIbDKcGgHwFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEYCIQCNssDOxKRl4I-kx8S9Lp8WM-WY9YkR5dMl1vnp3kWfrwIhAKQKNHVXWfIKf__0GK3UpqvHNcBJdi3JXPw9tsTyZZ5b"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn rpIdHash does not match the key's rp_id"
+      }
+    },
+    {
+      "name": "user-present-not-verified",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUBAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEUCIGOoHMCz2vBYJelYnvrrDWmzHHWcoDGLebZHhi2lJoQBAiEAwFbYMVRg0Otk-1i6XgchbSzu1XPaoktQJ--H9wv_yvo"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn assertion lacks user presence or verification"
+      }
+    },
+    {
+      "name": "signature-altered",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEYCIQCvoAgNeS3ZZHECrVJgMngKJ3vNzMSIeT5W5FGs3nLIdgIhAMaqWK0q4HslXVnDWnubZdlHOcQ9Q0lMIBwdQnZRAruW"
+      },
+      "error": {
+        "code": -32070,
+        "message": "Signature failed verification"
+      }
+    },
+    {
+      "name": "client-data-not-json",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.bm90IGpzb24.MEUCIQDNVgr6aH6_XzF92gvU1L2y3yY-BJroYZKwWfuBZCSb2gIgIsyfarzdys-V0ueB8oxKUl4FYzALQETeTI_SfwzStGg"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn clientDataJSON is not a JSON object"
+      }
+    },
+    {
+      "name": "authenticator-data-too-short",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEQCIFvT4vyyRGkOAeQl3mZvzs1Thk8Cjv_G4Esn3YZ10mxvAiAzHYAed7d1JYAZF3vlkPT9I_kFZiw-_jxmVVgfIdfAow"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn authenticatorData is too short"
+      }
+    },
+    {
+      "name": "assertion-of-two-parts",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0"
+      },
+      "error": {
+        "code": -32070,
+        "message": "Malformed signature tag"
+      }
+    },
+    {
+      "name": "request-changed-after-signing",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "changed"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEUCIQDm2q3933mDGtpUFd56FkvXaQiwl5U5zUs-5mcs6yfm8wIgAh6iiuBZ6s4IB-1FvAIuAcj57WG8rnWMdfmaJW5CTg0"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn challenge is not the digest of this request"
+      }
+    },
+    {
+      "name": "key-is-not-a-webauthn-key",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-2",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:bob@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:7462aca275c321ba:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiYjVnZUpIM3g2Y0JBMFZyVENtZnpVZlE0alJUQTFMRXpMM3Yzck9VVXFtWSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEQCIEsdMGWETnqhFi-b6vkX5QgbDxj-8dQWB42L84161cH-AiB_hAvh6CO6A2BLG-3df2YJKm1Puu0O75ykOGz_EzZIDA"
+      },
+      "error": {
+        "code": -32070,
+        "message": "Key 7462aca275c321ba is not a WebAuthn key"
+      }
+    }
+  ]
+}

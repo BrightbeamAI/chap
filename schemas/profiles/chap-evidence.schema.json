@@ -27,8 +27,8 @@
     },
     "sig": {
       "type": "string",
-      "pattern": "^ed25519:([A-Za-z0-9._-]+:)?[A-Za-z0-9+/=]+$",
-      "description": "Originator's Ed25519 signature on this envelope."
+      "pattern": "^(ed25519:([A-Za-z0-9._-]+:)?[A-Za-z0-9+/=]+|webauthn:[A-Za-z0-9._-]+:[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+)$",
+      "description": "Originator's signature on this envelope: Ed25519, or a WebAuthn assertion (SPECIFICATION 5.2)."
     },
     "coord_sig": {
       "type": "string",

@@ -1,10 +1,12 @@
 /**
  * @brightbeamai/chap-coordinator/crypto
  *
- * Ed25519 signing/verification for the security-signed/1.0 profile.
+ * Ed25519 signing/verification for the security-signed/1.0 profile, and
+ * verification of WebAuthn assertions, the signatures a browser's
+ * authenticator makes with a P-256 key.
  *
  * Uses Node's built-in crypto (no external dependencies). Keys are
- * represented as RFC 7517 JWKs with kty=OKP, crv=Ed25519.
+ * represented as RFC 7517 JWKs.
  */
 
 import {
@@ -131,6 +133,93 @@ export function jwkThumbprint(jwk: unknown): string | undefined {
   if (!names || names.some((n) => typeof key[n] !== "string")) return undefined;
   const members = Object.fromEntries(names.map((n) => [n, key[n]]));
   return b64urlNoPad(createHash("sha256").update(canonicalize(members)).digest());
+}
+
+/** A WebAuthn assertion, as the last part of a `webauthn:` tag carries it. */
+export interface WebAuthnAssertion {
+  authenticatorData: Buffer;
+  clientDataJSON:    Buffer;
+  signature:         Buffer;
+}
+
+// Unpadded base64url. A length of 1 more than a multiple of 4 encodes no
+// whole byte, and is refused here, since Node and Python decode it apart.
+const B64URL = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * The assertion in `<authenticatorData>.<clientDataJSON>.<signature>`, each
+ * part unpadded base64url, or undefined where the part is not that.
+ */
+export function parseWebAuthnAssertion(part: string): WebAuthnAssertion | undefined {
+  const pieces = part.split(".");
+  if (pieces.length !== 3 || pieces.some((p) => !B64URL.test(p) || p.length % 4 === 1)) return undefined;
+  const [authenticatorData, clientDataJSON, signature] = pieces.map((p) => Buffer.from(p, "base64url"));
+  return { authenticatorData, clientDataJSON, signature };
+}
+
+// A P-256 coordinate: 32 bytes, unpadded base64url.
+const COORDINATE = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * Whether a JWK is a WebAuthn key: a P-256 key for ES256 with a `webauthn`
+ * member naming its `rp_id`, and, where it limits them, its `origins`.
+ */
+export function isWebAuthnKey(jwk: unknown): boolean {
+  if (jwk === null || typeof jwk !== "object" || Array.isArray(jwk)) return false;
+  const key = jwk as Record<string, unknown>;
+  const w = key.webauthn as Record<string, unknown> | null | undefined;
+  return key.kty === "EC" && key.crv === "P-256"
+    && typeof key.x === "string" && COORDINATE.test(key.x) && typeof key.y === "string" && COORDINATE.test(key.y)
+    && (key.alg === undefined || key.alg === "ES256")
+    && w !== null && typeof w === "object" && !Array.isArray(w)
+    && typeof w.rp_id === "string" && w.rp_id !== ""
+    && (w.origins === undefined || (Array.isArray(w.origins) && w.origins.every((o) => typeof o === "string")));
+}
+
+const UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
+/**
+ * Why a WebAuthn assertion does not sign a request, or null when it does.
+ * `canonical` is the JCS form of the request without its `sig`, and `jwk`
+ * a key isWebAuthnKey accepts. The checks are the relying party's in the
+ * WebAuthn assertion procedure: the client data says it is an assertion,
+ * over this request, from an origin the key allows; the authenticator data
+ * is for the key's relying party, with the user present and verified; and
+ * the ES256 signature covers the authenticator data and the hash of the
+ * client data.
+ */
+export function webAuthnFailure(canonical: Buffer, assertion: WebAuthnAssertion,
+                                jwk: Record<string, unknown>): string | null {
+  let client: unknown;
+  try { client = JSON.parse(UTF8.decode(assertion.clientDataJSON)); } catch { client = undefined; }
+  if (client === null || typeof client !== "object" || Array.isArray(client)) {
+    return "WebAuthn clientDataJSON is not a JSON object";
+  }
+  const data = client as Record<string, unknown>;
+  if (data.type !== "webauthn.get") return "WebAuthn clientDataJSON type is not webauthn.get";
+  if (data.challenge !== b64urlNoPad(createHash("sha256").update(canonical).digest())) {
+    return "WebAuthn challenge is not the digest of this request";
+  }
+  const w = jwk.webauthn as { rp_id: string; origins?: string[] };
+  if (w.origins !== undefined && w.origins.length > 0 && !w.origins.includes(data.origin as string)) {
+    return "WebAuthn origin is not one the key allows";
+  }
+  const auth = assertion.authenticatorData;
+  if (auth.length < 37) return "WebAuthn authenticatorData is too short";
+  if (!auth.subarray(0, 32).equals(createHash("sha256").update(w.rp_id, "utf-8").digest())) {
+    return "WebAuthn rpIdHash does not match the key's rp_id";
+  }
+  // UP, user present, is bit 0 and UV, user verified, bit 2.
+  if ((auth[32] & 0x05) !== 0x05) return "WebAuthn assertion lacks user presence or verification";
+  try {
+    const key = createPublicKey({ key: { kty: "EC", crv: "P-256", x: jwk.x as string, y: jwk.y as string },
+                                  format: "jwk" });
+    const signed = Buffer.concat([auth, createHash("sha256").update(assertion.clientDataJSON).digest()]);
+    return nodeVerify("sha256", signed, { key, dsaEncoding: "der" }, assertion.signature)
+      ? null : "Signature failed verification";
+  } catch {
+    return "Signature failed verification";
+  }
 }
 
 /** Demo helper: build a deterministic keypair + JWK for a URI. */

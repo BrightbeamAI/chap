@@ -97,7 +97,58 @@ return Ed25519_verify( canonical, base64_decode(sig_b64), pubkey )
 
 The public key is looked up by `(from, kid, ts)`: the key that was
 valid for that participant at that timestamp. This makes historical
-verification work after key rotation.
+verification work after key rotation. A tag of more than three parts is
+refused with `-32070`, "Malformed signature tag".
+
+### WebAuthn signatures
+
+A person whose key is held by a browser's authenticator signs through
+WebAuthn, which cannot sign arbitrary bytes. The request's digest goes in
+as the assertion's challenge, and the tag carries the whole assertion:
+
+```
+webauthn:<kid>:<authenticatorData>.<clientDataJSON>.<signature>
+```
+
+Each part is unpadded base64url. The key, registered at
+`participant.join` like any other, is a P-256 JWK with a `webauthn` member:
+
+```json
+{ "kty": "EC", "crv": "P-256", "x": "…", "y": "…", "alg": "ES256",
+  "kid": "…", "use": "sig",
+  "webauthn": { "rp_id": "example.org", "origins": ["https://desk.example.org"] } }
+```
+
+`rp_id` is required; `origins`, where present, lists the origins an
+assertion may come from. A client MAY set a key's `kid` to its RFC 7638
+thumbprint, as the reference desk does for every key it makes. The
+Coordinator verifies an assertion as a WebAuthn relying party does, and
+refuses one that fails with `-32070` and the message given:
+
+1. `clientDataJSON` is a JSON object ("WebAuthn clientDataJSON is not a
+   JSON object") whose `type` is `"webauthn.get"` ("WebAuthn
+   clientDataJSON type is not webauthn.get").
+2. Its `challenge` is the base64url SHA-256 of the canonical bytes an
+   `ed25519:` signature would sign ("WebAuthn challenge is not the digest
+   of this request"). This binds the assertion to the request.
+3. Its `origin` is one of the key's `origins`, when it lists any
+   ("WebAuthn origin is not one the key allows").
+4. `authenticatorData` holds at least 37 bytes ("WebAuthn
+   authenticatorData is too short"), and its first 32 are the SHA-256 of
+   the key's `rp_id` ("WebAuthn rpIdHash does not match the key's
+   rp_id").
+5. Its flags set both UP (`0x01`) and UV (`0x04`), so a person was present
+   and verified ("WebAuthn assertion lacks user presence or
+   verification").
+6. The ES256 signature, DER-encoded, verifies over `authenticatorData`
+   followed by the SHA-256 of `clientDataJSON` ("Signature failed
+   verification").
+
+A `webauthn:` tag naming a key that is not such a JWK is refused with
+"Key `<kid>` is not a WebAuthn key", and a tag whose assertion is not three
+base64url parts with "Malformed signature tag". The Python coordinator
+verifies through the `cryptography` package; without it, any signature is
+refused with `-32070` and a message naming the `crypto` extra.
 
 ### A signed request takes effect once
 
@@ -232,7 +283,9 @@ with `-32074` is recorded when the caller is a member.
 ## 8. Test vectors
 
 See [`../conformance/test-vectors.md`](../conformance/test-vectors.md) §1 and §2 for canonical
-inputs/outputs against RFC 8032 test vector 1.
+inputs/outputs against RFC 8032 test vector 1, and §1a and
+[`../conformance/webauthn-vectors.json`](../conformance/webauthn-vectors.json)
+for a WebAuthn assertion and the refusal of each check.
 
 ---
 
