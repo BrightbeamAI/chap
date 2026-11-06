@@ -781,3 +781,43 @@ def test_a_notify_setting_that_says_something_else_is_refused(tmp_path, notify, 
         load_config(write_config(tmp_path, notify=notify))
     assert load_config(write_config(tmp_path))["notify"] is None
     assert load_config(write_config(tmp_path, notify={"console": False}))["notify"] is None
+
+
+# -- the read API the desk reads --------------------------------------------------
+
+def test_the_read_api_lists_members_with_their_keys_and_reads_and_verifies_the_chain(desk_of, tmp_path):
+    # The desk reads these with no signature: under a key that asks for a
+    # gesture on every signature, a signed poll would ask each time.
+    port = desk_of(require_signatures="humans", chain=True)
+    person = Participant(HttpCoordinator(f"http://127.0.0.1:{port}/chap"), "wsp_test", HUMAN,
+                         Signer.load_or_create(HUMAN, tmp_path / "desk-keys"))
+    person.join("human", "reviewer", "You")
+
+    def get(path: str):
+        status, _, body = request(port, "GET", path)
+        return status, json.loads(body)
+
+    assert get("/api/members") == (200, {"members": [
+        {"uri": AGENT, "type": "agent", "role": "drafter", "display_name": "The drafter", "keys": []},
+        {"uri": HUMAN, "type": "human", "role": "reviewer", "display_name": "You", "keys": [person.signer.public_jwk]},
+    ]})
+    status, chain = get("/api/chain?from_seq=2")
+    assert status == 200 and [e["envelope"]["method"] for e in chain["entries"]] == ["participant.join"]
+    assert chain["next_seq"] == 3 and chain["entries"][0]["envelope"]["params"]["from"] == HUMAN
+    assert [e["seq"] for e in get("/api/chain?from_seq=0&to_seq=2")[1]["entries"]] == [0, 1]
+    for bad in ("/api/chain?from_seq=-1", "/api/chain?to_seq=two", "/api/chain?from_seq="):
+        assert get(bad)[0] == 400, bad
+    status, verified = get("/api/chain/verify")
+    assert status == 200 and verified["result"]["status"] == "verified" and verified["result"]["ok"] is True
+    # The same reads through POST /chap need the person's signature.
+    assert call(port, "audit.read", **{"from": HUMAN})["error"]["code"] == -32070
+
+    # A key revoked is a key the member no longer signs with.
+    person.call("participant.revoke_key", target_uri=HUMAN, kid=person.signer.kid, reason="lost")
+    assert get("/api/members")[1]["members"][1]["keys"] == []
+
+
+def test_without_the_chain_the_verification_says_so(desk_of):
+    port = desk_of()
+    status, _, body = request(port, "GET", "/api/chain/verify")
+    assert status == 200 and json.loads(body)["error"]["message"] == "Chain not enabled for this workspace"

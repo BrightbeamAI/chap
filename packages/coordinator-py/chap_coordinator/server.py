@@ -7,7 +7,8 @@ on it, and serves
 
     GET  /              the review desk
     POST /chap          CHAP calls as JSON-RPC, for any agent or client
-    GET  /api/...       what the desk needs that the protocol does not carry
+    GET  /api/...       what the desk reads: the config, the tasks and reviews,
+                        the members with their keys, and the chain
     GET  /analytics/    the pages chap-analytics wrote, when they exist
 
 and, with ``notify`` set, tells people that a review or a question waits
@@ -95,6 +96,7 @@ __all__ = [
     "SECURITY_HEADERS",
     "bootstrap",
     "desk_url",
+    "list_members",
     "list_tasks",
     "load_config",
     "make_coordinator",
@@ -521,6 +523,20 @@ def list_tasks(coord: Coordinator, workspace: str, kind: Optional[str] = None, s
     return out[:limit] if limit else out
 
 
+def list_members(coord: Coordinator, workspace: str) -> list[dict]:
+    """The workspace's members and the keys each signs with now: the keys
+    it joined or rotated to, less those revoked or rotated away. A member's
+    public keys are no secret, and the desk reads them here to know whether
+    the workspace holds its key for the reviewer, with no signed call."""
+    ws = coord.get_workspace(workspace)
+    if ws is None:
+        return []
+    return [{"uri": m.uri, "type": m.type, "role": m.role,
+             **({"display_name": m.display_name} if m.display_name else {}),
+             "keys": [k.jwk for k in m.keys if not k.revoked_at and not k.valid_until]}
+            for m in ws.members.values()]
+
+
 def task_evidence(coord: Coordinator, workspace: str, task_id: str) -> Optional[dict]:
     """The evidence behind a task's decisions: the task, the accepted
     task.complete and review.request entries from the chain for it (each
@@ -838,6 +854,11 @@ class ChapDesk:
                 return _json(200, _store_failure_said(coord.dispatch(envelope)))
         if path == "/api/config":
             return _json(200, public_config(config))
+        if path == "/api/members":
+            with self.lock:
+                return _json(200, {"members": list_members(coord, workspace)})
+        if path in ("/api/chain", "/api/chain/verify"):
+            return self._chain(path, query)
         query_params = parse_qs(query)
         first = lambda name: (query_params.get(name) or [None])[0] or None  # noqa: E731
         if path == "/api/reviews":
@@ -871,6 +892,30 @@ class ChapDesk:
                     "audit": len(ws.audit) if ws else 0,
                 })
         return _json(404, {"error": "not found"})
+
+    def _chain(self, path: str, query: str) -> _Reply:
+        """The chain, read and verified with the coordinator's own
+        audit.read and audit.verify_chain, run here as the read API reads
+        the tasks. They change nothing and are never recorded, so a reader
+        needs no signature: the desk would otherwise sign each poll, and a
+        key that asks for a gesture on every signature would ask each time.
+        ``/api/chain`` takes ``from_seq`` and ``to_seq`` and answers as
+        audit.read does; ``/api/chain/verify`` answers audit.verify_chain's
+        ``{"result": ...}`` or ``{"error": ...}``."""
+        params: dict[str, Any] = {"workspace": self.config["workspace"]}
+        if path == "/api/chain/verify":
+            with self.lock:
+                return _json(200, self.coord._handlers["audit.verify_chain"](params))
+        values = parse_qs(query, keep_blank_values=True)
+        params["range"] = {}
+        for name in ("from_seq", "to_seq"):
+            if name in values:
+                if not re.fullmatch(r"[0-9]+", values[name][0]):
+                    return _json(400, {"error": f"{name} is a whole number"})
+                params["range"][name] = int(values[name][0])
+        with self.lock:
+            read = self.coord._handlers["audit.read"](params)
+            return _json(400, {"error": read["error"]["message"]}) if "error" in read else _json(200, read["result"])
 
     def _analytics(self, name: str) -> _Reply:
         """A page chap-analytics wrote, read on each request, so a report
