@@ -92,9 +92,13 @@ def wrap_mcp_tool_call(
     confidence
         Optional confidence value attached to ``task.complete``.
     review_required
-        If True, leaves the task in ``review_requested`` state via
-        ``review.request`` to the caller's manager (configured per
-        deployment). Default False: completes the task immediately.
+        If True, the task is created with ``review_required``, so
+        ``task.complete`` holds the result as the artefact under review,
+        opens a review addressed to the workspace's human members, and
+        leaves the task in ``review_requested`` until one of them decides.
+        A workspace with no member who could review it refuses the
+        completion, and this raises. Default False: the task completes at
+        once.
     fulfils
         Optional id of the decision this call fulfils; recorded as a
         ``fulfils`` link on the result artefact. Asserted by the caller
@@ -135,6 +139,8 @@ def wrap_mcp_tool_call(
     }
     if routing_hints:
         create_params["routing_hints"] = dict(routing_hints)
+    if review_required:
+        create_params["review_required"] = True
 
     create_resp = coord.dispatch({
         "jsonrpc": "2.0",

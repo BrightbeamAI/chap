@@ -211,3 +211,38 @@ def test_wrap_a2a_validates_required_args() -> None:
     with pytest.raises(ValueError, match="remote_agent"):
         wrap_a2a_message_exchange(coord, "wsp_wrap",
             bridge_uri="service:a2a-bridge", remote_agent="", sent={}, received={})
+
+
+# ============================================================
+# wrap_mcp_tool_call: review_required
+# ============================================================
+
+def test_wrap_mcp_with_review_required_leaves_the_call_for_a_person_to_review() -> None:
+    # review_required was accepted and dropped, so the wrapped call completed
+    # at once, with no review, whatever the caller asked for.
+    coord = _make_coord()
+    coord.dispatch({"jsonrpc": "2.0", "id": "h", "method": "participant.join",
+                    "params": {"workspace": "wsp_wrap", "from": "human:alice", "type": "human",
+                               "role": "reviewer"}})
+    res = wrap_mcp_tool_call(
+        coord, "wsp_wrap",
+        caller="agent:bot", tool="payments.refund",
+        args={"amount": 50}, result={"refund_id": "R-1"},
+        review_required=True,
+    )
+    task = coord.get_workspace("wsp_wrap").tasks[res["task_id"]]
+    assert task.review_required is True
+    assert task.state == "review_requested"
+    assert task.review is not None
+    assert "human:alice" in task.review.requested_to
+
+
+def test_wrap_mcp_with_review_required_and_no_reviewer_raises() -> None:
+    coord = _make_coord()
+    with pytest.raises(RuntimeError, match="task.complete failed"):
+        wrap_mcp_tool_call(
+            coord, "wsp_wrap",
+            caller="agent:bot", tool="payments.refund",
+            args={"amount": 50}, result={"refund_id": "R-1"},
+            review_required=True,
+        )
