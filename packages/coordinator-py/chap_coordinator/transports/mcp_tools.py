@@ -377,3 +377,22 @@ TOOL_ANNOTATIONS: dict[str, dict[str, Any]] = {
     },
 }
 # --- END GENERATED DESCRIPTIONS ---
+
+
+#: The tools an agent's own connection offers: what its work needs, and
+#: nothing that chooses who reviews that work or passes its review on. The
+#: decision tools stay for work the agent is asked to review; on its own work
+#: the coordinator refuses them and records the attempt. Left out are
+#: workspace and membership changes, review.request (an explicit review may
+#: name its own author), escalate.raise (it ends the open review, and the
+#: successor's review opens under the default rule), and every other tool.
+#: task.update stays, and can take a task under review back to in_progress,
+#: which withdraws the draft. The next completion opens a new review where
+#: the task has review_required, and completes the task where it does not.
+#: The same set as ``AGENT_MCP_TOOLS`` in ``packages/coordinator-mcp/src/tools.ts``;
+#: ``tests/test_mcp_agent_tools.py`` holds the two together.
+AGENT_MCP_TOOLS: frozenset[str] = frozenset({
+    "chap.task.create", "chap.task.update", "chap.task.complete", "chap.whisper.ask",
+    "chap.decide.approve", "chap.decide.reject", "chap.decide.override",
+    "chap.workspace.describe", "chap.audit.read", "chap.audit.verify_chain",
+})

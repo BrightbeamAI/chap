@@ -80,3 +80,30 @@ async def test_without_the_new_options_every_tool_runs_and_each_call_names_its_o
         assert not made.is_error, _text(made)
         tid = json.loads(_text(made))["task_id"]
         assert coord.get_workspace("w").tasks[tid].delegator == "human:a"
+
+
+@pytest.mark.asyncio
+async def test_with_participant_the_tools_list_from_as_optional_and_say_whose_name_it_carries():
+    server = make_chap_mcp_server(_coord(), participant="agent:b")
+    async with Client(server) as client:
+        update = next(t for t in (await client.list_tools()).tools if t.name == "chap.task.update")
+        assert "from" not in update.input_schema["required"]
+        assert "task_id" in update.input_schema["required"]
+        assert "acts as agent:b" in update.input_schema["properties"]["from"]["description"]
+
+
+class _Awaiting:
+    def __init__(self, coord: Coordinator) -> None:
+        self.coord = coord
+
+    async def dispatch(self, envelope):
+        return self.coord.dispatch(envelope)
+
+
+@pytest.mark.asyncio
+async def test_a_dispatcher_that_answers_with_an_awaitable_is_awaited():
+    coord = Coordinator(CoordinatorOptions(deterministic_ids=True))
+    async with Client(make_chap_mcp_server(_Awaiting(coord))) as client:
+        r = await client.call_tool("chap.workspace.create", {"workspace": "w", "from": "human:a"})
+        assert not r.is_error, _text(r)
+        assert json.loads(_text(r))["workspace"] == "w"

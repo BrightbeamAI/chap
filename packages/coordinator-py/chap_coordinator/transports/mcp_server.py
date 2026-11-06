@@ -40,6 +40,20 @@ Usage (stdio)::
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())
 
+That server offers every tool, and each call names its own ``from``. A
+server that is one participant's connection, such as an assistant's, pins it
+and offers the agent's tools::
+
+    server = make_chap_mcp_server(
+        coord,
+        participant="agent:assistant@local",
+        tool_filter=lambda name: name in AGENT_MCP_TOOLS,
+    )
+
+``python -m chap_coordinator.transports.mcp_cli`` runs such a server on
+stdio, alone or forwarding to a desk server with ``--url``; see that
+module.
+
 Architecture notes
 ------------------
 
@@ -65,10 +79,11 @@ Architecture notes
 """
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 from itertools import count
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional, Protocol, Union
 
 from mcp.server import CacheHint, Server
 from mcp.server.context import ServerRequestContext
@@ -86,7 +101,8 @@ from mcp.types import (
 from chap_coordinator.coordinator import Coordinator
 
 from .mcp_schemas import SCHEMAS, TOOL_NAMES, method_for_tool, coerce_tool_args
-from .mcp_tools import TOOL_ANNOTATIONS, TOOL_DESCRIPTIONS
+from .mcp_tools import AGENT_MCP_TOOLS, TOOL_ANNOTATIONS, TOOL_DESCRIPTIONS
+from .remote import ChapEndpointError
 
 
 logger = logging.getLogger(__name__)
@@ -119,6 +135,8 @@ _INSTRUCTIONS = (
 
 __all__ = [
     "make_chap_mcp_server",
+    "AGENT_MCP_TOOLS",
+    "ChapDispatcher",
     "MODERN_PROTOCOL_VERSIONS",
     "SUPPORTED_PROTOCOL_VERSIONS",
     "LIST_TTL_MS",
@@ -132,8 +150,37 @@ __all__ = [
 ]
 
 
+class ChapDispatcher(Protocol):
+    """What the server dispatches each call through: a Coordinator, or anything
+    with the same ``dispatch``, such as a client that forwards the envelope to
+    a running server. The answer may be returned or awaited."""
+
+    def dispatch(self, envelope: dict[str, Any]) -> Union[dict[str, Any], Awaitable[dict[str, Any]]]: ...
+
+
+def _pinned_schema(schema: dict[str, Any], participant: str) -> dict[str, Any]:
+    """A tool's input schema as a server that acts as ``participant`` advertises
+    it. ``from`` is filled in, so a client need not send it, and the schema
+    says whose name the calls carry."""
+    properties = schema.get("properties") or {}
+    if "from" not in properties:
+        return schema
+    return {
+        **schema,
+        "properties": {
+            **properties,
+            "from": {
+                "type": "string",
+                "description": f"This server acts as {participant}: it fills this in, "
+                               "and refuses a call that names anyone else.",
+            },
+        },
+        "required": [key for key in schema.get("required", []) if key != "from"],
+    }
+
+
 def make_chap_mcp_server(
-    coord: Coordinator,
+    coord: ChapDispatcher,
     *,
     name: str = "chap",
     version: str = "0.3.4",
@@ -150,7 +197,8 @@ def make_chap_mcp_server(
     Parameters
     ----------
     coord
-        The Coordinator instance to wrap.
+        The Coordinator instance to wrap, or any object with the same
+        ``dispatch``, whose answer may be awaitable.
     name
         Server name advertised to MCP clients.
     version
@@ -165,8 +213,13 @@ def make_chap_mcp_server(
     participant
         Make every call as this participant: ``from`` is filled in on each
         call, and a call that names another ``from`` is refused. Use it where
-        the server is one participant's connection, such as an agent's.
-        Default: each call names its own ``from``.
+        the server is one participant's connection, such as an agent's, so
+        the connection cannot act in anyone else's name. The tools then list
+        ``from`` as optional, with this URI in its description. Default: each
+        call names its own ``from``.
+
+    ``AGENT_MCP_TOOLS`` is the tool set such a connection offers an agent:
+    pass ``tool_filter=lambda name: name in AGENT_MCP_TOOLS``.
     """
     if envelope_id_factory is None:
         counter = count(1)
@@ -194,7 +247,8 @@ def make_chap_mcp_server(
             name=tool_name,
             title=TOOL_ANNOTATIONS.get(tool_name, {}).get("title", tool_name),
             description=TOOL_DESCRIPTIONS.get(tool_name, f"CHAP method {method_for_tool(tool_name)}."),
-            inputSchema=SCHEMAS[tool_name],
+            inputSchema=(SCHEMAS[tool_name] if participant is None
+                         else _pinned_schema(SCHEMAS[tool_name], participant)),
             annotations=TOOL_ANNOTATIONS.get(tool_name),
         )
         for tool_name in enabled
@@ -251,6 +305,13 @@ def make_chap_mcp_server(
 
         try:
             response = coord.dispatch(envelope)
+            if inspect.isawaitable(response):
+                response = await response
+        except ChapEndpointError as exc:
+            # A forwarding dispatcher's own failures are written for the
+            # client: the server could not be reached, or did not answer in
+            # JSON-RPC.
+            return CallToolResult(isError=True, content=[TextContent(type="text", text=str(exc))])
         except Exception:  # noqa: BLE001 - a fault in the server, reported without its text
             # The exception's text can carry a path or a stack line, so it
             # goes to the server's log, which the client never sees.
