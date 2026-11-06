@@ -44,6 +44,13 @@ chap-code-gate report [--json]                         what the gate recorded, a
 chap-code-gate stop                                    stop a gate a command started in the background
 ```
 
+`install-hooks` writes the repository's own hooks in `.git/chap/hooks` and
+points `core.hooksPath` there. Each gate hook runs the gate's check, then
+the repository's hook of the same name from what it ran before (husky,
+another `core.hooksPath`, `.git/hooks`), and `--remove` puts the earlier
+`core.hooksPath` back. A hook that cannot find this package refuses the
+commit.
+
 `--gate <dir>` names the gate project; by default it is the nearest
 directory up from the working directory that holds `chap.config.json`. A
 gate project keeps a small file for the commands named by path from other

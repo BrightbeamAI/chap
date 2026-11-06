@@ -69,9 +69,9 @@ npm start                                        the gate
 node install-hooks.mjs --repo /path/to/repo      the hooks
 ```
 
-`install-hooks.mjs` sets `core.hooksPath` in that repository to this
-project's `hooks/`, so every `git commit` and `git push` there runs the
-gate's hooks:
+`install-hooks.mjs` writes the repository's own hooks, in `.git/chap/hooks`,
+and points `core.hooksPath` there, so every `git commit` and `git push` runs
+the gate's hooks:
 
 - `pre-commit` refuses the commit unless the staged change is exactly an
   approved change: approved against the commit's parent, read in the desk as
@@ -94,9 +94,20 @@ It also points the repository's `gpg.ssh.allowedSignersFile` at
 (`"sign_commits": "agent"`, below). `CHAP_GATE=off git commit` commits
 without an approval and says so; the commit carries no trailers, and the
 verifier fails it. `CHAP_GATE=off git push` pushes without the check, as the
-first push of a repository's existing history needs to. `--remove` takes the
-hooks away; a repository that runs hooks from somewhere else already is
-reported and left alone unless `--force` is given.
+first push of a repository's existing history needs to.
+
+A repository with hooks of its own keeps them. Whatever it ran before,
+husky's `.husky/_`, another `core.hooksPath` or `.git/hooks`, each gate
+hook runs the gate's check first and then the repository's hook of the same
+name, a push's refs going to both, and a hook the gate has none of runs as
+it did. `--remove` takes the gate's hooks out and puts back the
+`core.hooksPath` that was there. husky sets `core.hooksPath` again whenever
+its `prepare` script runs, on `npm install`, so run `install-hooks` after it:
+`"prepare": "husky && chap-code-gate install-hooks"` in a project that has
+the gate as a dependency. A hook that cannot find the gate's package, or
+`node`, refuses the commit and says why. A repository hooked up before
+0.3.5 points at this project's `hooks/`, which still works; running
+`install-hooks` again moves it to its own hooks.
 
 **Claude Code.** Copy `AGENT_INSTRUCTIONS.md` into the repository as
 `CLAUDE.md`, or into the project's instructions. It tells the assistant

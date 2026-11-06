@@ -34,7 +34,9 @@ if (!name || name === "--help" || name === "-h") {
   console.error(`Unknown command ${name}.\n\n${USAGE}`);
   process.exitCode = 2;
 } else {
+  // A refusal until the command has answered, so a hook that does not run to the end fails closed.
+  process.exitCode = 1;
   run(name, rest, { gateDir: gateDir ?? findGateDir() })
     .then((code) => process.exit(code))
-    .catch((e) => { console.error(e instanceof Error ? e.message : String(e)); process.exit(1); });
+    .catch((e) => { console.error(`${name === "hook" ? "chap: " : ""}${e instanceof Error ? e.message : String(e)}`); process.exit(1); });
 }

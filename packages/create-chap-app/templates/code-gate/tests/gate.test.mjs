@@ -39,7 +39,8 @@ test("the gate runs the production shape, and the demo repository is under its h
   assert.equal(g.config.mode, "trial");
   const cfg = await (await fetch(`${g.base}/api/config`)).json();
   assert.ok(cfg.profiles.includes("security-signed/1.0") && cfg.profiles.includes("modes/1.0"));
-  assert.equal((await git(repo, ["config", "--get", "core.hooksPath"])).trim(), join(projectDir, "hooks"));
+  const common = (await git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim();
+  assert.equal((await git(repo, ["config", "--get", "core.hooksPath"])).trim(), join(common, "chap", "hooks"));
 });
 
 test("a change in the working tree is proposed as a canonical patch that waits in the desk", async () => {
