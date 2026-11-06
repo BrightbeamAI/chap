@@ -685,6 +685,24 @@ class Notifier:
 
 # -- the routes ---------------------------------------------------------------
 
+#: What a caller is told of a call the store did not record.
+STORE_FAILED = "The store did not record this call, so it took no effect; the server's log says why"
+
+
+def _store_failure_said(response: dict) -> dict:
+    """A response, with a call the store did not record said so plainly.
+
+    Where a write fails, the coordinator answers -32603 with data
+    ``{"reason": "store"}`` and puts the cause in its log, and a person or
+    an agent would read "Internal error". The code and the data stay as
+    they are."""
+    error = response.get("error") if isinstance(response, dict) else None
+    data = error.get("data") if isinstance(error, dict) else None
+    if isinstance(data, dict) and data.get("reason") == "store" and error.get("code") == -32603:
+        return {**response, "error": {**error, "message": STORE_FAILED}}
+    return response
+
+
 class _Reply(NamedTuple):
     status: int
     body: bytes
@@ -816,7 +834,7 @@ class ChapDesk:
             except ValueError:
                 return _json(400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
             with self.lock:
-                return _json(200, coord.dispatch(envelope))
+                return _json(200, _store_failure_said(coord.dispatch(envelope)))
         if path == "/api/config":
             return _json(200, public_config(config))
         query_params = parse_qs(query)

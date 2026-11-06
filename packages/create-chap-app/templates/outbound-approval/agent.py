@@ -18,7 +18,9 @@ restarted agent finds the tasks it opened before and opens no duplicates,
 and a row whose text changed is a new message. Before it submits a draft
 the agent checks on workspace.describe, a read, that an approver has joined:
 a completion with nobody to address the review to is refused and the refusal
-recorded, so the agent waits instead and says so once.
+recorded, so the agent waits instead and says so once. A call the desk's
+store did not record took no effect: the agent says so, and makes it again
+on its next pass.
 
 Under control/1.0 pause.py pauses the agent from the command line. While it
 is paused, task.create is refused with -32063; the agent says so and waits
@@ -270,7 +272,10 @@ def run(agent: Participant, provider: Provider, source: str | os.PathLike, outbo
                     outcomes[item["message"]["message_id"]] = outcome
                     del pending[task_id]
         except (ChapError, ChapEndpointError, OSError) as exc:
-            log(f"error: {exc}")
+            # A call the desk's store did not record took no effect: the
+            # coordinator answers it with data {"reason": "store"}.
+            unrecorded = isinstance(exc, ChapError) and isinstance(exc.data, dict) and exc.data.get("reason") == "store"
+            log(f"error: {exc}" + (". The next pass makes it again" if unrecorded else ""))
         if once and not pending and all(m["message_id"] in seen for m in rows):
             return outcomes
         time.sleep(poll_seconds)

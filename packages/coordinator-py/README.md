@@ -232,11 +232,26 @@ it sends, so a framework bridge runs against the server unchanged.
 workspace in a SQLite file: the coordinator loads it when it starts and
 writes each call that adds to a workspace's log before the call returns.
 Without a store the state lives in memory and goes when the process exits.
-A call whose write fails is answered with `-32603` and
-`data: {"reason": "store"}`, and the workspace goes back to what the store
-holds; `store_errors="log"` keeps the earlier behaviour, where the call is
-answered as it was and the next write carries its change. The desk server
-opens the store `chap.config.json` names, from the config file's directory.
+The desk server opens the store `chap.config.json` names, from the config
+file's directory.
+
+**When a write fails.** `store_errors` says what a failed write does to
+the call that made it, a full disk say:
+
+- `"raise"`, the default: the call is answered with `-32603` and
+  `data: {"reason": "store"}`, and the workspace goes back to what the
+  store holds. The call took no effect, so its caller makes it again;
+  while the store cannot be read, calls on the workspace are refused the
+  same way. The desk server's message says so: "The store did not record
+  this call, so it took no effect; the server's log says why". The
+  templates' agents report it and make the call again on their next pass.
+- `"log"`: the call is answered as if it had been written, and the next
+  write carries its change. This is the behaviour of 0.3.4 and earlier,
+  where a caller could be told of a decision the store never kept.
+
+`on_store_error(err, {"id": ..., "version": ...})` hears of each failure;
+unset, the failure is logged on the `chap_coordinator` logger, which is
+the server's log.
 
 **Several processes, one store.** Each coordinator holds its workspaces in
 memory. Before a call on a workspace it asks the store whether another

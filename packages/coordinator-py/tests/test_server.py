@@ -24,6 +24,7 @@ import logging
 import os
 import re
 import socket
+import sqlite3
 import sys
 import threading
 import time
@@ -413,6 +414,34 @@ def test_requests_from_elsewhere_are_refused_before_their_body_is_read(desk):
     assert (status, json.loads(body)["error"]["code"]) == (400, -32700)
     status, headers, _ = request(port, "OPTIONS", "/chap", [("Access-Control-Request-Method", "POST")])
     assert (status, headers["allow"]) == (405, "GET, POST")
+
+
+def test_a_call_the_store_did_not_record_is_a_clear_error(desk, monkeypatch, caplog):
+    port, coord = desk["port"], desk["coord"]
+    tasks = len(coord.get_workspace("wsp_test").tasks)
+
+    def full(_change):
+        raise sqlite3.OperationalError("database or disk is full")
+
+    monkeypatch.setattr(coord.options.store, "apply", full)
+    with caplog.at_level(logging.ERROR, logger="chap_coordinator"):
+        refused = call(port, "task.create", **{"from": AGENT}, kind="draft", assignee=AGENT, input={})
+    # The code and the data are the coordinator's, and the words say what
+    # happened; the cause is in the server's log, and the call left nothing.
+    assert refused["error"] == {"code": -32603, "data": {"reason": "store"},
+                                "message": "The store did not record this call, so it took no effect; "
+                                           "the server's log says why"}
+    assert "writing workspace wsp_test to the store failed: database or disk is full" in caplog.text
+    assert len(coord.get_workspace("wsp_test").tasks) == tasks
+    monkeypatch.undo()
+    assert call(port, "task.create", **{"from": AGENT}, kind="draft", assignee=AGENT, input={})["result"]["state"] == "created"
+
+    # An internal error of any other kind keeps the coordinator's words.
+    def broken(_params):
+        raise RuntimeError("a fault in a handler")
+
+    monkeypatch.setitem(coord._handlers, "workspace.describe", broken)
+    assert call(port, "workspace.describe")["error"] == {"code": -32603, "message": "Internal error"}
 
 
 def test_a_fault_reaches_the_client_without_its_text(desk, monkeypatch, caplog):

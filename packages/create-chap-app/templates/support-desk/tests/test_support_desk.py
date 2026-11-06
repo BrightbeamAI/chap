@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -356,6 +357,37 @@ def test_the_desks_own_client_signs_the_persons_decision(tmp_path):
         assert "sig" not in calls["task.complete"]
         assert calls["decide.approve"]["sig"].startswith(f"ed25519:{decided['kid']}:")
         assert agent.call("audit.verify_chain")["status"] == "verified"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_submission_the_store_did_not_record_is_reported_and_made_again(tmp_path):
+    server, desk = start_desk()
+    desk["keys"] = tmp_path / "keys"
+    try:
+        agent, human = participants(desk)
+        store = desk["coord"].options.store
+        write = store.apply
+        failed: list[str] = []
+
+        def full(change):
+            # The disk is full when the agent first submits its draft.
+            if not failed and any(e.get("envelope", {}).get("method") == "task.complete" for e in change.entries):
+                failed.append(change.id)
+                raise sqlite3.OperationalError("database or disk is full")
+            return write(change)
+
+        store.apply = full
+        source = tmp_path / "one.csv"
+        source.write_text("id,customer,subject,body\nT-5,Ada Byrne,Order 5,Where is order 5?\n", encoding="utf-8")
+        run = AgentRun(agent, make_provider(drafter.scripted_reply), source, tmp_path / "replies")
+        review = wait_for(lambda: next(iter(open_reviews(desk["base"], human.uri)), None))
+        human.call("decide.approve", task_id=review["task_id"])
+        assert run.result() == {"T-5": "approve"}
+        assert failed and [line for line in run.lines if line.startswith("error:")] == [
+            "error: task.complete: The store did not record this call, so it took no effect; the server's log "
+            "says why (-32603). The next pass makes it again"]
     finally:
         server.shutdown()
         server.server_close()
