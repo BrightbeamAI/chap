@@ -3,13 +3,14 @@
 // The decisions here are scripted because these are tests; in the project
 // the decision is made in the desk.
 import { execFile } from "node:child_process";
+import { createHash, generateKeyPairSync, sign as cryptoSign } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { loadConfig, makeCoordinator, makeServer } from "@brightbeamai/chap-server";
-import { generateSigner } from "@brightbeamai/chap-server/client";
+import { canonicalize, generateSigner, thumbprint } from "@brightbeamai/chap-server/client";
 import { generateKeyFile } from "@brightbeamai/chap-server/keys";
 import { createDemoRepo } from "@brightbeamai/chap-code-gate/demo-repo";
 import { agentClient, contentHash, reviewerClient } from "@brightbeamai/chap-code-gate/gate";
@@ -61,6 +62,34 @@ export async function startGate({ suffix = "", humans = null, review = null, ext
   await writeFile(configPath, JSON.stringify({ ...config, port: server.address().port }, null, 2));
   gate.configPath = configPath;
   return { config, coord, server, base, gate, keyPath, configPath, agent, reviewer, close };
+}
+
+/**
+ * A passkey as the desk at `origin` would make and use one: a P-256 key, its
+ * JWK as the desk registers it, and a signer whose every signature is the
+ * assertion an authenticator gives once the person is verified, its
+ * challenge the SHA-256 of the envelope's canonical form without sig.
+ */
+export async function passkeySigner(uri, origin) {
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const { x, y } = publicKey.export({ format: "jwk" });
+  const rpId = new URL(origin).hostname;
+  const publicJwk = { kty: "EC", crv: "P-256", x, y, alg: "ES256", kid: await thumbprint({ kty: "EC", crv: "P-256", x, y }), use: "sig", webauthn: { rp_id: rpId, origins: [origin] } };
+  const sha256 = (b) => createHash("sha256").update(b).digest();
+  let counter = 0;
+  return {
+    scheme: "webauthn", uri, kid: publicJwk.kid, publicJwk,
+    async sign(envelope) {
+      const { sig: _old, ...unsigned } = envelope;
+      const authData = Buffer.alloc(37);
+      sha256(rpId).copy(authData, 0);
+      authData[32] = 0x05;
+      authData.writeUInt32BE(++counter, 33);
+      const clientData = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: sha256(canonicalize(unsigned)).toString("base64url"), origin, crossOrigin: false }));
+      const signature = cryptoSign("sha256", Buffer.concat([authData, sha256(clientData)]), { key: privateKey, dsaEncoding: "der" });
+      return { ...unsigned, sig: `webauthn:${publicJwk.kid}:${[authData, clientData, signature].map((b) => b.toString("base64url")).join(".")}` };
+    },
+  };
 }
 
 /** The hooks read the gate from the environment; point them at this one. */

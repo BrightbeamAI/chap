@@ -11,6 +11,7 @@ import { canonicalize, contentHash, deepEqual, makeClient, signerFromJwk } from 
 import { keyPathFor, readKeyFile, sshKeyFiles } from "@brightbeamai/chap-server/keys";
 import { modelName } from "@brightbeamai/chap-server/providers";
 import { blobAt, currentBranch, faithfulCheck, git, head, numstat, signsOwnCommits, treeDiff, treeOf, workingTreeChange } from "./git.mjs";
+import { isWebAuthnKey, webauthnFailure } from "./webauthn.mjs";
 
 /** The most text a change carries as file contents beside its patch, so the desk can edit files whole. */
 export const MAX_CONTENT_BYTES = 200_000;
@@ -522,9 +523,17 @@ const PROTOTYPE_NAMES = new Set(["__proto__", "constructor", "prototype", "toStr
 /** Whether a value is a public Ed25519 JWK. */
 const isKey = (k) => !!k && typeof k === "object" && k.kty === "OKP" && k.crv === "Ed25519" && typeof k.x === "string" && /^[A-Za-z0-9_-]{43}$/.test(k.x);
 
-/** A key's fingerprint, as the desk, trust.mjs and ssh-keygen print it: SHA256 of the raw public key, base64. */
+/** Whether a value is a key a reviewer signs with: an Ed25519 key, or a passkey's P-256 key. Agents sign with Ed25519 keys only. */
+export const isReviewerKey = (k) => isKey(k) || isWebAuthnKey(k);
+
+/**
+ * A key's fingerprint, as the desk and trust.mjs print it: SHA-256 of the
+ * raw public key, base64. An Ed25519 key's raw form is its 32 bytes; a
+ * passkey's P-256 key's is the uncompressed point, 0x04 then x and y.
+ */
 export function fingerprint(jwk) {
-  return "SHA256:" + createHash("sha256").update(Buffer.from(jwk.x.replace(/-/g, "+").replace(/_/g, "/"), "base64")).digest("base64").replace(/=+$/, "");
+  const raw = jwk.kty === "EC" ? Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url")]) : Buffer.from(jwk.x, "base64url");
+  return "SHA256:" + createHash("sha256").update(raw).digest("base64").replace(/=+$/, "");
 }
 
 const NAME_OK = (v) => typeof v === "string" && v.trim().length > 0 && v.length <= 120 && !/[\u0000-\u001f\u007f<>]/.test(v);
@@ -541,16 +550,18 @@ export function identityOf(entry, where) {
 
 /**
  * A map from participant URI to keys, with no prototype, checked key by
- * key. An entry is a list of keys, or { name, email, keys }; the names and
- * emails go into `identities`.
+ * key: Ed25519 keys, and for reviewers passkeys' P-256 keys as well. An
+ * entry is a list of keys, or { name, email, keys }; the names and emails
+ * go into `identities`.
  */
 function keyMap(value, what, source, identities = Object.create(null)) {
   const out = Object.create(null);
+  const reviewers = what === "reviewers";
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${source}: ${what} is not an object of URI to keys`);
   for (const [uri, entry] of Object.entries(value)) {
     if (PROTOTYPE_NAMES.has(uri) || !/^[a-z][a-z0-9+.-]*:/.test(uri)) throw new Error(`${source}: ${what} names ${JSON.stringify(uri)}, which is not a participant URI`);
     const keys = Array.isArray(entry) ? entry : entry && typeof entry === "object" ? entry.keys : null;
-    if (!Array.isArray(keys) || !keys.length || !keys.every(isKey)) throw new Error(`${source}: ${what}[${uri}] is not a list of Ed25519 public keys`);
+    if (!Array.isArray(keys) || !keys.length || !keys.every(reviewers ? isReviewerKey : isKey)) throw new Error(`${source}: ${what}[${uri}] is not a list of ${reviewers ? "Ed25519 or passkey (P-256) public keys" : "Ed25519 public keys"}`);
     out[uri] = keys;
     if (!Array.isArray(entry)) identities[uri] = identityOf(entry, `${source}: ${what}[${uri}]`);
   }
@@ -598,9 +609,8 @@ export function onlinePolicy(gate, ev) {
   for (const h of gate.config.humans ?? []) if (typeof h.uri === "string" && !PROTOTYPE_NAMES.has(h.uri)) identities[h.uri] = identityOf(h, `chap.config.json humans[${h.uri}]`);
   for (const [uri, m] of Object.entries(ev.members ?? {})) {
     if (PROTOTYPE_NAMES.has(uri)) continue;
-    const keys = (m.keys ?? []).filter(isKey);
-    if (m.type === "human" && configured.has(uri)) reviewers[uri] = keys;
-    if (m.type === "agent") agents[uri] = keys;
+    if (m.type === "human" && configured.has(uri)) reviewers[uri] = (m.keys ?? []).filter(isReviewerKey);
+    if (m.type === "agent") agents[uri] = (m.keys ?? []).filter(isKey);
   }
   return { source: `the gate at ${gate.base}`, workspace: ev.workspace, rule: reviewRule(gate).rule, reviewers, agents, people: [], identities };
 }
@@ -877,16 +887,27 @@ export function approvalOf(trailerList) {
   return { task, place: series === undefined ? null : m ? place(m[1], m[2]) : { invalid: series }, legacy: true, proposed: get("CHAP-Proposed-Commit") ?? null };
 }
 
-/** Whether `sig` on an envelope verifies against one of the JWKs given. */
+/**
+ * Whether `sig` on an envelope verifies against one of the JWKs given: an
+ * ed25519:<kid>:<base64> tag against an Ed25519 key, or a
+ * webauthn:<kid>:<assertion> tag against a passkey's key, checked as a
+ * relying party checks it (webauthn.mjs).
+ */
 export function envelopeVerifies(envelope, jwks) {
   const sig = envelope?.sig;
   if (typeof sig !== "string") return { ok: false, reason: "the envelope carries no signature" };
   const parts = sig.split(":");
-  if (parts.length !== 3 || parts[0] !== "ed25519") return { ok: false, reason: "the signature is not ed25519:<kid>:<base64>" };
-  const [, kid, b64] = parts;
+  if (parts.length !== 3 || !["ed25519", "webauthn"].includes(parts[0])) return { ok: false, reason: "the signature is not ed25519:<kid>:<base64> or webauthn:<kid>:<assertion>" };
+  const [scheme, kid, b64] = parts;
   const { sig: _omit, ...rest } = envelope;
   const bytes = Buffer.from(canonicalize(rest), "utf8");
-  const candidates = (jwks ?? []).filter((k) => k && typeof k.x === "string" && (k.kid === kid || !k.kid));
+  if (scheme === "webauthn") {
+    const key = (jwks ?? []).find((k) => isWebAuthnKey(k) && k.kid === kid);
+    if (!key) return { ok: false, reason: `no pinned passkey with kid ${kid}` };
+    const failure = webauthnFailure(bytes, b64, key);
+    return failure ? { ok: false, reason: failure } : { ok: true, kid, jwk: key };
+  }
+  const candidates = (jwks ?? []).filter((k) => isKey(k) && (k.kid === kid || !k.kid));
   if (!candidates.length) return { ok: false, reason: `no pinned key with kid ${kid}` };
   for (const jwk of candidates) {
     try {

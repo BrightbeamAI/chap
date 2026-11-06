@@ -137,7 +137,7 @@ test("a decision signed in another workspace, a trust file with a prototype name
   assert.throws(() => policyFromTrust({ chap_trust: 1, rule: "quorum:2", reviewers: JSON.parse('{"__proto__": []}'), agents: {} }, "t"), /not a list|not a participant URI/);
   assert.throws(() => policyFromTrust({ chap_trust: 1, rule: "quorum:2", reviewers: { constructor: [key] }, agents: {} }, "t"), /not a participant URI/);
   assert.throws(() => policyFromTrust({ chap_trust: 1, rule: "Quorum:2", reviewers: {}, agents: {} }, "t"), /rule is "Quorum:2"/);
-  assert.throws(() => policyFromTrust({ chap_trust: 1, reviewers: { "human:a": [] }, agents: {} }, "t"), /not a list of Ed25519 public keys/);
+  assert.throws(() => policyFromTrust({ chap_trust: 1, reviewers: { "human:a": [] }, agents: {} }, "t"), /reviewers\[human:a\] is not a list of Ed25519 or passkey \(P-256\) public keys/);
   for (const bad of [".git.", ".git ", "GIT~1/config", "a/.Git./x", "c:x"]) assert.equal(safePath(bad), false, bad);
   assert.equal(hasInvisible("ok\r"), false);
   assert.equal(hasInvisible("a\u202Eb"), true);

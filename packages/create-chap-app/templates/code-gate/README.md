@@ -286,7 +286,10 @@ rule:
 }
 ```
 
-A reviewed commit names each reviewer by that name and email, and the
+A reviewer who signs with a passkey is pinned by its P-256 key, `"kty":
+"EC"`, with the `webauthn` member the desk registered, which names the
+relying party and the origin the desk signs on; an agent signs with an
+Ed25519 key. A reviewed commit names each reviewer by that name and email, and the
 verifier holds it to them. It prints each key's fingerprint;
 confirm them with their holders, then commit the file through a change
 people review. The desk shows a reviewer their own fingerprint on the
@@ -314,20 +317,41 @@ the browser's key for you, and joins you only while it does not. A join
 under a URI another key holds is refused (`-32011`), and the desk then
 signs nothing and says so.
 
-**The reviewer's key.** The desk makes it in the browser as a key that
-cannot be exported, keeps it in the browser's IndexedDB for the desk's
-address, and names it by its RFC 7638 thumbprint; the signing badge opens a
-panel with its whole fingerprint, to check against what `npm run trust`
-prints. A page on the desk's address can ask the browser to sign with it,
-and no script can read the key out. That protects you from pages elsewhere,
-and from a script that runs on the address and leaves. It does not protect
-you from a program running as your own user, and a coding agent with a
-shell is one: it can drive your browser profile and have it sign, unless
-each signature needs a gesture of yours. Run the agent as another user, in
-a container or in a sandbox, and keep the pull request check, which needs
-an approval under the keys the trust policy pins, as the boundary. A desk
-from before 0.3.5 kept the key in `localStorage`; the first visit moves it
-into IndexedDB under the id it was registered with.
+**The reviewer's key.** With `"desk_signing": "auto"`, the setting here,
+the desk signs your approvals with a passkey where the browser has an
+authenticator built in that verifies you, such as Touch ID or Windows
+Hello. The authenticator holds the private key and asks for your
+fingerprint, face or PIN for each signature, so a coding agent with a shell
+on your machine, running as you, cannot approve in your name: it can only
+put a prompt in front of you, and a prompt you did not expect is one to
+refuse. The desk makes the passkey when you ask it to, at
+`http://localhost:8791/`, since a passkey is made for a name and never an
+IP address. Where the browser has no such authenticator, the desk makes a
+key in the browser that cannot be exported, keeps it in IndexedDB for the
+desk's address, and says in a notice what that key cannot protect against:
+a program running as you can have the browser sign with it, or copy it from
+the browser's files. Run the agent as another user, in a container or in a
+sandbox, and keep the pull request check, which needs an approval under the
+keys the trust policy pins, as the boundary. `"webauthn"` asks for a
+passkey always, a security key or a phone included; `"browser-key"` keeps
+the key in the browser. Either key is named by its RFC 7638 thumbprint, and
+the signing badge opens a panel with its kind and whole fingerprint, to
+check against what `npm run trust` prints. A desk from before 0.3.5 kept
+its key in `localStorage`, at `127.0.0.1`; open the desk there and it moves
+the key into IndexedDB under the id it was registered with, and goes on
+signing with it.
+
+**Changing a reviewer's key.** The hooks and the verifier check an approval
+against the keys the trust policy pins at the commit's parent, so a new key
+counts once the policy pins it, and the policy changes through a reviewed
+commit like any other. To move from the key kept in the browser to a
+passkey: pin the passkey's key beside the old one in `chap-trust.json`,
+through a change approved with the old key; move your name to the passkey
+in the desk, which offers the move under `"desk_signing": "webauthn"`, and
+under `"auto"` once a passkey can be made, and signs it with the old key;
+then take the old key out of the policy, through a change the passkey
+approves. A cleared browser loses its key, and the workspace holds that
+key for your name all the same: a new participant URI is the way on.
 
 ## Where the gate holds
 
@@ -667,7 +691,8 @@ and `--dry-run` changes nothing.
 - Delivery: telling reviewers a change waits. The desk polls; nothing here
   pushes a notification.
 - A key per reviewer and per agent, kept where the gate's `keys/` directory
-  is not: a secrets store, an HSM or the team's identity provider.
+  is not: a passkey for each reviewer, and a secrets store, an HSM or the
+  team's identity provider for the agents.
 - Keeping the chain head somewhere the gate's operator cannot change it, a
   SCITT receipt or a head published elsewhere (SECURITY.md), since whoever
   can write to the store can rewrite the log.

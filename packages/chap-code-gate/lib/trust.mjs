@@ -19,7 +19,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { agentClient, fingerprint, identityOf, loadGate, reviewRule, TRUST_FILE } from "./gate.mjs";
+import { agentClient, fingerprint, identityOf, isReviewerKey, loadGate, reviewRule, TRUST_FILE } from "./gate.mjs";
 
 export { fingerprint };
 
@@ -41,7 +41,8 @@ export async function buildTrust(gate, { reviewers = [], agents = [], people = [
   const client = await agentClient(gate, { keyPath });
   const described = await client.call("workspace.describe", {});
   const members = new Map((described.members ?? []).map((m) => [m.uri, m]));
-  const keysOf = (m) => (m?.jwks?.keys ?? []).filter((k) => k?.kty === "OKP" && typeof k.x === "string");
+  // A reviewer signs with an Ed25519 key or a passkey; an agent with an Ed25519 key.
+  const keysOf = (m) => (m?.jwks?.keys ?? []).filter((k) => (m.type === "human" ? isReviewerKey(k) : k?.kty === "OKP" && typeof k.x === "string"));
   const wantedReviewers = reviewers.length ? reviewers : (gate.config.humans ?? []).map((h) => h.uri);
   const out = { chap_trust: 1, workspace: gate.config.workspace, rule: reviewRule(gate).rule, reviewers: {}, agents: {}, people };
   const missing = [];
