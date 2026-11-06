@@ -60,3 +60,15 @@ def test_idempotency_keys_are_bounded(monkeypatch):
     before = len(ws.tasks)
     _create(c, "k0")
     assert len(ws.tasks) == before + 1
+
+
+def test_proto_constructor_and_prototype_are_refused_as_keys_and_no_task_is_made():
+    # The TypeScript coordinator keeps the keys in a plain object, which reads
+    # these names from the object itself, so both refuse them.
+    c = _ws()
+    for key in ("__proto__", "constructor", "prototype"):
+        assert _create(c, key)["error"] == {
+            "code": -32602,
+            "message": "idempotency_key must not be __proto__, constructor or prototype"}
+    assert len(c.workspaces["w"].tasks) == 0
+    assert c.workspaces["w"].idempotency_keys == {}

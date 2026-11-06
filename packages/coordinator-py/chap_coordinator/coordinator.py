@@ -442,6 +442,9 @@ def _raw_member(ws: Workspace, uri: Any) -> Member | None:
     return dict.get(ws.members, uri) if isinstance(uri, str) else None
 
 
+#: Names a task.create idempotency key cannot take (SPECIFICATION 12.3).
+_RESERVED_KEYS = ("__proto__", "constructor", "prototype")
+
 #: The participant types SPECIFICATION 5.1 names, each the scheme of its URIs.
 _PARTICIPANT_TYPES = ("human", "agent", "service", "group", "workspace")
 
@@ -1860,6 +1863,11 @@ class Coordinator:
         ])
         if bad:
             return bad
+        # The TypeScript coordinator keeps the keys in a plain object, where
+        # these names belong to the object itself, so both refuse them.
+        if p.get("idempotency_key") in _RESERVED_KEYS:
+            return {"error": rpc_error(
+                E.PARAMS, "idempotency_key must not be __proto__, constructor or prototype")}
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}

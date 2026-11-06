@@ -1665,7 +1665,10 @@ at-least-once transport can retry safely. A signed repeat that is the same
 request, `id` included, is answered with `-32075` before the key is read
 (§10.1), and its `data.accepted_at_seq` names the entry that created the task.
 The key is not part of the task descriptor; the Coordinator keeps a bounded
-per-workspace map of recent keys.
+per-workspace map of recent keys. A key of `__proto__`, `constructor` or
+`prototype` MUST be refused with `-32602`, since a key map held in a
+JavaScript object reads those names from the object itself and keeps no key
+named `__proto__`, so a retry carrying one could make a second task.
 
 ### 12.4 `review.*`
 

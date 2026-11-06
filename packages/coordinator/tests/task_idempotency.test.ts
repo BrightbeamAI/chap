@@ -40,3 +40,15 @@ test("no key creates distinct tasks", () => {
   assert.notEqual((a.result as { task_id: string }).task_id, (b.result as { task_id: string }).task_id);
   assert.equal(c.workspaces.get("w")!.tasks.size, 2);
 });
+
+test("__proto__, constructor and prototype are refused as keys, and no task is made", () => {
+  // A key map in a plain object reads these names from the object itself:
+  // "__proto__" was never stored, so a retry carrying it made a second task.
+  const c = ws();
+  for (const key of ["__proto__", "constructor", "prototype"]) {
+    assert.deepEqual(create(c, key).error,
+      { code: -32602, message: "idempotency_key must not be __proto__, constructor or prototype" });
+  }
+  assert.equal(c.workspaces.get("w")!.tasks.size, 0);
+  assert.deepEqual(Object.keys(c.workspaces.get("w")!.idempotency_keys), []);
+});

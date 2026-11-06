@@ -239,6 +239,9 @@ function advertises(ws: Workspace, name: string): boolean {
   return ws.profiles.some((p) => p === name || p.startsWith(name + "/"));
 }
 
+/** Names a task.create idempotency key cannot take (SPECIFICATION 12.3). */
+const RESERVED_KEYS = ["__proto__", "constructor", "prototype"];
+
 /** The participant types SPECIFICATION 5.1 names, each the scheme of its URIs. */
 const PARTICIPANT_TYPES = ["human", "agent", "service", "group", "workspace"];
 
@@ -1966,6 +1969,12 @@ export class Coordinator {
       ["routing_hints", "object"], ["idempotency_key", "string"],
     ]);
     if (bad) return bad;
+    // The keys live in a plain object, where these names belong to the
+    // object itself: "__proto__" was never stored, so a retry made a second
+    // task here and found the first in Python.
+    if (RESERVED_KEYS.includes(p.idempotency_key as string)) {
+      return { error: rpcError(E.PARAMS, "idempotency_key must not be __proto__, constructor or prototype") };
+    }
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const notMember = this.requireMember(ws, p.from);
