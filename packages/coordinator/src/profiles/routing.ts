@@ -15,20 +15,38 @@
  */
 import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
+import { paramsError } from "../params.js";
 import type { RouteDecisionArtefact, Task } from "../types.js";
 
 const CRIT: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+const DECIMAL = /^-?[0-9]+(\.[0-9]+)?$/;
+
+/**
+ * The confidence a hint gives, 1.0 where it gives none. Read from an integer
+ * or a decimal string alone, so both references read the same number:
+ * Number() and Python's float() each take forms the other refuses, such as
+ * "", "0x10" and "inf".
+ */
+export function confidenceOf(hints: Record<string, unknown>): number {
+  const v = hints.confidence;
+  if (typeof v === "number" && Number.isInteger(v)) return v;
+  if (typeof v === "string" && DECIMAL.test(v)) return Number(v);
+  return 1.0;
+}
+
+/** The rank of a hint's criticality, medium where it names none of the four. */
+export function criticalityOf(hints: Record<string, unknown>): number {
+  const crit = hints.criticality ?? "medium";
+  return typeof crit === "string" && Object.prototype.hasOwnProperty.call(CRIT, crit) ? CRIT[crit] : 1;
+}
 
 function defaultDepth(hints: Record<string, unknown>): {
   depth: "skip" | "spot_check" | "full" | "escalated";
   sampling?: number;
   summary: string;
 } {
-  const crit = (hints.criticality as string) ?? "medium";
-  let conf = 1.0;
-  try { conf = Number(hints.confidence ?? 1.0); } catch { conf = 1.0; }
-  if (isNaN(conf)) conf = 1.0;
-  const r = CRIT[crit] ?? 1;
+  const conf = confidenceOf(hints);
+  const r = criticalityOf(hints);
   if (r >= 3) return { depth: "full", summary: "criticality=critical: full review" };
   if (r === 2 && conf < 0.7) return { depth: "full", summary: "criticality=high and confidence<0.7: full review" };
   if (r === 0 && conf >= 0.95) return { depth: "skip", summary: "very low criticality + very high confidence: skip" };
@@ -120,6 +138,8 @@ export function registerRouting(coord: Coordinator): void {
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
+    const bad = paramsError(p, [["artefact_routing_hints", "object"]]);
+    if (bad) return bad;
     const hints: Record<string, unknown> = { ...(task.routing_hints ?? {}),
                                               ...((p.artefact_routing_hints as Record<string, unknown>) ?? {}) };
     if (!Object.keys(hints).length) {
@@ -168,6 +188,8 @@ export function registerRouting(coord: Coordinator): void {
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
+    const bad = paramsError(p, [["default_escalation_target", "string"]]);
+    if (bad) return bad;
     const hints = { ...(task.routing_hints ?? {}) };
     let escalate: boolean, to: string | undefined, rule: Record<string, unknown>;
     if (coord.options.escalationPolicy) {
@@ -181,11 +203,8 @@ export function registerRouting(coord: Coordinator): void {
         return { error: rpcError(E.ROUTING_POLICY_UNREACHABLE, `escalation policy error: ${msg}`) };
       }
     } else {
-      const crit = (hints.criticality as string) ?? "medium";
-      let conf = 1.0;
-      try { conf = Number(hints.confidence ?? 1.0); } catch { conf = 1.0; }
-      if (isNaN(conf)) conf = 1.0;
-      const r = CRIT[crit] ?? 1;
+      const conf = confidenceOf(hints);
+      const r = criticalityOf(hints);
       escalate = r >= 3 || (r >= 2 && conf < 0.6);
       to = p.default_escalation_target as string | undefined;
       rule = {

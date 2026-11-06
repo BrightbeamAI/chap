@@ -25,7 +25,7 @@ const NON_INTEGER_ERROR =
   '(e.g. "8.2") so the hash is deterministic across implementations.';
 const NUMBER_RANGE_ERROR =
   "CHAP canonical integers must be within the safe-integer range " +
-  "(abs value <= Number.MAX_SAFE_INTEGER); represent larger numbers as strings.";
+  "(abs value <= 2^53 - 1); represent larger numbers as strings.";
 
 const LONE_SURROGATE_ERROR =
   "CHAP canonical strings must be valid Unicode (I-JSON / RFC 7493); " +
@@ -52,7 +52,7 @@ function canonicalString(s: string): string {
 function canonicalNumber(n: number): string {
   if (!Number.isFinite(n)) {
     throw new Error(
-      "Non-finite numbers are not permitted in a CHAP canonical value",
+      "Non-finite numbers are not permitted in a CHAP canonical value.",
     );
   }
   if (!Number.isInteger(n)) {

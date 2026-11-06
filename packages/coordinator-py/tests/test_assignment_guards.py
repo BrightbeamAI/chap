@@ -295,13 +295,15 @@ def test_a_from_or_workspace_that_is_not_a_string_is_refused_under_signatures_an
                     else (-32011, "Not a workspace member: from is not a participant URI"))
         cases = [{"workspace": WS, "from": ["human:alice"]},
                  {"workspace": WS, "from": {"uri": "human:alice"}}]
-        if signed:
-            cases.append({"workspace": [WS], "from": "human:alice"})
         for params in cases:
             method = "participant.leave" if signed else "control.pause"
             r = send(method, {**params, "scope": "workspace"}, sig)
             assert r["error"]["code"] == expected[0], f"{options} {params}"
             assert r["error"]["message"] == expected[1]
+        # A workspace that is not a string names none, and is refused with
+        # the request itself, before any signature is looked at.
+        r = send("participant.leave", {"workspace": [WS], "from": "human:alice"}, sig)
+        assert r["error"] == {"code": -32602, "message": "workspace must be a non-empty string"}
         assert coord.workspaces[WS].state == "active"
         assert len(coord.workspaces[WS].members) == 1
 
@@ -317,7 +319,7 @@ def test_malformed_fields_are_refused_in_the_same_words_by_both_references():
         ("task.create", {"kind": "k", "input": {}, "assignee": "agent:bot", "mode": {"m": 1}},
          "mode must be a string"),
         ("task.create", {"kind": "k", "input": {}, "assignee": ["agent:bot"]},
-         "Assignee not in workspace"),
+         "assignee must be a string"),
         ("control.supersede", {"task_id": tid, "successor_task": {"kind": "v2", "review_required": {}}},
          "successor_task.review_required must be a boolean"),
         ("control.supersede", {"task_id": tid, "successor_task": {"kind": "v2", "mode": ["trial"]}},

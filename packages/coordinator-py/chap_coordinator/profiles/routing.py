@@ -27,9 +27,12 @@ Error codes:
 """
 from __future__ import annotations
 
+import json
+import re
 from typing import TYPE_CHECKING
 
 from ..jsonrpc import E, rpc_error
+from ..params import is_integer, lookup, params_error
 from ..types import RouteDecisionArtefact, TaskHistoryEntry
 
 if TYPE_CHECKING:
@@ -37,16 +40,36 @@ if TYPE_CHECKING:
 
 
 _CRIT = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+_DECIMAL = re.compile(r"-?[0-9]+(\.[0-9]+)?")
+
+
+def _confidence(hints: dict) -> float:
+    """The confidence a hint gives, 1.0 where it gives none.
+
+    Read from an integer or a decimal string alone, so both references read
+    the same number: float() and JavaScript's Number() each take forms the
+    other refuses, such as "", "0x10" and "inf".
+    """
+    value = hints.get("confidence")
+    if is_integer(value):
+        return float(value)
+    if isinstance(value, str) and _DECIMAL.fullmatch(value):
+        return float(value)
+    return 1.0
+
+
+def _criticality(hints: dict) -> int:
+    """The rank of a hint's criticality, medium where it names none of the four."""
+    crit = hints.get("criticality")
+    if crit is None:
+        crit = "medium"
+    return _CRIT.get(crit, 1) if isinstance(crit, str) else 1
 
 
 def _default_depth(hints: dict) -> tuple[str, float | None, str]:
     """Return (depth, sampling_probability, summary)."""
-    crit = hints.get("criticality", "medium")
-    try:
-        conf = float(hints.get("confidence", 1.0))
-    except Exception:
-        conf = 1.0
-    crit_rank = _CRIT.get(crit, 1)
+    conf = _confidence(hints)
+    crit_rank = _criticality(hints)
     if crit_rank >= 3:
         return "full", None, "criticality=critical: full review"
     if crit_rank == 2 and conf < 0.7:
@@ -65,7 +88,7 @@ def register_routing(coord: "Coordinator") -> None:
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         task_id = p.get("task_id")
-        task = ws.tasks.get(task_id or "")
+        task = lookup(ws.tasks, task_id)
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
         if p.get("candidates") is not None and not isinstance(p.get("candidates"), list):
@@ -121,7 +144,8 @@ def register_routing(coord: "Coordinator") -> None:
 
         if selected not in ws.members:
             return {"error": rpc_error(E.ROUTING_NO_ELIGIBLE_ASSIGNEE,
-                                       f"Selected {selected!r} is not a member")}
+                                       f"Selected {json.dumps(selected, ensure_ascii=False)} "
+                                       "is not a member")}
         # An operator policy can pick a paused participant. Routing to one
         # would assign a task to a participant whose work was stopped, so it
         # is refused as task.create refuses a paused assignee.
@@ -162,9 +186,12 @@ def register_routing(coord: "Coordinator") -> None:
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         task_id = p.get("task_id")
-        task = ws.tasks.get(task_id or "")
+        task = lookup(ws.tasks, task_id)
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
+        bad = params_error(p, [("artefact_routing_hints", "object")])
+        if bad:
+            return bad
         hints = dict(task.routing_hints or {})
         hints.update(p.get("artefact_routing_hints") or {})
         if not hints:
@@ -217,9 +244,12 @@ def register_routing(coord: "Coordinator") -> None:
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         task_id = p.get("task_id")
-        task = ws.tasks.get(task_id or "")
+        task = lookup(ws.tasks, task_id)
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
+        bad = params_error(p, [("default_escalation_target", "string")])
+        if bad:
+            return bad
         hints = dict(task.routing_hints or {})
 
         if coord.options.escalation_policy is not None:
@@ -234,12 +264,8 @@ def register_routing(coord: "Coordinator") -> None:
         else:
             # Default: escalate when criticality is critical, OR
             # criticality is high AND confidence < 0.6
-            crit = hints.get("criticality", "medium")
-            try:
-                conf = float(hints.get("confidence", 1.0))
-            except Exception:
-                conf = 1.0
-            crit_rank = _CRIT.get(crit, 1)
+            conf = _confidence(hints)
+            crit_rank = _criticality(hints)
             escalate = (crit_rank >= 3) or (crit_rank >= 2 and conf < 0.6)
             to = p.get("default_escalation_target")
             rule = {

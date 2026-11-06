@@ -11,6 +11,7 @@
  */
 import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
+import { paramsError } from "../params.js";
 import { contentHash } from "../canonical.js";
 import { rawValues } from "../tracked.js";
 import { modeLE } from "../types.js";
@@ -18,14 +19,19 @@ import type { Mode, SnapshotArtefact, Task, TaskState } from "../types.js";
 
 const VALID_MODES = new Set<Mode>(["shadow", "trial", "production"]);
 const VALID_SCOPES = new Set(["task", "participant", "workspace"]);
+const SCOPE_ERROR = "scope must be task, participant or workspace";
 
 export function registerControl(coord: Coordinator): void {
   coord.handlers.set("control.pause", (p) => {
     const ws = coord.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const bad = paramsError(p, [
+      ["scope", "string"], ["participant_uri", "string"], ["uri", "string"], ["in_flight_policy", "string"],
+    ]);
+    if (bad) return bad;
     const scope = (p.scope as string) || "task";
     if (!VALID_SCOPES.has(scope)) {
-      return { error: rpcError(E.PARAMS, `scope must be task/participant/workspace`) };
+      return { error: rpcError(E.PARAMS, SCOPE_ERROR) };
     }
     if (scope === "task") {
       const task = ws.tasks.get(p.task_id as string);
@@ -43,7 +49,8 @@ export function registerControl(coord: Coordinator): void {
     }
     if (scope === "participant") {
       const uri = (p.participant_uri as string) || (p.uri as string);
-      if (!uri || !ws.members.has(uri)) return { error: rpcError(E.PARAMS, `Unknown participant: ${uri}`) };
+      if (!uri) return { error: rpcError(E.PARAMS, "participant_uri is required") };
+      if (!ws.members.has(uri)) return { error: rpcError(E.PARAMS, `Unknown participant: ${uri}`) };
       ws.members.get(uri)!.paused = true;
       return { result: {
         scope: "participant", participant_uri: uri, paused: true,
@@ -58,9 +65,11 @@ export function registerControl(coord: Coordinator): void {
   coord.handlers.set("control.resume", (p) => {
     const ws = coord.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const bad = paramsError(p, [["scope", "string"], ["participant_uri", "string"], ["uri", "string"]]);
+    if (bad) return bad;
     const scope = (p.scope as string) || "task";
     if (!VALID_SCOPES.has(scope)) {
-      return { error: rpcError(E.PARAMS, `scope must be task/participant/workspace`) };
+      return { error: rpcError(E.PARAMS, SCOPE_ERROR) };
     }
     if (scope === "task") {
       const task = ws.tasks.get(p.task_id as string);
@@ -78,7 +87,8 @@ export function registerControl(coord: Coordinator): void {
     }
     if (scope === "participant") {
       const uri = (p.participant_uri as string) || (p.uri as string);
-      if (!uri || !ws.members.has(uri)) return { error: rpcError(E.PARAMS, `Unknown participant: ${uri}`) };
+      if (!uri) return { error: rpcError(E.PARAMS, "participant_uri is required") };
+      if (!ws.members.has(uri)) return { error: rpcError(E.PARAMS, `Unknown participant: ${uri}`) };
       ws.members.get(uri)!.paused = false;
       return { result: { scope: "participant", participant_uri: uri, paused: false } };
     }
@@ -103,6 +113,8 @@ export function registerControl(coord: Coordinator): void {
   coord.handlers.set("control.snapshot", (p) => {
     const ws = coord.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const bad = paramsError(p, [["include", "strings"], ["label", "string"]]);
+    if (bad) return bad;
     if (Array.isArray(p.include) && p.include.length === 0) {
       return { error: rpcError(E.PARAMS, "include must not be empty") };
     }
@@ -162,6 +174,11 @@ export function registerControl(coord: Coordinator): void {
   coord.handlers.set("control.rollback", (p) => {
     const ws = coord.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const bad = paramsError(p, [
+      ["to_snapshot_artefact_id", "string"], ["snapshot_artefact_id", "string"], ["snapshot_id", "string"],
+      ["what_to_restore", "strings"], ["reason", "string"],
+    ]);
+    if (bad) return bad;
     const snapId = (p.to_snapshot_artefact_id as string)
                  || (p.snapshot_artefact_id as string)
                  || (p.snapshot_id as string);
@@ -204,9 +221,11 @@ export function registerControl(coord: Coordinator): void {
     const old = ws.tasks.get(oldId);
     if (!old) return { error: rpcError(E.PARAMS, "Unknown task") };
     const newSpec = (p.successor_task as Record<string, unknown>) ?? {};
-    if (!newSpec.kind) {
+    if (typeof newSpec.kind !== "string" || !newSpec.kind) {
       return { error: rpcError(E.PARAMS, "successor_task must include kind") };
     }
+    const bad = paramsError(p, [["successor_task.assignee", "string"], ["reason", "string"]]);
+    if (bad) return bad;
     const assignee = (newSpec.assignee as string) || old.assignee;
     if (typeof assignee !== "string" || !ws.members.has(assignee)) {
       return { error: rpcError(E.PARAMS, "successor assignee not in workspace") };
@@ -265,17 +284,22 @@ export function registerControl(coord: Coordinator): void {
     old.updated_at = now;
     old.history.push({ ts: now, from: p.from as string, state: "superseded",
                        note: `-> ${newId}: ${(p.reason as string) || ""}` });
-    return { result: { superseded_task_id: old.id, new_task_id: newId, reason: p.reason as string | undefined } };
+    return { result: {
+      superseded_task_id: old.id, new_task_id: newId,
+      ...(p.reason != null ? { reason: p.reason as string } : {}),
+    } };
   });
 
   coord.handlers.set("control.set_mode_ceiling", (p) => {
     const ws = coord.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const bad = paramsError(p, [["reason", "string"]]);
+    if (bad) return bad;
     const m = (p.new_ceiling as Mode) ?? (p.mode_ceiling as Mode);
     if (!VALID_MODES.has(m)) {
-      return { error: rpcError(E.PARAMS, `new_ceiling must be shadow/trial/production`) };
+      return { error: rpcError(E.PARAMS, "new_ceiling must be shadow, trial or production") };
     }
     ws.mode_ceiling = m;
-    return { result: { mode_ceiling: ws.mode_ceiling, reason: p.reason as string | undefined } };
+    return { result: { mode_ceiling: ws.mode_ceiling, ...(p.reason != null ? { reason: p.reason as string } : {}) } };
   });
 }

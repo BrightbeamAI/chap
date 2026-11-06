@@ -13,6 +13,7 @@ import type { Coordinator } from "../coordinator.js";
 import { entryIsWellFormed, entryRecord, linkHash } from "../audit.js";
 import { canonicalize, ZERO_HASH } from "../canonical.js";
 import { E, rpcError } from "../jsonrpc.js";
+import { paramsError } from "../params.js";
 
 /** The head after a malformed entry, which no stored head can match. */
 const MALFORMED = "sha256:malformed";
@@ -39,10 +40,14 @@ export function registerAuditScitt(coord: Coordinator): void {
   coord.handlers.set("audit.submit_to_scitt", (p) => {
     const ws = coord.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const bad = paramsError(p, [
+      ["range", "object"], ["range.from_seq", "integer"], ["range.to_seq", "integer"], ["issuer", "string"],
+    ]);
+    if (bad) return bad;
     const range = (p.range as { from_seq?: number; to_seq?: number } | undefined) ?? {};
     const fromSeq = range.from_seq ?? 0;
     const toSeq = range.to_seq ?? ws.audit.length;
-    const issuer = (p.issuer as string) ?? "service:coordinator";
+    const issuer = (p.issuer as string) || "service:coordinator";
 
     if (!coord.options.scittSubmitter) {
       const statements = ws.audit.slice(fromSeq, toSeq).map(e =>
@@ -73,7 +78,7 @@ export function registerAuditScitt(coord: Coordinator): void {
 
   coord.handlers.set("audit.verify_receipt", (p) => {
     const receipt = p.receipt;
-    if (typeof receipt !== "object" || receipt === null) {
+    if (typeof receipt !== "object" || receipt === null || Array.isArray(receipt)) {
       return { error: rpcError(E.PARAMS, "receipt must be an object") };
     }
     if (coord.options.verifyScittReceipt) {
@@ -86,7 +91,8 @@ export function registerAuditScitt(coord: Coordinator): void {
       if (!ok) return { error: rpcError(E.SCITT_RECEIPT_INVALID, "Receipt did not verify") };
       return { result: { verified: true } };
     }
-    return { error: rpcError(E.SCITT_RECEIPT_INVALID, "No verifyScittReceipt hook configured; receipt not verified") };
+    // Worded alike in both references, which name the option differently.
+    return { error: rpcError(E.SCITT_RECEIPT_INVALID, "No receipt verifier is configured; receipt not verified") };
   });
 
   coord.handlers.set("audit.verify_chain", (p) => {
@@ -99,7 +105,7 @@ export function registerAuditScitt(coord: Coordinator): void {
     // replaying the whole log anyway would answer a wider question than the
     // caller asked while reporting counts scoped to the whole log, which is
     // the failure this method was just fixed to stop making.
-    if (p.from_seq !== undefined || p.to_seq !== undefined) {
+    if (p.from_seq != null || p.to_seq != null) {
       return { error: rpcError(
         E.PARAMS,
         "Range verification is not implemented; omit from_seq and to_seq to " +

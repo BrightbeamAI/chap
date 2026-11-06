@@ -10,6 +10,7 @@
  */
 import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
+import { paramsError } from "../params.js";
 import type { Handoff, HandoffTaskItem } from "../types.js";
 
 // Names a supplied id cannot take: JavaScript gives them special meaning as
@@ -23,6 +24,10 @@ export function registerHandoff(coord: Coordinator): void {
     for (const f of ["from", "to", "tasks"]) {
       if (!(f in p)) return { error: rpcError(E.PARAMS, `Missing field: ${f}`) };
     }
+    // The recipient is compared and looked up when the handoff is resolved.
+    if (typeof p.to !== "string") return { error: rpcError(E.PARAMS, "to must be a string") };
+    const bad = paramsError(p, [["context_links", "strings"]]);
+    if (bad) return bad;
     const proposer = p.from as string;
     const recipient = p.to as string;
     if (typeof recipient === "string" && !recipient.startsWith("group:")) {
@@ -37,6 +42,11 @@ export function registerHandoff(coord: Coordinator): void {
     }
     const proposed: HandoffTaskItem[] = [];
     for (const t of tasksIn as Array<Record<string, unknown>>) {
+      if (t === null || typeof t !== "object" || Array.isArray(t) || typeof t.task_id !== "string") {
+        return { error: rpcError(E.PARAMS, "each entry in tasks must be an object with a string task_id") };
+      }
+      const badItem = paramsError(t, [["blockers", "strings"]]);
+      if (badItem) return badItem;
       const tid = t.task_id as string;
       if (!tid || !ws.tasks.has(tid)) {
         return { error: rpcError(E.PARAMS, `Unknown task in handoff: ${tid}`) };
@@ -117,6 +127,8 @@ export function registerHandoff(coord: Coordinator): void {
     if (ws.members.get(acceptor)!.paused) {
       return { error: rpcError(E.CONTROL_WORKSPACE_PAUSED, `Acceptor ${acceptor} is paused`) };
     }
+    const bad = paramsError(p, [["accepted_task_ids", "strings"]]);
+    if (bad) return bad;
     // Omission accepts all proposed tasks; an empty selection is not a handoff.
     if (Array.isArray(p.accepted_task_ids) && p.accepted_task_ids.length === 0) {
       return { error: rpcError(E.PARAMS, "accepted_task_ids must not be empty") };

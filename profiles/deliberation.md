@@ -31,6 +31,11 @@ A deliberation's `rule` field is one of:
 | `weighted_vote:T`                     | Weighted votes; threshold T (e.g. `2.0`).          |
 | `weighted_vote_with_veto:T`           | Weighted votes; any veto-holder can block.         |
 
+`N` is written in digits, and `T` in digits with an optional decimal
+part, such as `2` or `1.5`. A rule written any other way, `quorum:1e9` or
+`weighted_vote:1.5x` for instance, is refused with `-32033`, so every
+Coordinator reads the same number from a rule it accepts.
+
 Custom rules MAY be supported by an implementation; clients MUST handle
 `-32033` from `deliberate.open` when their named rule is unknown.
 
@@ -61,9 +66,12 @@ string, or `__proto__`, `constructor` or `prototype` is refused with
 `-32602`, so a closed deliberation cannot be opened again under its id.
 Without it, the Coordinator generates one.
 
-Weights come from the `weights` map set at `deliberate.open`, 1.0 for a
-voter it omits. Only the participants named in `to` may vote. The
-`deadline` is recorded and never enforced.
+Weights come from the `weights` map set at `deliberate.open`, 1 for a
+voter it omits. Each weight is an integer, and each `veto` entry a
+boolean; any other value is refused with `-32602` when the deliberation
+opens, since the tally reads them only when it closes. Only the
+participants named in `to` may vote. The `deadline` is recorded and never
+enforced.
 
 Vote:
 

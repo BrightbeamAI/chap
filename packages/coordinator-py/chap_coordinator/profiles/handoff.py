@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..jsonrpc import E, rpc_error
+from ..params import lookup, params_error
 from ..types import Handoff, HandoffTask, TaskHistoryEntry
 
 # Names a supplied id cannot take, as in the TypeScript coordinator.
@@ -40,6 +41,12 @@ def register_handoff(coord: "Coordinator") -> None:
         for f in ("from", "to", "tasks"):
             if f not in p:
                 return {"error": rpc_error(E.PARAMS, f"Missing field: {f}")}
+        # The recipient is compared and looked up when the handoff is resolved.
+        if not isinstance(p["to"], str):
+            return {"error": rpc_error(E.PARAMS, "to must be a string")}
+        bad = params_error(p, [("context_links", "strings")])
+        if bad:
+            return bad
 
         proposer = p["from"]
         recipient = p["to"]
@@ -57,7 +64,13 @@ def register_handoff(coord: "Coordinator") -> None:
 
         proposed: list[HandoffTask] = []
         for t in tasks_in:
-            tid = t.get("task_id") if isinstance(t, dict) else None
+            if not isinstance(t, dict) or not isinstance(t.get("task_id"), str):
+                return {"error": rpc_error(
+                    E.PARAMS, "each entry in tasks must be an object with a string task_id")}
+            bad = params_error(t, [("blockers", "strings")])
+            if bad:
+                return bad
+            tid = t["task_id"]
             if not tid or tid not in ws.tasks:
                 return {"error": rpc_error(E.PARAMS,
                                            f"Unknown task in handoff: {tid}")}
@@ -107,7 +120,7 @@ def register_handoff(coord: "Coordinator") -> None:
         for f in ("from", "handoff_id"):
             if f not in p:
                 return {"error": rpc_error(E.PARAMS, f"Missing field: {f}")}
-        ho = ws.handoffs.get(p["handoff_id"])
+        ho = lookup(ws.handoffs, p["handoff_id"])
         if not ho:
             return {"error": rpc_error(E.PARAMS, "Unknown handoff")}
         if ho.state != "proposed":
@@ -135,6 +148,9 @@ def register_handoff(coord: "Coordinator") -> None:
             return {"error": rpc_error(E.CONTROL_WORKSPACE_PAUSED,
                                        f"Acceptor {acceptor} is paused")}
 
+        bad = params_error(p, [("accepted_task_ids", "strings")])
+        if bad:
+            return bad
         # Omission accepts all proposed tasks; an explicit empty selection
         # is invalid and must not record a handoff with no ownership transfer.
         if isinstance(p.get("accepted_task_ids"), list) and not p["accepted_task_ids"]:
@@ -177,7 +193,7 @@ def register_handoff(coord: "Coordinator") -> None:
         for f in ("from", "handoff_id"):
             if f not in p:
                 return {"error": rpc_error(E.PARAMS, f"Missing field: {f}")}
-        ho = ws.handoffs.get(p["handoff_id"])
+        ho = lookup(ws.handoffs, p["handoff_id"])
         if not ho:
             return {"error": rpc_error(E.PARAMS, "Unknown handoff")}
         if ho.state != "proposed":

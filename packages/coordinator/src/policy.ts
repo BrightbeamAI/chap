@@ -25,8 +25,7 @@ import type {
   RoutingPolicyFn,
   CoordinatorOptions,
 } from "./coordinator.js";
-
-const CRIT: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+import { confidenceOf, criticalityOf } from "./profiles/routing.js";
 
 export function makeDefaultPolicy(seniorTarget: string): Pick<CoordinatorOptions,
   "routingPolicy" | "reviewDepthPolicy" | "escalationPolicy"> {
@@ -47,11 +46,8 @@ export function makeDefaultPolicy(seniorTarget: string): Pick<CoordinatorOptions
   };
 
   const reviewDepthPolicy: ReviewDepthPolicyFn = (_task, hints) => {
-    const crit = (hints.criticality as string) ?? "medium";
-    let conf = 1.0;
-    try { conf = Number(hints.confidence ?? 1.0); } catch { conf = 1.0; }
-    if (isNaN(conf)) conf = 1.0;
-    const r = CRIT[crit] ?? 1;
+    const conf = confidenceOf(hints);
+    const r = criticalityOf(hints);
     if (r >= 3) return { depth: "full",
       rationale: { policy_id: "default", summary: "criticality=critical: full review" }};
     if (r === 2 && conf < 0.7) return { depth: "full",
@@ -65,11 +61,8 @@ export function makeDefaultPolicy(seniorTarget: string): Pick<CoordinatorOptions
   };
 
   const escalationPolicy: EscalationPolicyFn = (_task, hints) => {
-    const crit = (hints.criticality as string) ?? "medium";
-    let conf = 1.0;
-    try { conf = Number(hints.confidence ?? 1.0); } catch { conf = 1.0; }
-    if (isNaN(conf)) conf = 1.0;
-    const r = CRIT[crit] ?? 1;
+    const conf = confidenceOf(hints);
+    const r = criticalityOf(hints);
     const escalate = (r >= 3) || (r >= 2 && conf < 0.6);
     return {
       escalate,

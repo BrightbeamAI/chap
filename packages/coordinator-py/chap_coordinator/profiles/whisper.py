@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 from ..canonical import canonicalize
 from ..jsonrpc import E, rpc_error
+from ..params import is_integer, lookup, params_error
 from ..types import WhisperPrompt
 
 # Names a supplied id cannot take, as in the TypeScript coordinator.
@@ -60,10 +61,14 @@ def register_whisper(coord: "Coordinator") -> None:
                   "default_if_lapsed"):
             if f not in p:
                 return {"error": rpc_error(E.PARAMS, f"Missing field: {f}")}
-        if p["task_id"] not in ws.tasks:
+        if lookup(ws.tasks, p["task_id"]) is None:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
-        if p.get("options") is not None and not isinstance(p["options"], list):
-            return {"error": rpc_error(E.PARAMS, "options must be a list")}
+        bad = params_error(p, [("options", "list"), ("urgency", "string")])
+        if bad:
+            return bad
+        # The deadline is required, and a number of milliseconds.
+        if not is_integer(p["deadline_ms"]):
+            return {"error": rpc_error(E.PARAMS, "deadline_ms must be an integer")}
 
         askee = p["to"] if isinstance(p["to"], list) else [p["to"]]
         # A supplied id names a new whisper. One already in use was stored
@@ -102,7 +107,7 @@ def register_whisper(coord: "Coordinator") -> None:
         for f in ("from", "whisper_id"):
             if f not in p:
                 return {"error": rpc_error(E.PARAMS, f"Missing field: {f}")}
-        prompt = ws.whispers.get(p["whisper_id"])
+        prompt = lookup(ws.whispers, p["whisper_id"])
         if not prompt:
             return {"error": rpc_error(E.PARAMS, "Unknown whisper id")}
         # Only a participant the whisper was addressed to may answer it. A

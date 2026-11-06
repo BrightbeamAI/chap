@@ -23,9 +23,11 @@ Error codes:
 """
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from ..jsonrpc import E, rpc_error
+from ..params import is_integer, lookup, params_error
 from ..types import Deliberation
 
 # Names a supplied id cannot take, as in the TypeScript coordinator.
@@ -35,12 +37,20 @@ if TYPE_CHECKING:
     from ..coordinator import Coordinator
 
 
+# A rule's argument is read by these patterns alone, so both references read
+# the same number from it: Python's float() and JavaScript's parseFloat each
+# take forms the other refuses, such as "1.5x", "1_0" and "inf".
+_QUORUM_ARG = re.compile(r"[0-9]+")
+_THRESHOLD_ARG = re.compile(r"[0-9]+(\.[0-9]+)?")
+
+
 def _parse_rule(rule: str) -> tuple[str, dict]:
     if ":" in rule:
         kind, arg = rule.split(":", 1)
-        if kind == "quorum":
+        if kind == "quorum" and _QUORUM_ARG.fullmatch(arg):
             return kind, {"n": int(arg)}
-        if kind in ("weighted_vote", "weighted_vote_with_veto"):
+        if (kind in ("weighted_vote", "weighted_vote_with_veto")
+                and _THRESHOLD_ARG.fullmatch(arg)):
             return kind, {"threshold": float(arg)}
     if rule in ("any_one_approves", "all_approve"):
         return rule, {}
@@ -56,6 +66,8 @@ def _compute_outcome(delib: Deliberation) -> dict:
               if v.get("veto_invoked") and (delib.veto or {}).get(v["voter"])]
     weights = delib.weights or {}
 
+    # Weights are integers and a voter without one weighs 1, so a tally is
+    # an integer, as it is in the TypeScript reference.
     if kind == "any_one_approves":
         passed = len(yea) >= 1
         return {"outcome": "approved" if passed else "rejected",
@@ -86,8 +98,8 @@ def _compute_outcome(delib: Deliberation) -> dict:
                 "vetoes": []}
 
     if kind == "weighted_vote":
-        yea_w = sum(weights.get(v["voter"], 1.0) for v in yea)
-        nay_w = sum(weights.get(v["voter"], 1.0) for v in nay)
+        yea_w = sum(weights.get(v["voter"], 1) for v in yea)
+        nay_w = sum(weights.get(v["voter"], 1) for v in nay)
         passed = yea_w >= params["threshold"]
         return {"outcome": "approved" if passed else "rejected",
                 "rule": delib.rule,
@@ -98,10 +110,10 @@ def _compute_outcome(delib: Deliberation) -> dict:
         if vetoes:
             return {"outcome": "rejected",
                     "rule": delib.rule,
-                    "tally": {"yea": 0.0, "nay": 0.0},
+                    "tally": {"yea": 0, "nay": 0},
                     "vetoes": [v["voter"] for v in vetoes]}
-        yea_w = sum(weights.get(v["voter"], 1.0) for v in yea)
-        nay_w = sum(weights.get(v["voter"], 1.0) for v in nay)
+        yea_w = sum(weights.get(v["voter"], 1) for v in yea)
+        nay_w = sum(weights.get(v["voter"], 1) for v in nay)
         passed = yea_w >= params["threshold"]
         return {"outcome": "approved" if passed else "rejected",
                 "rule": delib.rule,
@@ -120,9 +132,26 @@ def register_deliberation(coord: "Coordinator") -> None:
         for f in ("from", "rule"):
             if f not in p:
                 return {"error": rpc_error(E.PARAMS, f"Missing field: {f}")}
+        for name in ("to", "participants"):
+            v = p.get(name)
+            if v is not None and not isinstance(v, str) and not (
+                    isinstance(v, list) and all(isinstance(x, str) for x in v)):
+                return {"error": rpc_error(
+                    E.PARAMS, f"{name} must be a string or a list of strings")}
+        if not isinstance(p["rule"], str):
+            return {"error": rpc_error(E.PARAMS, "rule must be a string")}
+        bad = params_error(p, [("weights", "object"), ("veto", "object")])
+        if bad:
+            return bad
+        # Weights are summed and vetoes read as true or false when the vote is
+        # counted, so they are checked when it opens.
+        if not all(is_integer(w) for w in (p.get("weights") or {}).values()):
+            return {"error": rpc_error(E.PARAMS, "weights must map participants to integers")}
+        if not all(isinstance(v, bool) for v in (p.get("veto") or {}).values()):
+            return {"error": rpc_error(E.PARAMS, "veto must map participants to booleans")}
         # Participants: spec uses `to` (list); accept `participants` too
         # for clients that match the in-memory dataclass.
-        participants = p.get("to") or p.get("participants")
+        participants = p["to"] if p.get("to") is not None else p.get("participants")
         if isinstance(participants, str):
             participants = [participants]
         if not participants:
@@ -168,16 +197,19 @@ def register_deliberation(coord: "Coordinator") -> None:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
-        delib = ws.deliberations.get(p.get("deliberation_id", ""))
+        delib = lookup(ws.deliberations, p.get("deliberation_id"))
         if not delib:
             return {"error": rpc_error(E.PARAMS, "Unknown deliberation")}
         if delib.state != "open":
             return {"error": rpc_error(E.DELIB_CLOSED_OR_LAPSED,
                                        "Deliberation not open")}
+        bad = params_error(p, [("comment", "string"), ("text", "string")])
+        if bad:
+            return bad
         delib.comments.append({
             "ts": coord.now_iso(),
             "from": p.get("from", ""),
-            "text": p.get("comment") or p.get("text", ""),
+            "text": p.get("comment") or p.get("text") or "",
         })
         return {"result": {"accepted": True}}
 
@@ -185,7 +217,7 @@ def register_deliberation(coord: "Coordinator") -> None:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
-        delib = ws.deliberations.get(p.get("deliberation_id", ""))
+        delib = lookup(ws.deliberations, p.get("deliberation_id"))
         if not delib:
             return {"error": rpc_error(E.PARAMS, "Unknown deliberation")}
         if delib.state != "open":
@@ -197,6 +229,9 @@ def register_deliberation(coord: "Coordinator") -> None:
         if p["vote"] not in ("yea", "nay", "abstain"):
             return {"error": rpc_error(E.PARAMS,
                                        "vote must be yea/nay/abstain")}
+        bad = params_error(p, [("veto_invoked", "boolean")])
+        if bad:
+            return bad
         voter = p["from"]
         if voter not in delib.participants:
             return {"error": rpc_error(E.DELIB_VOTER_NOT_IN_LIST,
@@ -218,7 +253,7 @@ def register_deliberation(coord: "Coordinator") -> None:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
-        delib = ws.deliberations.get(p.get("deliberation_id", ""))
+        delib = lookup(ws.deliberations, p.get("deliberation_id"))
         if not delib:
             return {"error": rpc_error(E.PARAMS, "Unknown deliberation")}
         if delib.state == "closed":

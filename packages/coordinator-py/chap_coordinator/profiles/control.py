@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 from ..coordinator import mode_le
 from ..canonical import content_hash
 from ..jsonrpc import E, rpc_error
+from ..params import lookup, params_error
 from ..types import SnapshotArtefact, Task, TaskHistoryEntry
 
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
 
 _VALID_MODES = ("shadow", "trial", "production")
 _VALID_SCOPES = ("task", "participant", "workspace")
+_SCOPE_ERROR = "scope must be task, participant or workspace"
 
 
 def register_control(coord: "Coordinator") -> None:
@@ -46,12 +48,16 @@ def register_control(coord: "Coordinator") -> None:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
-        scope = p.get("scope", "task")
+        bad = params_error(p, [("scope", "string"), ("participant_uri", "string"),
+                               ("uri", "string"), ("in_flight_policy", "string")])
+        if bad:
+            return bad
+        scope = p.get("scope") or "task"
         if scope not in _VALID_SCOPES:
-            return {"error": rpc_error(E.PARAMS, f"scope must be one of {_VALID_SCOPES}")}
+            return {"error": rpc_error(E.PARAMS, _SCOPE_ERROR)}
 
         if scope == "task":
-            task = ws.tasks.get(p.get("task_id", ""))
+            task = lookup(ws.tasks, p.get("task_id"))
             if not task:
                 return {"error": rpc_error(E.PARAMS, "Unknown task")}
             if task.state in ("completed", "declined", "cancelled", "superseded"):
@@ -72,13 +78,15 @@ def register_control(coord: "Coordinator") -> None:
 
         if scope == "participant":
             uri = p.get("participant_uri") or p.get("uri")
-            if not uri or uri not in ws.members:
+            if not uri:
+                return {"error": rpc_error(E.PARAMS, "participant_uri is required")}
+            if uri not in ws.members:
                 return {"error": rpc_error(E.PARAMS,
                                            f"Unknown participant: {uri}")}
             ws.members[uri].paused = True
             return {"result": {"scope": "participant", "participant_uri": uri,
                                "paused": True,
-                               "in_flight_policy": p.get("in_flight_policy", "allow_to_complete")}}
+                               "in_flight_policy": p.get("in_flight_policy") or "allow_to_complete"}}
 
         # workspace
         ws.state = "paused"
@@ -89,12 +97,16 @@ def register_control(coord: "Coordinator") -> None:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
-        scope = p.get("scope", "task")
+        bad = params_error(p, [("scope", "string"), ("participant_uri", "string"),
+                               ("uri", "string")])
+        if bad:
+            return bad
+        scope = p.get("scope") or "task"
         if scope not in _VALID_SCOPES:
-            return {"error": rpc_error(E.PARAMS, f"scope must be one of {_VALID_SCOPES}")}
+            return {"error": rpc_error(E.PARAMS, _SCOPE_ERROR)}
 
         if scope == "task":
-            task = ws.tasks.get(p.get("task_id", ""))
+            task = lookup(ws.tasks, p.get("task_id"))
             if not task:
                 return {"error": rpc_error(E.PARAMS, "Unknown task")}
             if task.state != "paused":
@@ -113,7 +125,9 @@ def register_control(coord: "Coordinator") -> None:
 
         if scope == "participant":
             uri = p.get("participant_uri") or p.get("uri")
-            if not uri or uri not in ws.members:
+            if not uri:
+                return {"error": rpc_error(E.PARAMS, "participant_uri is required")}
+            if uri not in ws.members:
                 return {"error": rpc_error(E.PARAMS,
                                            f"Unknown participant: {uri}")}
             ws.members[uri].paused = False
@@ -129,7 +143,7 @@ def register_control(coord: "Coordinator") -> None:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
-        task = ws.tasks.get(p.get("task_id", ""))
+        task = lookup(ws.tasks, p.get("task_id"))
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
         if task.state in ("completed", "declined", "cancelled", "superseded"):
@@ -147,6 +161,9 @@ def register_control(coord: "Coordinator") -> None:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        bad = params_error(p, [("include", "strings"), ("label", "string")])
+        if bad:
+            return bad
         requested = p.get("include")
         if isinstance(requested, list) and not requested:
             return {"error": rpc_error(E.PARAMS, "include must not be empty")}
@@ -209,13 +226,18 @@ def register_control(coord: "Coordinator") -> None:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        bad = params_error(p, [("to_snapshot_artefact_id", "string"),
+                               ("snapshot_artefact_id", "string"), ("snapshot_id", "string"),
+                               ("what_to_restore", "strings"), ("reason", "string")])
+        if bad:
+            return bad
         snap_id = (p.get("to_snapshot_artefact_id")
                    or p.get("snapshot_artefact_id")
                    or p.get("snapshot_id"))
         if not snap_id:
             return {"error": rpc_error(E.PARAMS,
                                        "to_snapshot_artefact_id is required")}
-        snap = ws.snapshots.get(snap_id)
+        snap = lookup(ws.snapshots, snap_id)
         if not snap:
             return {"error": rpc_error(E.CONTROL_SNAPSHOT_NOT_FOUND,
                                        f"Unknown snapshot: {snap_id}")}
@@ -253,16 +275,20 @@ def register_control(coord: "Coordinator") -> None:
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         old_id = p.get("task_id")
-        old = ws.tasks.get(old_id or "")
+        old = lookup(ws.tasks, old_id)
         if not old:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
 
         # successor_task is an object describing the new task; the Coordinator
         # creates it as part of the supersede operation (per spec).
         new_spec = p.get("successor_task") or {}
-        if not isinstance(new_spec, dict) or "kind" not in new_spec:
+        if (not isinstance(new_spec, dict) or not isinstance(new_spec.get("kind"), str)
+                or not new_spec["kind"]):
             return {"error": rpc_error(E.PARAMS,
                                        "successor_task must include kind")}
+        bad = params_error(p, [("successor_task.assignee", "string"), ("reason", "string")])
+        if bad:
+            return bad
         assignee = new_spec.get("assignee") or old.assignee
         if not isinstance(assignee, str) or assignee not in ws.members:
             return {"error": rpc_error(E.PARAMS,
@@ -299,7 +325,7 @@ def register_control(coord: "Coordinator") -> None:
             state="created",
             assignee=assignee,
             delegator=p.get("from", ""),
-            input=new_spec.get("input") or {},
+            input=new_spec["input"] if new_spec.get("input") is not None else {},
             created_at=now,
             updated_at=now,
             mode=requested_mode,
@@ -331,20 +357,24 @@ def register_control(coord: "Coordinator") -> None:
         return {"result": {
             "superseded_task_id": old.id,
             "new_task_id": new_id,
-            "reason": p.get("reason"),
+            **({"reason": p["reason"]} if p.get("reason") is not None else {}),
         }}
 
     def control_set_mode_ceiling(p: dict) -> dict:
         ws = coord.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
-        new_ceiling = p.get("new_ceiling") or p.get("mode_ceiling")
+        bad = params_error(p, [("reason", "string")])
+        if bad:
+            return bad
+        new_ceiling = (p["new_ceiling"] if p.get("new_ceiling") is not None
+                       else p.get("mode_ceiling"))
         if new_ceiling not in _VALID_MODES:
             return {"error": rpc_error(E.PARAMS,
-                                       f"new_ceiling must be one of {_VALID_MODES}")}
+                                       "new_ceiling must be shadow, trial or production")}
         ws.mode_ceiling = new_ceiling
         return {"result": {"mode_ceiling": ws.mode_ceiling,
-                           "reason": p.get("reason")}}
+                           **({"reason": p["reason"]} if p.get("reason") is not None else {})}}
 
     coord._handlers["control.pause"] = control_pause
     coord._handlers["control.resume"] = control_resume

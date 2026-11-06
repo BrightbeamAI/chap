@@ -279,13 +279,16 @@ test("a from or workspace that is not a string is refused under signatures and s
     for (const params of [
       { workspace: WS, from: ["human:alice"] },
       { workspace: WS, from: { uri: "human:alice" } },
-      ...(options.requireSignatures ? [{ workspace: [WS], from: "human:alice" }] : []),
     ]) {
       const method = options.requireSignatures ? "participant.leave" : "control.pause";
       const r = send(method, { ...params, scope: "workspace" }, sig);
       assert.equal(r.error?.code, expected.code, `${JSON.stringify(options)} ${JSON.stringify(params)}`);
       assert.equal(r.error?.message, expected.message);
     }
+    // A workspace that is not a string names none, and is refused with the
+    // request itself, before any signature is looked at.
+    const r = send("participant.leave", { workspace: [WS], from: "human:alice" }, sig);
+    assert.deepEqual(r.error, { code: -32602, message: "workspace must be a non-empty string" });
     assert.equal(c.workspaces.get(WS)!.state, "active");
     assert.equal(c.workspaces.get(WS)!.members.size, 1);
   }
@@ -298,7 +301,7 @@ test("malformed fields are refused in the same words by both references", () => 
     ["task.create", { kind: "k", input: {}, assignee: "agent:bot", review_required: [] }, "review_required must be a boolean"],
     ["task.create", { kind: "k", input: {}, assignee: "agent:bot", review_required: "yes" }, "review_required must be a boolean"],
     ["task.create", { kind: "k", input: {}, assignee: "agent:bot", mode: { m: 1 } }, "mode must be a string"],
-    ["task.create", { kind: "k", input: {}, assignee: ["agent:bot"] }, "Assignee not in workspace"],
+    ["task.create", { kind: "k", input: {}, assignee: ["agent:bot"] }, "assignee must be a string"],
     ["control.supersede", { task_id: tid, successor_task: { kind: "v2", review_required: {} } }, "successor_task.review_required must be a boolean"],
     ["control.supersede", { task_id: tid, successor_task: { kind: "v2", mode: ["trial"] } }, "successor_task.mode must be a string"],
     ["control.supersede", { task_id: tid, successor_task: 5 }, "successor_task must include kind"],

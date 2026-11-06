@@ -1,0 +1,1751 @@
+{
+  "description": "Params of the wrong type or shape, answered alike by both references. Each case replays `setup` on a coordinator with deterministic ids and clock and the profiles listed, then sends `envelope`. A case under `refused` is answered with `response`, adds a refusal entry to the log where `recorded` says so (SPECIFICATION 10.1), and changes nothing else; one under `accepted` is answered with `response`, after the calls in `before`, if any. Every case was found by the differential fuzzer, and its `note` says how the two references disagreed before.",
+  "profiles": [
+    "core/1.0",
+    "review/1.0",
+    "control/1.0",
+    "handoff/1.0",
+    "whisper/1.0",
+    "deliberation/1.0",
+    "routing/1.0"
+  ],
+  "workspace": "wsp_malformed",
+  "setup": [
+    {
+      "jsonrpc": "2.0",
+      "id": "s1",
+      "method": "workspace.create",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "human:a",
+        "profiles": [
+          "core/1.0",
+          "review/1.0",
+          "control/1.0",
+          "handoff/1.0",
+          "whisper/1.0",
+          "deliberation/1.0",
+          "routing/1.0"
+        ]
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s2",
+      "method": "participant.join",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "human:a",
+        "type": "human",
+        "role": "admin"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s3",
+      "method": "participant.join",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "human:c",
+        "type": "human"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s4",
+      "method": "participant.join",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "agent:b",
+        "type": "agent"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s5",
+      "method": "task.create",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "human:a",
+        "kind": "k",
+        "input": {},
+        "assignee": "agent:b",
+        "routing_hints": {
+          "criticality": "high"
+        }
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s6",
+      "method": "task.update",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "agent:b",
+        "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+        "state": "in_progress"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s7",
+      "method": "task.create",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "human:a",
+        "kind": "k",
+        "input": {},
+        "assignee": "agent:b"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s8",
+      "method": "review.request",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "agent:b",
+        "task_id": "tsk_01HF7YAT02000KRVQKEBZ99Y1A",
+        "artefact": {
+          "text": "draft"
+        },
+        "to": [
+          "human:a"
+        ]
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s9",
+      "method": "whisper.ask",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "agent:b",
+        "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+        "to": [
+          "human:a"
+        ],
+        "question": "q",
+        "deadline_ms": 600000,
+        "default_if_lapsed": "no"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s10",
+      "method": "deliberate.open",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "human:a",
+        "to": [
+          "human:a",
+          "human:c"
+        ],
+        "rule": "any_one_approves"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s11",
+      "method": "handoff.propose",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "agent:b",
+        "to": "human:c",
+        "tasks": [
+          {
+            "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N"
+          }
+        ]
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": "s12",
+      "method": "control.snapshot",
+      "params": {
+        "workspace": "wsp_malformed",
+        "from": "human:a"
+      }
+    }
+  ],
+  "refused": [
+    {
+      "name": "workspace-not-a-string",
+      "note": "A workspace that is a list names none; Python could not look it up.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "workspace.describe",
+        "params": {
+          "workspace": []
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "workspace must be a non-empty string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "workspace-empty",
+      "note": "participant.join made a workspace for an empty name and then could not find it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "participant.join",
+        "params": {
+          "workspace": "",
+          "from": "human:e",
+          "type": "human"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "workspace must be a non-empty string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "workspace-null",
+      "note": "Null names no workspace either.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "task.create",
+        "params": {
+          "workspace": null,
+          "from": "human:a",
+          "kind": "k",
+          "input": {},
+          "assignee": "agent:b"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "workspace must be a non-empty string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "create-mode-unknown",
+      "note": "A mode outside the three was kept and compared as above every ceiling.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "workspace.create",
+        "params": {
+          "workspace": "wsp_other",
+          "mode": "bogus"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "mode must be shadow, trial or production"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "create-step-up-window-not-an-integer",
+      "note": "Python raised converting it; TypeScript used 300.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "workspace.create",
+        "params": {
+          "workspace": "wsp_other",
+          "step_up_window_sec": "abc"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "step_up_window_sec must be an integer"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "create-profiles-not-a-list",
+      "note": "Python read a string's letters as profiles.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "workspace.create",
+        "params": {
+          "workspace": "wsp_other",
+          "profiles": "core/1.0"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "profiles must be a list of strings"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "set-profiles-not-a-list",
+      "note": "Both raised copying it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "workspace.set_profiles",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "profiles": 5
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "profiles must be a list of strings"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "join-from-not-a-string",
+      "note": "Python could not look the member up.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "participant.join",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": [
+            1,
+            2
+          ],
+          "type": "human"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "from must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "join-from-null",
+      "note": "A member was stored under a null URI.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "participant.join",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": null,
+          "type": "agent"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "from must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "join-scopes-not-a-list",
+      "note": "A snapshot read an object's scopes one way in each language.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "participant.join",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:e",
+          "type": "human",
+          "scopes": {
+            "a": 1
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "scopes must be a list of strings"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "join-jwks-keys-not-a-list",
+      "note": "Both raised iterating it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "participant.join",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:e",
+          "type": "human",
+          "jwks": {
+            "keys": 5
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "jwks.keys must be a list"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "create-assignee-not-a-string",
+      "note": "JavaScript read an empty list as an assignee and Python as none.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "kind": "k",
+          "input": {},
+          "assignee": [],
+          "to": "agent:b"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "assignee must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "create-routing-hints-not-an-object",
+      "note": "Routing spread a string's letters into the hints.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "kind": "k",
+          "input": {},
+          "assignee": "agent:b",
+          "routing_hints": "x"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "routing_hints must be an object"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "update-task-id-not-a-string",
+      "note": "Python could not look the task up.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "task.update",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "task_id": [],
+          "state": "in_progress"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "Unknown task"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "update-state-missing",
+      "note": "The refusal named the state as undefined in one language and None in the other.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "task.update",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "state must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "complete-confidence-not-a-number",
+      "note": "Python kept a list as the confidence; TypeScript dropped it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "task.complete",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "output": {},
+          "confidence": []
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "confidence must be a number or a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "read-range-seq-not-an-integer",
+      "note": "Python raised converting it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "audit.read",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "range": {
+            "from_seq": "x"
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "range.from_seq must be an integer"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "read-filter-method-not-a-string",
+      "note": "An empty list filtered every entry out in JavaScript and none in Python.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "audit.read",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "filter": {
+            "method": []
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "filter.method must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "request-to-not-a-list",
+      "note": "Python moved the task under review and then raised.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "review.request",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "artefact": {},
+          "to": 5
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "to must be a string or a list of strings"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "request-rule-not-a-string",
+      "note": "TypeScript raised reading it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "review.request",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "artefact": {},
+          "to": [
+            "human:a"
+          ],
+          "rule": []
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "rule must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "reject-revision-not-a-boolean",
+      "note": "An empty list asked for a revision in JavaScript and declined in Python.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "decide.reject",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT02000KRVQKEBZ99Y1A",
+          "request_revision": []
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "request_revision must be a boolean"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "override-policy-refs-not-a-list",
+      "note": "Python kept a string's letters as references.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "decide.override",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT02000KRVQKEBZ99Y1A",
+          "diff": [],
+          "rationale": "r",
+          "policy_refs": "ab"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "policy_refs must be a list of strings"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "abstain-category-not-a-string",
+      "note": "An empty list was the category in JavaScript and other in Python.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "abstain.declare",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT02000KRVQKEBZ99Y1A",
+          "reason": "r",
+          "category": []
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "category must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "escalate-kind-not-a-string",
+      "note": "An empty list was the kind in JavaScript and the original's in Python.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "escalate.raise",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "original_task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "new_task": {
+            "kind": [],
+            "assignee": "agent:b"
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "new_task.kind must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "ask-deadline-not-an-integer",
+      "note": "Python raised converting it; TypeScript stored NaN.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "whisper.ask",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "to": [
+            "human:a"
+          ],
+          "question": "q",
+          "deadline_ms": "abc",
+          "default_if_lapsed": "no"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "deadline_ms must be an integer"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "ask-urgency-not-a-string",
+      "note": "An empty list was the urgency in JavaScript and low in Python.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "whisper.ask",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "to": [
+            "human:a"
+          ],
+          "question": "q",
+          "deadline_ms": 1000,
+          "default_if_lapsed": "no",
+          "urgency": []
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "urgency must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "open-quorum-not-digits",
+      "note": "parseInt read NaN and opened the deliberation; Python refused with its own words.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "deliberate.open",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "to": [
+            "human:a"
+          ],
+          "rule": "quorum:abc"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32033,
+          "message": "Unknown rule: quorum:abc"
+        }
+      },
+      "recorded": true
+    },
+    {
+      "name": "open-threshold-not-a-decimal",
+      "note": "parseFloat read 1.5 from 1.5x; float() refused it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "deliberate.open",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "to": [
+            "human:a"
+          ],
+          "rule": "weighted_vote:1.5x"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32033,
+          "message": "Unknown rule: weighted_vote:1.5x"
+        }
+      },
+      "recorded": true
+    },
+    {
+      "name": "open-to-not-a-list",
+      "note": "Python raised copying it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "deliberate.open",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "to": 5,
+          "rule": "any_one_approves"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "to must be a string or a list of strings"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "open-weight-not-an-integer",
+      "note": "Python raised summing it when the vote closed, after closing it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "deliberate.open",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "to": [
+            "human:a"
+          ],
+          "rule": "weighted_vote:1",
+          "weights": {
+            "human:a": "heavy"
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "weights must map participants to integers"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "open-veto-not-a-boolean",
+      "note": "An empty list was a veto in JavaScript and none in Python.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "deliberate.open",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "to": [
+            "human:a"
+          ],
+          "rule": "weighted_vote_with_veto:1",
+          "veto": {
+            "human:a": []
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "veto must map participants to booleans"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "comment-not-a-string",
+      "note": "An empty list was the comment in JavaScript and the text in Python.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "deliberate.comment",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "deliberation_id": "dlb_01HF7YAT040017HQF6WQYJKW2M",
+          "comment": [],
+          "text": "t"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "comment must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "vote-veto-not-a-boolean",
+      "note": "An empty list invoked a veto in JavaScript and not in Python.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "deliberate.vote",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "deliberation_id": "dlb_01HF7YAT040017HQF6WQYJKW2M",
+          "vote": "yea",
+          "veto_invoked": []
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "veto_invoked must be a boolean"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "vote-deliberation-id-not-a-string",
+      "note": "Python could not look the deliberation up.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "deliberate.vote",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "deliberation_id": [],
+          "vote": "yea"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "Unknown deliberation"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "propose-to-not-a-string",
+      "note": "Resolving the handoff later raised in both.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "handoff.propose",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "to": 5,
+          "tasks": [
+            {
+              "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N"
+            }
+          ]
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "to must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "propose-task-entry-null",
+      "note": "TypeScript raised reading its task_id.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "handoff.propose",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "to": "human:c",
+          "tasks": [
+            null
+          ]
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "each entry in tasks must be an object with a string task_id"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "accept-ids-not-strings",
+      "note": "Python could not look a list up in a set.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "handoff.accept",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:c",
+          "handoff_id": "hnd_01HF7YAT05001HE5B0KXY78V39",
+          "accepted_task_ids": [
+            []
+          ]
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "accepted_task_ids must be a list of strings"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "pause-scope-not-a-string",
+      "note": "JavaScript read 0 as no scope and Python as an unknown one.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "control.pause",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "scope": 0
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "scope must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "pause-scope-unknown",
+      "note": "The two worded the refusal differently.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "control.pause",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "scope": "bogus"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "scope must be task, participant or workspace"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "pause-participant-unnamed",
+      "note": "The refusal named the participant as undefined in one language and None in the other.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "control.pause",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "scope": "participant"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "participant_uri is required"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "snapshot-include-not-a-list",
+      "note": "Python read a string's letters as slices.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "control.snapshot",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "include": "ab"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "include must be a list of strings"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "rollback-restore-not-a-list",
+      "note": "JavaScript searched the string and Python its letters.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "control.rollback",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "to_snapshot_artefact_id": "art_01HF7YAT06001VAK6TB3XVXT3Y",
+          "what_to_restore": "members"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "what_to_restore must be a list of strings"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "supersede-kind-empty",
+      "note": "Python accepted an empty kind; TypeScript refused it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "control.supersede",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "successor_task": {
+            "kind": ""
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "successor_task must include kind"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "ceiling-unknown",
+      "note": "The two worded the refusal differently.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "control.set_mode_ceiling",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "new_ceiling": "x"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "new_ceiling must be shadow, trial or production"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "ceiling-reason-not-a-string",
+      "note": "A reason is returned as given, so it must be a string.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "control.set_mode_ceiling",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "new_ceiling": "trial",
+          "reason": []
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "reason must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "route-task-id-not-a-string",
+      "note": "Python could not look the task up.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "task.route",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": [
+            {}
+          ],
+          "candidates": [
+            "agent:b"
+          ]
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "Unknown task"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "depth-hints-not-an-object",
+      "note": "Python raised merging them.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "review.depth",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "artefact_routing_hints": [
+            {}
+          ]
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "artefact_routing_hints must be an object"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "auto-target-not-a-string",
+      "note": "Python raised reading it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "escalate.auto",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "default_escalation_target": 5
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "default_escalation_target must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "rotate-old-kid-not-a-string",
+      "note": "The refusal showed an object one way in each language.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "participant.rotate_key",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "old_kid": {
+            "a": 1
+          },
+          "new_jwk": {
+            "kid": "k2"
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "old_kid must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "revoke-kid-null",
+      "note": "The refusal showed null one way in each language.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "participant.revoke_key",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "target_uri": "agent:b",
+          "kid": null
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "kid must be a string"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "receipt-not-an-object",
+      "note": "TypeScript took a list as a receipt.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "audit.verify_receipt",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "receipt": []
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "receipt must be an object"
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "number-past-the-safe-range",
+      "note": "The two worded the canonical number refusal differently.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "participant.revoke_key",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "target_uri": "agent:b",
+          "kid": 9007199254740992
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "CHAP canonical integers must be within the safe-integer range (abs value <= 2^53 - 1); represent larger numbers as strings."
+        }
+      },
+      "recorded": false
+    },
+    {
+      "name": "rule-in-quotes",
+      "note": "Python quoted the rule with single quotes.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "review.request",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "agent:b",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "artefact": {},
+          "to": [
+            "human:a"
+          ],
+          "rule": "x"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "error": {
+          "code": -32602,
+          "message": "Unsupported review rule \"x\": review/1.0 supports any_one_approves, all_approve, quorum:<n>"
+        }
+      },
+      "recorded": false
+    }
+  ],
+  "accepted": [
+    {
+      "name": "ceiling-without-reason",
+      "note": "Python answered with a null reason; TypeScript left it out.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "control.set_mode_ceiling",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "new_ceiling": "production"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "result": {
+          "mode_ceiling": "production"
+        }
+      }
+    },
+    {
+      "name": "supersede-without-reason",
+      "note": "Python answered with a null reason; TypeScript left it out.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "control.supersede",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "successor_task": {
+            "kind": "v2",
+            "assignee": "agent:b"
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "result": {
+          "superseded_task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "new_task_id": "tsk_01HF7YAT070025712M29XGJS4K"
+        }
+      }
+    },
+    {
+      "name": "depth-confidence-empty",
+      "note": "Number() read an empty confidence as 0, a full review on a high task, and float() refused it.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "review.depth",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "artefact_routing_hints": {
+            "confidence": ""
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "result": {
+          "depth": "spot_check",
+          "decision_artefact": "art_01HF7YAT070025712M29XGJS4K",
+          "rationale": {
+            "policy_id": "default",
+            "hints_used": [
+              "criticality",
+              "confidence"
+            ],
+            "summary": "default mid-confidence: 25% sample"
+          },
+          "sampling_probability": 0.25
+        }
+      }
+    },
+    {
+      "name": "depth-criticality-reserved-name",
+      "note": "JavaScript looked __proto__ up on the rank table.",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "review.depth",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+          "artefact_routing_hints": {
+            "criticality": "__proto__"
+          }
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "result": {
+          "depth": "spot_check",
+          "decision_artefact": "art_01HF7YAT070025712M29XGJS4K",
+          "rationale": {
+            "policy_id": "default",
+            "hints_used": [
+              "criticality"
+            ],
+            "summary": "low criticality + high confidence: 10% sample"
+          },
+          "sampling_probability": 0.1
+        }
+      }
+    },
+    {
+      "name": "close-weighted-tally",
+      "note": "Python summed default weights as 1.0.",
+      "before": [
+        {
+          "jsonrpc": "2.0",
+          "id": "v",
+          "method": "deliberate.open",
+          "params": {
+            "workspace": "wsp_malformed",
+            "from": "human:a",
+            "to": [
+              "human:a"
+            ],
+            "rule": "weighted_vote:1"
+          }
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": "v",
+          "method": "deliberate.vote",
+          "params": {
+            "workspace": "wsp_malformed",
+            "from": "human:a",
+            "deliberation_id": "dlb_01HF7YAT070025712M29XGJS4K",
+            "vote": "yea"
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "deliberate.close",
+        "params": {
+          "workspace": "wsp_malformed",
+          "from": "human:a",
+          "deliberation_id": "dlb_01HF7YAT070025712M29XGJS4K"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "result": {
+          "outcome": "approved",
+          "rule": "weighted_vote:1",
+          "tally": {
+            "yea": 1,
+            "nay": 0
+          },
+          "vetoes": []
+        }
+      }
+    },
+    {
+      "name": "describe-empty-capabilities",
+      "note": "TypeScript described empty capabilities and scopes; Python left them out.",
+      "before": [
+        {
+          "jsonrpc": "2.0",
+          "id": "v",
+          "method": "participant.join",
+          "params": {
+            "workspace": "wsp_malformed",
+            "from": "human:e",
+            "type": "human",
+            "capabilities": {},
+            "scopes": []
+          }
+        }
+      ],
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "method": "workspace.describe",
+        "params": {
+          "workspace": "wsp_malformed"
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "v",
+        "result": {
+          "id": "wsp_malformed",
+          "created": "2023-11-14T22:13:21.000Z",
+          "state": "active",
+          "mode": "trial",
+          "mode_ceiling": "production",
+          "max_envelope_bytes": 1048576,
+          "step_up_window_sec": 300,
+          "profiles": [
+            "core/1.0",
+            "review/1.0",
+            "control/1.0",
+            "handoff/1.0",
+            "whisper/1.0",
+            "deliberation/1.0",
+            "routing/1.0"
+          ],
+          "members": [
+            {
+              "uri": "human:a",
+              "type": "human",
+              "role": "admin",
+              "joined": "2023-11-14T22:13:22.000Z"
+            },
+            {
+              "uri": "human:c",
+              "type": "human",
+              "role": "participant",
+              "joined": "2023-11-14T22:13:23.000Z"
+            },
+            {
+              "uri": "agent:b",
+              "type": "agent",
+              "role": "participant",
+              "joined": "2023-11-14T22:13:24.000Z"
+            },
+            {
+              "uri": "human:e",
+              "type": "human",
+              "role": "participant",
+              "joined": "2023-11-14T22:13:33.000Z"
+            }
+          ],
+          "audit_count": 13,
+          "task_count": 2,
+          "override_count": 0
+        }
+      }
+    }
+  ]
+}

@@ -18,17 +18,26 @@
  */
 import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
+import { paramsError } from "../params.js";
 import type { Deliberation } from "../types.js";
 
 // Names a supplied id cannot take: JavaScript gives them special meaning as
 // object keys, and the patch engine refuses them as path segments too.
 const RESERVED_IDS = new Set(["__proto__", "constructor", "prototype"]);
 
+// A rule's argument is read by these patterns alone, so both references read
+// the same number from it: parseFloat and Python's float() each take forms
+// the other refuses, such as "1.5x", "1_0" and "inf".
+const QUORUM_ARG = /^[0-9]+$/;
+const THRESHOLD_ARG = /^[0-9]+(\.[0-9]+)?$/;
+
 function parseRule(rule: string): { kind: string; params: Record<string, number> } {
-  if (rule.includes(":")) {
-    const [kind, arg] = rule.split(":", 2);
-    if (kind === "quorum") return { kind, params: { n: parseInt(arg, 10) } };
-    if (kind === "weighted_vote" || kind === "weighted_vote_with_veto") {
+  const colon = rule.indexOf(":");
+  if (colon >= 0) {
+    const kind = rule.slice(0, colon);
+    const arg = rule.slice(colon + 1);
+    if (kind === "quorum" && QUORUM_ARG.test(arg)) return { kind, params: { n: parseInt(arg, 10) } };
+    if ((kind === "weighted_vote" || kind === "weighted_vote_with_veto") && THRESHOLD_ARG.test(arg)) {
       return { kind, params: { threshold: parseFloat(arg) } };
     }
   }
@@ -112,6 +121,25 @@ export function registerDeliberation(coord: Coordinator): void {
     for (const f of ["from", "rule"]) {
       if (!(f in p)) return { error: rpcError(E.PARAMS, `Missing field: ${f}`) };
     }
+    for (const name of ["to", "participants"]) {
+      const v = p[name];
+      if (v != null && typeof v !== "string" && !(Array.isArray(v) && v.every((x) => typeof x === "string"))) {
+        return { error: rpcError(E.PARAMS, `${name} must be a string or a list of strings`) };
+      }
+    }
+    if (typeof p.rule !== "string") return { error: rpcError(E.PARAMS, "rule must be a string") };
+    const bad = paramsError(p, [["weights", "object"], ["veto", "object"]]);
+    if (bad) return bad;
+    // Weights are summed and vetoes read as true or false when the vote is
+    // counted, so they are checked when it opens.
+    const weights = (p.weights ?? {}) as Record<string, unknown>;
+    if (!Object.values(weights).every((w) => typeof w === "number" && Number.isInteger(w))) {
+      return { error: rpcError(E.PARAMS, "weights must map participants to integers") };
+    }
+    const veto = (p.veto ?? {}) as Record<string, unknown>;
+    if (!Object.values(veto).every((v) => typeof v === "boolean")) {
+      return { error: rpcError(E.PARAMS, "veto must map participants to booleans") };
+    }
     const to = p.to ?? p.participants;
     const participants: string[] = Array.isArray(to) ? (to as string[]) : typeof to === "string" ? [to] : [];
     if (!participants.length) {
@@ -166,6 +194,8 @@ export function registerDeliberation(coord: Coordinator): void {
     if (delib.state !== "open") {
       return { error: rpcError(E.DELIB_CLOSED_OR_LAPSED, "Deliberation not open") };
     }
+    const bad = paramsError(p, [["comment", "string"], ["text", "string"]]);
+    if (bad) return bad;
     delib.comments.push({
       ts: coord.now(),
       from: p.from as string,
@@ -189,6 +219,8 @@ export function registerDeliberation(coord: Coordinator): void {
     if (v !== "yea" && v !== "nay" && v !== "abstain") {
       return { error: rpcError(E.PARAMS, "vote must be yea/nay/abstain") };
     }
+    const bad = paramsError(p, [["veto_invoked", "boolean"]]);
+    if (bad) return bad;
     const voter = p.from as string;
     if (!delib.participants.includes(voter)) {
       return { error: rpcError(E.DELIB_VOTER_NOT_IN_LIST,

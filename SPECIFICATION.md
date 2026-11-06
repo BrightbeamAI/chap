@@ -1226,8 +1226,9 @@ with the first that fails:
 1. The request itself: a JSON-RPC 2.0 call with a non-empty string `method`,
    nested no deeper than 64 levels counting the envelope as the first, within
    the size limit, with `params` an object when present, for a method the
-   Coordinator implements, with a canonical form (`-32600`, `-32601`,
-   `-32602`).
+   Coordinator implements, with a canonical form, and naming its workspace,
+   where `params` carries `workspace`, with a non-empty string (`-32600`,
+   `-32601`, `-32602`).
 2. Whether it is a signed copy of a recorded refusal (below).
 3. The signature, where signatures are required (`-32070` to `-32073`).
 4. Step-up freshness for a privileged method, where it is enforced

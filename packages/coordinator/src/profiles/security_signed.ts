@@ -10,6 +10,7 @@
  */
 import type { Coordinator } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
+import { paramsError } from "../params.js";
 import type { KeyRecord } from "../types.js";
 
 export function registerSecuritySigned(coord: Coordinator): void {
@@ -18,6 +19,11 @@ export function registerSecuritySigned(coord: Coordinator): void {
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     for (const f of ["from", "old_kid", "new_jwk"]) {
       if (!(f in p)) return { error: rpcError(E.PARAMS, `Missing field: ${f}`) };
+    }
+    // Both are written into the refusals below, where null reads one way in
+    // each language.
+    for (const f of ["from", "old_kid"]) {
+      if (typeof p[f] !== "string") return { error: rpcError(E.PARAMS, `${f} must be a string`) };
     }
     const member = ws.members.get(p.from as string);
     if (!member) return { error: rpcError(E.SIG_KEY_NOT_FOUND, `Unknown participant: ${p.from}`) };
@@ -46,6 +52,13 @@ export function registerSecuritySigned(coord: Coordinator): void {
     for (const f of ["target_uri", "kid"]) {
       if (!(f in p)) return { error: rpcError(E.PARAMS, `Missing field: ${f}`) };
     }
+    // Both are written into the refusals below, where null reads one way in
+    // each language.
+    for (const f of ["target_uri", "kid"]) {
+      if (typeof p[f] !== "string") return { error: rpcError(E.PARAMS, `${f} must be a string`) };
+    }
+    const bad = paramsError(p, [["from", "string"], ["reason", "string"]]);
+    if (bad) return bad;
     const sender = p.from as string | undefined;
     if (sender !== p.target_uri) {
       const caller = sender ? ws.members.get(sender) : undefined;

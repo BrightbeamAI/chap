@@ -38,7 +38,7 @@ _NON_INTEGER_ERROR = (
 )
 _NUMBER_RANGE_ERROR = (
     "CHAP canonical integers must be within the safe-integer range "
-    "(abs value <= 2**53 - 1); represent larger numbers as strings."
+    "(abs value <= 2^53 - 1); represent larger numbers as strings."
 )
 _LONE_SURROGATE_ERROR = (
     "CHAP canonical strings must be valid Unicode (I-JSON / RFC 7493); "

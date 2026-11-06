@@ -154,6 +154,13 @@ The Coordinator merges the task's `routing_hints` with the optional
 in `artefact_routing_hints` takes precedence. Neither reference
 Coordinator reads an `artefact_id`.
 
+The built-in policies read `confidence` from an integer or a decimal
+string, such as `"0.91"`, and take any other value, or none, as 1.0.
+They read a `criticality` other than the four tiers as `medium`. Every
+Coordinator therefore reaches the same tier from the same hints, where a
+general number parser would read `""` or `"0x10"` one way in one
+language and another way in the next.
+
 Response:
 
 ```json

@@ -17,6 +17,7 @@
 import type { Coordinator } from "../coordinator.js";
 import { canonicalize } from "../canonical.js";
 import { E, rpcError } from "../jsonrpc.js";
+import { paramsError } from "../params.js";
 import type { WhisperPrompt, Envelope } from "../types.js";
 
 // Names a supplied id cannot take: JavaScript gives them special meaning as
@@ -46,8 +47,11 @@ export function registerWhisper(coord: Coordinator): void {
     if (!ws.tasks.has(p.task_id as string)) {
       return { error: rpcError(E.PARAMS, "Unknown task") };
     }
-    if (p.options !== undefined && p.options !== null && !Array.isArray(p.options)) {
-      return { error: rpcError(E.PARAMS, "options must be a list") };
+    const bad = paramsError(p, [["options", "list"], ["urgency", "string"]]);
+    if (bad) return bad;
+    // The deadline is required, and a number of milliseconds.
+    if (typeof p.deadline_ms !== "number" || !Number.isInteger(p.deadline_ms)) {
+      return { error: rpcError(E.PARAMS, "deadline_ms must be an integer") };
     }
     const to = p.to;
     const askee: string[] = Array.isArray(to) ? (to as string[]) : [to as string];
@@ -120,7 +124,10 @@ export function registerWhisper(coord: Coordinator): void {
       if (!hasOption) {
         return { error: rpcError(E.PARAMS, "answer_option is required when options are defined") };
       }
-      const valid = new Set(prompt.options.map(o => o.id));
+      // An option that is not an object offers no id, as in Python.
+      const valid = new Set(prompt.options
+        .filter((o) => o !== null && typeof o === "object" && !Array.isArray(o))
+        .map((o) => o.id));
       if (!valid.has(answerOption)) {
         return { error: rpcError(E.WHISPER_OPTION_NOT_IN_SET,
           `Answer option ${canonicalize(answerOption as never).toString("utf-8")} not in option set`) };

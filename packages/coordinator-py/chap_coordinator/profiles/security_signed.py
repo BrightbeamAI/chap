@@ -27,6 +27,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..jsonrpc import E, rpc_error
+from ..params import lookup, params_error
 from ..types import KeyRecord
 
 if TYPE_CHECKING:
@@ -42,7 +43,12 @@ def register_security_signed(coord: "Coordinator") -> None:
         for f in ("from", "old_kid", "new_jwk"):
             if f not in p:
                 return {"error": rpc_error(E.PARAMS, f"Missing field: {f}")}
-        member = ws.members.get(p["from"])
+        # Both are written into the refusals below, where None reads one way
+        # in each language.
+        for f in ("from", "old_kid"):
+            if not isinstance(p[f], str):
+                return {"error": rpc_error(E.PARAMS, f"{f} must be a string")}
+        member = lookup(ws.members, p["from"])
         if not member:
             return {"error": rpc_error(E.SIG_KEY_NOT_FOUND,
                                        f"Unknown participant: {p['from']}")}
@@ -56,7 +62,7 @@ def register_security_signed(coord: "Coordinator") -> None:
                                        f"Key {old_kid} is revoked")}
 
         new_jwk = p["new_jwk"]
-        if not isinstance(new_jwk, dict) or "kid" not in new_jwk:
+        if not isinstance(new_jwk, dict) or not isinstance(new_jwk.get("kid"), str):
             return {"error": rpc_error(E.PARAMS, "new_jwk must include kid")}
 
         now = coord.now_iso()
@@ -78,6 +84,14 @@ def register_security_signed(coord: "Coordinator") -> None:
         for f in ("target_uri", "kid"):
             if f not in p:
                 return {"error": rpc_error(E.PARAMS, f"Missing field: {f}")}
+        # Both are written into the refusals below, where None reads one way
+        # in each language.
+        for f in ("target_uri", "kid"):
+            if not isinstance(p[f], str):
+                return {"error": rpc_error(E.PARAMS, f"{f} must be a string")}
+        bad = params_error(p, [("from", "string"), ("reason", "string")])
+        if bad:
+            return bad
         sender = p.get("from")
         if sender != p["target_uri"]:
             caller = ws.members.get(sender) if sender else None
@@ -85,7 +99,7 @@ def register_security_signed(coord: "Coordinator") -> None:
                 return {"error": rpc_error(
                     E.NOT_AUTHORISED,
                     "Revoking another member's key requires the admin role")}
-        member = ws.members.get(p["target_uri"])
+        member = lookup(ws.members, p["target_uri"])
         if not member:
             return {"error": rpc_error(E.SIG_KEY_NOT_FOUND,
                                        f"Unknown target: {p['target_uri']}")}

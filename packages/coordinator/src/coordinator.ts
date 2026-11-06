@@ -25,6 +25,7 @@ import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "./catalogue.js";
 import { publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
+import { paramsError } from "./params.js";
 import { entryCall, entryRecord, isSigned, linkHash, refusalIsRecorded, signedDigest } from "./audit.js";
 import { applyJsonPatch } from "./patch.js";
 import type { Store, StoreChange, WorkspaceRecord } from "./storage/store.js";
@@ -182,12 +183,10 @@ function missing(params: Record<string, unknown>, fields: string[]): string | nu
   return null;
 }
 
-function tagsError(p: Record<string, unknown>): { error: ReturnType<typeof rpcError> } | null {
-  const tags = p.tags;
-  if (tags !== undefined && (!Array.isArray(tags) || !tags.every((t) => typeof t === "string"))) {
-    return { error: rpcError(E.PARAMS, "tags must be a list of strings") };
-  }
-  return null;
+const MODES = new Set<string>(["shadow", "trial", "production"]);
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function reviewRuleSupported(rule: string): boolean {
@@ -896,6 +895,13 @@ export class Coordinator {
       const msg = canonicalError instanceof Error ? canonicalError.message : String(canonicalError);
       return reply(envelope, { error: rpcError(E.PARAMS, msg) });
     }
+    // A workspace is named by a non-empty string. A list or an object in its
+    // place named no workspace here and broke the Python lookup, and an empty
+    // one made participant.join create a workspace it then could not find, so
+    // both references refuse either before any lookup.
+    if (params.workspace !== undefined && (typeof params.workspace !== "string" || !params.workspace)) {
+      return reply(envelope, { error: rpcError(E.PARAMS, "workspace must be a non-empty string") });
+    }
 
     // SPECIFICATION 10.1: a signed request whose signed content matches a
     // recorded refusal is answered with that refusal and not evaluated again.
@@ -1279,8 +1285,17 @@ export class Coordinator {
   // ==========================================================
 
   private opWorkspaceCreate(p: Record<string, unknown>): ReturnType<Handler> {
+    const bad = paramsError(p, [
+      ["profiles", "strings"], ["mode", "string"], ["mode_ceiling", "string"],
+      ["routing_policy_uri", "string"], ["step_up_window_sec", "integer"], ["min_acr", "string"],
+    ]);
+    if (bad) return bad;
+    for (const name of ["mode", "mode_ceiling"]) {
+      if (p[name] != null && !MODES.has(p[name] as string)) {
+        return { error: rpcError(E.PARAMS, `${name} must be shadow, trial or production`) };
+      }
+    }
     const id = (p.workspace as string) || this.ids.workspaceId();
-    if (typeof id !== "string") return { error: rpcError(E.PARAMS, "workspace must be a string id") };
     if (this.workspaces.has(id)) return { error: rpcError(E.PARAMS, `workspace already exists: ${id}`) };
     const profiles: string[] = Array.isArray(p.profiles) ? [...(p.profiles as string[])] : [...(this.options.defaultProfiles ?? ["core/1.0", "review/1.0"])];
 
@@ -1317,7 +1332,7 @@ export class Coordinator {
       mode: (p.mode as Mode) ?? "trial",
       mode_ceiling: (p.mode_ceiling as Mode) ?? "production",
       routing_policy_uri: p.routing_policy_uri as string | undefined,
-      step_up_window_sec: typeof p.step_up_window_sec === "number" ? p.step_up_window_sec : 300,
+      step_up_window_sec: (p.step_up_window_sec as number | null | undefined) ?? 300,
       min_acr: p.min_acr as string | undefined,
       members: this.newMap(),
       tasks: this.newMap(),
@@ -1371,6 +1386,9 @@ export class Coordinator {
   private opWorkspaceSetProfiles(p: Record<string, unknown>): ReturnType<Handler> {
     const miss = missing(p, ["workspace", "from", "profiles"]);
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
+    if (!Array.isArray(p.profiles) || !p.profiles.every((x) => typeof x === "string")) {
+      return { error: rpcError(E.PARAMS, "profiles must be a list of strings") };
+    }
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const notMember = this.requireMember(ws, p.from);
@@ -1391,6 +1409,16 @@ export class Coordinator {
   private opParticipantJoin(p: Record<string, unknown>): ReturnType<Handler> {
     const miss = missing(p, ["workspace", "from", "type"]);
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
+    // The member is stored under its URI and read by its type, so neither
+    // may be null.
+    for (const f of ["from", "type"]) {
+      if (typeof p[f] !== "string") return { error: rpcError(E.PARAMS, `${f} must be a string`) };
+    }
+    const bad = paramsError(p, [
+      ["role", "string"], ["display_name", "string"], ["scopes", "strings"],
+      ["capabilities", "object"], ["jwks", "object"], ["jwks.keys", "list"],
+    ]);
+    if (bad) return bad;
     let ws = this.workspaces.get(p.workspace as string);
     if (!ws) {
       const create = this.opWorkspaceCreate({ workspace: p.workspace });
@@ -1443,7 +1471,7 @@ export class Coordinator {
       member.oidc_acr = typeof claims.acr === "string" ? claims.acr : undefined;
       const cnf = claims.cnf as Record<string, unknown> | undefined;
       const cnfJwk = cnf?.jwk as Record<string, unknown> | undefined;
-      if (cnfJwk && typeof cnfJwk.kid === "string") {
+      if (cnfJwk && typeof cnfJwk.kid === "string" && cnfJwk.kid) {
         member.keys.push({ jwk: cnfJwk as unknown as KeyRecord["jwk"], kid: cnfJwk.kid as string, valid_from: now });
       }
     }
@@ -1461,7 +1489,7 @@ export class Coordinator {
       }
       member.vc_holder = holder;
       const vpJwk = subject.cnf_jwk as Record<string, unknown> | undefined;
-      if (vpJwk && typeof vpJwk.kid === "string") {
+      if (vpJwk && typeof vpJwk.kid === "string" && vpJwk.kid) {
         member.keys.push({ jwk: vpJwk as unknown as KeyRecord["jwk"], kid: vpJwk.kid as string, valid_from: now });
       }
     }
@@ -1470,11 +1498,13 @@ export class Coordinator {
 
     // Self-asserted JWKs are ignored for an identity-bound participant: the
     // verifier-pinned cnf.jwk / vp_jwk is the signing key (proof of possession).
-    const jwks = p.jwks as { keys?: Array<{ kid: string; [k: string]: unknown }> } | undefined;
+    const jwks = p.jwks as { keys?: unknown[] } | undefined;
     if (jwks?.keys && attested.length === 0) {
-      for (const j of jwks.keys) {
-        if (j.kid && !member.keys.some(k => k.kid === j.kid)) {
-          member.keys.push({ jwk: j as unknown as KeyRecord["jwk"], kid: j.kid, valid_from: now });
+      for (const j of jwks.keys as Array<Record<string, unknown> | null>) {
+        // A key without a string kid cannot be named by a signature tag.
+        const kid = j !== null && typeof j === "object" && !Array.isArray(j) ? j.kid : undefined;
+        if (typeof kid === "string" && kid && !member.keys.some(k => k.kid === kid)) {
+          member.keys.push({ jwk: j as unknown as KeyRecord["jwk"], kid, valid_from: now });
         }
       }
     }
@@ -1508,6 +1538,13 @@ export class Coordinator {
   private opTaskCreate(p: Record<string, unknown>): ReturnType<Handler> {
     const miss = missing(p, ["workspace", "from", "kind", "input"]);
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
+    // A param of the wrong type is refused, so both references read the same
+    // task from the same call.
+    const bad = paramsError(p, [
+      ["assignee", "string"], ["to", "string"], ["mode", "string"], ["review_required", "boolean"],
+      ["routing_hints", "object"], ["idempotency_key", "string"],
+    ]);
+    if (bad) return bad;
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const notMember = this.requireMember(ws, p.from);
@@ -1520,18 +1557,11 @@ export class Coordinator {
       return { error: rpcError(E.CONTROL_WORKSPACE_PAUSED, `Assignee ${assignee} is paused`) };
     }
 
-    // modes/1.0 ceiling check. A mode or review_required of the wrong type is
-    // refused, so both references read the same task from the same call.
-    if (p.mode !== undefined && p.mode !== null && typeof p.mode !== "string") {
-      return { error: rpcError(E.PARAMS, "mode must be a string") };
-    }
+    // modes/1.0 ceiling check.
     const requestedMode = ((p.mode as Mode) || ws.mode);
     if (!modeLE(requestedMode, ws.mode_ceiling)) {
       return { error: rpcError(E.MODE_CEILING_EXCEEDED,
         `Requested mode ${requestedMode} exceeds ceiling ${ws.mode_ceiling}`) };
-    }
-    if (p.review_required !== undefined && p.review_required !== null && typeof p.review_required !== "boolean") {
-      return { error: rpcError(E.PARAMS, "review_required must be a boolean") };
     }
 
     const taskId = this.ids.taskId();
@@ -1578,6 +1608,8 @@ export class Coordinator {
     if (notMember) return notMember;
     const task = ws.tasks.get(p.task_id as string);
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
+    // The state is required, and is written into the refusal below.
+    if (typeof p.state !== "string") return { error: rpcError(E.PARAMS, "state must be a string") };
     const newState = p.state as Task["state"];
     // Pausing and resuming both belong to control/1.0. A Core-only workspace
     // that could pause through task.update would hold a task nothing it
@@ -1625,6 +1657,9 @@ export class Coordinator {
     // can neither revive a terminated task nor bypass a pause.
     if (task.state !== "created" && task.state !== "in_progress") {
       return { error: rpcError(E.PARAMS, `Cannot complete task in state: ${task.state}`) };
+    }
+    if (p.confidence != null && typeof p.confidence !== "number" && typeof p.confidence !== "string") {
+      return { error: rpcError(E.PARAMS, "confidence must be a number or a string") };
     }
     // review/1.0 S3.1: task.complete on a task whose review is required opens a
     // review implicitly rather than completing. The submitted output becomes the
@@ -1678,7 +1713,7 @@ export class Coordinator {
       return { result: { state: "review_requested", review_id: task.id } };
     }
     task.output = p.output;
-    if (typeof p.confidence === "number" || typeof p.confidence === "string") task.confidence = p.confidence;
+    if (p.confidence != null) task.confidence = p.confidence as number | string;
     task.state = "completed";
     task.updated_at = this.now();
     task.history.push({ ts: task.updated_at, from: p.from as ParticipantUri, state: "completed" });
@@ -1692,10 +1727,17 @@ export class Coordinator {
       const notMember = this.requireMember(ws, p.from);
       if (notMember) return notMember;
     }
-    const range = (p.range as { from_seq?: number; to_seq?: number } | undefined) ?? {};
-    const filter = (p.filter as {
+    // A range or filter that is not an object reads as none. Within one, a
+    // field the read compares or slices by must be of its type.
+    const bad = paramsError(p, [
+      ["range.from_seq", "integer"], ["range.to_seq", "integer"],
+      ["filter.method", "string"], ["filter.from", "string"], ["filter.task_id", "string"],
+    ]);
+    if (bad) return bad;
+    const range = (isObject(p.range) ? p.range : {}) as { from_seq?: number; to_seq?: number };
+    const filter = (isObject(p.filter) ? p.filter : {}) as {
       method?: string; from?: string; task_id?: string; outcome?: unknown;
-    } | undefined) ?? {};
+    };
     if (filter.outcome != null && filter.outcome !== "accepted" && filter.outcome !== "refused") {
       return { error: rpcError(E.PARAMS, "filter.outcome must be 'accepted' or 'refused'") };
     }
@@ -1762,8 +1804,14 @@ export class Coordinator {
       return { error: rpcError(E.NOT_REVIEWABLE, `Cannot request review for task in state: ${task.state}`) };
     }
     const to = p.to;
+    if (to != null && typeof to !== "string"
+        && !(Array.isArray(to) && to.every((r) => typeof r === "string"))) {
+      return { error: rpcError(E.PARAMS, "to must be a string or a list of strings") };
+    }
     const reviewers: string[] = Array.isArray(to) ? (to as string[]) : typeof to === "string" ? [to] : [];
     if (!reviewers.length) return { error: rpcError(E.PARAMS, "review.request needs 'to'") };
+    const bad = paramsError(p, [["rule", "string"]]);
+    if (bad) return bad;
     const now = this.now();
     const declaredRule = p.rule as string | undefined;
     const rule = declaredRule || "any_one_approves";
@@ -1789,7 +1837,7 @@ export class Coordinator {
       // Only a rule the caller actually supplied can be a change. Comparing
       // the resolved default instead refused the documented
       // widen-the-reviewer-set request whenever `rule` was omitted.
-      if (declaredRule !== undefined && declaredRule !== task.review.rule) {
+      if (declaredRule != null && declaredRule !== task.review.rule) {
         return { error: rpcError(
           E.REVIEW_ALREADY_OPEN,
           `Cannot change the decision rule of an open review (currently ${task.review.rule})`,
@@ -1799,7 +1847,7 @@ export class Coordinator {
       for (const r of reviewers) {
         if (!task.review.requested_to.includes(r)) task.review.requested_to.push(r);
       }
-      if (p.deadline !== undefined) task.review.deadline = p.deadline as string;
+      if (p.deadline != null) task.review.deadline = p.deadline as string;
       task.updated_at = now;
       return { result: {
         state: "review_requested",
@@ -1841,7 +1889,8 @@ export class Coordinator {
     if (typeof declared !== "string") {
       return { error: rpcError(E.PARAMS, "approved_artefact_digest must be a string") };
     }
-    if (task.pending_artefact === undefined) {
+    // A null output is no artefact, as it is in the Python reference.
+    if (task.pending_artefact === undefined || task.pending_artefact === null) {
       return { error: rpcError(E.PARAMS, "No artefact under review to bind a digest to") };
     }
     const actual = contentHash(task.pending_artefact);
@@ -1858,8 +1907,8 @@ export class Coordinator {
   private opDecide(p: Record<string, unknown>, kind: "approve" | "reject"): ReturnType<Handler> {
     const miss = missing(p, ["workspace", "from", "task_id"]);
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
-    const badTags = tagsError(p);
-    if (badTags) return badTags;
+    const bad = paramsError(p, [["tags", "strings"], ["request_revision", "boolean"]]);
+    if (bad) return bad;
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const notMember = this.requireMember(ws, p.from);
@@ -1899,8 +1948,8 @@ export class Coordinator {
   private opDecideOverride(p: Record<string, unknown>): ReturnType<Handler> {
     const miss = missing(p, ["workspace", "from", "task_id", "diff", "rationale"]);
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
-    const badTags = tagsError(p);
-    if (badTags) return badTags;
+    const bad = paramsError(p, [["tags", "strings"], ["policy_refs", "strings"]]);
+    if (bad) return bad;
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const notMember = this.requireMember(ws, p.from);
@@ -1917,7 +1966,7 @@ export class Coordinator {
     // The override is of the artefact under review; use the coordinator's
     // record, not a caller-supplied "before" that could be fabricated.
     const base = task.pending_artefact;
-    if (base === undefined) return { error: rpcError(E.PARAMS, "No base artefact for override") };
+    if (base === undefined || base === null) return { error: rpcError(E.PARAMS, "No base artefact for override") };
     let applied: unknown;
     try {
       applied = applyJsonPatch(base, p.diff as never, {
@@ -1962,6 +2011,8 @@ export class Coordinator {
   private opAbstainDeclare(p: Record<string, unknown>): ReturnType<Handler> {
     const miss = missing(p, ["workspace", "from", "task_id", "reason"]);
     if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
+    const bad = paramsError(p, [["category", "string"]]);
+    if (bad) return bad;
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const notMember = this.requireMember(ws, p.from);
@@ -2004,6 +2055,8 @@ export class Coordinator {
       return { error: rpcError(E.PARAMS, "new_task must be an object") };
     }
     const nt = p.new_task as Record<string, unknown>;
+    const bad = paramsError(p, [["new_task.kind", "string"]]);
+    if (bad) return bad;
     const assignee = nt.assignee;
     if (typeof assignee !== "string" || !ws.members.has(assignee)) {
       return { error: rpcError(E.PARAMS, "Escalation assignee not in workspace") };
@@ -2060,9 +2113,11 @@ function memberToDict(m: Member): Record<string, unknown> {
   const out: Record<string, unknown> = {
     uri: m.uri, type: m.type, role: m.role, joined: m.joined,
   };
+  // Empty capabilities and scopes are left out, as the Python reference
+  // leaves them out.
   if (m.display_name) out.display_name = m.display_name;
-  if (m.capabilities) out.capabilities = m.capabilities;
-  if (m.scopes) out.scopes = m.scopes;
+  if (m.capabilities && Object.keys(m.capabilities).length) out.capabilities = m.capabilities;
+  if (m.scopes?.length) out.scopes = m.scopes;
   if (m.keys.length) {
     out.jwks = { keys: m.keys.filter(k => !k.revoked_at && !k.valid_until).map(k => k.jwk) };
     out.key_history = m.keys;

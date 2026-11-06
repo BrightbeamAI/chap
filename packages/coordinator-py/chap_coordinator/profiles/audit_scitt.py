@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING
 from ..audit import entry_is_well_formed, entry_record, link_hash
 from ..canonical import ZERO_HASH, canonicalize
 from ..jsonrpc import E, rpc_error
+from ..params import params_error
 
 if TYPE_CHECKING:
     from ..coordinator import Coordinator
@@ -78,9 +79,13 @@ def register_audit_scitt(coord: "Coordinator") -> None:
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
 
+        bad = params_error(p, [("range", "object"), ("range.from_seq", "integer"),
+                               ("range.to_seq", "integer"), ("issuer", "string")])
+        if bad:
+            return bad
         rng = p.get("range") or {}
-        from_seq = int(rng.get("from_seq", 0))
-        to_seq = int(rng.get("to_seq", len(ws.audit)))
+        from_seq = 0 if rng.get("from_seq") is None else int(rng["from_seq"])
+        to_seq = len(ws.audit) if rng.get("to_seq") is None else int(rng["to_seq"])
         issuer = p.get("issuer") or "service:coordinator"
 
         receipts: list[dict] = []
@@ -129,9 +134,10 @@ def register_audit_scitt(coord: "Coordinator") -> None:
                 return {"error": rpc_error(E.SCITT_RECEIPT_INVALID,
                                            "Receipt did not verify")}
             return {"result": {"verified": True}}
+        # Worded alike in both references, which name the option differently.
         return {"error": rpc_error(
             E.SCITT_RECEIPT_INVALID,
-            "No verify_scitt_receipt hook configured; receipt not verified")}
+            "No receipt verifier is configured; receipt not verified")}
 
     def audit_verify_chain(p: dict) -> dict:
         """Local prev_hash chain replay (supplementary to SCITT).

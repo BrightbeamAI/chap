@@ -25,6 +25,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import datetime as _dt
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -37,6 +38,7 @@ from .ids import IdFactory
 from .tracked import Scope, TrackedDict
 from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
 from .jsonrpc import E, is_valid_envelope, make_response, rpc_error
+from .params import lookup, params_error
 from .patch import PatchError, apply_json_patch
 from .types import (
     AuditEntry,
@@ -264,14 +266,6 @@ def _missing(params: dict, fields: list[str]) -> str | None:
     for f in fields:
         if f not in params:
             return f
-    return None
-
-
-def _tags_error(params: dict) -> dict | None:
-    tags = params.get("tags")
-    if tags is not None and (not isinstance(tags, list)
-                             or not all(isinstance(t, str) for t in tags)):
-        return {"error": rpc_error(E.PARAMS, "tags must be a list of strings")}
     return None
 
 
@@ -615,6 +609,14 @@ class Coordinator:
             )
         if canonical_error is not None:
             return make_response(env_id, error=rpc_error(E.PARAMS, str(canonical_error)))
+        # A workspace is named by a non-empty string. A list or an object in
+        # its place cannot be looked up in a dict, and an empty one made
+        # participant.join create a workspace it then could not find, so both
+        # references refuse either before any lookup.
+        if "workspace" in params and (not isinstance(params["workspace"], str)
+                                      or not params["workspace"]):
+            return make_response(env_id, error=rpc_error(
+                E.PARAMS, "workspace must be a non-empty string"))
 
         # SPECIFICATION 10.1: a signed request whose signed content matches a
         # recorded refusal is answered with that refusal and not evaluated
@@ -1183,12 +1185,22 @@ class Coordinator:
     # ============================================================
 
     def _op_workspace_create(self, p: dict) -> dict:
+        bad = params_error(p, [
+            ("profiles", "strings"), ("mode", "string"),
+            ("mode_ceiling", "string"), ("routing_policy_uri", "string"),
+            ("step_up_window_sec", "integer"), ("min_acr", "string"),
+        ])
+        if bad:
+            return bad
+        for name in ("mode", "mode_ceiling"):
+            if p.get(name) is not None and p[name] not in _MODE_ORDER:
+                return {"error": rpc_error(
+                    E.PARAMS, f"{name} must be shadow, trial or production")}
         ws_id = p.get("workspace") or self.ids.workspace_id()
-        if not isinstance(ws_id, str):
-            return {"error": rpc_error(E.PARAMS, "workspace must be a string id")}
         if ws_id in self.workspaces:
             return {"error": rpc_error(E.PARAMS, f"workspace already exists: {ws_id}")}
-        profiles = list(p.get("profiles") or self.options.default_profiles)
+        requested = p.get("profiles")
+        profiles = list(requested if requested is not None else self.options.default_profiles)
 
         # SPECIFICATION 15.4: the descriptor and the enforcement agree, and the
         # workspace boundary is where a disagreement surfaces.
@@ -1222,7 +1234,8 @@ class Coordinator:
             mode=p.get("mode") or "trial",
             mode_ceiling=p.get("mode_ceiling") or "production",
             routing_policy_uri=p.get("routing_policy_uri"),
-            step_up_window_sec=int(p.get("step_up_window_sec") or 300),
+            step_up_window_sec=(300 if p.get("step_up_window_sec") is None
+                                else int(p["step_up_window_sec"])),
             min_acr=p.get("min_acr"),
         )
         if "audit-scitt/1.0" in profiles or self.options.enable_chain:
@@ -1272,6 +1285,8 @@ class Coordinator:
         miss = _missing(p, ["workspace", "from", "profiles"])
         if miss:
             return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
+        if not isinstance(p["profiles"], list) or not all(isinstance(x, str) for x in p["profiles"]):
+            return {"error": rpc_error(E.PARAMS, "profiles must be a list of strings")}
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
@@ -1296,6 +1311,17 @@ class Coordinator:
         miss = _missing(p, ["workspace", "from", "type"])
         if miss:
             return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
+        # The member is stored under its URI and read by its type, so neither
+        # may be None.
+        for f in ("from", "type"):
+            if not isinstance(p[f], str):
+                return {"error": rpc_error(E.PARAMS, f"{f} must be a string")}
+        bad = params_error(p, [
+            ("role", "string"), ("display_name", "string"), ("scopes", "strings"),
+            ("capabilities", "object"), ("jwks", "object"), ("jwks.keys", "list"),
+        ])
+        if bad:
+            return bad
         ws_id = p["workspace"]
         ws = self.workspaces.get(ws_id)
         if not ws:
@@ -1354,7 +1380,7 @@ class Coordinator:
             # Pin the cnf.jwk if present (RFC 7800)
             cnf = claims.get("cnf") or {}
             cnf_jwk = cnf.get("jwk") if isinstance(cnf, dict) else None
-            if isinstance(cnf_jwk, dict) and cnf_jwk.get("kid"):
+            if isinstance(cnf_jwk, dict) and isinstance(cnf_jwk.get("kid"), str) and cnf_jwk["kid"]:
                 member.keys.append(KeyRecord(
                     jwk=cnf_jwk, kid=cnf_jwk["kid"], valid_from=now,
                 ))
@@ -1376,7 +1402,7 @@ class Coordinator:
             member.vc_holder = holder
             # If the VP carried a proof-of-possession jwk, pin it
             vp_jwk = subject.get("cnf_jwk")
-            if isinstance(vp_jwk, dict) and vp_jwk.get("kid"):
+            if isinstance(vp_jwk, dict) and isinstance(vp_jwk.get("kid"), str) and vp_jwk["kid"]:
                 member.keys.append(KeyRecord(
                     jwk=vp_jwk, kid=vp_jwk["kid"], valid_from=now,
                 ))
@@ -1387,8 +1413,9 @@ class Coordinator:
         # verifier-pinned cnf.jwk / vp_jwk is the signing key (proof of possession).
         jwks = p.get("jwks")
         if isinstance(jwks, dict) and not attested:
-            for j in jwks.get("keys", []) or []:
-                if isinstance(j, dict) and j.get("kid"):
+            for j in jwks.get("keys") or []:
+                # A key without a string kid cannot be named by a signature tag.
+                if isinstance(j, dict) and isinstance(j.get("kid"), str) and j["kid"]:
                     if not any(k.kid == j["kid"] for k in member.keys):
                         member.keys.append(KeyRecord(
                             jwk=j, kid=j["kid"], valid_from=now,
@@ -1423,6 +1450,15 @@ class Coordinator:
         miss = _missing(p, ["workspace", "from", "kind", "input"])
         if miss:
             return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
+        # A param of the wrong type is refused, so both references read the
+        # same task from the same call.
+        bad = params_error(p, [
+            ("assignee", "string"), ("to", "string"), ("mode", "string"),
+            ("review_required", "boolean"), ("routing_hints", "object"),
+            ("idempotency_key", "string"),
+        ])
+        if bad:
+            return bad
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
@@ -1438,19 +1474,13 @@ class Coordinator:
             return {"error": rpc_error(E.CONTROL_WORKSPACE_PAUSED,
                                        f"Assignee {assignee} is paused")}
 
-        # modes/1.0 ceiling check. A mode or review_required of the wrong type
-        # is refused, so both references read the same task from the same call.
-        if p.get("mode") is not None and not isinstance(p.get("mode"), str):
-            return {"error": rpc_error(E.PARAMS, "mode must be a string")}
+        # modes/1.0 ceiling check.
         requested_mode = p.get("mode") or ws.mode
         if not mode_le(requested_mode, ws.mode_ceiling):
             return {"error": rpc_error(
                 E.MODE_CEILING_EXCEEDED,
                 f"Requested mode {requested_mode} exceeds ceiling {ws.mode_ceiling}",
             )}
-        if (p.get("review_required") is not None
-                and not isinstance(p.get("review_required"), bool)):
-            return {"error": rpc_error(E.PARAMS, "review_required must be a boolean")}
 
         task_id = self.ids.task_id()
         now = self.now_iso()
@@ -1492,9 +1522,12 @@ class Coordinator:
         not_member = self._require_member(ws, p.get("from"))
         if not_member:
             return not_member
-        task = ws.tasks.get(p.get("task_id", ""))
+        task = lookup(ws.tasks, p.get("task_id"))
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
+        # The state is required, and is written into the refusal below.
+        if not isinstance(p.get("state"), str):
+            return {"error": rpc_error(E.PARAMS, "state must be a string")}
         new_state = p.get("state")
         # Pausing and resuming both belong to control/1.0. A Core-only
         # workspace that could pause through task.update would hold a task
@@ -1536,7 +1569,7 @@ class Coordinator:
         not_member = self._require_member(ws, p.get("from"))
         if not_member:
             return not_member
-        task = ws.tasks.get(p.get("task_id", ""))
+        task = lookup(ws.tasks, p.get("task_id"))
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
         # Completion is only legal from an active, non-terminal, non-paused
@@ -1548,6 +1581,10 @@ class Coordinator:
         if task.state not in ("created", "in_progress"):
             return {"error": rpc_error(
                 E.PARAMS, f"Cannot complete task in state: {task.state}")}
+        confidence = p.get("confidence")
+        if confidence is not None and (isinstance(confidence, bool)
+                                       or not isinstance(confidence, (int, float, str))):
+            return {"error": rpc_error(E.PARAMS, "confidence must be a number or a string")}
         # review/1.0 S3.1: task.complete on a task whose review is required
         # opens a review implicitly rather than completing. The submitted output
         # becomes the artefact under review; only a reviewer decision (decide.*)
@@ -1625,15 +1662,24 @@ class Coordinator:
             not_member = self._require_member(ws, p.get("from"))
             if not_member:
                 return not_member
-        rng = p.get("range") or {}
+        # A range or filter that is not an object reads as none. Within one, a
+        # field the read compares or slices by must be of its type.
+        bad = params_error(p, [
+            ("range.from_seq", "integer"), ("range.to_seq", "integer"),
+            ("filter.method", "string"), ("filter.from", "string"), ("filter.task_id", "string"),
+        ])
+        if bad:
+            return bad
+        rng = p.get("range")
+        rng = rng if isinstance(rng, dict) else {}
         flt = p.get("filter")
         flt = flt if isinstance(flt, dict) else {}
         outcome_filter = flt.get("outcome")
         if outcome_filter is not None and outcome_filter not in ("accepted", "refused"):
             return {"error": rpc_error(
                 E.PARAMS, "filter.outcome must be 'accepted' or 'refused'")}
-        from_seq = int(rng.get("from_seq", 0))
-        to_seq = int(rng.get("to_seq", len(ws.audit)))
+        from_seq = 0 if rng.get("from_seq") is None else int(rng["from_seq"])
+        to_seq = len(ws.audit) if rng.get("to_seq") is None else int(rng["to_seq"])
 
         out: list[dict] = []
         for entry in ws.audit[from_seq:to_seq]:
@@ -1678,7 +1724,7 @@ class Coordinator:
         not_member = self._require_member(ws, p.get("from"))
         if not_member:
             return not_member
-        task = ws.tasks.get(p["task_id"])
+        task = lookup(ws.tasks, p["task_id"])
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
         # task.complete refuses a task that has been stopped, so that a
@@ -1695,17 +1741,24 @@ class Coordinator:
                 E.NOT_REVIEWABLE,
                 f"Cannot request review for task in state: {task.state}")}
         reviewers = p.get("to")
+        if reviewers is not None and not isinstance(reviewers, str) and not (
+                isinstance(reviewers, list) and all(isinstance(r, str) for r in reviewers)):
+            return {"error": rpc_error(E.PARAMS, "to must be a string or a list of strings")}
         if isinstance(reviewers, str):
             reviewers = [reviewers]
         if not reviewers:
             return {"error": rpc_error(E.PARAMS, "review.request needs 'to'")}
+        bad = params_error(p, [("rule", "string")])
+        if bad:
+            return bad
         now = self.now_iso()
         declared_rule = p.get("rule")
         rule = declared_rule or "any_one_approves"
         if not _review_rule_supported(rule):
             return {"error": rpc_error(
                 E.PARAMS,
-                f"Unsupported review rule {rule!r}: review/1.0 supports "
+                f"Unsupported review rule {json.dumps(rule, ensure_ascii=False)}: "
+                "review/1.0 supports "
                 "any_one_approves, all_approve, quorum:<n>")}
 
         # A review already open on this task. Replacing the artefact underneath
@@ -1793,16 +1846,16 @@ class Coordinator:
         miss = _missing(p, ["workspace", "from", "task_id"])
         if miss:
             return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
-        bad_tags = _tags_error(p)
-        if bad_tags:
-            return bad_tags
+        bad = params_error(p, [("tags", "strings"), ("request_revision", "boolean")])
+        if bad:
+            return bad
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         not_member = self._require_member(ws, p.get("from"))
         if not_member:
             return not_member
-        task = ws.tasks.get(p["task_id"])
+        task = lookup(ws.tasks, p["task_id"])
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
         if task.state != "review_requested":
@@ -1843,16 +1896,16 @@ class Coordinator:
         miss = _missing(p, ["workspace", "from", "task_id", "diff", "rationale"])
         if miss:
             return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
-        bad_tags = _tags_error(p)
-        if bad_tags:
-            return bad_tags
+        bad = params_error(p, [("tags", "strings"), ("policy_refs", "strings")])
+        if bad:
+            return bad
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         not_member = self._require_member(ws, p.get("from"))
         if not_member:
             return not_member
-        task = ws.tasks.get(p["task_id"])
+        task = lookup(ws.tasks, p["task_id"])
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
         if task.state != "review_requested":
@@ -1919,13 +1972,16 @@ class Coordinator:
         miss = _missing(p, ["workspace", "from", "task_id", "reason"])
         if miss:
             return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
+        bad = params_error(p, [("category", "string")])
+        if bad:
+            return bad
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
         not_member = self._require_member(ws, p.get("from"))
         if not_member:
             return not_member
-        task = ws.tasks.get(p["task_id"])
+        task = lookup(ws.tasks, p["task_id"])
         if not task:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
         if task.state != "review_requested":
@@ -1971,6 +2027,9 @@ class Coordinator:
         nt = p["new_task"]
         if not isinstance(nt, dict):
             return {"error": rpc_error(E.PARAMS, "new_task must be an object")}
+        bad = params_error(p, [("new_task.kind", "string")])
+        if bad:
+            return bad
         assignee = nt.get("assignee")
         if not isinstance(assignee, str) or assignee not in ws.members:
             return {"error": rpc_error(E.PARAMS,
@@ -2001,7 +2060,7 @@ class Coordinator:
             state="created",
             assignee=assignee,
             delegator=p["from"],
-            input=nt.get("input") or {},
+            input=nt["input"] if nt.get("input") is not None else {},
             created_at=now,
             updated_at=now,
             supersedes=orig.id,
