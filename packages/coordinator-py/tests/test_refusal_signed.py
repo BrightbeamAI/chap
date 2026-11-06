@@ -3,8 +3,8 @@
 The log publishes every recorded call, signature and all, so anyone who can
 read it holds a copy of each signed request. A copy of a recorded refusal is
 answered with that refusal and not evaluated, even once whatever refused it
-has changed. A copy of a call that took effect is evaluated as any request
-is, and if it is refused the refusal is not recorded, because its signer made
+has changed. A copy of a call that took effect is refused with -32075 and not
+evaluated either, and the refusal is not recorded, because its signer made
 that call once. Both rules compare what the sender signed, the request
 without its ``sig``, so re-encoding a signature does not make a new request.
 
@@ -149,16 +149,37 @@ def test_the_answer_comes_before_the_pause_and_before_the_signature_check():
     assert w.copy(late)["error"]["data"] == {"refused_at_seq": at}
 
 
-def test_a_signed_copy_of_an_accepted_call_that_is_refused_is_not_recorded():
+def test_a_signed_copy_of_an_accepted_call_is_refused_with_32075_and_not_recorded():
     w = _Signed()
     tid = w.under_review("human:c")
     approve = w.envelope("decide.approve", {"task_id": tid, "comment": "ok"}, "human:c")
     assert "error" not in w.copy(approve)
+    at = len(w.ws.audit) - 1
     before = len(w.ws.audit)
-    # The review is closed, so the copy is refused. Its signer approved once.
-    assert w.copy(approve)["error"]["code"] == -32010
-    assert w.copy({**approve, "sig": _reencoded(approve["sig"])})["error"]["code"] == -32010
+    answer = {"code": -32075,
+              "message": f"Accepted at seq {at}; a signed request takes effect once",
+              "data": {"accepted_at_seq": at}}
+    assert w.copy(approve)["error"] == answer
+    assert w.copy({**approve, "sig": _reencoded(approve["sig"])})["error"] == answer
     assert len(w.ws.audit) == before
+
+
+def test_a_reviewers_signed_reject_counts_once_even_when_the_same_artefact_comes_back():
+    # The 6 November probe: the reviewer sends back a draft with a signed
+    # reject, the agent resubmits the same draft, and a copy of the reject from
+    # the log sends it back again in the reviewer's name.
+    w = _Signed()
+    tid = w.send("task.create", {"kind": "k", "input": {}, "assignee": "agent:b",
+                                 "review_required": True}, "agent:b")["result"]["task_id"]
+    w.send("task.complete", {"task_id": tid, "output": {"body": "draft"}}, "agent:b")
+    reject = w.envelope("decide.reject", {"task_id": tid, "request_revision": True,
+                                          "comment": "fix x"}, "human:a")
+    assert w.copy(reject)["result"]["state"] == "in_progress"
+    w.send("task.complete", {"task_id": tid, "output": {"body": "draft"}}, "agent:b")
+    assert w.copy(reject)["error"]["code"] == -32075
+    assert w.ws.tasks[tid].state == "review_requested"
+    assert sum(1 for e in w.ws.audit
+               if e.envelope and e.envelope["method"] == "decide.reject") == 1
 
 
 def test_the_rules_survive_a_restart():
@@ -180,7 +201,7 @@ def test_the_rules_survive_a_restart():
     before = len(ws.audit)
     assert restarted.dispatch(json.loads(json.dumps(late)))["error"]["data"] == {
         "refused_at_seq": at}
-    assert restarted.dispatch(json.loads(json.dumps(approve)))["error"]["code"] == -32063
+    assert restarted.dispatch(json.loads(json.dumps(approve)))["error"]["code"] == -32075
     assert len(ws.audit) == before
 
 

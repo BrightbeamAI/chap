@@ -104,12 +104,14 @@ test("an unsigned request identical to a recorded refusal is evaluated again", (
   assert.equal(send("decide.approve", params, "same").result.state, "completed");
 });
 
-test("a signed copy of an accepted call that is refused is not recorded", () => {
+test("a signed copy of an accepted call is refused with -32075 and not recorded", () => {
   const task = openReview("r7");
   const params = { workspace: "r7", from: "human:a", task_id: task };
   assert.equal(signed("decide.approve", params, "once").result.state, "completed");
   const before = log("r7").length;
-  assert.equal(signed("decide.approve", params, "once").error.code, -32010);
+  const error = signed("decide.approve", params, "once").error;
+  assert.equal(error.code, -32075);
+  assert.deepEqual(error.data, { accepted_at_seq: before - 1 });
   assert.equal(log("r7").length, before);
 });
 

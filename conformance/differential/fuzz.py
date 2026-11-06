@@ -131,6 +131,11 @@ METHOD_PARAMS: dict[str, tuple[str, ...]] = {
     "audit.submit_to_scitt": ("range", "issuer"),
 }
 
+# The signature on a fuzzed call. Neither reference checks it, since the
+# workspace does not require signatures, and both compare signed calls by what
+# was signed, so one value serves every call.
+SIG = "ed25519:fuzz:" + "A" * 86 + "=="
+
 # Values a param of the wrong type or shape takes. 2**53 lies past the
 # canonical number range, so it is refused at ingress.
 JUNK = (None, 0, 7, -1, True, False, "", "x", "human:a", [], ["x"], [1, 2], {},
@@ -150,6 +155,8 @@ class Recorder:
         self.dispatched: list[dict] = []
         self.responses: list[dict] = []
         self.states: list[dict] = []
+        # Envelopes sent with a `sig`, so a later step can send one again.
+        self.signed: list[dict] = []
         self.tasks: list[str] = []
         self.handoffs: list[str] = []
         self.snapshots: list[str] = []
@@ -169,6 +176,11 @@ class Recorder:
         self._n += 1
         env = {"jsonrpc": "2.0", "id": f"e{self._n}", "method": method,
                "params": {"workspace": "w", "from": actor, **params}}
+        if self.rnd.random() < 0.1:
+            # A call is signed when it carries a `sig` string, checked or not
+            # (SPECIFICATION 10.1), so its copies meet the signed-copy rules.
+            env["sig"] = SIG
+            self.signed.append(json.loads(json.dumps(env)))
         # Record what the client sent, not what dispatch left behind. A handler
         # that writes into params would otherwise be replayed into the other
         # reference, and the two would agree on a value only one of them had
@@ -284,6 +296,8 @@ class Recorder:
                 "ceiling", "leave_and_rejoin", "malformed", "malformed", "malformed"]
         if self._paused_participants():
             menu += ["resume_participant"] * 2
+        if self.signed:
+            menu += ["signed_copy"]
         if live:
             menu += ["review"] * 4
         if self._by_state("review_requested"):
@@ -358,6 +372,13 @@ class Recorder:
             return
         if a == "malformed":
             self._malformed()
+            return
+        if a == "signed_copy":
+            # A signed call sent again unchanged: refused -32075 where it took
+            # effect, answered with the recorded refusal where it was refused,
+            # and evaluated again where its refusal was not recorded.
+            env = rnd.choice(self.signed)
+            self._send_envelope(env["method"], json.loads(json.dumps(env)))
             return
         if a == "decide":
             tid = rnd.choice(self._by_state("review_requested"))

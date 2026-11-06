@@ -80,12 +80,13 @@ export function linkHash(record: unknown, prev: string): string {
 
 /**
  * Refusals the log never records: a call that was malformed or invalid, a
- * fault in the Coordinator, and a call whose signature or key did not check
- * out.
+ * fault in the Coordinator, a call whose signature or key did not check out,
+ * and a signed copy of a call the log already holds as accepted.
  */
 const UNRECORDED_CODES: ReadonlySet<number> = new Set([
   E.PARSE, E.REQUEST, E.PARAMS, E.INTERNAL,
   E.SIG_VERIFY_FAILED, E.SIG_KEY_NOT_FOUND, E.SIG_KEY_REVOKED, E.SIG_ROTATION_KEY_MISMATCH,
+  E.SIG_ALREADY_ACCEPTED,
 ]);
 
 /**

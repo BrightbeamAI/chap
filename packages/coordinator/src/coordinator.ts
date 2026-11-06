@@ -262,10 +262,10 @@ function reply(env: Envelope, body: { result?: unknown; error?: { code: number; 
   return out;
 }
 
-/** The signed calls on a log, keyed by `signedDigest`. */
+/** The signed calls on a log, keyed by `signedDigest`: refusals, and the seq each accepted call took. */
 interface SignedIndex {
   refused: Map<string, { seq: number; code: number }>;
-  accepted: Set<string>;
+  accepted: Map<string, number>;
 }
 
 function indexSigned(index: SignedIndex, entry: AuditEntry): void {
@@ -275,7 +275,9 @@ function indexSigned(index: SignedIndex, entry: AuditEntry): void {
   try { digest = signedDigest(call as Envelope); }
   catch { return; /* an entry that cannot be canonicalised was altered; verify_chain reports it */ }
   if (entry.outcome != null) index.refused.set(digest, { seq: entry.seq, code: entry.outcome.code });
-  else index.accepted.add(digest);
+  // A log written before signed copies were refused can hold one call twice;
+  // the first is where it took effect.
+  else if (!index.accepted.has(digest)) index.accepted.set(digest, entry.seq);
 }
 
 // ============================================================
@@ -338,8 +340,8 @@ export class Coordinator {
   private auditListeners: AuditListener[] = [];
   /**
    * The signed calls on each workspace's log, by what their senders signed:
-   * recorded refusals with their seq and code, and accepted calls. Rebuilt
-   * from the log when missing, so a snapshot never carries it.
+   * recorded refusals with their seq and code, and accepted calls with their
+   * seq. Rebuilt from the log when missing, so a snapshot never carries it.
    */
   private signedIndexes = new WeakMap<Workspace, SignedIndex>();
   /** Method handler registry; profiles plug into this. */
@@ -975,19 +977,30 @@ export class Coordinator {
     }
 
     // SPECIFICATION 10.1: a signed request whose signed content matches a
-    // recorded refusal is answered with that refusal and not evaluated again.
-    // The log publishes a refused request, signature and all, so without this
-    // anyone who can read the log could send it again once whatever refused
-    // it had changed, and it would take effect in its signer's name.
+    // recorded refusal is answered with that refusal and not evaluated again,
+    // and one that matches an accepted call is refused with -32075. The log
+    // publishes every call, signature and all, so without this anyone who can
+    // read the log could send a refused request again once whatever refused
+    // it had changed, or an accepted one again once it applied anew, a
+    // reviewer's reject to a resubmitted artefact for instance, and it would
+    // take effect in its signer's name.
     if (isSigned(envelope)) {
       const wsId = params.workspace;
       const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
       if (ws) {
-        const prior = this.signedIndex(ws).refused.get(signedDigest(envelope));
+        const index = this.signedIndex(ws);
+        const digest = signedDigest(envelope);
+        const prior = index.refused.get(digest);
         if (prior) {
           return reply(envelope, { error: rpcError(prior.code,
             `Refused at seq ${prior.seq}; a refused request is not evaluated again`,
             { refused_at_seq: prior.seq }) });
+        }
+        const accepted = index.accepted.get(digest);
+        if (accepted !== undefined) {
+          return reply(envelope, { error: rpcError(E.SIG_ALREADY_ACCEPTED,
+            `Accepted at seq ${accepted}; a signed request takes effect once`,
+            { accepted_at_seq: accepted }) });
         }
       }
     }
@@ -1147,7 +1160,7 @@ export class Coordinator {
   private signedIndex(ws: Workspace): SignedIndex {
     let index = this.signedIndexes.get(ws);
     if (!index) {
-      index = { refused: new Map(), accepted: new Set() };
+      index = { refused: new Map(), accepted: new Map() };
       for (const entry of ws.audit) indexSigned(index, entry);
       this.signedIndexes.set(ws, index);
     }

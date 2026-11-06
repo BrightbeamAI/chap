@@ -95,12 +95,12 @@ def link_hash(record: Any, prev: str) -> str:
 
 
 # Refusals the log never records: a call that was malformed or invalid, a
-# fault in the Coordinator, and a call whose signature or key did not check
-# out.
+# fault in the Coordinator, a call whose signature or key did not check out,
+# and a signed copy of a call the log already holds as accepted.
 _UNRECORDED_CODES = frozenset({
     E.PARSE, E.REQUEST, E.PARAMS, E.INTERNAL,
     E.SIG_VERIFY_FAILED, E.SIG_KEY_NOT_FOUND, E.SIG_KEY_REVOKED,
-    E.SIG_ROTATION_KEY_MISMATCH,
+    E.SIG_ROTATION_KEY_MISMATCH, E.SIG_ALREADY_ACCEPTED,
 })
 
 # Methods whose refusals are never recorded. They run before the caller is

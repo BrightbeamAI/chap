@@ -53,9 +53,9 @@ them off:
   after the review has been re-addressed to its sender. It is answered with
   the recorded refusal and `data.refused_at_seq`, and is neither evaluated nor
   recorded again.
-- A signed copy of a `decide.approve` that took effect. The review has
-  closed, so the copy is refused `-32010`, and the refusal is not recorded:
-  its signer made the call once.
+- A signed copy of a `decide.approve` that took effect. It is refused
+  `-32075` with `data.accepted_at_seq`, before anything else is evaluated,
+  and the refusal is not recorded: its signer made the call once.
 
 Run them:
 

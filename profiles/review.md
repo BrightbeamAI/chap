@@ -189,16 +189,17 @@ with `-32011`. The round's `requested_at` is the time of the completion.
 Before this, a task that did not require review completed on that
 `task.complete` with no decision at all.
 
-Two things the round leaves as they were. A copy of a decision sent again
-is a new call, evaluated like any other ([SECURITY.md, Envelope id
-replay](../SECURITY.md#envelope-id-replay)), and counts in the round it
-arrives in; a decision that carries `approved_artefact_digest` (§3.2) is
-refused against any artefact other than the one it names, so a client that
-needs its decision tied to one artefact sends the digest. And
-`review.request` still adds reviewers to an open review, as described
-above, and opens a review with new reviewers and a new rule on a task back
-in progress; on a task that requires review either names only people other
-than the authors.
+Two rules hold across rounds. A signed copy of a decision already on the
+log is refused with `-32075` and is not evaluated again
+(SPECIFICATION §10.1). An unsigned copy is a new call, evaluated like any
+other ([SECURITY.md, Envelope id replay](../SECURITY.md#envelope-id-replay)),
+and counts in the round it arrives in; a decision that carries
+`approved_artefact_digest` (§3.2) is refused against any artefact other
+than the one it names, so a client that needs its decision tied to one
+artefact sends the digest. And `review.request` still adds reviewers to an
+open review, as described above, and opens a review with new reviewers and
+a new rule on a task back in progress; on a task that requires review
+either names only people other than the authors.
 
 **Completing round the review.** `task.update` reaches `completed` by
 another route and carries no output, so a task requiring review, or one

@@ -1201,6 +1201,8 @@ existing workspace, and its refusal is none of the following.
   revocation that fails, and those are left off with them. `-32074`, a
   decision whose artefact digest does not match the artefact under review,
   is recorded.
+- `-32075`, a signed copy of a call already accepted (below). Its signer
+  made that call once, and the log holds it.
 - `-32601`, except where the profile gate (§15.4) refuses a method the
   catalogue marks `privileged`. That refusal is an attempt to pull an
   emergency brake the workspace has switched off, and is recorded. A
@@ -1242,7 +1244,8 @@ with the first that fails:
    Coordinator implements, with a canonical form, and naming its workspace,
    where `params` carries `workspace`, with a non-empty string (`-32600`,
    `-32601`, `-32602`).
-2. Whether it is a signed copy of a recorded refusal (below).
+2. Whether it is a signed copy of a call on the log, a recorded refusal or
+   an accepted call (below).
 3. The signature, where signatures are required (`-32070` to `-32073`).
 4. Step-up freshness for a privileged method, where it is enforced
    (`-32402`).
@@ -1271,14 +1274,20 @@ has the same canonical form, however the signature is encoded.
   refusal's `seq`, and MUST NOT evaluate or record it again. Otherwise a
   refused request copied from the log could be sent once the reason for the
   refusal had passed, and take effect in its signer's name.
-- A signed call that is the same call as an accepted entry is evaluated as
-  any call is, but its refusal MUST NOT be recorded, since its signer made
-  that call once.
+- A Coordinator MUST refuse a signed call that is the same call as an
+  accepted entry with `-32075`, "Accepted at seq N; a signed request takes
+  effect once", and `data.accepted_at_seq` set to that entry's `seq`, and
+  MUST NOT evaluate or record it. Otherwise an accepted request copied from
+  the log could be sent once it applied again, a reviewer's reject sent back
+  to an artefact resubmitted unchanged for instance, and take effect a
+  second time in its signer's name.
 
 A client that retries a refused call sends a new request with a new `id`, as
-§4.1 requires of every message. An unsigned call is not compared with the
-log: without a signature anyone can send any call in any name, and each of
-its refusals is recorded.
+§4.1 requires of every message. A client that is not sure a signed call
+arrived may send the same request again: `-32075` tells it the call took
+effect, and where. An unsigned call is not compared with the log: without a
+signature anyone can send any call in any name, and each of its refusals is
+recorded.
 
 Entries are linked by SHA-256 hashes over the canonical record and the
 previous head:
@@ -1556,8 +1565,11 @@ to answer them, and the state machine in §8.1 does not use them.
 `task.create` accepts an optional
 `idempotency_key`: a repeat carrying a key already seen in the workspace returns
 the original task rather than creating (or recording) a duplicate, so an
-at-least-once transport can retry safely. The key is not part of the task
-descriptor; the Coordinator keeps a bounded per-workspace map of recent keys.
+at-least-once transport can retry safely. A signed repeat that is the same
+request, `id` included, is answered with `-32075` before the key is read
+(§10.1), and its `data.accepted_at_seq` names the entry that created the task.
+The key is not part of the task descriptor; the Coordinator keeps a bounded
+per-workspace map of recent keys.
 
 ### 12.4 `review.*`
 
@@ -1889,10 +1901,12 @@ defended class. The full operational threat model is in
 re-injects it into the chain. *Countermeasures:* each entry carries
 the Coordinator's own arrival time and sequence, whatever the sender's
 `ts` says. A signed copy of a recorded refusal is answered with that
-refusal (§10.1), and a `task.create` repeating a seen `idempotency_key`
-returns the original task. Any other copy of an accepted call is
-evaluated as a new call and, if still valid, takes effect and is
-recorded again. Rejecting an envelope `id` on second observation is a
+refusal, and a signed copy of an accepted call is refused with `-32075`
+(§10.1); neither is evaluated. A `task.create` repeating a seen
+`idempotency_key` returns the original task. An unsigned copy of an
+accepted call is evaluated as a new call and, if still valid, takes
+effect and is recorded again, since without a signature nothing ties
+it to its sender. Rejecting an envelope `id` on second observation is a
 deployment-level defence, described in
 [SECURITY.md](./SECURITY.md#envelope-id-replay): neither reference
 keeps a seen-id set.

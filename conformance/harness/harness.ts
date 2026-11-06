@@ -697,6 +697,24 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
     const { result } = await call("decide.approve", "human:alice@example.org", { task_id: t.task_id });
     assertEq(result?.state, "completed", "the reviewer's decision completes it");
   });
+
+  await test("Review profile", "rv-18", "a signed call that took effect is not evaluated again", async () => {
+    // A call is signed when it carries a top-level `sig` string, whether or
+    // not the server checks signatures (SPECIFICATION 10.1), so the rule
+    // applies here without keys.
+    const { result: t } = await call("task.create", "human:alice@example.org", { kind: "review_test", assignee: BOT, input: {} });
+    const body = JSON.stringify({ jsonrpc: "2.0", id: "rv-18-once", method: "task.update",
+      params: { workspace: ws, from: BOT, task_id: t.task_id, state: "in_progress" },
+      sig: "ed25519:k1:" + "A".repeat(86) + "==" });
+    const first = await client.callRaw(body);
+    assertEq(first.body?.result?.state, "in_progress", "the first copy should take effect");
+    const { result: before } = await client.call("workspace.describe", { workspace: ws });
+    const again = await client.callRaw(body);
+    assert(again.body?.error?.code === -32075, `a second copy was evaluated, got ${JSON.stringify(again.body)}`);
+    assertEq(again.body.error.data?.accepted_at_seq, before.audit_count - 1, "the answer names where it took effect");
+    const { result: after } = await client.call("workspace.describe", { workspace: ws });
+    assertEq(after.audit_count, before.audit_count, "the copy must not be recorded");
+  });
 }
 
 

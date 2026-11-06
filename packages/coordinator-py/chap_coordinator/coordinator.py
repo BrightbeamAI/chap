@@ -131,7 +131,9 @@ def _index_signed(index: dict, entry: AuditEntry) -> None:
         code = entry.outcome.get("code") if isinstance(entry.outcome, dict) else None
         index["refused"][digest] = (entry.seq, code)
     else:
-        index["accepted"].add(digest)
+        # A log written before signed copies were refused can hold one call
+        # twice; the first is where it took effect.
+        index["accepted"].setdefault(digest, entry.seq)
 
 
 # Cap on a workspace's task.create idempotency map. Older keys are evicted, so
@@ -676,19 +678,29 @@ class Coordinator:
 
         # SPECIFICATION 10.1: a signed request whose signed content matches a
         # recorded refusal is answered with that refusal and not evaluated
-        # again. The log publishes a refused request, signature and all, so
-        # without this anyone who can read the log could send it again once
-        # whatever refused it had changed, and it would take effect in its
-        # signer's name.
+        # again, and one that matches an accepted call is refused with -32075.
+        # The log publishes every call, signature and all, so without this
+        # anyone who can read the log could send a refused request again once
+        # whatever refused it had changed, or an accepted one again once it
+        # applied anew, a reviewer's reject to a resubmitted artefact for
+        # instance, and it would take effect in its signer's name.
         target_id = params.get("workspace")
         target = self.workspaces.get(target_id) if isinstance(target_id, str) else None
         if target is not None and is_signed(envelope):
-            prior = self._signed_index(target)["refused"].get(signed_digest(envelope))
+            index = self._signed_index(target)
+            digest = signed_digest(envelope)
+            prior = index["refused"].get(digest)
             if prior is not None:
                 seq, code = prior
                 return make_response(env_id, error=rpc_error(
                     code, f"Refused at seq {seq}; a refused request is not evaluated again",
                     data={"refused_at_seq": seq}))
+            accepted = index["accepted"].get(digest)
+            if accepted is not None:
+                return make_response(env_id, error=rpc_error(
+                    E.SIG_ALREADY_ACCEPTED,
+                    f"Accepted at seq {accepted}; a signed request takes effect once",
+                    data={"accepted_at_seq": accepted}))
 
         # security-signed/1.0: verify top-level `sig` field if required.
         # participant.join and workspace.create are bootstrap operations that
@@ -849,13 +861,13 @@ class Coordinator:
         """The signed calls on this workspace's log, by what their senders signed.
 
         ``refused`` maps a recorded refusal to its ``(seq, code)``, and
-        ``accepted`` holds the calls that took effect. Held beside the
+        ``accepted`` maps each call that took effect to its seq. Held beside the
         workspace rather than in it, so a snapshot never carries it, and
         rebuilt from the log when missing.
         """
         index = getattr(ws, "_signed_index", None)
         if index is None:
-            index = {"refused": {}, "accepted": set()}
+            index = {"refused": {}, "accepted": {}}
             for entry in ws.audit:
                 _index_signed(index, entry)
             object.__setattr__(ws, "_signed_index", index)

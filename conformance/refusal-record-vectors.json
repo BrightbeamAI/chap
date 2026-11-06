@@ -937,7 +937,7 @@
     },
     {
       "name": "unrecorded-signed-copy-of-an-accepted-call",
-      "note": "A signed copy of a call that took effect is refused, since the review has closed, and the refusal is not recorded: its signer made the call once.",
+      "note": "A signed copy of a call that took effect is refused with -32075, before anything else is evaluated, and the refusal is not recorded: its signer made the call once.",
       "profiles": [
         "core/1.0",
         "review/1.0",
@@ -1055,8 +1055,11 @@
         "jsonrpc": "2.0",
         "id": "once",
         "error": {
-          "code": -32010,
-          "message": "Task not awaiting review: completed"
+          "code": -32075,
+          "message": "Accepted at seq 7; a signed request takes effect once",
+          "data": {
+            "accepted_at_seq": 7
+          }
         }
       },
       "recorded": false,

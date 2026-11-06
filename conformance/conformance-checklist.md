@@ -66,7 +66,7 @@ CHAP conformance.
 
 - [ ] Every accepted state-changing envelope is appended in arrival order. `workspace.describe`, `audit.read`, `audit.verify_chain`, `audit.verify_receipt` and `audit.submit_to_scitt` are never appended, and a `task.create` answered from a seen `idempotency_key` is not appended again.
 - [ ] Every refused call that [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1 names is appended as a refusal entry, with the call under `request` and an `outcome` giving the code, and no other refusal is appended. Verified by `refusal-record-vectors.json`, and over HTTP by harness vector `rv-13`.
-- [ ] A call is checked in the order [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1 gives. A signed copy of a recorded refusal, compared without its `sig`, is answered with that refusal and `data.refused_at_seq` and is not evaluated; a signed copy of an accepted call that is refused is not recorded. `refusal-record-vectors.json` checks the signed-copy rules and that the request's own checks come before the pause.
+- [ ] A call is checked in the order [`../SPECIFICATION.md`](../SPECIFICATION.md) §10.1 gives. A signed copy of a recorded refusal, compared without its `sig`, is answered with that refusal and `data.refused_at_seq` and is not evaluated; a signed copy of an accepted call is refused with `-32075` and `data.accepted_at_seq`, is not evaluated, and is not recorded. `refusal-record-vectors.json` checks the signed-copy rules and that the request's own checks come before the pause, and harness vector `rv-18` checks `-32075`.
 - [ ] Each entry records the Coordinator's arrival timestamp.
 - [ ] `audit.read` results are stable: a range within the log returns the same entries every time.
 
@@ -166,7 +166,7 @@ a profile it does not pass.**
 - [ ] Public keys are advertised at `participant.join` and validated on subsequent envelopes.
 - [ ] `participant.rotate_key` requires the old key's signature.
 - [ ] Revoked keys remain valid for verifying messages dated before revocation.
-- [ ] Returns `-32070` … `-32074` for signature-specific failures.
+- [ ] Returns `-32070` … `-32075` for signature-specific failures, `-32075` for a signed copy of an accepted call.
 - [ ] Passes the RFC 8032 test-vector validation in [`./test-vectors.md`](./test-vectors.md) §1.
 
 ### Profile: `audit-scitt/1.0`

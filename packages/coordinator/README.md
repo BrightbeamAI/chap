@@ -187,6 +187,11 @@ signature as a top-level `sig: "ed25519:<kid>:<base64>"` field. The
 Coordinator looks up the verifying key by `(from, kid, ts)`, so
 historical envelopes verify across key rotation.
 
+A signed request takes effect once. The same signed call sent again, its
+`sig` re-encoded or not, is refused with `-32075` and
+`data.accepted_at_seq`, and a copy of a recorded refusal is answered with
+that refusal; neither is evaluated again.
+
 Key lifecycle:
 - `participant.rotate_key` is signed with the old key; the Coordinator
   marks `valid_until` on the old key and `valid_from` on the new one.

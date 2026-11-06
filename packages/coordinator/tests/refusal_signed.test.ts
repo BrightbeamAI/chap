@@ -4,9 +4,9 @@
  * The log publishes every recorded call, signature and all, so anyone who can
  * read it holds a copy of each signed request. A copy of a recorded refusal is
  * answered with that refusal and not evaluated, even once whatever refused it
- * has changed. A copy of a call that took effect is evaluated as any request
- * is, and if it is refused the refusal is not recorded, because its signer made
- * that call once. Both rules compare what the sender signed, the request
+ * has changed. A copy of a call that took effect is refused with -32075 and
+ * not evaluated either, and the refusal is not recorded, because its signer
+ * made that call once. Both rules compare what the sender signed, the request
  * without its `sig`, so re-encoding a signature does not make a new request.
  *
  * The mirror of this file is
@@ -130,16 +130,36 @@ test("the answer comes before the pause and before the signature check", () => {
   assert.deepEqual(copy(late).error.data, { refused_at_seq: at });
 });
 
-test("a signed copy of an accepted call that is refused is not recorded", () => {
+test("a signed copy of an accepted call is refused with -32075 and not recorded", () => {
   const { copy, envelope, ws, underReview } = signedReady();
   const id = underReview("human:c");
   const approve = envelope("decide.approve", { task_id: id, comment: "ok" }, "human:c");
   assert.equal(copy(approve).error, undefined);
+  const at = ws.audit.length - 1;
   const before = ws.audit.length;
-  // The review is closed, so the copy is refused. Its signer approved once.
-  assert.equal(copy(approve).error.code, -32010);
-  assert.equal(copy({ ...approve, sig: reencoded(approve.sig as string) }).error.code, -32010);
+  const answer = {
+    code: -32075,
+    message: `Accepted at seq ${at}; a signed request takes effect once`,
+    data: { accepted_at_seq: at },
+  };
+  assert.deepEqual(copy(approve).error, answer);
+  assert.deepEqual(copy({ ...approve, sig: reencoded(approve.sig as string) }).error, answer);
   assert.equal(ws.audit.length, before);
+});
+
+test("a reviewer's signed reject counts once, even when the same artefact comes back", () => {
+  // The 6 November probe: the reviewer sends back a draft with a signed
+  // reject, the agent resubmits the same draft, and a copy of the reject from
+  // the log sends it back again in the reviewer's name.
+  const { copy, envelope, send, ws } = signedReady();
+  const id = send("task.create", { kind: "k", input: {}, assignee: "agent:b", review_required: true }, "agent:b").result.task_id;
+  send("task.complete", { task_id: id, output: { body: "draft" } }, "agent:b");
+  const reject = envelope("decide.reject", { task_id: id, request_revision: true, comment: "fix x" }, "human:a");
+  assert.equal(copy(reject).result.state, "in_progress");
+  send("task.complete", { task_id: id, output: { body: "draft" } }, "agent:b");
+  assert.equal(copy(reject).error.code, -32075);
+  assert.equal(ws.tasks.get(id).state, "review_requested");
+  assert.equal(ws.audit.filter((e: any) => e.envelope?.method === "decide.reject").length, 1);
 });
 
 test("the rules survive a snapshot and a restore", () => {
@@ -159,7 +179,7 @@ test("the rules survive a snapshot and a restore", () => {
   const restored = d.workspaces.get("w") as any;
   const before = restored.audit.length;
   assert.deepEqual((d.dispatch(JSON.parse(JSON.stringify(late)) as never) as any).error.data, { refused_at_seq: at });
-  assert.equal((d.dispatch(JSON.parse(JSON.stringify(approve)) as never) as any).error.code, -32063);
+  assert.equal((d.dispatch(JSON.parse(JSON.stringify(approve)) as never) as any).error.code, -32075);
   assert.equal(restored.audit.length, before);
 });
 

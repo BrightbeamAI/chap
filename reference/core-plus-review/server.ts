@@ -143,8 +143,8 @@ interface Workspace {
   overrides: Map<ArtefactId, OverrideArtefact>;
   audit:     AuditEntry[];
   profiles:  string[];
-  /** Signed calls on the log by what their senders signed, for SPECIFICATION 10.1. */
-  signed:    { refused: Map<string, { seq: number; code: number }>; accepted: Set<string> };
+  /** Signed calls on the log by what their senders signed, with the seq each took, for SPECIFICATION 10.1. */
+  signed:    { refused: Map<string, { seq: number; code: number }>; accepted: Map<string, number> };
 }
 
 // ============================================================
@@ -163,8 +163,9 @@ const E = {
   PATCH_FAILED:     -32012,
   REVIEW_LAPSED:    -32013,
   REVIEW_ALREADY_OPEN: -32014,
-  // security-signed codes used by review decisions (CEP-001)
+  // security-signed codes used by review decisions (CEP-001) and signed copies
   SIG_ARTEFACT_DIGEST_MISMATCH: -32074,
+  SIG_ALREADY_ACCEPTED:         -32075,
 } as const;
 
 /**
@@ -284,7 +285,7 @@ function ensureWorkspace(id: string): Workspace {
       overrides: new Map(),
       audit:     [],
       profiles:  ["core/1.0", "review/1.0"],
-      signed:    { refused: new Map(), accepted: new Set() },
+      signed:    { refused: new Map(), accepted: new Map() },
     };
     workspaces.set(id, ws);
   }
@@ -307,7 +308,7 @@ const READ_ONLY = new Set(["workspace.describe", "audit.read"]);
 // profile gate, so -32601 only ever means a method it does not implement.
 const UNRECORDED_CODES = new Set<number>([
   E.PARSE, E.REQUEST, E.METHOD, E.PARAMS, E.INTERNAL,
-  -32070, -32071, -32072, -32073,
+  -32070, -32071, -32072, -32073, E.SIG_ALREADY_ACCEPTED,
 ]);
 
 /** A call carrying a top-level signature. This server does not verify it. */
@@ -323,12 +324,13 @@ function signedDigest(env: Envelope): string {
 }
 
 function recordAudit(ws: Workspace, env: Envelope): void {
+  const seq = ws.audit.length;
   ws.audit.push({
-    seq:      ws.audit.length,
+    seq,
     arrived:  new Date().toISOString(),
     envelope: env,
   });
-  if (isSigned(env)) ws.signed.accepted.add(signedDigest(env));
+  if (isSigned(env)) ws.signed.accepted.set(signedDigest(env), seq);
 }
 
 /**
@@ -898,12 +900,20 @@ export function dispatch(env: Envelope): Envelope {
     const params = env.params ?? {};
     const wsId = params.workspace as string;
     // SPECIFICATION §10.1: a signed copy of a recorded refusal is answered
-    // with that refusal, and is neither evaluated nor recorded again.
-    const prior = wsId && isSigned(env) ? getWorkspace(wsId)?.signed.refused.get(signedDigest(env)) : undefined;
+    // with that refusal, and a signed copy of an accepted call is refused
+    // with -32075; neither is evaluated or recorded again.
+    const signed = wsId && isSigned(env) ? getWorkspace(wsId)?.signed : undefined;
+    const prior = signed?.refused.get(signedDigest(env));
     if (prior) {
       return { jsonrpc: "2.0", id: env.id ?? null as any, error: err(prior.code,
         `Refused at seq ${prior.seq}; a refused request is not evaluated again`,
         { refused_at_seq: prior.seq }) };
+    }
+    const accepted = signed?.accepted.get(signedDigest(env));
+    if (accepted !== undefined) {
+      return { jsonrpc: "2.0", id: env.id ?? null as any, error: err(E.SIG_ALREADY_ACCEPTED,
+        `Accepted at seq ${accepted}; a signed request takes effect once`,
+        { accepted_at_seq: accepted }) };
     }
     const out = handler(params);
     if (wsId && !READ_ONLY.has(env.method)) {

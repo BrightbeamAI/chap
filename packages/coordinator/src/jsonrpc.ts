@@ -54,6 +54,7 @@ export const E = {
   SIG_KEY_REVOKED:           -32072,
   SIG_ROTATION_KEY_MISMATCH: -32073,
   SIG_ARTEFACT_DIGEST_MISMATCH: -32074,
+  SIG_ALREADY_ACCEPTED:         -32075,
 
   // audit-scitt/1.0 profile (profiles/audit-scitt.md S8)
   SCITT_UNREACHABLE:        -32080,

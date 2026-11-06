@@ -72,6 +72,21 @@ The public key is looked up by `(from, kid, ts)`: the key that was
 valid for that participant at that timestamp. This makes historical
 verification work after key rotation.
 
+### A signed request takes effect once
+
+Every reader of the log holds a copy of each signed call on it, signature
+and all. A Coordinator MUST NOT evaluate a signed request whose signed
+content, the call without its `sig`, has the same canonical form as a call
+the log holds as accepted. It answers `-32075`, "Accepted at seq N; a
+signed request takes effect once", with `data: {"accepted_at_seq": N}`,
+and does not record the refusal. Without this a copy of a reviewer's
+signed reject, taken from the log, could send back the same artefact again
+in the reviewer's name once the agent resubmitted it. A client that is not
+sure a signed call arrived can send it again unchanged: `-32075` says it
+took effect, and where. SPECIFICATION §10.1 fixes where the check comes in
+the order of checks, and what a signed copy of a recorded refusal is
+answered with.
+
 ---
 
 ## 4. Key registration
@@ -178,9 +193,10 @@ Revoking another member's key needs the `admin` role, else `-32011`.
 | `-32072`  | Key has been revoked.                            |
 | `-32073`  | Rotation message not signed with old key.        |
 | `-32074`  | `approved_artefact_digest` does not match the artefact under review. Returned by `decide.*` whether or not this profile is advertised. |
+| `-32075`  | A signed request the log already holds as accepted (§3); it takes effect once. `data.accepted_at_seq` names its entry. Returned whether or not this profile is advertised. |
 
-Refusals with `-32070` to `-32073` are never recorded; one with
-`-32074` is recorded when the caller is a member.
+Refusals with `-32070` to `-32073` and `-32075` are never recorded; one
+with `-32074` is recorded when the caller is a member.
 
 ---
 
