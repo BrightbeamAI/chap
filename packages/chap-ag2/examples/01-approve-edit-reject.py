@@ -8,9 +8,10 @@ Run (needs the optional AG2 extra):
 
 The assistant runs without an LLM (a fixed draft). A UserProxyAgent
 records each human turn through the bridge from inside get_human_input,
-where both the message under review and the reply are available. The
-decision is scripted here, standing in for a UI that captures the human's
-intent -- AG2's reply text alone can't tell an edit from plain dialogue.
+where both the message under review and the reply are available, on a
+hash-linked chain. The decision is scripted here, standing in for a UI
+that captures the human's intent: AG2's reply text alone can't tell an
+edit from plain dialogue.
 """
 
 import sys
@@ -63,7 +64,7 @@ def build_user(bridge: ChapTurnBridge) -> UserProxyAgent:
 
 
 def main() -> None:
-    coord = Coordinator()
+    coord = Coordinator(enable_chain=True)
     bridge = ChapTurnBridge(
         coord,
         workspace="wsp_support",
@@ -94,6 +95,9 @@ def main() -> None:
         elif env["method"] in ("decide.approve", "decide.reject"):
             detail = f"  {params.get('comment', '')}"
         print(f"  seq={entry['seq']:<2} {env['method']:<16} {who}{detail}")
+    verified = coord.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
+                               "params": {"workspace": "wsp_support"}})
+    print(f"\nChain verified: {verified['result']['ok']}")
 
 
 if __name__ == "__main__":

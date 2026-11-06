@@ -10,6 +10,7 @@ stand in for a real AG2 turn.
 """
 
 import sys
+import threading
 from pathlib import Path
 
 THIS = Path(__file__).resolve()
@@ -19,7 +20,7 @@ sys.path.insert(0, str(THIS.parents[2] / "coordinator-py"))
 import pytest
 
 from chap_coordinator import Coordinator, CoordinatorOptions
-from chap_ag2 import ChapTurnBridge, ChapBridgeError
+from chap_ag2 import ChapTurnBridge, ChapBridgeError, Decision, ReviewRejected
 
 
 def msg(content, name="assistant"):
@@ -57,10 +58,20 @@ def last_params(bridge, method):
 # ---- setup ---------------------------------------------------------
 
 
-def test_bridge_joins_agent_and_reviewer(coord, bridge):
+def test_bridge_joins_the_agent_and_the_reviewer_when_it_records(coord, bridge):
     ws = coord.workspaces["wsp_ag2_test"]
     assert "agent:assistant#v1" in ws.members
-    assert "human:alice@example.org" in ws.members
+    # A person who decides at a desk joins there, with their own key, so the
+    # bridge joins the reviewer only to record a decision in their name.
+    assert "human:alice@example.org" not in ws.members
+    bridge.record_turn(msg("draft"), "")
+    assert ws.members["human:alice@example.org"].type == "human"
+
+
+def test_the_agent_cannot_review_its_own_messages(coord):
+    with pytest.raises(ValueError, match="cannot be the agent"):
+        ChapTurnBridge(coord, workspace="wsp_ag2_self",
+                       agent="human:alice@example.org", reviewer="human:alice@example.org")
 
 
 # ---- the safe fallback: only empty -> approve ----------------------
@@ -75,7 +86,7 @@ def test_empty_reply_infers_approve(bridge):
 def test_non_empty_reply_without_decision_records_nothing(bridge):
     tid = bridge.record_turn(msg("draft"), "what about the tax?")
     assert tid is None
-    assert methods(bridge) == ["workspace.create", "participant.join", "participant.join"]
+    assert methods(bridge) == ["workspace.create", "participant.join"]
 
 
 def test_exit_is_not_a_reject(bridge):
@@ -135,6 +146,86 @@ def test_per_turn_approver_from_uri_scheme(coord, bridge):
     ws = coord.workspaces["wsp_ag2_test"]
     assert ws.members["service:autodeploy"].type == "service"
     assert last_params(bridge, "decide.approve")["from"] == "service:autodeploy"
+
+
+# ---- waiting for a decision made at a desk ---------------------------
+
+
+def desk_decides(coord, method, **params):
+    """A person at a desk sharing the coordinator: they join, and decide
+    the review that is open."""
+    coord.dispatch({"jsonrpc": "2.0", "id": "join", "method": "participant.join",
+                    "params": {"workspace": "wsp_ag2_test", "from": "human:alice@example.org",
+                               "type": "human"}})
+    for _ in range(500):
+        open_ = [t for t in coord.workspaces["wsp_ag2_test"].tasks.values()
+                 if t.state == "review_requested"]
+        if open_:
+            out = coord.dispatch({"jsonrpc": "2.0", "id": "desk", "method": method,
+                                  "params": {"workspace": "wsp_ag2_test",
+                                             "from": "human:alice@example.org",
+                                             "task_id": open_[0].id, **params}})
+            assert "error" not in out, out
+            return
+        threading.Event().wait(0.01)
+    raise AssertionError("no review reached the desk")
+
+
+def reply_after(bridge, coord, method, **params):
+    desk = threading.Thread(target=desk_decides, args=(coord, method), kwargs=params)
+    desk.start()
+    try:
+        return bridge.request_reply(msg("refund $100 to Alice"), timeout=5, poll_seconds=0.01)
+    finally:
+        desk.join()
+
+
+def test_request_reply_opens_a_review_the_task_requires(coord, bridge):
+    seen = []
+    bridge.on_envelope = lambda m, p: seen.append(m)
+    assert reply_after(bridge, coord, "decide.approve") == ""
+    assert seen == ["task.create", "review.request"]
+    (task,) = coord.workspaces["wsp_ag2_test"].tasks.values()
+    assert (task.review_required, task.state, task.output) == (
+        True, "completed", "refund $100 to Alice")
+
+
+def test_request_reply_returns_the_reviewers_version(coord, bridge):
+    reply = reply_after(bridge, coord, "decide.override",
+                        diff=[{"op": "replace", "path": "", "value": "refund $50 to Alice"}],
+                        rationale="over the limit")
+    assert reply == "refund $50 to Alice"
+
+
+def test_request_reply_returns_the_note_when_a_revision_is_asked_for(coord, bridge):
+    reply = reply_after(bridge, coord, "decide.reject",
+                        comment="ask for the order number first", request_revision=True)
+    assert reply == "ask for the order number first"
+
+
+def test_request_reply_raises_on_a_rejection(coord, bridge):
+    with pytest.raises(ReviewRejected) as raised:
+        reply_after(bridge, coord, "decide.reject", comment="not on the allow-list")
+    assert (raised.value.state, raised.value.rationale) == ("declined", "not on the allow-list")
+
+
+def test_wait_for_decision_reads_a_client_with_task(coord):
+    class DeskClient:
+        def task(self, task_id):
+            return {"task_id": task_id, "state": "completed", "output": "edited",
+                    "review": {"decisions": [{"reviewer": "human:alice@example.org",
+                                              "kind": "override", "rationale": "shorter"}]}}
+
+    bridge = ChapTurnBridge(coord, workspace="wsp_ag2_test", agent="agent:assistant#v1",
+                            reviewer="human:alice@example.org", client=DeskClient())
+    assert bridge.wait_for_decision("tsk_remote", timeout=1) == Decision(
+        task_id="tsk_remote", state="completed", kind="override",
+        reviewer="human:alice@example.org", output="edited", comment="shorter")
+
+
+def test_wait_for_decision_times_out(bridge):
+    with pytest.raises(TimeoutError):
+        bridge.request_reply(msg("draft"), timeout=0.05, poll_seconds=0.01)
 
 
 # ---- guards --------------------------------------------------------

@@ -30,8 +30,9 @@ dependencies = [
 [project.optional-dependencies]
 # AG2 is only needed to run a live conversation. The adapter reads the
 # message and reply structurally, so the bridge and its tests work
-# without it installed.
-ag2 = ["ag2>=0.9"]
+# without it installed. AG2 1.0 replaced the `autogen` package and its
+# get_human_input hook, which the examples and the README use.
+ag2 = ["ag2>=0.9,<1"]
 dev = ["pytest>=8", "pytest-cov>=5"]
 
 [project.urls]
