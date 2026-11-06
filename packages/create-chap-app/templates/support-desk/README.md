@@ -12,7 +12,7 @@ python desk.py                  # owns the store, serves the desk and POST /chap
 python agent.py tickets.csv     # in a second terminal: drafts, then waits for you
 ```
 
-Then decide in the desk at http://127.0.0.1:8788/.
+Then decide in the desk at http://localhost:8788/.
 
 `desk.py` creates the workspace and keeps the SQLite store under `data/`
 beside `chap.config.json`, wherever you start it from. Opening the desk

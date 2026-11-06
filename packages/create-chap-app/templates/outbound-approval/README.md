@@ -14,7 +14,7 @@ python agent.py messages.csv     # in a second terminal: drafts, then waits for 
 python pause.py                  # hold the agent; python resume.py lets it go on
 ```
 
-Then decide in the desk at http://127.0.0.1:8789/.
+Then decide in the desk at http://localhost:8789/.
 
 `desk.py` creates the workspace in trial mode and keeps the SQLite store
 under `data/` beside `chap.config.json`, wherever you start it from.

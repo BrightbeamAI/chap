@@ -59,7 +59,10 @@ def test_serve_runs_the_desk_from_a_config_file_wherever_it_starts(tmp_path):
                                stderr=subprocess.PIPE, text=True)
     try:
         banner = [process.stdout.readline() for _ in range(5)]
-        base = re.search(r"on (http://127\.0\.0\.1:\d+)", banner[0]).group(1)
+        # The desk is opened at localhost, a name WebAuthn takes, which
+        # reaches the server on either loopback address.
+        base = re.search(r"on (http://localhost:\d+)$", banner[0].rstrip()).group(1)
+        assert banner[1].rstrip() == f"  desk     {base}/"
         assert banner[4].strip() == f"store    {project / 'data' / 'chap.db'}"
         with urllib.request.urlopen(base + "/api/health", timeout=5) as response:
             assert json.loads(response.read())["workspace"] == "wsp_cli"

@@ -122,7 +122,11 @@ pip install "chap-coordinator[crypto]"
 chap-coordinator serve --config chap.config.json
 ```
 
-The desk is then at http://127.0.0.1:8787/.
+The desk is then at http://localhost:8787/. The server prints the desk's
+address at `localhost` wherever it listens on this machine, since the desk
+may sign with WebAuthn, which needs a domain name, and on the loopback
+address it listens on IPv4 and IPv6 alike, so the name reaches it either
+way.
 
 - `store` is read against the config file's directory, wherever the server
   starts, and a leading `~` is the home directory; `":memory:"` keeps
@@ -252,10 +256,11 @@ app.mount("/", desk)
 uvicorn app:app --workers 1
 ```
 
-The desk's pages name their files from `/`, so the desk is mounted at the
-root; `POST /chap` and `/api/` also work below a prefix. An app that needs
-more workers runs `chap-coordinator serve` beside them, and each worker
-calls it through `HttpCoordinator`.
+The desk's pages name their files relative to the page, so the desk works
+mounted at any path: `app.mount("/review", desk)` serves it at `/review/`,
+with `POST /review/chap` and the read API beside it. An app that needs more
+workers runs `chap-coordinator serve` beside them, and each worker calls it
+through `HttpCoordinator`.
 
 **A job queue.** Queue workers (Celery, RQ, arq) are processes of their
 own, so each reaches the server over HTTP. One job opens the review and

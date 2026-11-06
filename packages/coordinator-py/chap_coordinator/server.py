@@ -29,12 +29,20 @@ Whichever server runs them, the routes check every request:
   no Origin;
 - ``POST /chap`` takes ``application/json`` only (415), and no body over
   MAX_BODY_BYTES is read (413);
-- every response carries a Content-Security-Policy that allows no inline
-  script and no framing, ``X-Frame-Options: DENY``, ``nosniff`` and
-  ``Referrer-Policy: no-referrer``, so no other page can frame the desk;
-- a page under ``/analytics/`` is served with ``Content-Security-Policy:
-  sandbox allow-scripts``: it runs in an origin of its own, where it reads
-  nothing the desk keeps, and its calls here are refused as cross-origin.
+- every response carries SECURITY_HEADERS, the Node server's: a
+  Content-Security-Policy that allows no inline script and no framing,
+  ``X-Frame-Options: DENY``, ``nosniff`` and ``Referrer-Policy:
+  no-referrer``, so no other page can frame the desk;
+- a page under ``/analytics/`` is served with ANALYTICS_POLICY, ``sandbox
+  allow-scripts``: it runs in an origin of its own, where it reads nothing
+  the desk keeps, and its calls here are refused as cross-origin.
+
+The desk's pages name their files relative to the page, so the ASGI app
+serves the desk mounted at any path. The standard library server is
+opened at ``http://localhost:<port>/``, where it listens on this machine:
+the desk may sign with WebAuthn, which needs a domain name, and an IP
+address is none. On the loopback address it listens on IPv4 and IPv6
+alike, so ``localhost`` reaches it whichever address the name resolves to.
 
 One process owns one store. The coordinator is a single writer, and the
 server makes every call and every read under one lock, ``ChapDesk.lock``;
@@ -56,6 +64,7 @@ import json
 import logging
 import os
 import re
+import socket
 import sqlite3
 import sys
 import threading
@@ -70,12 +79,13 @@ from .storage.sqlite import SqliteStore
 from .storage.store import MemoryStore
 
 __all__ = [
-    "ANALYTICS_CSP",
+    "ANALYTICS_POLICY",
     "ChapDesk",
     "ChapServer",
-    "DESK_CSP",
     "MAX_BODY_BYTES",
+    "SECURITY_HEADERS",
     "bootstrap",
+    "desk_url",
     "list_tasks",
     "load_config",
     "make_coordinator",
@@ -93,16 +103,20 @@ logger = logging.getLogger(__name__)
 #: The largest request body read: a little above the coordinator's envelope limit.
 MAX_BODY_BYTES = 1_100_000
 
-#: The desk's policy. Its scripts and styles are its own files; the style
-#: attributes its views set are allowed, a style element is not, and its
-#: icon is a data: URL. It reaches this server only, and no page may frame it.
-DESK_CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; "
-            "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; "
-            "frame-ancestors 'none'")
+#: The headers on every answer, the Node server's own. The policy lets the
+#: desk load its own scripts, styles and images and call its own server,
+#: and nothing else: no inline script or style, no plugin, no form posted
+#: anywhere, no frame around it.
+SECURITY_HEADERS = {
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
+                               "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+}
 
-#: The policy of the pages under /analytics/: their scripts run, in an
-#: origin of their own, and no page may frame them.
-ANALYTICS_CSP = "sandbox allow-scripts; frame-ancestors 'none'"
+#: The policy for the analytics pages: their scripts run, in an origin of their own.
+ANALYTICS_POLICY = "sandbox allow-scripts; frame-ancestors 'none'"
 
 TYPES = {
     ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -113,13 +127,25 @@ TYPES = {
 
 
 def security_headers(path: str) -> list[tuple[str, str]]:
-    """The headers every response carries; ``path`` is the request's path."""
-    return [
-        ("content-security-policy", ANALYTICS_CSP if path.startswith("/analytics/") else DESK_CSP),
-        ("x-frame-options", "DENY"),
-        ("x-content-type-options", "nosniff"),
-        ("referrer-policy", "no-referrer"),
-    ]
+    """The headers every response carries; ``path`` is the request's path
+    below the desk's mount point."""
+    policy = ANALYTICS_POLICY if path.startswith("/analytics/") else SECURITY_HEADERS["content-security-policy"]
+    return [(name, policy if name == "content-security-policy" else value) for name, value in SECURITY_HEADERS.items()]
+
+
+#: The addresses of this machine alone, and the ones of every interface. A
+#: server listening on either is opened at localhost.
+_LOOPBACK = ("127.0.0.1", "::1", "localhost")
+_WILDCARD = ("0.0.0.0", "::", "")
+
+
+def desk_url(host: str, port: int) -> str:
+    """Where a person opens the desk of a server listening on ``host`` and
+    ``port``: ``http://localhost:<port>/`` on this machine, since the desk
+    may sign with WebAuthn, which needs a domain name; else the host as
+    given, bracketed where it is an IPv6 address."""
+    shown = "localhost" if host in _LOOPBACK + _WILDCARD else f"[{host}]" if ":" in host else host
+    return f"http://{shown}:{port}/"
 
 
 # -- configuration ------------------------------------------------------------
@@ -565,9 +591,11 @@ class ChapDesk:
 
     ``config`` is what :func:`load_config` returns and ``coord`` the
     coordinator :func:`make_coordinator` built from it. The desk's pages
-    name their files from ``/``, so mount it at the root, after your own
-    routes: ``app.mount("/", ChapDesk(config, coord))``. Under an ASGI
-    server the calls run on asyncio's default thread pool, under ``lock``.
+    name their files relative to the page, so it serves under any path:
+    ``app.mount("/review", ChapDesk(config, coord))`` puts the desk at
+    ``/review/``, and the mount point without its slash is sent there.
+    Under an ASGI server the calls run on asyncio's default thread pool,
+    under ``lock``.
     """
 
     def __init__(self, config: dict, coord: Coordinator) -> None:
@@ -710,13 +738,19 @@ class ChapDesk:
             raise RuntimeError(f"ChapDesk serves HTTP, and was given a {scope['type']} connection")
         method, path = scope["method"], _route_path(scope)
         headers = [(name.decode("latin-1").lower(), value.decode("latin-1")) for name, value in scope["headers"]]
+        query = scope.get("query_string", b"").decode("latin-1")
         reply = self.check(method, path, headers, (scope.get("server") or (None, None))[1])
-        if reply is None:
+        root = scope.get("root_path", "")
+        if reply is None and root and scope["path"] in ("", root):
+            # The mount point itself: the desk's paths are relative, so its
+            # page is at the mount point with a slash.
+            reply = _Reply(308, b"", "text/plain; charset=utf-8",
+                           (("location", f"{root}/" + (f"?{query}" if query else "")),))
+        elif reply is None:
             body = await _read_body(receive) if method == "POST" else b""
             if body is None:
                 reply = _too_large()
             else:
-                query = scope.get("query_string", b"").decode("latin-1")
                 reply = await asyncio.get_running_loop().run_in_executor(None, self.handle, method, path, query, body)
         await send({"type": "http.response.start", "status": reply.status,
                     "headers": [(name.encode("latin-1"), value.encode("latin-1"))
@@ -758,24 +792,82 @@ def _response_headers(path: str, reply: _Reply) -> list[tuple[str, str]]:
 
 # -- the standard library server ----------------------------------------------
 
-class ChapServer(ThreadingHTTPServer):
-    """The standard library's HTTP server, running a :class:`ChapDesk`."""
+#: The loopback address of the other family, for a server on one.
+_OTHER_LOOPBACK = {"127.0.0.1": "::1", "localhost": "::1", "::1": "127.0.0.1"}
+
+
+class _Listener(ThreadingHTTPServer):
+    """The standard library's HTTP server running a desk's routes on one
+    address, of either family."""
 
     allow_reuse_address = True
     daemon_threads = True
 
     def __init__(self, address: tuple[str, int], desk: ChapDesk) -> None:
         self.desk = desk
+        self.address_family = socket.AF_INET6 if ":" in address[0] else socket.AF_INET
         super().__init__(address, _Handler)
 
+
+class ChapServer(_Listener):
+    """The standard library's HTTP server, running a :class:`ChapDesk`.
+
+    On a loopback address it listens on the other family's as well, on the
+    same port: 127.0.0.1 and ::1, so ``http://localhost:<port>/`` reaches
+    this server whichever of the two the name resolves to first, and never
+    another program listening on the other. Where this machine has no
+    loopback address of the other family, it listens on the one it has.
+    """
+
+    def __init__(self, address: tuple[str, int], desk: ChapDesk) -> None:
+        self.other: Optional[_Listener] = None
+        self._other_serving: Optional[threading.Thread] = None
+        super().__init__(address, desk)
+        if address[0] in _OTHER_LOOPBACK:
+            other = _OTHER_LOOPBACK[address[0]]
+            try:
+                self.other = _Listener((other, self.server_port), desk)
+            except OSError as err:
+                if err.errno == errno.EADDRINUSE:
+                    super().server_close()
+                    raise OSError(errno.EADDRINUSE, os.strerror(errno.EADDRINUSE), other) from err
+
     @property
-    def base(self) -> str:
-        return f"http://{self.desk.config['host']}:{self.server_port}"
+    def desk_url(self) -> str:
+        """Where a person opens the desk: :func:`desk_url` for this server."""
+        return desk_url(self.desk.config["host"], self.server_port)
+
+    def serve_forever(self, poll_interval: float = 0.5) -> None:
+        if self.other is not None and self._other_serving is None:
+            self._other_serving = threading.Thread(target=self.other.serve_forever, args=(poll_interval,),
+                                                   daemon=True)
+            self._other_serving.start()
+        super().serve_forever(poll_interval)
+
+    def shutdown(self) -> None:
+        """Stop serving on every address; serve_forever returns."""
+        if self._other_serving is None:
+            return super().shutdown()
+        other = threading.Thread(target=self.other.shutdown)
+        other.start()
+        super().shutdown()
+        other.join()
+        self._other_serving = None
+
+    def server_close(self) -> None:
+        if self._other_serving is not None:
+            # serve_forever ended with an exception, Ctrl-C say, and the
+            # other address is still served.
+            self.other.shutdown()
+            self._other_serving = None
+        if self.other is not None:
+            self.other.server_close()
+        super().server_close()
 
 
 class _Handler(BaseHTTPRequestHandler):
     server_version = "CHAPDesk"
-    server: ChapServer
+    server: _Listener
 
     def log_message(self, *_: Any) -> None:
         pass
@@ -816,7 +908,8 @@ class _Handler(BaseHTTPRequestHandler):
 
 def make_server(config: dict, coord: Coordinator) -> ChapServer:
     """Bind the standard library server on the configured host and port.
-    Port 0 picks a free port; read it from ``server.server_port``."""
+    Port 0 picks a free port; read it from ``server.server_port``, and the
+    desk's address from ``server.desk_url``."""
     return ChapServer((config["host"], int(config["port"])), ChapDesk(config, coord))
 
 
@@ -835,10 +928,10 @@ def serve(config: dict) -> int:
         _close(coord)
         if err.errno != errno.EADDRINUSE:
             raise
-        print(f"Port {config['port']} on {config['host']} is in use, by another desk or another program. "
-              "Stop that one, or set PORT to a free port.", file=sys.stderr)
+        print(f"Port {config['port']} on {err.filename or config['host']} is in use, by another desk or another "
+              "program. Stop that one, or set PORT to a free port.", file=sys.stderr)
         return 1
-    base = server.base
+    base = server.desk_url.rstrip("/")
     flags = ((", chain on" if config.get("chain") else "")
              + (f", {POLICY_WORDS[config['signature_policy']]}" if config.get("require_signatures") else ""))
     print(f"CHAP {config['workspace']} on {base}")

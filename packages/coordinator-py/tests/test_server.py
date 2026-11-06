@@ -15,6 +15,7 @@ library's HTTP server, and as an ASGI app under Starlette and FastAPI.
 """
 from __future__ import annotations
 
+import asyncio
 import http.client
 import json
 import logging
@@ -23,25 +24,29 @@ import re
 import socket
 import sys
 import threading
+import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urljoin
 
 import pytest
 from fastapi import FastAPI
 from starlette.applications import Starlette
-from starlette.routing import Mount
+from starlette.responses import PlainTextResponse
+from starlette.routing import Mount, Route
 from starlette.testclient import TestClient
 
 from chap_coordinator.client import HttpCoordinator, Participant, Signer
 from chap_coordinator.server import (
-    ANALYTICS_CSP, DESK_CSP, MAX_BODY_BYTES, ChapDesk, load_config, make_coordinator, make_server,
-    public_config, read_desk, serve,
+    ANALYTICS_POLICY, MAX_BODY_BYTES, SECURITY_HEADERS, ChapDesk, desk_url, load_config, make_coordinator,
+    make_server, public_config, read_desk, serve,
 )
 
 HUMAN = "human:you@local"
 AGENT = "agent:drafter"
-SECURITY = {"content-security-policy": DESK_CSP, "x-frame-options": "DENY",
-            "x-content-type-options": "nosniff", "referrer-policy": "no-referrer"}
+DESK_POLICY = SECURITY_HEADERS["content-security-policy"]
+#: The Node server, whose headers the desk is built for.
+NODE_SERVER = Path(__file__).resolve().parents[2] / "chap-server" / "lib" / "server.mjs"
 
 
 def write_config(directory: Path, **fields) -> Path:
@@ -87,7 +92,7 @@ def desk(tmp_path, monkeypatch):
     server = make_server(config, coord)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        yield {"config": config, "coord": coord, "port": server.server_port}
+        yield {"config": config, "coord": coord, "port": server.server_port, "ipv6": server.other is not None}
     finally:
         server.shutdown()
         server.server_close()
@@ -117,8 +122,8 @@ def call(port: int, method: str, **params):
     return json.loads(data)
 
 
-def assert_secured(headers: dict, csp: str = DESK_CSP) -> None:
-    assert {k: headers.get(k) for k in SECURITY} == {**SECURITY, "content-security-policy": csp}
+def assert_secured(headers: dict, csp: str = DESK_POLICY) -> None:
+    assert {k: headers.get(k) for k in SECURITY_HEADERS} == {**SECURITY_HEADERS, "content-security-policy": csp}
 
 
 # -- configuration --------------------------------------------------------------
@@ -309,8 +314,61 @@ def test_every_response_carries_the_security_headers(desk):
         raw.sendall(f"BREW / HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n\r\n".encode())
         head = raw.recv(65536).decode("latin-1").lower()
     assert head.startswith("http/1.0 501")
-    for name, value in SECURITY.items():
+    for name, value in SECURITY_HEADERS.items():
         assert f"{name}: {value.lower()}" in head
+
+
+@pytest.mark.skipif(not NODE_SERVER.exists(), reason="the Node server's source is not beside this package")
+def test_the_headers_are_the_node_servers():
+    # The desk is one set of files, built for the policy the Node server
+    # sends, so both servers send the same headers.
+    source = NODE_SERVER.read_text(encoding="utf-8")
+    block = re.search(r"export const SECURITY_HEADERS = \{(.*?)\};", source, re.S).group(1)
+    assert dict(re.findall(r'"([a-z-]+)": "([^"]*)"', block)) == SECURITY_HEADERS
+    assert re.search(r'export const ANALYTICS_POLICY = "([^"]*)";', source).group(1) == ANALYTICS_POLICY
+
+
+@pytest.mark.parametrize("host, opened", [
+    ("127.0.0.1", "http://localhost:8788/"), ("localhost", "http://localhost:8788/"),
+    ("::1", "http://localhost:8788/"), ("0.0.0.0", "http://localhost:8788/"), ("::", "http://localhost:8788/"),
+    ("chap.internal", "http://chap.internal:8788/"), ("fd00::5", "http://[fd00::5]:8788/"),
+])
+def test_on_this_machine_the_desk_is_opened_at_localhost(host, opened):
+    # The desk may sign with WebAuthn, whose relying party is a domain name.
+    assert desk_url(host, 8788) == opened
+
+
+def test_localhost_reaches_the_server_on_either_loopback_address(desk):
+    port = desk["port"]
+    for origin_host in (f"localhost:{port}", f"127.0.0.1:{port}", f"[::1]:{port}"):
+        status, _, _ = request(port, "POST", "/chap", [("Content-Type", "application/json"),
+                                                       ("Origin", f"http://{origin_host}")],
+                               b'{"jsonrpc": "2.0", "id": 1, "method": "workspace.describe", '
+                               b'"params": {"workspace": "wsp_test"}}', host=origin_host)
+        assert status == 200, origin_host
+    with urllib.request.urlopen(f"http://localhost:{port}/", timeout=10) as page:
+        assert b"CHAP review desk" in page.read()
+    if not desk["ipv6"]:
+        pytest.skip("this machine has no IPv6 loopback address")
+    conn = http.client.HTTPConnection("::1", port, timeout=10)
+    conn.request("GET", "/api/health", headers={"Host": f"localhost:{port}"})
+    response = conn.getresponse()
+    assert response.status == 200 and json.loads(response.read())["workspace"] == "wsp_test"
+    conn.close()
+
+
+def test_a_port_taken_on_the_other_loopback_address_is_named(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("PORT", raising=False)
+    try:
+        taken = socket.socket(socket.AF_INET6)
+        taken.bind(("::1", 0))
+    except OSError:
+        pytest.skip("this machine has no IPv6 loopback address")
+    with taken:
+        taken.listen()
+        port = taken.getsockname()[1]
+        assert serve(load_config(write_config(tmp_path, port=port))) == 1
+    assert f"Port {port} on ::1 is in use" in capsys.readouterr().err
 
 
 def test_a_page_under_analytics_runs_in_a_sandbox(desk):
@@ -321,10 +379,10 @@ def test_a_page_under_analytics_runs_in_a_sandbox(desk):
     status, headers, body = request(port, "GET", "/analytics/report.html")
     assert status == 200 and b"localStorage" in body
     assert headers["content-type"] == "text/html; charset=utf-8"
-    assert_secured(headers, ANALYTICS_CSP)
+    assert_secured(headers, ANALYTICS_POLICY)
     status, headers, body = request(port, "GET", "/analytics/summary.json")
     assert (status, json.loads(body)) == (200, {"tasks": 1})
-    assert_secured(headers, ANALYTICS_CSP)
+    assert_secured(headers, ANALYTICS_POLICY)
     # One file in the directory, by name: no separator, drive, escape or dot file.
     for path in ("/analytics/..%2Fchap.config.json", "/analytics/sub%5Cx.html", "/analytics/C:report.html",
                  "/analytics/.hidden.html", "/analytics/%2e%2e/chap.config.json", "/analytics/report.exe"):
@@ -485,7 +543,7 @@ def test_the_asgi_app_makes_the_same_checks_and_sends_the_same_headers(asgi):
         Path(config["analytics"], "report.html").write_text("<p>report</p>", encoding="utf-8")
         report = client.get("/analytics/report.html")
         assert report.status_code == 200
-        assert_secured(report.headers, ANALYTICS_CSP)
+        assert_secured(report.headers, ANALYTICS_POLICY)
 
 
 def test_fastapi_mounts_the_desk_beside_its_own_routes(asgi):
@@ -508,11 +566,60 @@ def test_fastapi_mounts_the_desk_beside_its_own_routes(asgi):
         assert "CHAP review desk" in client.get("/").text
 
 
-def test_mounted_below_a_prefix_the_routes_are_found_there(asgi):
+class _References(HTMLParser):
+    """The URLs a page loads: every src and href."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.urls: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        self.urls += [value for name, value in attrs if name in ("src", "href") and value]
+
+
+def test_mounted_below_a_prefix_the_desk_works_there(asgi):
     config, coord = asgi
-    app = Starlette(routes=[Mount("/review", app=ChapDesk(config, coord))])
+
+    async def own_config(_request):
+        return PlainTextResponse("the application's own /api/config")
+
+    desk = ChapDesk(config, coord)
+    app = Starlette(routes=[Route("/api/config", own_config), Mount("/review", app=desk)])
     with TestClient(app, base_url="http://127.0.0.1:8788") as client:
-        assert client.get("/review/api/config").json()["workspace"] == "wsp_test"
+        page = client.get("/review/")
+        assert page.status_code == 200 and "CHAP review desk" in page.text
+        assert_secured(page.headers)
+        # Everything the page loads, and every path the desk's scripts call,
+        # is relative to the page, and is served under the prefix.
+        refs = _References()
+        refs.feed(page.text)
+        modules = re.findall(r'from "\./([^"]+)"', "".join(body.decode() for name, (body, _) in read_desk().items()
+                                                          if name.endswith((".js", ".mjs"))))
+        assert refs.urls and modules
+        for ref in [*refs.urls, *modules, "api/config", "api/health?desk=1", "api/tasks?brief=1",
+                    "api/reviews?reviewer=human%3Ayou%40local"]:
+            assert not ref.startswith("/"), ref
+            assert client.get(urljoin("/review/", ref)).status_code == 200, ref
         envelope = {"jsonrpc": "2.0", "id": 1, "method": "workspace.describe", "params": {"workspace": "wsp_test"}}
         assert client.post("/review/chap", json=envelope).json()["result"]["id"] == "wsp_test"
-        assert client.get("/api/config").status_code == 404
+        # The application keeps its own routes, with nothing of the desk's.
+        own = client.get("/api/config")
+        assert own.text == "the application's own /api/config" and "content-security-policy" not in own.headers
+
+    # An ASGI server can hand the app the mount point itself, which names no
+    # page: it is sent to the page, with the query kept.
+    sent: list[dict] = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "method": "GET", "path": "/review", "root_path": "/review", "query_string": b"task=t1",
+             "headers": [(b"host", b"127.0.0.1:8788")], "server": ("127.0.0.1", 8788)}
+    asyncio.run(desk(scope, receive, send))
+    start = sent[0]
+    headers = {name.decode(): value.decode() for name, value in start["headers"]}
+    assert (start["status"], headers["location"]) == (308, "/review/?task=t1")
+    assert_secured(headers)
