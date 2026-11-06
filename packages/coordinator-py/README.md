@@ -195,10 +195,13 @@ print(decided["state"], decided["output"])
 ```
 
 `call` raises `ChapError`, with the coordinator's code, when a call is
-refused, and `ChapEndpointError` when no JSON-RPC answer comes at all.
-Under `"humans"` the agent calls unsigned, as above. Where every call is
-signed, the agent signs with a key of its own and joins once, which
-registers the key:
+refused, and `ChapEndpointError` when no JSON-RPC answer comes at all. A
+person joins when they first open the desk, and until one has, a
+completion that asks for a review is refused with `-32011`, since nobody
+could decide it; `agent.reviewer_present()` says whether one has, as the
+templates' agents check before they submit. Under `"humans"` the agent
+calls unsigned, as above. Where every call is signed, the agent signs with
+a key of its own and joins once, which registers the key:
 
 ```python
 from chap_coordinator.client import Signer
@@ -346,7 +349,8 @@ Under `"humans"` the server joined the agent when it started. Where every
 call is signed, every worker gives the participant the same key file, and
 the agent joins once with it. The idempotency key lets a retried job find
 the task it opened before, and a job that finds its draft already submitted
-leaves it. A rejection that asks for a revision leaves the task
+leaves it. A job run before any person has opened the desk fails at
+task.complete with `-32011`, and the queue runs it again. A rejection that asks for a revision leaves the task
 `in_progress`, and running `draft_reply` again submits a new draft.
 
 **Backups and chain heads.** With WAL, the SQLite store's default, copy
