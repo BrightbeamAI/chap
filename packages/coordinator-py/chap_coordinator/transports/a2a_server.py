@@ -34,8 +34,14 @@ Architecture notes
   Agent Card with id ``chap.<method>``. This matches the MCP
   transport's ``chap.<method>`` tool naming, so a caller fluent in
   one is fluent in the other.
-- A2A messages carry the CHAP params in a ``DataPart``. The skill id
+- A2A messages carry the CHAP params in a data part. The skill id
   identifies which CHAP method to dispatch.
+- An answer is an agent message carrying the result. A refusal is a task
+  that has failed, in A2A's terms: rejected when the coordinator refused
+  the call, failed when it could not complete it. Either way the status
+  message carries the CHAP error, ``{chap_error, message, data?}``.
+- ``participant`` pins ``from``, as it does for the MCP server, so a
+  connection meant for one agent cannot act in anyone else's name.
 - Authentication is intentionally out of scope at this layer.
   A2A's security schemes (OAuth, mTLS, API key) attach to the
   Agent Card and are enforced at the HTTP transport. Real
@@ -44,6 +50,8 @@ Architecture notes
 from __future__ import annotations
 
 import json
+import logging
+from datetime import datetime, timezone
 from itertools import count
 from typing import Any, Callable
 
@@ -57,7 +65,9 @@ from a2a.types import (
     Message,
     Part,
     Role,
+    Task,
     TaskState,
+    TaskStatus,
 )
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
@@ -75,6 +85,14 @@ __all__ = [
     "make_chap_agent_card",
     "dispatch_a2a_message",
 ]
+
+logger = logging.getLogger(__name__)
+
+#: JSON-RPC's internal error: a fault inside the coordinator, which refused nothing.
+_INTERNAL_ERROR = -32603
+
+#: What a client is told of a fault inside the server; the detail is in the server's log.
+_FAILED_INSIDE = "The CHAP call failed inside the server; its log has the detail."
 
 #: The media type of every part a CHAP skill takes and returns: the call's
 #: params in, and its result or refusal out, as JSON data parts. A2A names
@@ -155,18 +173,21 @@ def dispatch_a2a_message(
     *,
     envelope_id_factory: Callable[[], Any] | None = None,
     skill_filter: Callable[[str], bool] | None = None,
+    participant: str | None = None,
 ) -> dict[str, Any]:
     """Translate an A2A Message into a CHAP envelope and dispatch it.
 
     The Message is expected to carry the CHAP method name in its
     ``metadata`` under key ``skill`` (which the A2A SDK populates from
-    the requested skill id) and the params in the first ``DataPart``.
+    the requested skill id) and the params in the first data part.
+    With ``participant`` the call is made as that member, and one that
+    names another ``from`` is refused with -32011.
 
     Returns the CHAP response envelope.
     """
     counter = envelope_id_factory or _default_id_factory()
     skill_id, params = _extract_skill_and_params(message)
-    method = method_for_tool(skill_id) if skill_id else None
+    method = method_for_tool(skill_id) if isinstance(skill_id, str) else None
 
     if method is None:
         return {
@@ -190,11 +211,25 @@ def dispatch_a2a_message(
             },
         }
 
+    args = dict(params or {})
+    if participant is not None:
+        if "from" in args and args["from"] != participant:
+            return {
+                "jsonrpc": "2.0",
+                "id": counter(),
+                "error": {
+                    "code": -32011,
+                    "message": (f"This server acts as {participant}; a call cannot name "
+                                f"another from ({json.dumps(args['from'], ensure_ascii=False)})."),
+                },
+            }
+        args["from"] = participant
+
     return coord.dispatch({
         "jsonrpc": "2.0",
         "id": counter(),
         "method": method,
-        "params": params or {},
+        "params": args,
     })
 
 
@@ -251,87 +286,73 @@ class ChapAgentExecutor(AgentExecutor):
         *,
         envelope_id_factory: Callable[[], Any] | None = None,
         skill_filter: Callable[[str], bool] | None = None,
+        participant: str | None = None,
     ) -> None:
         self._coord = coord
         self._next_id = envelope_id_factory or _default_id_factory()
-        self._cancelled: set[str] = set()
         # The card only lists skills; the executor is what runs them, so it
         # takes the same filter as the card and refuses what it excludes.
         self._skill_filter = skill_filter
+        self._participant = participant
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        if context.task_id and context.task_id in self._cancelled:
-            await self._publish_text(
-                event_queue, context, "Task was cancelled before execution.",
-            )
-            return
-
         try:
             response = dispatch_a2a_message(
                 self._coord, context.message, envelope_id_factory=self._next_id,
-                skill_filter=self._skill_filter,
+                skill_filter=self._skill_filter, participant=self._participant,
             )
-        except Exception as exc:  # noqa: BLE001
-            await self._publish_text(
-                event_queue, context,
-                f"CHAP dispatch threw: {exc!r}",
-            )
+        except Exception:  # noqa: BLE001 - a fault in the server, reported without its text
+            # The exception's text can carry a path or a stack line, so it
+            # goes to the server's log, which the client never sees.
+            logger.exception("CHAP dispatch failed")
+            response = {"jsonrpc": "2.0", "error": {"code": _INTERNAL_ERROR, "message": _FAILED_INSIDE}}
+        else:
+            if response.get("error", {}).get("code") == _INTERNAL_ERROR:
+                # A fault inside the coordinator, whose data can carry the
+                # exception's text. It goes to the server's log, and the
+                # client is told only that the call failed. A refusal is
+                # passed on as it came.
+                logger.error("CHAP call failed: %s", response["error"])
+                response = {"jsonrpc": "2.0", "error": {"code": _INTERNAL_ERROR, "message": _FAILED_INSIDE}}
+
+        if "error" not in response:
+            await event_queue.enqueue_event(self._agent_message(context, response.get("result")))
             return
 
-        if "error" in response:
-            err = response["error"]
-            payload = {
-                "chap_error": err.get("code"),
-                "message": err.get("message", ""),
-            }
-            if "data" in err:
-                payload["data"] = err["data"]
-            await self._publish_data(event_queue, context, payload, is_error=True)
-            return
-
-        await self._publish_data(event_queue, context, response.get("result"))
+        err = response["error"]
+        payload: dict[str, Any] = {"chap_error": err.get("code"), "message": err.get("message", "")}
+        if "data" in err:
+            payload["data"] = err["data"]
+        task_id = context.task_id or ""
+        await event_queue.enqueue_event(Task(
+            id=task_id,
+            context_id=context.context_id or "",
+            status=TaskStatus(
+                state=(TaskState.TASK_STATE_FAILED if err.get("code") == _INTERNAL_ERROR
+                       else TaskState.TASK_STATE_REJECTED),
+                message=self._agent_message(context, payload, task_id=task_id),
+                timestamp=datetime.now(timezone.utc),
+            ),
+            history=[context.message] if context.message else [],
+        ))
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
-        if context.task_id:
-            self._cancelled.add(context.task_id)
+        """A CHAP call takes effect within ``execute``, before it returns, so no
+        call is ever left running to stop, and there is nothing to cancel."""
 
-    async def _publish_data(
-        self,
-        event_queue: EventQueue,
-        context: RequestContext,
-        payload: Any,
-        *,
-        is_error: bool = False,
-    ) -> None:
+    def _agent_message(self, context: RequestContext, payload: Any, *, task_id: str = "") -> Message:
+        """The agent's message: one JSON data part. An answer is a message
+        alone, with no task made for it, so it names none; a refusal names
+        its task."""
         value = Value()
         ParseDict(payload if isinstance(payload, dict) else {"result": payload}, value)
-        part = Part(data=value, media_type=CHAP_MEDIA_TYPE)
-        if is_error:
-            # Mark error responses via metadata for clients that care.
-            from google.protobuf.struct_pb2 import Struct
-            md = Struct()
-            ParseDict({"is_error": True}, md)
-            part.metadata.CopyFrom(md)
-        msg = Message(
+        return Message(
             message_id=f"chap-resp-{self._next_id()}",
             role=Role.ROLE_AGENT,
             context_id=context.context_id or "",
-            task_id=context.task_id or "",
-            parts=[part],
+            task_id=task_id,
+            parts=[Part(data=value, media_type=CHAP_MEDIA_TYPE)],
         )
-        await event_queue.enqueue_event(msg)
-
-    async def _publish_text(
-        self, event_queue: EventQueue, context: RequestContext, text: str,
-    ) -> None:
-        msg = Message(
-            message_id=f"chap-resp-{self._next_id()}",
-            role=Role.ROLE_AGENT,
-            context_id=context.context_id or "",
-            task_id=context.task_id or "",
-            parts=[Part(text=text)],
-        )
-        await event_queue.enqueue_event(msg)
 
 
 def make_chap_agent_executor(
@@ -339,11 +360,16 @@ def make_chap_agent_executor(
     *,
     envelope_id_factory: Callable[[], Any] | None = None,
     skill_filter: Callable[[str], bool] | None = None,
+    participant: str | None = None,
 ) -> ChapAgentExecutor:
     """Convenience constructor mirroring ``make_chap_mcp_server``.
 
     Pass the same ``skill_filter`` as :func:`make_chap_agent_card`: the card
     only lists skills, and the executor refuses the ones the filter excludes.
+    ``participant`` makes every call as that member: ``from`` is filled in,
+    and a call that names another is refused with -32011. Use it where the
+    server is one participant's connection, such as an orchestrator's.
+    Default: each call names its own ``from``.
     """
     return ChapAgentExecutor(coord, envelope_id_factory=envelope_id_factory,
-                             skill_filter=skill_filter)
+                             skill_filter=skill_filter, participant=participant)

@@ -6,14 +6,15 @@
  * now on the 1.x SDK: a 1.0 client finds the JSON-RPC interface on the card
  * and round-trips, and a 0.3 client, sending message/send with kind-tagged
  * parts and no A2A-Version header, is still answered, through the SDK's
- * compatibility layer.
+ * compatibility layer. A refused call reaches either client as a task the
+ * agent rejected.
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import type { Server as HttpServer } from "node:http";
 
 import express from "express";
-import { AGENT_CARD_PATH, Role, type Message } from "@a2a-js/sdk";
+import { AGENT_CARD_PATH, Role, TaskState, type Message, type Task } from "@a2a-js/sdk";
 import { DefaultRequestHandler, InMemoryTaskStore } from "@a2a-js/sdk/server";
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from "@a2a-js/sdk/server/express";
 import { ClientFactory, type Client } from "@a2a-js/sdk/client";
@@ -96,4 +97,33 @@ test("a v0.3 client is still answered: the card and message/send in v0.3 shapes"
   assert.equal(body.result.role, "agent");
   assert.equal(body.result.parts[0].kind, "data");
   assert.equal(body.result.parts[0].data.workspace, "w03");
+});
+
+test("a refused call reaches a 1.0 client as a rejected task", async () => {
+  const client = await new ClientFactory().createFromUrl(base);
+  const reply = await client.sendMessage({ tenant: "", configuration: undefined, metadata: undefined,
+    message: message("chap.workspace.describe", { workspace: "missing" }) }) as Task;
+  assert.equal(reply.status?.state, TaskState.TASK_STATE_REJECTED, JSON.stringify(reply));
+  const data = (reply.status!.message!.parts[0].content as { value: Record<string, any> }).value;
+  assert.equal(data.chap_error, -32602);
+  // The SDK keeps the task: a client can read it back.
+  const again = await client.getTask({ tenant: "", id: reply.id, historyLength: undefined });
+  assert.equal(again.status?.state, TaskState.TASK_STATE_REJECTED);
+});
+
+test("a refused call reaches a v0.3 client as a task in state rejected", async () => {
+  const r = await fetch(`${base}/`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0", id: "2", method: "message/send",
+      params: { message: { kind: "message", messageId: "m-v03-refused", role: "user",
+                           parts: [{ kind: "data", data: { skill: "chap.workspace.describe", params: { workspace: "missing" } } }] } },
+    }),
+  });
+  const body = await r.json();
+  assert.equal(body.result.kind, "task", JSON.stringify(body));
+  assert.equal(body.result.status.state, "rejected");
+  assert.equal(body.result.status.message.parts[0].kind, "data");
+  assert.equal(body.result.status.message.parts[0].data.chap_error, -32602);
 });

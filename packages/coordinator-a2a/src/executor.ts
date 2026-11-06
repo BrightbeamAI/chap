@@ -7,17 +7,30 @@
  * Skill ids on inbound messages must take the form ``chap.<method>``;
  * the executor extracts the skill id from message metadata or the
  * data part and translates the call into a CHAP envelope.
+ *
+ * An answer is an agent message carrying the result. A refusal is a task
+ * that has failed, in A2A's terms: rejected when the coordinator refused
+ * the call, failed when it could not complete it. Either way the status
+ * message carries the CHAP error, `{chap_error, message, data?}`, so a
+ * client that reads only A2A states sees the failure, and one that reads
+ * CHAP codes has them.
  */
 
 import { randomUUID } from "node:crypto";
 
 import { AgentEvent, type AgentExecutor, type ExecutionEventBus, type RequestContext } from "@a2a-js/sdk/server";
-import { Role, type Message, type Part } from "@a2a-js/sdk";
+import { Role, TaskState, type Message, type Part } from "@a2a-js/sdk";
 
 import type { Coordinator, Envelope } from "@brightbeamai/chap-coordinator";
 import { methodForTool } from "@brightbeamai/chap-coordinator-mcp/schemas";
 
 import { CHAP_MEDIA_TYPE } from "./card.js";
+
+/** JSON-RPC's internal error: a fault inside the coordinator, which refused nothing. */
+const INTERNAL_ERROR = -32603;
+
+/** What a client is told of a fault inside the server; the detail is in the server's log. */
+const FAILED_INSIDE = "The CHAP call failed inside the server; its log has the detail.";
 
 export interface ChapAgentExecutorOptions {
   /** Optional id generator for CHAP envelope ids. */
@@ -29,11 +42,21 @@ export interface ChapAgentExecutorOptions {
    * them. Default: all 39.
    */
   skillFilter?: (skillId: string) => boolean;
+  /**
+   * Make every call as this participant. `from` is filled in on each call,
+   * and a call that names another `from` is refused with -32011. Use it
+   * where the server is one participant's connection, such as an
+   * orchestrator's, so the connection cannot act in anyone else's name, as
+   * `participant` does for the MCP server. Default: each call names its own
+   * `from`.
+   */
+  participant?: string;
 }
 
 export class ChapAgentExecutor implements AgentExecutor {
   private readonly nextEnvelopeId: () => string;
   private readonly skillFilter: (skillId: string) => boolean;
+  private readonly participant: string | undefined;
 
   constructor(
     private readonly coord: Coordinator,
@@ -42,28 +65,54 @@ export class ChapAgentExecutor implements AgentExecutor {
     let counter = 0;
     this.nextEnvelopeId = options.envelopeIdFactory ?? (() => `a2a-${++counter}`);
     this.skillFilter = options.skillFilter ?? (() => true);
+    this.participant = options.participant;
   }
 
   async execute(requestContext: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
     const contextId = requestContext.contextId || requestContext.userMessage.contextId || randomUUID();
 
-    let response: Envelope;
+    let error: Envelope["error"];
+    let result: unknown;
     try {
-      response = dispatchA2aMessage(this.coord, requestContext.userMessage, {
+      const response = dispatchA2aMessage(this.coord, requestContext.userMessage, {
         envelopeId: this.nextEnvelopeId(),
         skillFilter: this.skillFilter,
+        ...(this.participant !== undefined ? { participant: this.participant } : {}),
       });
+      if (response.error?.code === INTERNAL_ERROR) {
+        // A fault inside the coordinator, whose data can carry the
+        // exception's text. It goes to the server's log, and the client is
+        // told only that the call failed. A refusal is passed on as it came.
+        console.error("CHAP call failed:", response.error);
+        error = { code: INTERNAL_ERROR, message: FAILED_INSIDE };
+      } else {
+        error = response.error;
+        result = response.result;
+      }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      response = { jsonrpc: "2.0", error: { code: -32603, message: `CHAP dispatch threw: ${msg}` } };
+      // A fault in the server. Its message can carry a path or a stack line,
+      // so it goes to the server's log, which the client never sees.
+      console.error("CHAP dispatch failed:", e);
+      error = { code: INTERNAL_ERROR, message: FAILED_INSIDE };
     }
 
-    if (response.error) {
-      const body: Record<string, unknown> = { chap_error: response.error.code, message: response.error.message };
-      if (response.error.data !== undefined) body.data = response.error.data;
-      eventBus.publish(AgentEvent.message(this.agentMessage(contextId, body, { is_error: true })));
+    if (error) {
+      const { code, message, data } = error;
+      const taskId = requestContext.taskId;
+      eventBus.publish(AgentEvent.task({
+        id: taskId,
+        contextId,
+        status: {
+          state: code === INTERNAL_ERROR ? TaskState.TASK_STATE_FAILED : TaskState.TASK_STATE_REJECTED,
+          message: this.agentMessage(contextId, taskId, { chap_error: code, message, ...(data !== undefined ? { data } : {}) }),
+          timestamp: new Date().toISOString(),
+        },
+        artifacts: [],
+        history: [requestContext.userMessage],
+        metadata: undefined,
+      }));
     } else {
-      eventBus.publish(AgentEvent.message(this.agentMessage(contextId, coerceToRecord(response.result))));
+      eventBus.publish(AgentEvent.message(this.agentMessage(contextId, "", coerceToRecord(result))));
     }
     eventBus.finished();
   }
@@ -77,14 +126,17 @@ export class ChapAgentExecutor implements AgentExecutor {
     eventBus.finished();
   }
 
-  /** The agent's reply: one JSON data part. No task is made for it, so it names none. */
-  private agentMessage(contextId: string, data: Record<string, unknown>, metadata?: Record<string, unknown>): Message {
+  /**
+   * The agent's message: one JSON data part. An answer is a message alone,
+   * with no task made for it, so it names none; a refusal names its task.
+   */
+  private agentMessage(contextId: string, taskId: string, data: Record<string, unknown>): Message {
     return {
       messageId: `chap-resp-${this.nextEnvelopeId()}`,
       contextId,
-      taskId: "",
+      taskId,
       role: Role.ROLE_AGENT,
-      parts: [dataPart(data, metadata)],
+      parts: [dataPart(data)],
       metadata: undefined,
       extensions: [],
       referenceTaskIds: [],
@@ -109,6 +161,8 @@ export interface DispatchA2aMessageOptions {
   envelopeId?: string | number;
   /** Refuse a skill the filter excludes, with -32601. */
   skillFilter?: (skillId: string) => boolean;
+  /** Make the call as this participant, and refuse one that names another `from`, with -32011. */
+  participant?: string;
 }
 
 /**
@@ -144,11 +198,26 @@ export function dispatchA2aMessage(
     };
   }
 
+  const args: Record<string, unknown> = { ...(params ?? {}) };
+  if (options.participant !== undefined) {
+    if (args.from !== undefined && args.from !== options.participant) {
+      return {
+        jsonrpc: "2.0",
+        id,
+        error: {
+          code: -32011,
+          message: `This server acts as ${options.participant}; a call cannot name another from (${JSON.stringify(args.from)}).`,
+        },
+      };
+    }
+    args.from = options.participant;
+  }
+
   return coord.dispatch({
     jsonrpc: "2.0",
     id,
     method,
-    params: params ?? {},
+    params: args,
   });
 }
 
@@ -157,8 +226,8 @@ export function dispatchA2aMessage(
 // ============================================================
 
 /** A part carrying JSON, with the media type the card names for every skill. */
-function dataPart(data: unknown, metadata?: Record<string, unknown>): Part {
-  return { content: { $case: "data", value: data }, metadata, filename: "", mediaType: CHAP_MEDIA_TYPE };
+function dataPart(data: unknown): Part {
+  return { content: { $case: "data", value: data }, metadata: undefined, filename: "", mediaType: CHAP_MEDIA_TYPE };
 }
 
 function coerceToRecord(value: unknown): Record<string, unknown> {

@@ -62,7 +62,50 @@ A message carries the CHAP params in a data part, a part whose
 card names for every skill's input and output. The skill id is looked up in
 `message.metadata.skill` first, then in `skill` on the first data part; the
 params are that part's `params`, or the rest of the part when there are
-none. The answer is an agent message with one data part.
+none.
+
+## Answers and refusals
+
+An answer is an agent message with one data part, the call's result. A call
+CHAP refuses is a failure in A2A's terms: a task the agent rejected
+(`TASK_STATE_REJECTED`), or one that failed (`TASK_STATE_FAILED`) when the
+coordinator could not complete the call (`-32603`). The task's status
+message carries the CHAP error as a data part, with the error's `data` when
+it has any:
+
+```json
+{ "chap_error": -32011, "message": "Not an addressed reviewer for this task: agent:bot" }
+```
+
+so a client that reads only A2A states sees the failure, and one that reads
+CHAP codes has them. A 0.3 client sees the same task, in state `rejected` or
+`failed`. A fault inside the server is reported without its text, which goes
+to the server's log.
+
+## One participant's connection
+
+`makeChapAgentExecutor(coord, { participant })` makes every call as that
+member, as `participant` does for the MCP server: `from` is filled in, and a
+call that names anyone else is refused with `-32011`. Use it where the A2A
+server is one participant's connection, such as an orchestrator's, so the
+connection cannot act in anyone else's name, a person's included. Without
+it, each call names its own `from`.
+
+`skillFilter` restricts the skills: pass the same filter to
+`makeChapAgentCard`, which lists the skills, and to the executor, which runs
+them and refuses an excluded one with `-32601`.
+
+```typescript
+const onlyTheAgentsSkills = (id: string) => AGENT_MCP_TOOLS.has(id);
+const card = makeChapAgentCard({ baseUrl: "http://127.0.0.1:9090/", skillFilter: onlyTheAgentsSkills });
+const executor = makeChapAgentExecutor(coord, {
+  participant: "agent:orchestrator@local",
+  skillFilter: onlyTheAgentsSkills,
+});
+```
+
+`AGENT_MCP_TOOLS` comes from `@brightbeamai/chap-coordinator-mcp`; the skill
+ids are the MCP tool names.
 
 ## A2A 0.3 clients
 

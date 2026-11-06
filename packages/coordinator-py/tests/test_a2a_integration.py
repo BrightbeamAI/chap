@@ -19,7 +19,7 @@ from a2a.server.agent_execution import RequestContext
 from a2a.server.request_handlers.response_helpers import agent_card_to_dict
 from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
-from a2a.types import Message, Part, Role, SendMessageRequest
+from a2a.types import Message, Part, Role, SendMessageRequest, Task, TaskState
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
 
@@ -200,21 +200,16 @@ async def test_executor_publishes_success_as_data_message() -> None:
 
 
 @pytest.mark.asyncio
-async def test_executor_publishes_error_with_is_error_metadata() -> None:
+async def test_executor_publishes_a_refusal_as_a_rejected_task() -> None:
     coord = _make_coord()
     executor = make_chap_agent_executor(coord)
     msg = _build_message("chap.workspace.describe", {"workspace": "nope"})
     events = await _run(executor, msg)
 
     assert len(events) == 1
-    payload = _extract_data(events[0])
-    assert payload["chap_error"] == -32602
-
-    # Check the is_error flag in metadata
-    part = events[0].parts[0]
-    if len(part.metadata.fields):
-        md = MessageToDict(part.metadata)
-        assert md.get("is_error") is True
+    assert isinstance(events[0], Task)
+    assert events[0].status.state == TaskState.TASK_STATE_REJECTED
+    assert _extract_data(events[0].status.message)["chap_error"] == -32602
 
 
 @pytest.mark.asyncio

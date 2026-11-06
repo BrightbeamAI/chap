@@ -17,7 +17,7 @@ import {
   type AgentExecutionEvent,
   type ExecutionEventBus,
 } from "@a2a-js/sdk/server";
-import { Role, type Message } from "@a2a-js/sdk";
+import { Role, type Message, type Task } from "@a2a-js/sdk";
 
 import { Coordinator } from "@brightbeamai/chap-coordinator";
 
@@ -37,12 +37,14 @@ function message(skill: string, params: Record<string, unknown>): Message {
   };
 }
 
-/** The JSON the executor's first event carries. */
+/** The JSON the executor answered with: an answer's own, or a refused task's status message. */
 async function run(executor: ReturnType<typeof makeChapAgentExecutor>, msg: Message): Promise<Record<string, any>> {
   const bus = new RecordingBus();
   await executor.execute(new RequestContext({ tenant: "", message: msg, configuration: undefined, metadata: undefined },
                                             "t1", "c1", new ServerCallContext()), bus);
-  return ((bus.events[0].data as Message).parts[0].content as { value: Record<string, any> }).value;
+  const event = bus.events[0];
+  const reply = event.kind === "task" ? (event.data as Task).status!.message! : event.data as Message;
+  return (reply.parts[0].content as { value: Record<string, any> }).value;
 }
 
 test("a skill the filter excludes is refused and runs nothing", async () => {

@@ -13,7 +13,7 @@ import pytest
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
-from a2a.types import Message, Part, Role, SendMessageRequest
+from a2a.types import Message, Part, Role, SendMessageRequest, Task
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
 
@@ -39,11 +39,14 @@ def _message(skill: str, params: dict) -> Message:
 
 
 async def _run(executor, message: Message) -> dict:
+    """The JSON the executor answered with: an answer's own, or a refused task's status message."""
     queue = _Queue()
     ctx = RequestContext(call_context=ServerCallContext(),
                          request=SendMessageRequest(message=message), context_id="c")
     await executor.execute(ctx, queue)
-    return MessageToDict(queue.events[0].parts[0].data)
+    event = queue.events[0]
+    reply = event.status.message if isinstance(event, Task) else event
+    return MessageToDict(reply.parts[0].data)
 
 
 @pytest.mark.asyncio
