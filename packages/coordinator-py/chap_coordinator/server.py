@@ -1119,9 +1119,20 @@ class _Handler(BaseHTTPRequestHandler):
 
 def make_server(config: dict, coord: Coordinator) -> ChapServer:
     """Bind the standard library server on the configured host and port.
-    Port 0 picks a free port; read it from ``server.server_port``, and the
-    desk's address from ``server.desk_url``."""
-    return ChapServer((config["host"], int(config["port"])), ChapDesk(config, coord))
+    Port 0 picks a port free on both loopback addresses; read it from
+    ``server.server_port``, and the desk's address from ``server.desk_url``."""
+    desk = ChapDesk(config, coord)
+    address = (config["host"], int(config["port"]))
+    attempts = 5
+    while True:
+        try:
+            return ChapServer(address, desk)
+        except OSError as err:
+            # A port picked free on one loopback address can be held on the
+            # other by another program; another port is picked.
+            attempts -= 1
+            if address[1] != 0 or err.errno != errno.EADDRINUSE or attempts == 0:
+                raise
 
 
 def serve(config: dict) -> int:
@@ -1139,8 +1150,12 @@ def serve(config: dict) -> int:
         _close(coord)
         if err.errno != errno.EADDRINUSE:
             raise
-        print(f"Port {config['port']} on {err.filename or config['host']} is in use, by another desk or another "
-              "program. Stop that one, or set PORT to a free port.", file=sys.stderr)
+        if err.filename:
+            print(f"Port {config['port']} on {err.filename} is in use, and localhost may reach that address first: "
+                  "another program answers there. Stop it, or set PORT to a free port.", file=sys.stderr)
+        else:
+            print(f"Port {config['port']} on {config['host']} is in use, by another desk or another program. "
+                  "Stop that one, or set PORT to a free port.", file=sys.stderr)
         return 1
     base = server.desk_url.rstrip("/")
     print(f"CHAP {config['workspace']} on {base}")

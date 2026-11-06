@@ -16,6 +16,7 @@ library's HTTP server, and as an ASGI app under Starlette and FastAPI.
 from __future__ import annotations
 
 import asyncio
+import errno
 import hashlib
 import hmac
 import http.client
@@ -41,6 +42,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Mount, Route
 from starlette.testclient import TestClient
 
+from chap_coordinator import server as server_module
 from chap_coordinator.client import HttpCoordinator, Participant, Signer
 from chap_coordinator.server import (
     ANALYTICS_POLICY, MAX_BODY_BYTES, SECURITY_HEADERS, ChapDesk, desk_url, load_config, make_coordinator,
@@ -374,7 +376,29 @@ def test_a_port_taken_on_the_other_loopback_address_is_named(tmp_path, monkeypat
         taken.listen()
         port = taken.getsockname()[1]
         assert serve(load_config(write_config(tmp_path, port=port))) == 1
-    assert f"Port {port} on ::1 is in use" in capsys.readouterr().err
+    assert f"Port {port} on ::1 is in use, and localhost may reach that address first" in capsys.readouterr().err
+
+
+def test_port_0_takes_a_port_free_on_both_loopback_addresses(tmp_path, monkeypatch):
+    # The port picked on 127.0.0.1 can be another program's on ::1; the
+    # server then picks again.
+    listener = server_module._Listener
+    held: list[int] = []
+
+    class HeldOnce(listener):
+        def __init__(self, address, desk) -> None:
+            if not held:
+                held.append(address[1])
+                raise OSError(errno.EADDRINUSE, os.strerror(errno.EADDRINUSE))
+            super().__init__(address, desk)
+
+    monkeypatch.setattr(server_module, "_Listener", HeldOnce)
+    config = load_config(write_config(tmp_path, port=0))
+    server = make_server(config, make_coordinator(config))
+    try:
+        assert held and server.server_port != 0
+    finally:
+        server.server_close()
 
 
 def test_a_page_under_analytics_runs_in_a_sandbox(desk):
