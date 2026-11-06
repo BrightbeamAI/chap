@@ -396,15 +396,23 @@ def concentration(f: Frames) -> Brief:
         return Brief("concentration", "Who carries the reviewing", "No decisions yet.",
                      "No reviewer has decided on any agent's work.", "Nothing to balance.", False, c)
     top = c.iloc[0]
+    n_reviewers = int(top["n_reviewers"])
     head = (f"{top['top_reviewer']} takes {_pct(top['top_share'])} of the decisions on {top['assignee']}'s work "
-            f"({int(top['n_decisions'])} decisions across {int(top['n_reviewers'])} reviewers).")
+            f"({int(top['n_decisions'])} decisions across {n_reviewers} "
+            f"reviewer{'' if n_reviewers == 1 else 's'}).")
     text = ""
     if not cen.empty:
         hub = cen.iloc[0]
         text = (f"{hub['participant']} sits between the most work on the collaboration graph "
                 f"(betweenness {hub['betweenness']:.2f}, {int(hub['in_weight'])} items in, {int(hub['out_weight'])} out).")
-    if top["top_share"] > 0.6 and top["sufficient"]:
+    if n_reviewers == 1:
+        decision = (f"{top['top_reviewer']} is the only reviewer of {top['assignee']}'s work, so one person's "
+                    "judgement is the standard: add a second reviewer to check it, or accept that knowingly.")
+    elif top["top_share"] > 0.6 and top["sufficient"]:
         decision = f"One reviewer decides most of {top['assignee']}'s work: spread it, or accept that their standard is the standard."
+    elif top["top_share"] > 0.6:
+        decision = (f"{int(top['n_decisions'])} decisions are too few to say whether one reviewer carries "
+                    f"{top['assignee']}'s work.")
     else:
         decision = "Reviewing is spread across people."
     return Brief("concentration", "Who carries the reviewing", head, text, decision, bool(top["sufficient"]), c)

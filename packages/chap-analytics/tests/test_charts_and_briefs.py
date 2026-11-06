@@ -138,6 +138,23 @@ def test_coverage_and_duties_briefs_flag_an_unwatched_workspace():
     assert "Route them to a human" in d.decision
 
 
+def test_a_single_reviewer_is_named_the_only_reviewer():
+    """With one reviewer deciding everything, the brief said reviewing was
+    spread across people whenever the sample was small."""
+    for n in (6, 40):
+        b = briefs.concentration(frames(synthetic(0, tasks=n, reviewers=("human:ana",))))
+        assert "across 1 reviewer)" in b.headline
+        assert "human:ana is the only reviewer of agent:drafter's work" in b.decision
+        assert "spread" not in b.decision
+
+
+def test_a_concentrated_small_sample_is_called_too_small():
+    f = frames(synthetic(1, tasks=8, reviewer_weights=(8, 1, 1)))
+    top = briefs.concentration(f).table.iloc[0]
+    assert top["n_reviewers"] > 1 and top["top_share"] > 0.6 and not top["sufficient"]
+    assert "too few to say" in briefs.concentration(f).decision
+
+
 # ------------------------------------------------- transparency-log submissions
 
 def _recorded_submission_chain():
