@@ -61,3 +61,20 @@ test("the bin says what it does", async () => {
   assert.match(stdout, /chap-server keys/);
   await assert.rejects(run(process.execPath, [BIN, "--bogus"]), (e) => /Unknown option --bogus/.test(e.stderr));
 });
+
+test("a port in use is one line that says what to do", async () => {
+  const busy = createServer(() => {});
+  await new Promise((r) => busy.listen(0, "127.0.0.1", r));
+  const port = busy.address().port;
+  try {
+    const { configPath } = await project({ port });
+    await assert.rejects(run(process.execPath, [BIN, "--config", configPath]), (e) => {
+      assert.equal(e.code, 1);
+      assert.equal(e.stderr.trim().split("\n").length, 1, e.stderr);
+      assert.match(e.stderr, new RegExp(`Port ${port} on 127\\.0\\.0\\.1 is in use: .* another port with PORT or "port" in chap\\.config\\.json`));
+      return true;
+    });
+  } finally {
+    await new Promise((r) => busy.close(r));
+  }
+});

@@ -10,4 +10,4 @@ import { usage, wantsHelp } from "@brightbeamai/chap-server";
 import { serveGate } from "@brightbeamai/chap-code-gate";
 
 if (wantsHelp()) console.log(usage(import.meta.url));
-else await serveGate({ dir: dirname(fileURLToPath(import.meta.url)) });
+else await serveGate({ dir: dirname(fileURLToPath(import.meta.url)) }).catch((e) => { console.error(e.message); process.exit(1); });

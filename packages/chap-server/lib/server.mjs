@@ -695,7 +695,10 @@ export async function createChapServer(options = {}) {
   return {
     config, coord, handler, server,
     async listen({ port = config.port, host = config.host, log = console.log } = {}) {
-      await new Promise((resolve) => server.listen(port, host, resolve));
+      await new Promise((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(port, host, () => { server.off("error", reject); resolve(); });
+      }).catch((e) => { throw listenError(e, port, host); });
       const base = `http://${host}:${server.address().port}`;
       log(`CHAP ${config.workspace} on ${base}`);
       log(`  desk     ${base}/`);
@@ -707,6 +710,14 @@ export async function createChapServer(options = {}) {
     },
     close: () => new Promise((resolve) => server.close(resolve)),
   };
+}
+
+/** Why the server could not listen, in a line that says what to do. */
+function listenError(err, port, host) {
+  if (err.code === "EADDRINUSE") return new Error(`Port ${port} on ${host} is in use: another process answers there, a gate or desk started earlier perhaps. Stop it, or give this one another port with PORT or "port" in chap.config.json.`);
+  if (err.code === "EACCES") return new Error(`Port ${port} on ${host} needs privileges this process does not have; give it a port above 1023 with PORT or "port" in chap.config.json.`);
+  if (err.code === "EADDRNOTAVAIL") return new Error(`${host} is not an address of this machine; set CHAP_HOST, or "host" in chap.config.json.`);
+  return err;
 }
 
 /**

@@ -134,3 +134,19 @@ test("server.mjs and diff-profiles.mjs print their help with --help", async () =
     assert.match(stdout, pattern, script);
   }
 });
+
+test("npm start on a port in use says so in one line", async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { createServer } = await import("node:http");
+  const busy = createServer(() => {});
+  await new Promise((r) => busy.listen(0, "127.0.0.1", r));
+  const port = busy.address().port;
+  try {
+    const dir = fileURLToPath(new URL("..", import.meta.url));
+    await assert.rejects(promisify(execFile)(process.execPath, [`${dir}server.mjs`], { env: { ...process.env, PORT: String(port), CHAP_DB_PATH: ":memory:" }, timeout: 10000 }),
+      (e) => e.code === 1 && /^Port \d+ on 127\.0\.0\.1 is in use/.test(e.stderr) && e.stderr.trim().split("\n").length === 1);
+  } finally {
+    await new Promise((r) => busy.close(r));
+  }
+});

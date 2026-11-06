@@ -9,4 +9,4 @@ import { fileURLToPath } from "node:url";
 import { serve, usage, wantsHelp } from "@brightbeamai/chap-server";
 
 if (wantsHelp()) console.log(usage(import.meta.url));
-else await serve({ dir: dirname(fileURLToPath(import.meta.url)) });
+else await serve({ dir: dirname(fileURLToPath(import.meta.url)) }).catch((e) => { console.error(e.message); process.exit(1); });
