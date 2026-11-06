@@ -637,6 +637,33 @@ async function decide(kind) {
   }
 }
 
+/**
+ * Ask before an approval made with the a key, so a single key press, made
+ * by mistake or taken by a page the desk sits under, never decides. Resolve
+ * true to approve.
+ */
+function confirmKeyApproval(t) {
+  return new Promise((resolve) => {
+    const done = (ok) => { $("confirm").hidden = true; $("confirm-send").onclick = null; $("confirm-cancel").onclick = null; resolve(ok); };
+    $("confirm-title").textContent = "Approve as written?";
+    $("confirm-cancel").textContent = "Back";
+    $("confirm-send").textContent = "Approve";
+    $("confirm-send").disabled = false;
+    $("confirm-body").replaceChildren(el("p", { text: `${titleOf(t)}: your approval is signed and sent for the artefact as it stands.` }));
+    $("confirm").hidden = false;
+    $("confirm-send").onclick = () => done(true);
+    $("confirm-cancel").onclick = () => done(false);
+    $("confirm-send").focus();
+  });
+}
+
+/** The a key: approve the task on show once the reviewer confirms. */
+async function approveByKey() {
+  const t = current();
+  if (!t || !mine(t) || state.busy || $("approve").disabled) return;
+  if (await confirmKeyApproval(t)) await decide("approve");
+}
+
 /** Ask before approving a branch whose commits were not all opened; resolve true to approve. */
 function confirmBranch(artefact) {
   const unread = artefact.commits.filter((c) => !state.range.read.has(c.sha));
@@ -778,7 +805,7 @@ function onKey(e) {
   switch (e.key) {
     case "j": if (ordered.length) select_(ordered[Math.min(ordered.length - 1, at + 1)]); break;
     case "k": if (ordered.length) select_(ordered[Math.max(0, at - 1)]); break;
-    case "a": decide("approve"); break;
+    case "a": approveByKey(); break;
     case "r": if (selected() && mine(selected())) { $("comment").focus(); notice("Write the note, then press Request changes.", ""); } break;
     case "x": decide("reject"); break;
     case "e": toggleEdit(); break;
