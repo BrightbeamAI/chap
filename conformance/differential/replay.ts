@@ -103,17 +103,25 @@ async function main(): Promise<void> {
   // coordinator restarted on the file holds what this one holds.
   const { SqliteStore } = await import("../../packages/coordinator/src/storage/sqlite.ts");
   const errors: string[] = [];
-  const store = new SqliteStore(req.store);
-  const coord = new Coordinator({ ...options, store, onStoreError: (e) => { errors.push(String(e)); } });
+  const open = () => {
+    const s = new SqliteStore(req.store!);
+    return { s, c: new Coordinator({ ...options, store: s, onStoreError: (e) => { errors.push(String(e)); } }) };
+  };
+  const held = (c: Coordinator) => JSON.stringify(sorted(JSON.parse(JSON.stringify(c.snapshot()))));
+  let { s: store, c: coord } = open();
   const responses = req.envelopes.map((e) => coord.dispatch(e as never));
-  if (req.lapse_at) coord.checkWhisperLapses?.(req.workspace, req.lapse_at);
-  const before = JSON.stringify(sorted(JSON.parse(JSON.stringify(coord.snapshot()))));
+  let restartSame = true;
+  // The whispers lapse on the restarted coordinator, so a default it lost on
+  // the way shows up in the entries the lapses write.
+  for (const lapse of [true, false]) {
+    const before = held(coord);
+    store.close();
+    ({ s: store, c: coord } = open());
+    restartSame &&= before === held(coord);
+    if (lapse && req.lapse_at) coord.checkWhisperLapses?.(req.workspace, req.lapse_at);
+  }
+  const own = project(coord);
   store.close();
-  const reopened = new SqliteStore(req.store);
-  const restarted = new Coordinator({ ...options, store: reopened });
-  const after = JSON.stringify(sorted(JSON.parse(JSON.stringify(restarted.snapshot()))));
-  const own = project(restarted);
-  reopened.close();
   // Each coordinator reads the other's file: projected, it holds what the
   // file this one wrote holds.
   let cross: unknown = null;
@@ -122,7 +130,7 @@ async function main(): Promise<void> {
     cross = project(new Coordinator({ ...options, store: other }));
     other.close();
   }
-  process.stdout.write(JSON.stringify({ responses, errors, restart_same: before === after, own, cross }));
+  process.stdout.write(JSON.stringify({ responses, errors, restart_same: restartSame, own, cross }));
 }
 
 main().catch((e) => {

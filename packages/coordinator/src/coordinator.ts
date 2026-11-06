@@ -279,59 +279,77 @@ function targetOf(envelope: unknown): WorkspaceId | undefined {
   return typeof id === "string" && id !== "" ? id : undefined;
 }
 
-/** An object with its null fields left out, as this coordinator writes it. */
-function withoutNulls(value: unknown): unknown {
-  return isObject(value) ? Object.fromEntries(Object.entries(value).filter(([, v]) => v !== null)) : value;
+/**
+ * The fields that keep a null. A whisper's default_if_lapsed is required, and
+ * null is the default a lapse applies and records.
+ */
+const NULL_VALUES: Readonly<Record<string, readonly string[]>> = { whispers: ["default_if_lapsed"] };
+
+/** Deletes the fields of `o` that hold null, but those named in `keep`. */
+function dropNulls(o: Record<string, unknown>, keep: readonly string[] = []): void {
+  for (const key of Object.keys(o)) if (o[key] === null && !keep.includes(key)) delete o[key];
+}
+
+/**
+ * Puts one object of a workspace's collection in this coordinator's shape,
+ * in place, whichever coordinator made it. A field with no value is left
+ * out: the Python coordinator writes it as null, and a call that gives a
+ * param as null gives it no value, as both coordinators read params. The
+ * Python coordinator also names a history entry's sender `from_` and keeps a
+ * route decision's fields of its kind in `extra`; this one names the sender
+ * `from` and keeps those fields beside `kind`. What an input, an output or
+ * an artefact holds is kept as it is. Putting an object in shape twice
+ * changes nothing more.
+ */
+function inShape(name: string, item: Record<string, unknown>): Record<string, unknown> {
+  if (name === "route_decisions") {
+    const extra = item.extra;
+    delete item.extra;
+    if (isObject(extra)) Object.assign(item, extra);
+    item.kind = "route_decision";
+  }
+  dropNulls(item, NULL_VALUES[name]);
+  const each = (o: Record<string, unknown>, field: string, f?: (x: Record<string, unknown>) => void) => {
+    if (!Array.isArray(o[field])) return;
+    for (const x of o[field] as unknown[]) {
+      if (isObject(x)) {
+        dropNulls(x);
+        f?.(x);
+      }
+    }
+  };
+  if (name === "members") each(item, "keys");
+  if (name === "tasks") {
+    each(item, "history", (h) => {
+      if (h.from === undefined && typeof h.from_ === "string") h.from = h.from_;
+      delete h.from_;
+    });
+    if (isObject(item.review)) {
+      dropNulls(item.review);
+      each(item.review, "decisions");
+    }
+  }
+  if (name === "deliberations") each(item, "votes");
+  if (name === "handoffs") {
+    each(item, "tasks");
+    if (Array.isArray(item.accepted_task_ids) && item.accepted_task_ids.length === 0) delete item.accepted_task_ids;
+  }
+  return item;
 }
 
 /**
  * A workspace snapshot in this coordinator's shape, whichever coordinator
- * wrote it. The Python coordinator writes a field it has no value for as
- * null, a history entry's sender as `from_`, and a route decision's fields
- * of its kind beside an `extra` object; this one leaves the field out, names
- * the sender `from`, and keeps a route decision's fields together under its
- * `kind`. Only the coordinator's own fields change: an input, an output or
- * an artefact is read as it was written.
+ * wrote it: its own fields with no value left out, and a copy of each object
+ * of its collections put in shape. The snapshot itself is not changed.
  */
 function inThisShape(w: Record<string, unknown>): Record<string, unknown> {
-  const out = withoutNulls(w) as Record<string, unknown>;
-  const each = (name: string, f: (item: Record<string, unknown>) => Record<string, unknown>) => {
+  const out = { ...w };
+  dropNulls(out);
+  for (const name of COLLECTIONS) {
     if (Array.isArray(out[name])) {
-      out[name] = (out[name] as unknown[]).map((x) => (isObject(x) ? f(withoutNulls(x) as Record<string, unknown>) : x));
+      out[name] = (out[name] as unknown[]).map((x) => (isObject(x) ? inShape(name, structuredClone(x)) : x));
     }
-  };
-  const list = (item: Record<string, unknown>, field: string) => {
-    if (Array.isArray(item[field])) item[field] = (item[field] as unknown[]).map(withoutNulls);
-  };
-  for (const name of ["overrides", "whispers", "snapshots"]) each(name, (x) => x);
-  each("members", (m) => { list(m, "keys"); return m; });
-  each("tasks", (t) => {
-    if (Array.isArray(t.history)) {
-      t.history = t.history.map((h) => {
-        const entry = withoutNulls(h) as Record<string, unknown>;
-        if (entry.from === undefined && typeof entry.from_ === "string") entry.from = entry.from_;
-        delete entry.from_;
-        return entry;
-      });
-    }
-    if (isObject(t.review)) {
-      const review = withoutNulls(t.review) as Record<string, unknown>;
-      list(review, "decisions");
-      t.review = review;
-    }
-    return t;
-  });
-  each("deliberations", (d) => { list(d, "votes"); return d; });
-  each("handoffs", (h) => {
-    list(h, "tasks");
-    if (Array.isArray(h.accepted_task_ids) && h.accepted_task_ids.length === 0) delete h.accepted_task_ids;
-    return h;
-  });
-  each("route_decisions", (r) => {
-    const extra = isObject(r.extra) ? r.extra : {};
-    delete r.extra;
-    return { ...r, ...extra, kind: "route_decision" };
-  });
+  }
   return out;
 }
 
@@ -669,21 +687,28 @@ export class Coordinator {
     }
   }
 
-  /** The change since the last write, taking the recorded keys with it. */
+  /**
+   * The change since the last write, taking the recorded keys with it. Each
+   * object written is put in the shape a restore gives back, and held in it,
+   * so a coordinator restarted on the store holds what this one holds.
+   */
   private takeChange(ws: Workspace, p: Persisted): StoreChange | undefined {
     const replace = p.replace;
     const objects: Record<string, Record<string, unknown>> = {};
     for (const name of COLLECTIONS) {
-      const map = ws[name] as unknown as TrackedMap<string, unknown>;
+      const map = ws[name] as unknown as TrackedMap<string, Record<string, unknown>>;
       if (replace) {
         const all: Record<string, unknown> = {};
-        for (const [key, value] of Map.prototype.entries.call(map) as IterableIterator<[string, unknown]>) {
-          all[key] = value;
+        for (const [key, value] of Map.prototype.entries.call(map) as IterableIterator<[string, Record<string, unknown>]>) {
+          all[key] = inShape(name, value);
         }
         objects[name] = all;
       } else if (map.dirty.size) {
         const changed: Record<string, unknown> = {};
-        for (const key of map.dirty) changed[key] = map.peek(key) ?? null;
+        for (const key of map.dirty) {
+          const value = map.peek(key);
+          changed[key] = value === undefined ? null : inShape(name, value);
+        }
         objects[name] = changed;
       }
       map.dirty.clear();
@@ -730,6 +755,13 @@ export class Coordinator {
   private persistSnapshot(ws: Workspace): void {
     const next = (this.wsVersions.get(ws.id) ?? 0) + 1;
     this.wsVersions.set(ws.id, next);
+    // As takeChange: each object is written, and held, in the shape a
+    // restore gives back.
+    for (const name of COLLECTIONS) {
+      for (const value of rawValues(ws[name] as unknown as TrackedMap<string, Record<string, unknown>>)) {
+        inShape(name, value);
+      }
+    }
     let record: WorkspaceRecord;
     try {
       record = { id: ws.id, data: this.snapshotOf(ws), version: next, updated_at: this.now() };
@@ -1688,9 +1720,11 @@ export class Coordinator {
       profiles,
       mode: (p.mode as Mode) ?? "trial",
       mode_ceiling: (p.mode_ceiling as Mode) ?? "production",
-      routing_policy_uri: p.routing_policy_uri as string | undefined,
+      // A param given as null gives no value, as in the Python reference: a
+      // null min_acr sets no minimum.
+      routing_policy_uri: (p.routing_policy_uri as string | null | undefined) ?? undefined,
       step_up_window_sec: (p.step_up_window_sec as number | null | undefined) ?? 300,
-      min_acr: p.min_acr as string | undefined,
+      min_acr: (p.min_acr as string | null | undefined) ?? undefined,
       signature_policy: policy,
       members: this.newMap(),
       tasks: this.newMap(),

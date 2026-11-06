@@ -25,10 +25,11 @@ what it received: a handler that writes into the request makes the recorded
 envelope differ from the signed one, and would otherwise be replayed into the
 other reference as though both had produced it.
 
-Each seed is also replayed into both references on a SQLite file. Each call
-writes only what it changed, so the check is that nothing was missed: a
-coordinator restarted on the file holds what the one that wrote it held, and
-the two references wrote the same audit entries.
+Each seed is also replayed into both references on a SQLite file, restarted,
+its pending whispers lapsed, and restarted again. Each call writes only what
+it changed, so the check is that nothing was missed: a coordinator restarted
+on the file holds what the one that wrote it held, and the two references
+wrote the same audit entries.
 
 Action selection reads the workspace as it stands: decisions go to tasks under
 review and to reviewers the review named, resumes go to paused tasks, handoffs
@@ -573,7 +574,8 @@ class Recorder:
         elif a == "whisper":
             r = self._send("whisper.ask", self._assignee(tid), task_id=tid,
                            to=[rnd.choice(HUMANS)], question=f"q{self._n}",
-                           deadline_ms=rnd.choice([0, 600_000]), default_if_lapsed="no")
+                           deadline_ms=rnd.choice([0, 600_000]),
+                           default_if_lapsed=rnd.choice(["no", None]))
             wid = self._result(r, "whisper_id")
             if wid:
                 self.whispers.append(wid)
@@ -823,21 +825,31 @@ def _project_workspace(coord: Coordinator, workspace: str) -> dict | None:
 
 
 def _replay_py(envelopes: list[dict], store: str) -> tuple[list[dict], list[str], bool]:
-    """The Python reference on a SQLite file: responses, store errors, restart."""
+    """The Python reference on a SQLite file: responses, store errors, and
+    whether a restart, before the whispers lapse and after, holds the same."""
     options = dict(deterministic_ids=True, deterministic_clock=True,
                    enable_chain=True, default_profiles=PROFILES)
     errors: list[str] = []
-    sq = SqliteStore(store)
-    coord = Coordinator(CoordinatorOptions(
-        **options, store=sq, on_store_error=lambda e, r: errors.append(str(e))))
+
+    def open_coordinator() -> tuple[SqliteStore, Coordinator]:
+        sq = SqliteStore(store)
+        return sq, Coordinator(CoordinatorOptions(
+            **options, store=sq, on_store_error=lambda e, r: errors.append(str(e))))
+
+    sq, coord = open_coordinator()
     responses = [coord.dispatch(json.loads(json.dumps(e))) for e in envelopes]
-    coord.check_whisper_lapses("w", _LAPSE_AT)
-    before = _plain(coord)
+    same = True
+    # The whispers lapse on the restarted coordinator, so a default it lost
+    # on the way shows up in the entries the lapses write.
+    for lapse in (True, False):
+        before = _plain(coord)
+        sq.close()
+        sq, coord = open_coordinator()
+        same = same and before == _plain(coord)
+        if lapse:
+            coord.check_whisper_lapses("w", _LAPSE_AT)
     sq.close()
-    reopened = SqliteStore(store)
-    after = _plain(Coordinator(CoordinatorOptions(**options, store=reopened)))
-    reopened.close()
-    return responses, errors, before == after
+    return responses, errors, same
 
 
 def _entries(path: str) -> list:

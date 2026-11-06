@@ -61,6 +61,21 @@ def test_step_up_enforces_min_acr():
     assert "error" not in ok or ok["error"]["code"] != -32402
 
 
+def test_a_min_acr_given_as_null_sets_no_minimum():
+    fresh = int(time.time())
+
+    def verify(token):
+        return {"sub": "u", "auth_time": fresh, "acr": token}
+
+    c = Coordinator(CoordinatorOptions(enforce_step_up=True, verify_oidc_token=verify))
+    c.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w", "min_acr": None}})
+    c.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:alice", "type": "human",
+                           "oidc_token": "pwd"}})
+    assert _privileged(c, "human:alice").get("error", {}).get("code") != -32402
+
+
 def test_min_acr_not_bypassed_by_downgraded_rejoin():
     fresh = int(time.time())
 

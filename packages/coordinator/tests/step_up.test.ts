@@ -43,6 +43,19 @@ test("step-up enforces min_acr", () => {
   assert.notEqual(privileged(c, "human:bob").error?.code, -32402);
 });
 
+test("a min_acr given as null sets no minimum", () => {
+  // A param given as null gives no value, as in the Python reference. This
+  // coordinator held the null as the minimum, and refused every person.
+  const fresh = Math.floor(Date.now() / 1000);
+  const c = new Coordinator({ enforceStepUp: true,
+    verifyOidcToken: (t: string) => ({ sub: "u", auth_time: fresh, acr: t }) });
+  c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create",
+    params: { workspace: "w", min_acr: null }});
+  c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",
+    params: { workspace: "w", from: "human:alice", type: "human", oidc_token: "pwd" }});
+  assert.notEqual(privileged(c, "human:alice").error?.code, -32402);
+});
+
 test("min_acr is not bypassed by a downgraded re-join", () => {
   const fresh = Math.floor(Date.now() / 1000);
   const c = new Coordinator({ enforceStepUp: true,

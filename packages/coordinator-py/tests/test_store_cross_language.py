@@ -1,11 +1,13 @@
 """
 conformance/store-vectors.json: a store the TypeScript coordinator wrote
-restores here to the state this coordinator reached from the same calls.
+restores here to the state this coordinator reached from the same calls,
+and a store this one wrote restores to what it held.
 
 The TypeScript coordinator names a history entry's sender ``from``, keeps a
 route decision's own fields at the top beside its ``kind``, and leaves out a
 field with no value, and this coordinator could not restore any of it: the
-workspace was skipped with a warning. Mirrors store_cross_language.test.ts,
+workspace was skipped with a warning. A whisper's null default_if_lapsed is
+kept by both, and its lapse records it. Mirrors store_cross_language.test.ts,
 which restores the Python snapshot.
 """
 from __future__ import annotations
@@ -33,11 +35,15 @@ def _native():
     return c
 
 
-def _from_typescript():
+def _restored(data):
     store = MemoryStore()
-    store.save(WorkspaceRecord(id="w", data=copy.deepcopy(VECTORS["typescript"]),
-                               version=len(VECTORS["typescript"]["audit"]), updated_at="t"))
+    store.save(WorkspaceRecord(id="w", data=copy.deepcopy(data),
+                               version=len(data["audit"]), updated_at="t"))
     return Coordinator(_options(store=store))
+
+
+def _from_typescript():
+    return _restored(VECTORS["typescript"])
 
 
 def _plain(c):
@@ -63,6 +69,14 @@ def test_a_store_the_typescript_coordinator_wrote_restores_to_the_state_this_one
     assert _without_nulls(_plain(_from_typescript())) == _without_nulls(_plain(_native()))
 
 
+def test_a_restart_on_the_store_this_coordinator_wrote_holds_what_it_held():
+    store = MemoryStore()
+    c = Coordinator(_options(store=store))
+    for e in VECTORS["envelopes"]:
+        c.dispatch(copy.deepcopy(e))
+    assert _plain(Coordinator(_options(store=store))) == _plain(c)
+
+
 def test_the_restored_workspace_carries_on_as_this_ones_would():
     loaded, own = _from_typescript(), _native()
     task = next(t for t in own.workspaces["w"].tasks.values() if t.state == "review_requested")
@@ -73,4 +87,13 @@ def test_the_restored_workspace_carries_on_as_this_ones_would():
     approve = {"jsonrpc": "2.0", "id": "d", "method": "decide.approve",
                "params": {"workspace": "w", "from": "human:c", "task_id": task.id}}
     assert loaded.dispatch(copy.deepcopy(approve)) == own.dispatch(copy.deepcopy(approve))
+    assert loaded.workspaces["w"].chain_head == own.workspaces["w"].chain_head
+
+
+def test_a_whisper_restored_with_a_null_default_lapses_to_it_from_either_store():
+    # Both restored, so both clocks read alike when the lapses are recorded.
+    loaded, own = _from_typescript(), _restored(VECTORS["python"])
+    lapsed = loaded.check_whisper_lapses("w", "2100-01-01T00:00:00.000Z")
+    assert [e["params"]["default_applied"] for e in lapsed] == ["first", None]
+    assert lapsed == own.check_whisper_lapses("w", "2100-01-01T00:00:00.000Z")
     assert loaded.workspaces["w"].chain_head == own.workspaces["w"].chain_head
