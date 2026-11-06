@@ -142,6 +142,20 @@ def test_the_store_is_found_from_the_config_files_directory_wherever_the_server_
     assert load_config(path)["store"] == ":memory:"
 
 
+def test_port_0_in_the_file_picks_a_free_port(tmp_path, monkeypatch):
+    monkeypatch.delenv("PORT", raising=False)
+    config = load_config(write_config(tmp_path, port=0))
+    assert config["port"] == 0
+    server = make_server(config, make_coordinator(config))
+    try:
+        assert server.server_port not in (0, 8787)
+    finally:
+        server.server_close()
+    assert load_config(write_config(tmp_path, port=None))["port"] == 8787
+    monkeypatch.setenv("PORT", "8790")
+    assert load_config(write_config(tmp_path, port=0))["port"] == 8790
+
+
 def test_a_leading_tilde_is_the_home_directory(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))

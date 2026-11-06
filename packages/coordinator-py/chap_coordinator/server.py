@@ -177,10 +177,10 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
 
     ``path`` is the file, by default CHAP_CONFIG, else ``chap.config.json``
     in the current directory. PORT, CHAP_HOST and CHAP_DB_PATH replace the
-    port, host and store; CHAP_REQUIRE_SIGNATURES (``1``, ``true``,
-    ``humans``, ``0`` or ``false``) and CHAP_CHAIN (``1`` or ``true``)
-    replace the two settings; CHAP_ALLOWED_HOSTS adds host names, comma
-    separated.
+    port, host and store; port 0 picks a free port. CHAP_REQUIRE_SIGNATURES
+    (``1``, ``true``, ``humans``, ``0`` or ``false``) and CHAP_CHAIN (``1``
+    or ``true``) replace the two settings; CHAP_ALLOWED_HOSTS adds host
+    names, comma separated.
 
     ``store`` and ``analytics`` are paths against the config file's
     directory, from wherever the server starts, and a leading ``~`` is the
@@ -211,7 +211,8 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
     if not isinstance(config.get("profiles"), list) or not all(isinstance(p, str) for p in config["profiles"]):
         raise ValueError(f"{config_path} needs profiles, a list such as [\"core/1.0\", \"review/1.0\"]")
     base = config_path.parent
-    config["port"] = int(os.environ.get("PORT") or config.get("port") or 8787)
+    port = os.environ.get("PORT") or config.get("port")
+    config["port"] = int(8787 if port is None or port == "" else port)
     config["host"] = os.environ.get("CHAP_HOST") or config.get("host") or "127.0.0.1"
     config["store"] = _project_path(os.environ.get("CHAP_DB_PATH") or config.get("store") or "./data/chap.db", base)
     config["analytics"] = _project_path(config.get("analytics") or "./analytics", base)
