@@ -20,9 +20,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { access, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isMain, loadConfig, start } from "@brightbeamai/chap-server";
+import { isMain, loadConfig } from "@brightbeamai/chap-server";
 import { generateKeyFile, sshKeyFiles } from "@brightbeamai/chap-server/keys";
-import { createDemoRepo } from "@brightbeamai/chap-code-gate";
+import { createDemoRepo, startGate } from "@brightbeamai/chap-code-gate";
 import { run as runAgent } from "./agent.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -38,7 +38,7 @@ export async function demo({ fresh = false, once = false, log = console.log } = 
   await sshKeyFiles(config.agent.uri, keyPath);
   if (created) log(`The agent's key is new: ${keyPath}`);
 
-  const { server, base } = await start(config);
+  const { server, base } = await startGate(config);
   const repo = join(here, "demo-repo");
   if (!(await exists(repo))) await createDemoRepo(repo, { log: (l) => log(`  ${l}`), gateDir: here });
 

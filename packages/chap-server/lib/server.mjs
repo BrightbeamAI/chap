@@ -142,8 +142,12 @@ export function reconcileSignedProfile(config) {
   }
 }
 
-/** Build the coordinator from a config. Exported so tests can run in-process. */
-export async function makeCoordinator(config, extra = {}) {
+/**
+ * Build the coordinator from a config. Exported so tests can run in-process.
+ * `enrol` lists members to join with their keys at start (see bootstrap);
+ * every other entry of `extra` is a coordinator option.
+ */
+export async function makeCoordinator(config, { enrol = [], log = console.log, ...extra } = {}) {
   reconcileSignedProfile(config);
   reconcileOidcProfile(config, !!(config.oidc || extra.verifyOidcToken));
   const options = {
@@ -160,22 +164,38 @@ export async function makeCoordinator(config, extra = {}) {
   }
   const coord = new Coordinator(options);
   await coord.start();
-  await bootstrap(coord, config);
+  await bootstrap(coord, config, { enrol, log });
   return coord;
 }
 
 /**
  * Create the workspace and join the configured participants.
  *
- * With signatures required, nobody is joined here: each participant joins
- * itself with its own key, since a re-join cannot add a key for someone.
- * The desk does this for a human; agent.mjs does it for the agent.
+ * `enrol` lists members whose keys are known before anyone joins, from a
+ * trust policy say: { uri, type, role, display_name, keys }. Each is joined
+ * with its keys first, so whoever joins later under that URI with another
+ * key holds nothing; a member on record already with none of its keys is
+ * reported through `log`.
+ *
+ * With signatures required, nobody else is joined here: each participant
+ * joins itself with its own key, since a re-join cannot add a key for
+ * someone. The desk does this for a human; the agent does it for itself.
  */
-export async function bootstrap(coord, config) {
+export async function bootstrap(coord, config, { enrol = [], log = console.log } = {}) {
   const send = (method, params) => coord.dispatch({ jsonrpc: "2.0", id: `boot-${method}`, method, params: { workspace: config.workspace, ...params } });
   if (!coord.getWorkspace(config.workspace)) {
     const r = send("workspace.create", { profiles: config.profiles, ...(config.mode ? { mode: config.mode } : {}), ...(config.mode_ceiling ? { mode_ceiling: config.mode_ceiling } : {}) });
     if (r.error) throw new Error(`workspace.create: ${r.error.message}`);
+  }
+  for (const m of enrol) {
+    const held = coord.getWorkspace(config.workspace).members.get(m.uri);
+    if (held) {
+      const xs = new Set(held.keys.filter((k) => !k.revoked_at && !k.valid_until).map((k) => k.jwk.x));
+      if (!m.keys.some((k) => xs.has(k.x))) log(`${m.uri} is on record in ${config.workspace} with a key the trust policy does not pin; their decisions there will not verify against it. Find out who joined under that URI.`);
+      continue;
+    }
+    const r = send("participant.join", { from: m.uri, type: m.type, role: m.role, ...(m.display_name ? { display_name: m.display_name } : {}), jwks: { keys: m.keys } });
+    if (r.error) throw new Error(`participant.join ${m.uri}: ${r.error.message}`);
   }
   if (config.require_signatures) return;
   const ws = coord.getWorkspace(config.workspace);
@@ -621,9 +641,9 @@ export async function makeServer(config, coord) {
 }
 
 /** The config, the coordinator and the handler, from what createChapServer and chapHandler take. */
-async function prepare({ config, configPath, coordinator, basePath } = {}) {
+async function prepare({ config, configPath, coordinator, basePath, enrol = [], log = console.log } = {}) {
   config ??= await loadConfig(configPath);
-  const coord = coordinator ?? await makeCoordinator(config);
+  const coord = coordinator ?? await makeCoordinator(config, { enrol, log });
   return { config, coord, handler: await makeHandler(config, coord, { basePath }) };
 }
 
@@ -632,8 +652,9 @@ async function prepare({ config, configPath, coordinator, basePath } = {}) {
  * store with the workspace created, its handler, and a Node HTTP server.
  * `config` is what loadConfig returns; `configPath` reads one instead;
  * `coordinator` serves one the caller made; `basePath` serves everything
- * under a prefix. `listen()` takes the configured port and host and prints
- * where it answers; `close()` stops it.
+ * under a prefix; `enrol` joins members with known keys first (bootstrap).
+ * `listen()` takes the configured port and host and prints where it
+ * answers; `close()` stops it.
  */
 export async function createChapServer(options = {}) {
   const { config, coord, handler } = await prepare(options);

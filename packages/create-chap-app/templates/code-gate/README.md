@@ -281,7 +281,12 @@ the reviewers `chap.config.json` names and the keys the workspace records.
 
 A URI is held by whoever joined the workspace first under it, unless the
 deployment ties joins to a login (OIDC, below). Pinning keys in the policy,
-after confirming their fingerprints, is what closes that. The desk checks it
+after confirming their fingerprints, is what closes that, and the gate acts
+on it at start: it joins every reviewer and agent the policy pins, with the
+pinned keys, before anyone else can join under those URIs. It reads
+`chap-trust.json` in this project, or the file `trust` in
+`chap.config.json` names (a path from this project), and it says at start
+when its store holds one of them under a key the policy does not pin. The desk checks it
 too: after joining it asks the workspace, with a signed read, whether it
 holds the browser's key for you, and while another key holds your URI it
 signs nothing and says so.
@@ -365,7 +370,10 @@ leave it off.
    decision: reviewers request changes and the agent revises. `all_approve`
    needs every reviewer the policy names.
 5. **The trust policy.** `npm run trust` once the reviewers and agents have
-   joined, then commit `chap-trust.json` at the root, as above. Add it, the
+   joined, then commit `chap-trust.json` at the root, as above, and set
+   `"trust": "../../chap-trust.json"` in the gate project's
+   `chap.config.json`, so a gate started on a fresh store joins them with
+   their pinned keys first. Add it, the
    gate project and `.github/workflows/` to CODEOWNERS.
 6. **The check on every pull request.** Copy
    `.github/workflows/chap-verify.yml` into the repository and make the job

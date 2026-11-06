@@ -9,4 +9,5 @@ export { entry, hookEntry } from "./lib/entry.mjs";
 export { hook } from "./lib/hook.mjs";
 export { installClaudeHook, installHooks } from "./lib/install-hooks.mjs";
 export { createDemoRepo } from "./lib/demo-repo.mjs";
+export { serveGate, startGate, trustedMembers } from "./lib/server.mjs";
 export { main as claudeSession } from "./lib/claude-session.mjs";

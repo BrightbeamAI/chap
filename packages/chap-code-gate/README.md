@@ -25,6 +25,11 @@ elsewhere, or `host` and `port` (which `CHAP_HOST` and `PORT` replace).
 hooks take whether signatures are required from the configuration too, and
 never from what a running gate reports.
 
+The gate's server, `serveGate` and `startGate`, is chap-server's with the
+trust policy acted on at start: the reviewers and agents `chap-trust.json`
+in the project pins (or the file `trust` in the configuration names) join
+with their pinned keys before anyone else can join under their URIs.
+
 ## The commands
 
 ```
