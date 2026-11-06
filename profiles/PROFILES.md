@@ -17,9 +17,9 @@ Each row is a self-contained document.
 
 | Profile                                                       | What it adds                                                       | When you need it                                              |
 |---------------------------------------------------------------|--------------------------------------------------------------------|---------------------------------------------------------------|
-| [`security-signed`](./security-signed.md)                     | Ed25519 message signing, JCS canonicalisation, and the rule that a key rotation is signed with the old key. | Cross-trust-boundary deployments; non-repudiation requirement.|
+| [`security-signed`](./security-signed.md)                     | Ed25519 and WebAuthn (ES256) message signing, JCS canonicalisation, a signature policy, and the rule that a key rotation is signed with the old key. | Cross-trust-boundary deployments; non-repudiation requirement.|
 | [`audit-scitt`](./audit-scitt.md)                             | Cryptographic transparency log via IETF SCITT.                     | Regulatory audit; offline-verifiable proofs.                  |
-| [`identity-oidc`](./identity-oidc.md)                         | OIDC-bound human identity with `cnf.jwk` and step-up auth.         | Most enterprise SaaS deployments.                             |
+| [`identity-oidc`](./identity-oidc.md)                         | OIDC-bound human identity with `cnf.jwk` or a nonce-bound key, and step-up auth. | Most enterprise SaaS deployments.                             |
 | [`identity-vc`](./identity-vc.md)                             | W3C Verifiable Credentials for richer identity claims.             | Regulated professions; cross-org credentials.                 |
 | [`review`](./review.md)                                       | `review.request`, `review.acknowledge`, `decide.approve`/`reject`/`override`, `abstain`. | Humans approving agent output. **The highest-value profile.** |
 | [`whisper`](./whisper.md)                                     | Deadline-bound interrupt questions with default-if-lapsed.         | Mid-task disambiguation.                                      |

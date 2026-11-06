@@ -223,6 +223,11 @@ Both kinds are verified through the `cryptography` package, the `crypto`
 extra; without it a signed call is refused with `-32070` and a message
 that names the extra.
 
+A signed request takes effect once. The same signed call sent again, its
+`sig` re-encoded or not, is refused with `-32075` and
+`data.accepted_at_seq`, and a copy of a recorded refusal is answered with
+that refusal; neither is evaluated again.
+
 Key lifecycle:
 
 - `participant.rotate_key` is signed with the old key; the Coordinator
