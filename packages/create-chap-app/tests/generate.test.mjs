@@ -131,6 +131,15 @@ test("the code gate names its reviewer by name and email, and reviews at commit 
   await rm(dir, { recursive: true });
 });
 
+test("the production image runs Node 24 and installs what package-lock.json pins", async () => {
+  const dockerfile = await readFile(new URL("../templates/production/Dockerfile", import.meta.url), "utf8");
+  const from = [...dockerfile.matchAll(/^FROM (\S+)/gm)].map((m) => m[1]);
+  assert.deepEqual(from, ["node:24-bookworm-slim", "node:24-bookworm-slim"]);
+  assert.match(dockerfile, /^COPY package\.json package-lock\.json \.\/$/m);
+  assert.match(dockerfile, /^RUN npm ci --omit=dev\b/m);
+  assert.doesNotMatch(dockerfile, /^RUN npm install/m);
+});
+
 test("with no template named, the code gate is the one generated", async () => {
   assert.equal(DEFAULT_TEMPLATE, "code-gate");
   assert.ok((await listTemplates()).some((t) => t.name === DEFAULT_TEMPLATE));

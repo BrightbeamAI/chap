@@ -38,8 +38,11 @@ mkdir -p data outbox analytics
 docker compose up --build
 ```
 
-The coordinator keeps its store in `./data`, the agent reads its key from
-`./keys` and writes to `./outbox`, and the desk is at the same address. The
+The image runs Node 24 and installs what `package-lock.json` pins, with
+`npm ci`; the `npm install` before it writes that file, and committing it
+keeps every later build on the same versions. The coordinator keeps its
+store in `./data`, the agent reads its key from `./keys` and writes to
+`./outbox`, and the desk is at the same address. The
 agent reaches the coordinator by its service name, which
 `CHAP_ALLOWED_HOSTS` in the Compose file tells the coordinator to answer to.
 Both containers run as the `node` user, so the directories you create are
