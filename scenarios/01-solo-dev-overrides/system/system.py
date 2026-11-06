@@ -24,7 +24,7 @@ What is stubbed, so this runs offline with no API key:
     approval prompt; here a fixed script decides, so the run is reproducible.
 
 Run it:
-    pip install "pydantic-ai-slim>=1.0"        # the one dependency
+    pip install chap-pydantic-ai "pydantic-ai-slim>=1.0"
     python3 system.py
 
 Prints the same payoff as the core scenario, but every decision below was
@@ -44,8 +44,15 @@ except ModuleNotFoundError:
     root = Path(__file__).resolve().parents[3]
     sys.path.insert(0, str(root / "packages" / "coordinator-py"))
     sys.path.insert(0, str(root / "packages" / "chap-pydantic-ai"))
-    from chap_coordinator import Coordinator
-    from chap_pydantic_ai import ChapApprovalBridge
+    try:
+        from chap_coordinator import Coordinator
+        from chap_pydantic_ai import ChapApprovalBridge
+    except ModuleNotFoundError:
+        sys.exit(
+            "This system example needs the CHAP bridge for Pydantic AI:\n"
+            "    pip install chap-pydantic-ai \"pydantic-ai-slim>=1.0\"\n"
+            "(The zero-dependency core version is ../scenario.py.)"
+        )
 
 try:
     from pydantic_ai import (
@@ -56,7 +63,7 @@ try:
 except ModuleNotFoundError:
     sys.exit(
         "This system example needs Pydantic AI:\n"
-        "    pip install \"pydantic-ai-slim>=1.0\"\n"
+        "    pip install chap-pydantic-ai \"pydantic-ai-slim>=1.0\"\n"
         "(The zero-dependency core version is ../scenario.py.)"
     )
 

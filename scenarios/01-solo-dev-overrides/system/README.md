@@ -9,14 +9,15 @@ human-in-the-loop approval flow rather than a staged one. It is the
 ## Run it
 
 ```bash
-pip install "pydantic-ai-slim>=1.0"
+pip install chap-pydantic-ai "pydantic-ai-slim>=1.0"
 python3 system.py
 ```
 
-One dependency, no API key, no network. It prints the decisions CHAP
-recorded and the override learning report, exactly like the core scenario,
-but this time every decision was produced by driving a real agent loop
-through its approval gate.
+Two packages (the bridge, which brings `chap-coordinator`, and Pydantic
+AI), no API key, no network. It prints the decisions CHAP recorded and the
+override learning report, exactly like the core scenario, but this time
+every decision was produced by driving a real agent loop through its
+approval gate.
 
 ## What is real, and what is stubbed
 
@@ -64,17 +65,21 @@ agent = Agent("anthropic:claude-sonnet-4-5", output_type=[str, DeferredToolReque
 Point the agent at a real model, drive the approval prompt from real
 developer input instead of the `DECISIONS` script, and the bridge and audit
 chain are unchanged. That is the whole point of keeping the boundary clean:
-the same integration carries you from an offline demo to production.
+the same integration carries you from an offline demo to production. To
+have the developer decide at a CHAP desk, with the review open there until
+they do, call `bridge.request_results(pending)` and resume the agent with
+the results it returns.
 
 ## Contributing your own system implementation
 
 This is the shape to copy for a "completed system example":
 
-1. A real agent framework driving the workflow (any of the four adapters:
+1. A real agent framework driving the workflow (any of the five adapters:
    [`chap-langgraph`](../../../packages/chap-langgraph/),
    [`chap-pydantic-ai`](../../../packages/chap-pydantic-ai/),
    [`chap-ag2`](../../../packages/chap-ag2/),
-   [`chap-llama-index`](../../../packages/chap-llama-index/)).
+   [`chap-llama-index`](../../../packages/chap-llama-index/),
+   [`chap-google-adk`](../../../packages/chap-google-adk/)).
 2. CHAP mediating the human-in-the-loop decision, recorded on the chain.
 3. An offline, reproducible default (a stub model and scripted decisions)
    so it runs in CI and for a first-time reader, with a documented one-line

@@ -26,9 +26,9 @@ python3 scenario.py
 
 That is the whole setup. The script has **no dependencies beyond the
 standard library**: from a clone of the repo it imports the in-repo
-`coordinator-py` automatically, and once `chap-coordinator` is on PyPI,
-`pip install chap-coordinator` works with the same script. No network, no
-services, no config.
+`coordinator-py` automatically, and anywhere else `pip install
+chap-coordinator` runs the same script. No network, no services, no
+config.
 
 ## What you'll see
 

@@ -24,7 +24,7 @@ scenario × framework × language cross-product:
 |---|---|---|
 | [`start-here/`](../start-here/) | The first run: one browser review desk and the few lines that gate your own output. Deliberately the only thing of its kind. | exactly **one** |
 | [`examples/*.md`](../examples/) | Curated capability walkthroughs, one per CHAP verb, written as docs. | one per **capability** |
-| `packages/chap-*/examples/` | Adapter demos: the same handshake shown once per framework (LangGraph, Pydantic AI, AG2, LlamaIndex). | one per **adapter** |
+| `packages/chap-*/examples/` | Adapter demos: the same handshake shown once per framework (LangGraph, Pydantic AI, AG2, LlamaIndex, Google ADK). | one per **adapter** |
 | `scenarios/NN-slug/` (here) | Domain narratives on CHAP **core**: what CHAP records in situation X. One canonical implementation each. | one per **scenario** |
 | [`packages/create-chap-app/templates/`](../packages/create-chap-app/templates/) | Generated projects a developer runs against their own agent and data: a desk, one profile setting, tests and `diff-profiles`. | one per **use case** |
 
@@ -56,8 +56,8 @@ wanted`, not beginner work.
 | # | Scenario | Narrative | Status | Label |
 |---|---|---|---|---|
 | 1 | The solo dev who can't remember what they overrode | [§1](../IN_PRACTICE.md#1-the-solo-dev-who-cant-remember-what-they-overrode) | **done** ([code](./01-solo-dev-overrides/)) | good first issue |
-| 2 | Marketing copy with one drafter and one editor | [§2](../IN_PRACTICE.md#2-marketing-copy-with-one-drafter-and-one-editor) | open | good first issue |
-| 3 | The indie founder, the inbox, and the angry customer | [§3](../IN_PRACTICE.md#3-the-indie-founder-the-inbox-and-the-angry-customer) | open | good first issue |
+| 2 | Marketing copy with one drafter and one editor | [§2](../IN_PRACTICE.md#2-marketing-copy-with-one-drafter-and-one-editor) | **done** ([code](./02-marketing-copy/)) | good first issue |
+| 3 | The indie founder, the inbox, and the angry customer | [§3](../IN_PRACTICE.md#3-the-indie-founder-the-inbox-and-the-angry-customer) | **done** ([code](./03-founder-inbox/)) | good first issue |
 | 4 | Support ops at 03:00 | [§4](../IN_PRACTICE.md#4-support-ops-at-0300) | open | |
 | 5 | Sixty engineers and a code-review bot they don't trust the same way | [§5](../IN_PRACTICE.md#5-sixty-engineers-and-a-code-review-bot-they-dont-trust-the-same-way) | open | |
 | 6 | A junior, a partner, and a contract that ships tonight | [§6](../IN_PRACTICE.md#6-a-junior-a-partner-and-a-contract-that-ships-tonight) | open | |
@@ -96,11 +96,12 @@ a real Pydantic AI agent whose action is approval-gated, driven through
 the [`chap-pydantic-ai`](../packages/chap-pydantic-ai/) bridge, recorded
 on the audit chain. The bar to copy:
 
-- A real agent framework drives the workflow (any of the four adapters:
+- A real agent framework drives the workflow (any of the five adapters:
   [`chap-langgraph`](../packages/chap-langgraph/),
   [`chap-pydantic-ai`](../packages/chap-pydantic-ai/),
   [`chap-ag2`](../packages/chap-ag2/),
-  [`chap-llama-index`](../packages/chap-llama-index/)).
+  [`chap-llama-index`](../packages/chap-llama-index/),
+  [`chap-google-adk`](../packages/chap-google-adk/)).
 - CHAP mediates the human decision, recorded on the chain.
 - It runs offline and reproducibly by default (a stub model, scripted
   decisions) with a documented one-line path to a live model, so CI and a

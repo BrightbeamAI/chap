@@ -25,9 +25,9 @@ python3 scenario.py
 
 That is the whole setup. The script has **no dependencies beyond the
 standard library**: from a clone of the repo it imports the in-repo
-`coordinator-py` automatically, and once `chap-coordinator` is on PyPI,
-`pip install chap-coordinator` works with the same script. No network, no
-services, no config.
+`coordinator-py` automatically, and anywhere else `pip install
+chap-coordinator` runs the same script. No network, no services, no
+config.
 
 ### Two ways to run this scenario
 
@@ -35,7 +35,7 @@ services, no config.
 |---|---|---|
 | **What it is** | The story staged directly against the coordinator. | The story wired into a real agent framework (Pydantic AI). |
 | **Proves** | The CHAP mechanics: record, verify, query. | CHAP slots into a real system's human-in-the-loop path. |
-| **Runs with** | Standard library only. | `pip install "pydantic-ai-slim>=1.0"`, still offline, no API key. |
+| **Runs with** | Standard library only. | `pip install chap-pydantic-ai "pydantic-ai-slim>=1.0"`, still offline, no API key. |
 | **Bar to read/copy** | Good first issue. | A completed system example to aspire to. |
 
 Start with `scenario.py` to understand what CHAP records; open

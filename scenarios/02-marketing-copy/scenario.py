@@ -19,7 +19,7 @@ Run it:
     # from a clone of the repo, nothing to install:
     python3 scenario.py
 
-    # or, once chap-coordinator is on PyPI:
+    # or, anywhere else, from PyPI:
     pip install chap-coordinator && python3 scenario.py
 
 It prints three things, in order:
