@@ -18,13 +18,18 @@
 // chap.config.json (1 MiB when unset), with a little room (413).
 
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import { readFile, readdir, mkdir, stat } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Coordinator, MemoryStore } from "@brightbeamai/chap-coordinator";
+import { AGENT_MCP_TOOLS, chapMcpHttpHandler } from "@brightbeamai/chap-coordinator-mcp";
 
 /** The desk's files, served by every project from this package. */
 export const DESK_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "desk");
+
+/** This package's version, which /mcp reports as its server's. */
+const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 /**
  * The project's configuration: the file `path` names, by default the one
@@ -446,19 +451,11 @@ async function readDirectory(dir) {
   return files;
 }
 
-// What the agent's MCP connection offers. `participant` makes every call as
-// the agent, so the connection cannot act in another member's name, and the
-// tools are the ones the agent's own work needs. The decision tools stay:
-// called by the agent on its own work, the coordinator refuses them and
-// records the attempt. What would let the agent decide its own work, or end a
-// review it is under, is left out: review.request (an explicit review may name
-// its own author), escalate.raise (it ends the open review, and the
-// successor's review opens under the default rule), and every other tool.
-export const AGENT_MCP_TOOLS = new Set([
-  "chap.task.create", "chap.task.update", "chap.task.complete", "chap.whisper.ask",
-  "chap.decide.approve", "chap.decide.reject", "chap.decide.override",
-  "chap.workspace.describe", "chap.audit.read", "chap.audit.verify_chain",
-]);
+// What the agent's MCP connection offers: AGENT_MCP_TOOLS, the tools the
+// agent's own work needs, from @brightbeamai/chap-coordinator-mcp.
+// `participant` makes every call as the agent, so the connection cannot act
+// in another member's name.
+export { AGENT_MCP_TOOLS };
 
 /**
  * The request handler for one project: the desk, POST /chap, the read API,
@@ -480,18 +477,10 @@ export async function makeHandler(config, coord) {
     throw new Error("chap.config.json turns on mcp, and /mcp acts as the agent: set agent.uri");
   }
   if (config.mcp) {
-    const { makeChapMcpServer } = await import("@brightbeamai/chap-coordinator-mcp");
-    const { StreamableHTTPServerTransport } = await import("@modelcontextprotocol/sdk/server/streamableHttp.js");
-    // Stateless: one server and transport per request, over the shared
-    // coordinator. The MCP client keeps no session with this process.
-    mcp = async (req, res, body) => {
-      const server = makeChapMcpServer(coord, { name: config.workspace, version: "0.3.4",
-        participant: config.agent.uri, toolFilter: (name) => AGENT_MCP_TOOLS.has(name) });
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-      res.on("close", () => { transport.close(); server.close(); });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, body);
-    };
+    // Stateless: the MCP client keeps no session with this process. Both
+    // protocol eras are answered, the handshake one and 2026-07-28.
+    mcp = chapMcpHttpHandler(coord, { name: config.workspace, version: VERSION,
+      participant: config.agent.uri, toolFilter: (name) => AGENT_MCP_TOOLS.has(name), maxBodyBytes: bodyLimit(config) });
   }
 
   return async (req, res, next) => {

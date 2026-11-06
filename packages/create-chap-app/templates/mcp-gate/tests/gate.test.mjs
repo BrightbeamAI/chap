@@ -108,3 +108,18 @@ test("the desk is served with its client module", async () => {
   assert.equal(cfg.workspace, config.workspace);
   assert.equal(cfg.mcp, true);
 });
+
+test("an MCP client on the 2026-07-28 revision is answered at /mcp, as the agent, with the agent's tools", async () => {
+  const meta = { "io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {} };
+  const post = (body) => fetch(`${base}/mcp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "mcp-method": body.method, ...(body.params?.name ? { "mcp-name": body.params.name } : {}) },
+    body: JSON.stringify(body),
+  });
+  const listed = await post({ jsonrpc: "2.0", id: 1, method: "tools/list", params: { _meta: meta } });
+  assert.equal(listed.status, 200);
+  assert.deepEqual(new Set((await listed.json()).result.tools.map((t) => t.name)), AGENT_MCP_TOOLS);
+  const spoofed = await (await post({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "chap.decide.approve", arguments: { workspace: config.workspace, from: human(), task_id: "tsk_x" }, _meta: meta } })).json();
+  assert.equal(spoofed.result.isError, true);
+  assert.match(spoofed.result.content[0].text, /acts as/);
+});
