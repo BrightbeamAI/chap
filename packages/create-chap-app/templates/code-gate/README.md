@@ -274,7 +274,25 @@ the reviewers `chap.config.json` names and the keys the workspace records.
 
 A URI is held by whoever joined the workspace first under it, unless the
 deployment ties joins to a login (OIDC, below). Pinning keys in the policy,
-after confirming their fingerprints, is what closes that.
+after confirming their fingerprints, is what closes that. The desk checks it
+too: after joining it asks the workspace, with a signed read, whether it
+holds the browser's key for you, and while another key holds your URI it
+signs nothing and says so.
+
+**The reviewer's key.** The desk makes it in the browser as a key that
+cannot be exported, keeps it in the browser's IndexedDB for the desk's
+address, and names it by its RFC 7638 thumbprint; the signing badge opens a
+panel with its whole fingerprint, to check against what `npm run trust`
+prints. A page on the desk's address can ask the browser to sign with it,
+and no script can read the key out. That protects you from pages elsewhere,
+and from a script that runs on the address and leaves. It does not protect
+you from a program running as your own user, and a coding agent with a
+shell is one: it can drive your browser profile and have it sign, unless
+each signature needs a gesture of yours. Run the agent as another user, in
+a container or in a sandbox, and keep the pull request check, which needs
+an approval under the keys the trust policy pins, as the boundary. A desk
+from before 0.3.5 kept the key in `localStorage`; the first visit moves it
+into IndexedDB under the id it was registered with.
 
 ## Where the gate holds
 

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { generateKeyPairSync } from "node:crypto";
 import { loadConfig as loadConfigFrom, makeCoordinator, makeServer } from "@brightbeamai/chap-server";
 import { makeClient, generateSigner, signerFromJwk } from "@brightbeamai/chap-server/client";
-import { generateKeyFile, readKeyFile, kidFor } from "@brightbeamai/chap-server/keys";
+import { generateKeyFile, readKeyFile, kidFor, thumbprint } from "@brightbeamai/chap-server/keys";
 import { startDevIssuer, signJwt } from "@brightbeamai/chap-server/dev-issuer";
 import { makeOidcVerifier } from "@brightbeamai/chap-server/oidc";
 import { runChecks } from "../doctor.mjs";
@@ -64,14 +64,15 @@ test("the configuration asks for signatures, the chain and the production profil
   assert.deepEqual(cfg.profiles, config.profiles);
 });
 
-test("keys.mjs writes the private key once, readable by its owner only, with the desk's kid", async () => {
+test("npm run keys writes the private key once, readable by its owner only, named by its thumbprint", async () => {
   const mode = (await stat(keyPath)).mode & 0o777;
   assert.equal(mode, 0o600);
   const jwk = JSON.parse(await readFile(keyPath, "utf8"));
   assert.equal(jwk.kty, "OKP");
   assert.equal(jwk.crv, "Ed25519");
   assert.equal(typeof jwk.d, "string");
-  assert.equal(jwk.kid, kidFor(config.agent.uri));
+  assert.equal(jwk.kid, thumbprint(jwk));
+  assert.notEqual(jwk.kid, kidFor(config.agent.uri), "a key's id comes from the key, and no longer from the URI");
   assert.equal(agent.signer.kid, jwk.kid);
   const again = await generateKeyFile(config.agent.uri, keyDir);
   assert.equal(again.created, false);

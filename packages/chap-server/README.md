@@ -82,6 +82,21 @@ their scripts run in an origin of their own, cannot read what the desk
 keeps in the browser, and a call they make to the server carries a foreign
 origin and is refused.
 
+## The reviewer's key
+
+Under `security-signed/1.0` the desk signs each call with an Ed25519 key it
+makes in the browser as a key that cannot be exported, kept in IndexedDB for
+the desk's address and named by its RFC 7638 thumbprint. Its signing badge
+opens a panel with the whole fingerprint. After joining, the desk asks the
+workspace with a signed `workspace.describe` whether it holds this key for
+the reviewer, and while another key holds the reviewer's URI it signs
+nothing and says so. A key an earlier desk kept in `localStorage` moves to
+IndexedDB on the first visit, under the id it was registered with.
+
+A program running as the reviewer's own user can drive their browser and
+have it sign; a key that needs a gesture for each signature is what stops
+that.
+
 ## In a server of your own
 
 ```js

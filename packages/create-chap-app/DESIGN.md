@@ -95,9 +95,10 @@ coordinator answers the caller who asked; which reviews a person is shown
 is the deployment's decision, as SPECIFICATION §15.1 says.
 
 Under `security-signed/1.0` the desk signs each call in the browser with an
-Ed25519 key it generates and keeps in the browser's storage. The public key
-is registered at `participant.join`. The private key never leaves the
-browser. Every decision carries `approved_artefact_digest`, the hash of the
+Ed25519 key it generates there as a key that cannot be exported, kept in
+IndexedDB and named by its RFC 7638 thumbprint. The public key is
+registered at `participant.join`, and the desk signs only once a signed read
+shows the workspace holds that key for the reviewer. Every decision carries `approved_artefact_digest`, the hash of the
 artefact the desk showed, so the coordinator refuses a decision on an
 artefact the reviewer did not see, and `round`, the hash of the submission
 that opened the review round, which the coordinator records with the call. A

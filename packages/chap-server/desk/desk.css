@@ -178,6 +178,9 @@ textarea.code.field { min-height: 80px; }
 .since-note { margin-bottom: 10px; }
 .edit-hint { margin-bottom: 8px; }
 .badge.refusal { margin-left: 6px; }
+button.chip { cursor: pointer; font-family: inherit; }
+.key-alert { margin: 1rem 1.125rem 0; }
+#key-fingerprint, #key-id { word-break: break-all; }
 pre.json { margin: 0; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-s); overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .notice { min-height: 1.2em; font-size: var(--text-s); }
 .notice.bad { color: var(--bad); }

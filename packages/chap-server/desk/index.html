@@ -14,7 +14,7 @@
     <div class="chips" id="profiles"></div>
     <div class="spacer"></div>
     <span class="chip" id="connection"><span class="dot"></span><span>connecting</span></span>
-    <span class="chip" id="signing"><span class="dot"></span><span>signing off</span></span>
+    <button class="chip" id="signing" aria-haspopup="dialog"><span class="dot"></span><span>signing off</span></button>
     <span class="chip" id="chain"><span class="dot"></span><span>chain off</span></span>
     <label><span class="label-text">Deciding as</span> <select id="reviewer" aria-label="Deciding as"></select></label>
     <div class="text-size" role="group" aria-label="Text size"><button class="icon-btn" id="text-smaller" title="Smaller text" aria-label="Smaller text"><span class="a-small">A</span></button><button class="icon-btn" id="text-larger" title="Larger text" aria-label="Larger text"><span class="a-large">A</span></button></div>
@@ -32,6 +32,7 @@
         <button class="tab" role="tab" data-view="activity" aria-selected="false">Activity <span class="badge" id="activity-count">0</span></button>
         <button class="tab" role="tab" data-view="insights" aria-selected="false">Insights</button>
       </div>
+      <div class="alert key-alert" id="key-alert" role="alert" hidden><b>This browser's key is not the reviewer's.</b> <span id="key-alert-text"></span></div>
       <section class="view" id="view-review" role="tabpanel">
         <div id="review-empty" class="empty">Pick a task on the left. The ones waiting for your decision are at the top.</div>
         <div id="review" hidden>
@@ -98,6 +99,18 @@
       <dt><kbd>?</kbd></dt><dd>this list</dd>
       <dt>A A</dt><dd>smaller and larger text, at the top right; the desk keeps the size for next time</dd>
     </dl></div>
+  </div>
+</div>
+<div class="help" id="key" role="dialog" aria-labelledby="key-title" hidden>
+  <div class="card">
+    <div class="card-head"><h3 id="key-title">Your signing key</h3><span class="spacer"></span><button class="btn small" id="key-close">Close</button></div>
+    <div class="card-body"><dl class="kv">
+      <dt>Deciding as</dt><dd id="key-uri"></dd>
+      <dt>Fingerprint</dt><dd class="mono" id="key-fingerprint"></dd>
+      <dt>Key id</dt><dd class="mono" id="key-id"></dd>
+      <dt>On record</dt><dd id="key-status"></dd>
+    </dl>
+    <p class="small muted">The key was made in this browser and is kept where no page can read it out. Give the fingerprint to whoever keeps the trust policy, and check it against theirs in full: approvals count only under the key they pin.</p></div>
   </div>
 </div>
 <div class="help" id="confirm" hidden>

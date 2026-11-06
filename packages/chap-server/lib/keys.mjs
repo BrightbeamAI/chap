@@ -7,10 +7,11 @@
 // never overwritten; rotate with participant.rotate_key, or remove the
 // file and join under a new URI.
 //
-// The kid is the first sixteen hex characters of the SHA-256 of the URI,
-// the same rule the desk's client uses, so a key is recognisable in the
-// member's key list. `chap-server keys` writes the key for the agent the
-// project's chap.config.json names, or for `--uri <uri>`.
+// A new key's kid is its RFC 7638 thumbprint, as the desk names its keys,
+// so no two keys share one. A key file written before keeps the kid it was
+// registered under: the kid is read from the file. `chap-server keys` writes
+// the key for the agent the project's chap.config.json names, or for
+// `--uri <uri>`.
 //
 // The same key, written in OpenSSH's format beside the JWK, signs git
 // commits (git's SSH signing, gpg.format=ssh): `sshKeyFiles` writes
@@ -23,8 +24,14 @@ import { generateKeyPairSync, createHash, randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
+/** The kid key files written before 0.3.5 carry: the first sixteen hex characters of the SHA-256 of the URI. */
 export function kidFor(uri) {
   return createHash("sha256").update(uri).digest("hex").slice(0, 16);
+}
+
+/** The RFC 7638 thumbprint of an Ed25519 JWK: the SHA-256 of {"crv","kty","x"} in that order, base64url. */
+export function thumbprint(jwk) {
+  return createHash("sha256").update(JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x })).digest("base64url");
 }
 
 export function slug(uri) {
@@ -49,7 +56,8 @@ export async function generateKeyFile(uri, dir = resolve("keys")) {
   const path = keyPathFor(uri, dir);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const { privateKey } = generateKeyPairSync("ed25519");
-  const privateJwk = { ...privateKey.export({ format: "jwk" }), kid: kidFor(uri), use: "sig", alg: "EdDSA" };
+  const jwk = privateKey.export({ format: "jwk" });
+  const privateJwk = { ...jwk, kid: thumbprint(jwk), use: "sig", alg: "EdDSA" };
   try {
     await writeFile(path, JSON.stringify(privateJwk, null, 2) + "\n", { mode: 0o600, flag: "wx" });
   } catch (err) {

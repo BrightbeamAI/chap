@@ -67,12 +67,27 @@ participant URI.
 ## The browser key
 
 Under `security-signed/1.0` the desk generates an Ed25519 key in the
-browser, keeps it in the browser's storage, registers its public half at
-`participant.join`, and signs each decision with it. The private key never
-leaves the browser. Clearing the browser's storage loses the key: the member
-on record keeps the old public key, so the desk then needs a new participant
-URI, or a `participant.rotate_key` signed with the old key before it is
-cleared.
+browser as a key that cannot be exported, keeps it in the browser's
+IndexedDB for the desk's address, registers its public half at
+`participant.join`, and signs each decision with it. A page on the desk's
+address can ask the browser to sign with it, and no script can read the key
+out to sign somewhere else. The key's id is its RFC 7638 thumbprint, and the
+signing badge opens a panel with its whole fingerprint, the form
+`npm run trust` prints. After joining, the desk asks the workspace, with a
+signed read, whether it holds this key for you; while another key holds
+your URI the desk signs nothing and says so. A desk from before 0.3.5 kept
+the key in `localStorage`; the first visit moves it into IndexedDB under the
+id it was registered with.
+
+The key protects you from pages elsewhere and from a script that runs on the
+desk's address and then leaves. It does not protect you from a program
+running as your own user on this machine, an agent with a shell included:
+that program can drive your browser profile and have it sign, unless each
+signature needs a gesture of yours. Run such an agent as another user, in a
+container or in a sandbox. Clearing the browser's storage loses the key:
+the member on record keeps the old public key, so the desk then needs a new
+participant URI, or a `participant.rotate_key` signed with the old key
+before it is cleared.
 
 ## OIDC
 
