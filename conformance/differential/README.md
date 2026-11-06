@@ -10,17 +10,23 @@ on random ones, and on whole envelope *sequences* rather than single values.
 For each seed, `fuzz.py`:
 
 1. Drives the **Python** reference (`chap_coordinator`) with a random sequence of
-   legal calls, recording the concrete envelopes it accepts. Ids are
-   server-minted, so the sequence cannot be written in advance - it is recorded
-   as it is produced.
+   calls, recording the concrete envelopes it sends. Ids are server-minted, so
+   the sequence cannot be written in advance - it is recorded as it is
+   produced. Most calls are legal for the state the workspace is in; a share
+   miss, and another share is malformed: a param missing, null or of another
+   type, for every method, and envelopes that are not a call at all.
 2. Replays that exact sequence into the **TypeScript** reference
    (`replay.ts`) in a subprocess. A subprocess boundary is used rather than HTTP
    so no serialisation layer masks or invents a difference.
-3. Asserts the two agree on **every response** and on the **audit-chain head**.
-   The chain head alone is not a sufficient oracle - the link hash covers the
-   request envelope, so a divergence in a *response* (for example a differing
-   artefact shape) passes the chain check and shows up only on response
-   comparison.
+3. Asserts the two agree on **every response**, on the **state** each holds
+   after every call, and on the **audit-chain head**. The chain head alone is
+   not a sufficient oracle - the link hash covers the request envelope, so a
+   divergence in a *response* (for example a differing artefact shape) passes
+   the chain check and shows up only on response comparison. The state is
+   compared as a projection both sides produce, `project()` in `fuzz.py` and
+   in `replay.ts`, so a handler that changes state and then refuses shows up
+   even when both answers agree. An answer of `-32603` from either reference
+   fails the seed, since every refusal of a call has its own code.
 4. Replays the sequence into both references again, each on a SQLite file,
    and lapses every pending whisper. Each call writes only what it changed, so
    this checks that nothing was missed: a coordinator restarted on the file

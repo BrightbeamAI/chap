@@ -5,12 +5,14 @@ CHAP's headline guarantee is that two independently-authored coordinators
 produce byte-identical results (SPECIFICATION.md). Static vectors check that on
 hand-written cases; this checks it on random ones.
 
-For each seed it drives the Python reference with a random sequence of legal
-calls, records the concrete envelopes it accepted (ids are server-minted, so a
-sequence cannot be written in advance), replays that exact sequence into the
+For each seed it drives the Python reference with a random sequence of calls,
+records the concrete envelopes it sent (ids are server-minted, so a sequence
+cannot be written in advance), replays that exact sequence into the
 TypeScript reference in a subprocess, and asserts the two agree on every
-response and on the audit-chain head. A subprocess boundary is used rather than
-HTTP so no serialisation layer masks or invents a difference.
+response, on the state each holds after every call, and on the audit-chain
+head. A subprocess boundary is used so no serialisation layer masks or
+invents a difference. An answer of -32603 from either fails the seed: it is a
+fault in the coordinator, whatever the other answered.
 
 The action set covers the core and review lifecycle, control, handoff, whisper,
 deliberation and routing, including canonical control.snapshot artefacts and
@@ -35,6 +37,13 @@ participants who have not voted. A share of the steps is a deliberate miss, so
 the refusals are compared as well as the successes. Overrides draw from the
 whole JSON Patch operation set against documents with arrays and nesting,
 including the `1e1` and `1_0` index tokens behind #103.
+
+Another share is malformed: a call to any method with one or two of the params
+it reads missing, null or of another type, the workspace and the sender
+included, params that are not an object, and envelopes that are not a call at
+all. The state comparison is what makes these worth sending: a handler that
+changed state and then refused or raised shows up there even when both
+references answered alike.
 
 Usage:
     python fuzz.py --seeds 200          # sweep seeds 0..199
@@ -67,6 +76,68 @@ HUMANS = ["human:a", "human:c"]
 AGENTS = ["agent:b", "agent:d"]
 
 
+# Every method a reference dispatches, with the params its handler reads. The
+# malformed calls draw on these, so each method meets a missing or ill-typed
+# value in every param it reads, and its refusal, its state and its log are
+# compared like any other call's.
+METHOD_PARAMS: dict[str, tuple[str, ...]] = {
+    "workspace.create": ("profiles", "mode", "mode_ceiling", "routing_policy_uri",
+                         "step_up_window_sec", "min_acr"),
+    "workspace.describe": (),
+    "workspace.set_profiles": ("profiles",),
+    "participant.join": ("type", "role", "display_name", "capabilities", "scopes", "jwks",
+                         "oidc_token", "vc_presentation"),
+    "participant.leave": (),
+    "participant.rotate_key": ("old_kid", "new_jwk"),
+    "participant.revoke_key": ("target_uri", "kid", "reason"),
+    "task.create": ("kind", "input", "assignee", "to", "mode", "review_required", "deadline",
+                    "routing_hints", "idempotency_key"),
+    "task.update": ("task_id", "state", "progress_note"),
+    "task.complete": ("task_id", "output", "confidence"),
+    "audit.read": ("range", "filter"),
+    "review.request": ("task_id", "artefact", "to", "rule", "deadline"),
+    "decide.approve": ("task_id", "comment", "tags", "approved_artefact_digest"),
+    "decide.reject": ("task_id", "comment", "tags", "request_revision",
+                      "approved_artefact_digest"),
+    "decide.override": ("task_id", "diff", "rationale", "tags", "policy_refs", "logical_id",
+                        "instance_id", "intent_preserved", "approved_artefact_digest"),
+    "abstain.declare": ("task_id", "reason", "category"),
+    "escalate.raise": ("original_task_id", "new_task"),
+    "whisper.ask": ("task_id", "to", "question", "options", "deadline_ms",
+                    "default_if_lapsed", "urgency", "whisper_id"),
+    "whisper.answer": ("whisper_id", "answer", "answer_text", "answer_option", "comment"),
+    "deliberate.open": ("to", "participants", "rule", "question", "weights", "veto",
+                        "deadline", "task_id", "deliberation_id"),
+    "deliberate.comment": ("deliberation_id", "comment", "text"),
+    "deliberate.vote": ("deliberation_id", "vote", "weight", "comment", "veto_invoked"),
+    "deliberate.close": ("deliberation_id",),
+    "handoff.propose": ("to", "tasks", "summary", "context_links", "handoff_id"),
+    "handoff.accept": ("handoff_id", "accepted_task_ids", "comment"),
+    "handoff.decline": ("handoff_id", "reason", "suggested_target"),
+    "control.pause": ("scope", "task_id", "participant_uri", "uri", "in_flight_policy",
+                      "reason"),
+    "control.resume": ("scope", "task_id", "participant_uri", "uri"),
+    "control.cancel": ("task_id", "reason"),
+    "control.snapshot": ("include", "label"),
+    "control.rollback": ("to_snapshot_artefact_id", "snapshot_artefact_id", "snapshot_id",
+                         "what_to_restore", "reason"),
+    "control.supersede": ("task_id", "successor_task", "reason"),
+    "control.set_mode_ceiling": ("new_ceiling", "mode_ceiling", "reason"),
+    "task.route": ("task_id", "candidates"),
+    "review.depth": ("task_id", "artefact_routing_hints"),
+    "escalate.auto": ("task_id", "default_escalation_target"),
+    "audit.verify_chain": ("from_seq", "to_seq"),
+    "audit.verify_receipt": ("receipt",),
+    "audit.submit_to_scitt": ("range", "issuer"),
+}
+
+# Values a param of the wrong type or shape takes. 2**53 lies past the
+# canonical number range, so it is refused at ingress.
+JUNK = (None, 0, 7, -1, True, False, "", "x", "human:a", [], ["x"], [1, 2], {},
+        {"a": 1}, [{}], [None], {"kind": 5, "assignee": 3}, "__proto__",
+        "constructor", 2 ** 53)
+
+
 class Recorder:
     """Drive the Python reference and record the envelopes it accepts."""
 
@@ -78,6 +149,7 @@ class Recorder:
         self.envelopes: list[dict] = []
         self.dispatched: list[dict] = []
         self.responses: list[dict] = []
+        self.states: list[dict] = []
         self.tasks: list[str] = []
         self.handoffs: list[str] = []
         self.snapshots: list[str] = []
@@ -107,6 +179,28 @@ class Recorder:
         self.dispatched.append(env)
         self.envelopes.append(sent)
         self.responses.append(resp)
+        self.states.append(project(self.coord))
+        self.sent[method] += 1
+        if "result" in resp:
+            self.ok[method] += 1
+        return resp
+
+    def _send_params(self, method: str, params: object) -> dict:
+        """Send params exactly as given, workspace and from included or not."""
+        self._n += 1
+        env = {"jsonrpc": "2.0", "id": f"e{self._n}", "method": method}
+        if params is not ...:
+            env["params"] = params
+        return self._send_envelope(method, env)
+
+    def _send_envelope(self, method: str, env: object) -> dict:
+        """Send an envelope exactly as given, whether or not it is one."""
+        sent = json.loads(json.dumps(env))
+        resp = self.coord.dispatch(env)
+        self.dispatched.append(env)
+        self.envelopes.append(sent)
+        self.responses.append(resp)
+        self.states.append(project(self.coord))
         self.sent[method] += 1
         if "result" in resp:
             self.ok[method] += 1
@@ -187,7 +281,7 @@ class Recorder:
         live = self._by_state("created", "in_progress")
         menu = ["create", "create", "update", "complete", "complete",
                 "whisper", "deliberate", "snapshot", "miss", "pause_participant",
-                "ceiling", "leave_and_rejoin"]
+                "ceiling", "leave_and_rejoin", "malformed", "malformed", "malformed"]
         if self._paused_participants():
             menu += ["resume_participant"] * 2
         if live:
@@ -261,6 +355,9 @@ class Recorder:
             # A call aimed at a task that is in the wrong state for it, so the
             # refusals stay compared as well as the successes.
             self._miss()
+            return
+        if a == "malformed":
+            self._malformed()
             return
         if a == "decide":
             tid = rnd.choice(self._by_state("review_requested"))
@@ -481,6 +578,90 @@ class Recorder:
                                candidates=list(AGENTS)),
         ])()
 
+    def _plausible(self, name: str) -> object:
+        """A well-formed value for a param, drawn from the workspace's state."""
+        rnd = self.rnd
+        members = [*HUMANS, *AGENTS]
+        known = {
+            "task_id": self.tasks, "original_task_id": self.tasks,
+            "handoff_id": self.handoffs, "whisper_id": self.whispers,
+            "deliberation_id": self.delibs, "to_snapshot_artefact_id": self.snapshots,
+            "snapshot_artefact_id": self.snapshots, "snapshot_id": self.snapshots,
+        }
+        if name in known:
+            return rnd.choice(known[name] or ["absent"])
+        if name in ("to", "participants", "candidates"):
+            return rnd.sample(members, 2)
+        if name in ("assignee", "target_uri", "participant_uri", "uri",
+                    "suggested_target", "default_escalation_target"):
+            return rnd.choice(members)
+        choices = {
+            "type": ["human", "agent"], "state": ["in_progress", "declined", "completed"],
+            "rule": ["any_one_approves", "quorum:2", "all_approve"],
+            "scope": ["task", "participant", "workspace"],
+            "vote": ["yea", "nay", "abstain"],
+            "mode": ["shadow", "trial", "production"],
+            "new_ceiling": ["trial", "production"], "mode_ceiling": ["trial", "production"],
+        }
+        if name in choices:
+            return rnd.choice(choices[name])
+        if name in ("input", "artefact", "output", "routing_hints", "artefact_routing_hints",
+                    "capabilities", "filter", "range", "receipt", "weights", "veto"):
+            return {"k": rnd.randint(0, 3)}
+        if name in ("new_task", "successor_task"):
+            return {"kind": "k", "input": {}, "assignee": AGENTS[0]}
+        if name in ("tags", "policy_refs", "include", "what_to_restore", "context_links",
+                    "accepted_task_ids", "profiles", "scopes"):
+            return ["members"]
+        if name == "diff":
+            return [{"op": "replace", "path": "/text", "value": "y"}]
+        if name in ("review_required", "request_revision", "intent_preserved", "veto_invoked"):
+            return rnd.choice([True, False])
+        if name in ("deadline_ms", "weight", "step_up_window_sec", "from_seq", "to_seq"):
+            return rnd.randint(0, 5)
+        if name == "tasks":
+            return [{"task_id": rnd.choice(self.tasks or ["absent"])}]
+        if name == "options":
+            return [{"id": "a"}, {"id": "b"}]
+        return rnd.choice(["text", "a note"])
+
+    def _malformed(self) -> None:
+        """A call with a param missing, or of the wrong type or shape.
+
+        It starts from params a handler could accept and then breaks one or
+        two of them, the workspace and the sender included now and then, so
+        the checks a method makes before it changes anything are compared,
+        and so is what it leaves behind when it refuses.
+        """
+        rnd = self.rnd
+        method = rnd.choice(sorted(METHOD_PARAMS))
+        names = METHOD_PARAMS[method]
+        if rnd.random() < 0.05:
+            # Something that is not a JSON-RPC call, or a call with no id.
+            self._n += 1
+            self._send_envelope("(not a call)", rnd.choice([
+                None, [], "x", 5, {}, {"jsonrpc": "1.0", "id": f"e{self._n}", "method": method},
+                {"jsonrpc": "2.0", "id": f"e{self._n}"},
+                {"jsonrpc": "2.0", "id": f"e{self._n}", "method": rnd.choice(JUNK)},
+                {"jsonrpc": "2.0", "method": "workspace.describe", "params": {"workspace": "w"}},
+            ]))
+            return
+        if rnd.random() < 0.05:
+            # params that are not an object at all, or absent.
+            self._send_params(method, rnd.choice([..., None, [], "x", 5]))
+            return
+        params: dict = {"workspace": "w", "from": rnd.choice([*HUMANS, *AGENTS])}
+        for name in names:
+            if rnd.random() < 0.7:
+                params[name] = self._plausible(name)
+        targets = list(names) + ["workspace", "from"] * (1 if names else 3)
+        for name in rnd.sample(targets, min(len(targets), rnd.randint(1, 2))):
+            if rnd.random() < 0.2:
+                params.pop(name, None)
+            else:
+                params[name] = rnd.choice(JUNK)
+        self._send_params(method, params)
+
     def _assignee(self, tid: str) -> str:
         t = self.coord.get_workspace("w").tasks.get(tid)
         return t.assignee if t else AGENTS[0]
@@ -513,6 +694,71 @@ def _plain(coord: Coordinator) -> str:
         data["audit"] = [e.to_dict() for e in ws.audit]
         out[ws_id] = data
     return json.dumps(out, sort_keys=True, default=str)
+
+
+def _drop_null(value):
+    """A value as JSON holds it once nulls are left out, so a field one
+    coordinator leaves unset and the other sets to null compare equal."""
+    if isinstance(value, dict):
+        return {k: _drop_null(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_drop_null(v) for v in value]
+    return value
+
+
+def project(coord: Coordinator) -> dict:
+    """Every workspace's state, by id, as replay.ts projects the TypeScript
+    coordinator's, so the two can be compared after every call."""
+    return {ws_id: _project_workspace(coord, ws_id) for ws_id in sorted(coord.workspaces)}
+
+
+def _project_workspace(coord: Coordinator, workspace: str) -> dict | None:
+    """One workspace's state in the shape replay.ts projects the TypeScript
+    workspace to.
+
+    The coordinators hold the same state in their own types: a Python history
+    entry names its sender `from_`, a route decision keeps its extra fields
+    apart, and an unset list is empty where TypeScript leaves it out. This
+    maps those differences away and keeps every other difference.
+    """
+    ws = coord.workspaces.get(workspace)
+    if ws is None:
+        return None
+    data = json.loads(json.dumps(asdict(ws), default=str))
+    out: dict = {k: data[k] for k in (
+        "id", "created", "state", "profiles", "mode", "mode_ceiling",
+        "routing_policy_uri", "step_up_window_sec", "min_acr",
+        "chain_head", "chain_enabled")}
+    out["members"] = sorted(data["members"].values(), key=lambda m: str(m.get("uri")))
+    tasks = []
+    for t in data["tasks"].values():
+        t["history"] = [{("from" if k == "from_" else k): v for k, v in h.items()}
+                        for h in t.get("history") or []]
+        review = t.get("review")
+        if isinstance(review, dict):
+            for d in review.get("decisions") or []:
+                if isinstance(d, dict) and not d.get("tags"):
+                    d.pop("tags", None)
+        tasks.append(t)
+    out["tasks"] = sorted(tasks, key=lambda t: str(t.get("id")))
+    out["overrides"] = sorted(data["overrides"].values(), key=lambda o: str(o.get("id")))
+    out["whispers"] = sorted(data["whispers"].values(), key=lambda w: str(w.get("id")))
+    out["deliberations"] = sorted(data["deliberations"].values(), key=lambda d: str(d.get("id")))
+    handoffs = []
+    for h in data["handoffs"].values():
+        if not h.get("accepted_task_ids"):
+            h.pop("accepted_task_ids", None)
+        handoffs.append(h)
+    out["handoffs"] = sorted(handoffs, key=lambda h: str(h.get("id")))
+    out["snapshots"] = sorted(data["snapshots"].values(), key=lambda s: str(s.get("id")))
+    decisions = []
+    for r in data["route_decisions"].values():
+        extra = r.pop("extra", None) or {}
+        decisions.append({**r, **extra, "kind": "route_decision"})
+    out["route_decisions"] = sorted(decisions, key=lambda r: str(r.get("id")))
+    out["idempotency_keys"] = data["idempotency_keys"]
+    out["audit"] = [e.to_dict() for e in ws.audit]
+    return _drop_null(json.loads(json.dumps(out, default=str)))
 
 
 def _replay_py(envelopes: list[dict], store: str) -> tuple[list[dict], list[str], bool]:
@@ -566,6 +812,23 @@ def check_stores(seed: int, rec: "Recorder") -> tuple[bool, str]:
     return True, ""
 
 
+def _state_difference(py: object, ts: object, path: str = "") -> str:
+    """The first place two projections differ, as a path and both values."""
+    if isinstance(py, dict) and isinstance(ts, dict):
+        for key in sorted(set(py) | set(ts)):
+            if py.get(key, ...) != ts.get(key, ...):
+                if key in py and key in ts:
+                    return _state_difference(py[key], ts[key], f"{path}/{key}")
+                return (f"  at {path}/{key}\n"
+                        f"    python: {json.dumps(py.get(key, '<absent>'))}\n"
+                        f"    ts:     {json.dumps(ts.get(key, '<absent>'))}")
+    if isinstance(py, list) and isinstance(ts, list) and len(py) == len(ts):
+        for i, (a, b) in enumerate(zip(py, ts)):
+            if a != b:
+                return _state_difference(a, b, f"{path}/{i}")
+    return f"  at {path or '/'}\n    python: {json.dumps(py)}\n    ts:     {json.dumps(ts)}"
+
+
 def _first_divergence(py: list[dict], ts: list[dict]) -> int | None:
     for i in range(min(len(py), len(ts))):
         if py[i] != ts[i]:
@@ -588,6 +851,15 @@ def check_seed(seed: int, steps: int,
             f"  methods: {', '.join(sorted(set(altered)))}\n"
             "  A recorded envelope must be the one the client sent, or a "
             "signature over it no longer verifies.")
+    faults = [i for i, r in enumerate(rec.responses)
+              if r.get("error", {}).get("code") == -32603]
+    if faults:
+        i = faults[0]
+        return False, (
+            f"seed {seed}: the Python reference answered envelope {i} with -32603\n"
+            f"  envelope: {json.dumps(rec.envelopes[i])}\n"
+            "  -32603 is a fault in the coordinator: every refusal of a call has "
+            "its own code.")
     ts = _replay_ts(rec.envelopes)
     ts_responses = ts["responses"]
     idx = _first_divergence(rec.responses, ts_responses)
@@ -598,6 +870,20 @@ def check_seed(seed: int, steps: int,
             f"  envelope: {json.dumps(env)}\n"
             f"  python:   {json.dumps(rec.responses[idx]) if idx < len(rec.responses) else '<none>'}\n"
             f"  ts:       {json.dumps(ts_responses[idx]) if idx < len(ts_responses) else '<none>'}")
+    faults = [i for i, r in enumerate(ts_responses)
+              if (r.get("error") or {}).get("code") == -32603]
+    if faults:
+        i = faults[0]
+        return False, (
+            f"seed {seed}: the TypeScript reference answered envelope {i} with -32603\n"
+            f"  envelope: {json.dumps(rec.envelopes[i])}")
+    idx = _first_divergence(rec.states, ts["states"])
+    if idx is not None:
+        return False, (
+            f"seed {seed}: state diverges after envelope {idx}\n"
+            f"  envelope: {json.dumps(rec.envelopes[idx])}\n"
+            f"  response: {json.dumps(rec.responses[idx])}\n"
+            f"{_state_difference(rec.states[idx], ts['states'][idx])}")
     if rec.chain_head() != ts["chain_head"]:
         return False, (
             f"seed {seed}: chain heads diverge after {len(rec.envelopes)} envelopes\n"
