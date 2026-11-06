@@ -31,6 +31,14 @@ shell, PowerShell and cmd all have, with the desk's address as a sentence.
 It has no dependencies, and it never installs anything itself: the
 project's README says what to install.
 
+`upgrade` brings a project forward. `lib/released.json` holds the hash of
+every file each release wrote into a project, those with no placeholder in
+them, and each release's `package.json` scripts;
+`scripts/released-copies.mjs` writes it from the release tags, and
+`--check` fails when the two disagree, so run it after tagging a release.
+Upgrade replaces or removes a file only where its hash is one of those, and
+otherwise keeps it and names it.
+
 What a project shares with every other project lives in packages, so a fix
 reaches a project through `npm update`: `@brightbeamai/chap-server` holds
 the server, the desk, the keys, the model providers and the profile

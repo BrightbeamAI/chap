@@ -229,6 +229,7 @@ async function exists(p) {
 function usage(templates) {
   const lines = [
     "Usage: npx create-chap-app <name> [--template <name>] [--profiles a,b] [--yes]",
+    "       npx create-chap-app upgrade [<dir>] [--dry-run] [--diff]   bring a project up to this release",
     "",
     "Templates, with what each needs installed:",
     ...templates.map((t) => `  ${templateLine(t)}`),
@@ -272,6 +273,7 @@ async function ask(rl, question, fallback) {
  */
 export async function main(argv = process.argv.slice(2), { input = stdin, output = stdout, interactive = !!input.isTTY } = {}) {
   const say = (text = "") => output.write(`${text}\n`);
+  if (argv[0] === "upgrade") return (await import("./lib/upgrade.mjs")).runUpgrade(argv.slice(1), { say });
   const args = parseArgs(argv);
   const templates = await listTemplates();
   if (args.help) { say(usage(templates)); return 0; }

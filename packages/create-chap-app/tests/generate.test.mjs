@@ -54,7 +54,7 @@ test("the package ships what a generated project needs", async () => {
   // `gitignore`, and the files list carries the bin, the templates, the
   // generator and the licence. This reads the files list the way npm pack does.
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-  assert.deepEqual(pkg.files, ["bin", "index.mjs", "templates", "README.md", "DESIGN.md", "LICENSE"]);
+  assert.deepEqual(pkg.files, ["bin", "index.mjs", "lib", "templates", "README.md", "DESIGN.md", "LICENSE"]);
   assert.match(await readFile(new URL("../LICENSE", import.meta.url), "utf8"), /Apache License\s+Version 2\.0/);
   assert.equal(pkg.license, "Apache-2.0");
   assert.equal(pkg.scripts.prepublishOnly, "npm test", "a failing generator does not publish");

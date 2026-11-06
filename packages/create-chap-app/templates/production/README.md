@@ -222,6 +222,14 @@ presents no token and a workspace cannot advertise the profile without a
 verifier; the tests cover what it changes. The decisions in it are scripted,
 because it is a comparison and nobody is at the desk.
 
+## Upgrading
+
+`npx create-chap-app@latest upgrade` in this directory brings the project up
+to the latest release. The CHAP packages move forward, and a file or a
+script the template ships is replaced only where it is still as a release
+wrote it. Every file kept because it differs is named, `--diff` shows how,
+and `--dry-run` changes nothing.
+
 ## What the deployment supplies
 
 - TLS in front of the coordinator, on every production transport

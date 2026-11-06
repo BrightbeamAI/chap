@@ -35,6 +35,36 @@ name and email. `--agent` names the agent's URI. For the code gate,
 default, `commit`, reviews each change before it is committed.
 `npx create-chap-app --help` lists every flag.
 
+## Upgrading a project
+
+```bash
+npx create-chap-app@latest upgrade my-gate --dry-run
+npx create-chap-app@latest upgrade my-gate
+```
+
+Upgrade brings a project this generator wrote, from 0.3.1 on, up to this
+release, and leaves the project its own:
+
+- The CHAP packages move forward: the `@brightbeamai/chap-*` dependencies
+  in `package.json`, or the `chap-` lines of `requirements.txt`, take the
+  ranges the template pins now, and the packages it has gained are added.
+- A file the template ships, or a `package.json` script, is replaced only
+  where it is still as a release wrote it, by its hash, and a file the
+  template has gained is added. A file a release wrote that the template no
+  longer ships is removed on the same condition: a project from 0.3.1 to
+  0.3.4 carried the server, the desk and the gate's library as copies, which
+  `@brightbeamai/chap-server` and `@brightbeamai/chap-code-gate` hold now.
+  `hooks/` and `gate-hook.mjs` stay whatever they hold, since a repository
+  hooked up before 0.3.5 runs them by path.
+- Every file kept because it differs is named, and `--diff` shows how with
+  `git diff`. `chap.config.json` keeps its settings; upgrade brings its
+  `template` stamp up to date and names each setting the template now
+  writes differently.
+
+A project from before the stamp is recognised by the released copies it
+holds; `--template` names its template where none are left. `--dry-run`
+says what would change and changes nothing.
+
 ## The templates
 
 | Template | Runs on | What it does |

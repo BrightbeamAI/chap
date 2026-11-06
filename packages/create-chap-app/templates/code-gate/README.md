@@ -641,6 +641,14 @@ its outcome under both.
 - Each approval covers one commit on the commit it was approved against;
   if the branch moves on first, the change is proposed again.
 
+## Upgrading
+
+`npx create-chap-app@latest upgrade` in this directory brings the project up
+to the latest release. The CHAP packages move forward, and a file or a
+script the template ships is replaced only where it is still as a release
+wrote it. Every file kept because it differs is named, `--diff` shows how,
+and `--dry-run` changes nothing.
+
 ## What the deployment supplies
 
 - TLS in front of the gate, and the team's login in front of it all. A

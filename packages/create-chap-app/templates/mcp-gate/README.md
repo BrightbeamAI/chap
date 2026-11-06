@@ -127,6 +127,14 @@ The agent approves its own work                               refused -32011    
 `--profiles` sets the first list, `--against` the second, and `--json` prints
 the rows as a document for `docs/profile-explorer.md`.
 
+## Upgrading
+
+`npx create-chap-app@latest upgrade` in this directory brings the project up
+to the latest release. The CHAP packages move forward, and a file or a
+script the template ships is replaced only where it is still as a release
+wrote it. Every file kept because it differs is named, `--diff` shows how,
+and `--dry-run` changes nothing.
+
 ## What the deployment supplies
 
 This project does not notify anyone: the desk lists the open reviews
