@@ -32,8 +32,17 @@ pip install "chap-coordinator[a2a]"
 
 ## Companion modules
 
-The base package is the protocol core. Two transport adapters ship in
-the same wheel under optional extras:
+The base package is the protocol core, with what runs it for people and
+agents in more than one process, standard library only:
+
+- `chap_coordinator.server`, the desk server: the review desk, `POST /chap`
+  and a read API, from the one process that owns the store; and the same
+  routes as an ASGI app for FastAPI or Starlette.
+- `chap_coordinator.client`, the HTTP client the other processes use.
+- `chap-coordinator`, the command that runs the desk server and the two
+  transports below (`python -m chap_coordinator` is the same command).
+
+Two transport adapters ship in the same wheel under optional extras:
 
 - `chap_coordinator.transports.mcp_server` wraps a Coordinator as an
   MCP server. Every CHAP method becomes an MCP tool named
@@ -87,6 +96,204 @@ resp = coord.dispatch({"jsonrpc": "2.0", "id": "4",
 print(resp["result"])  # {"task_id": "tsk_...", "state": "created"}
 ```
 
+## The server, the client and the command
+
+A coordinator runs in one process, which owns its store, and the people
+and agents it serves reach it from others. `chap_coordinator.server` is
+that process: the review desk where a person decides, `POST /chap` for CHAP
+calls as JSON-RPC, and a read API under `/api/`. A `chap.config.json`
+describes it:
+
+```json
+{
+  "workspace": "wsp_support",
+  "profiles": ["core/1.0", "review/1.0"],
+  "store": "./data/chap.db",
+  "port": 8787,
+  "humans": [{ "uri": "human:ana@example.org", "display_name": "Ana", "role": "reviewer" }],
+  "agent": { "uri": "agent:drafter", "display_name": "The drafter" },
+  "require_signatures": "humans",
+  "chain": true
+}
+```
+
+```bash
+pip install "chap-coordinator[crypto]"
+chap-coordinator serve --config chap.config.json
+```
+
+The desk is then at http://127.0.0.1:8787/.
+
+- `store` is read against the config file's directory, wherever the server
+  starts, and a leading `~` is the home directory; `":memory:"` keeps
+  everything in the process.
+- `require_signatures` is `true` (every call is signed), `"humans"` (a
+  person's calls are signed, and the desk signs in the browser) or
+  `false`. Signing needs the `crypto` extra.
+- `chain` links each entry on the log to the one before it by its hash.
+- PORT, CHAP_HOST, CHAP_DB_PATH, CHAP_REQUIRE_SIGNATURES, CHAP_CHAIN and
+  CHAP_ALLOWED_HOSTS override the file.
+
+The server answers only under its own host names, and a proxy's name goes
+in `allowed_hosts`. It refuses a browser request from another origin,
+takes JSON only on `POST /chap`, and its Content-Security-Policy lets no
+other page frame the desk. The pages chap-analytics writes to `analytics/`
+beside the config are served under `/analytics/`, in a sandbox that keeps
+them out of the desk's origin. There is no login: a deployment reached from
+other machines puts one in front.
+
+Every other process reaches the server with `chap_coordinator.client`:
+
+```python
+from chap_coordinator.client import HttpCoordinator, Participant, Signer
+
+desk = HttpCoordinator("http://127.0.0.1:8787/chap")
+agent = Participant(desk, "wsp_support", "agent:drafter",
+                    Signer.load_or_create("agent:drafter", "keys"))
+agent.join("agent", "drafter")
+task = agent.call("task.create", kind="draft_reply", assignee=agent.uri,
+                  input={"ticket": "T-1"}, review_required=True)
+agent.call("task.complete", task_id=task["task_id"], output={"body": "Hello"})
+decided = agent.wait_for_decision(task["task_id"], timeout=3600)
+print(decided["state"], decided["output"])
+```
+
+`call` raises `ChapError`, with the coordinator's code, when a call is
+refused, and `ChapEndpointError` when no JSON-RPC answer comes at all. With
+a `Signer`, every call the participant makes is signed with its own key,
+which `load_or_create` keeps in `keys/`, readable by its owner alone, and
+names by its RFC 7638 thumbprint; without one, its calls go unsigned.
+`HttpCoordinator.dispatch(envelope)` answers as `Coordinator.dispatch`
+does, and a `Participant` stands in for a coordinator as well, signing what
+it sends, so a framework bridge runs against the server unchanged.
+
+`chap-coordinator` has three commands, each with `--help`:
+
+- `serve`: the desk server, from a chap.config.json (`--config`, `--host`,
+  `--port`).
+- `mcp`: an MCP server on stdio that acts as one agent, `--as
+  agent:assistant@local` by default. With `--url
+  http://127.0.0.1:8787/chap` it forwards every call to a running desk
+  server, so the assistant's work waits for the person at that desk. Needs
+  the `mcp` extra.
+- `a2a`: an A2A server that acts as one agent. Needs the `a2a` extra.
+
+## Running it for real
+
+**The store.** `CoordinatorOptions(store=SqliteStore(path))` keeps every
+workspace in a SQLite file: the coordinator loads it when it starts and
+writes each call that adds to a workspace's log before the call returns.
+Without a store the state lives in memory and goes when the process exits.
+A call whose write fails is answered with `-32603` and
+`data: {"reason": "store"}`, and the workspace goes back to what the store
+holds; `store_errors="log"` keeps the earlier behaviour, where the call is
+answered as it was and the next write carries its change. The desk server
+opens the store `chap.config.json` names, from the config file's directory.
+
+**Several processes, one store.** Each coordinator holds its workspaces in
+memory. Before a call on a workspace it asks the store whether another
+process has written since, and reloads if so; a write another process got
+to first runs the call once more on what the store holds. Two processes
+over one SQLite file, such as a server and a queue worker, therefore cannot
+contradict each other's decisions. A store of your own that implements
+`save` alone has no such check, and still needs one process
+([SPECIFICATION.md §10.3](../../SPECIFICATION.md#103-writers)).
+
+**FastAPI.** Mount the desk in your app after your own routes, and run one
+worker: the desk's pages read the coordinator's memory, which a call
+handled by another worker does not update until this worker's next call.
+
+```python
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from chap_coordinator.server import ChapDesk, load_config, make_coordinator
+
+config = load_config("chap.config.json")
+coord = make_coordinator(config)
+desk = ChapDesk(config, coord)
+
+
+@asynccontextmanager
+async def lifespan(app):
+    yield
+    coord.options.store.close()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/healthz")
+def healthz():
+    with desk.lock:
+        return {"tasks": len(coord.get_workspace(config["workspace"]).tasks)}
+
+
+app.mount("/", desk)
+```
+
+```bash
+uvicorn app:app --workers 1
+```
+
+The desk's pages name their files from `/`, so the desk is mounted at the
+root; `POST /chap` and `/api/` also work below a prefix. An app that needs
+more workers runs `chap-coordinator serve` beside them, and each worker
+calls it through `HttpCoordinator`.
+
+**A job queue.** Queue workers (Celery, RQ, arq) are processes of their
+own, so each reaches the server over HTTP. One job opens the review and
+ends; a later one reads the decision, so no worker waits on a person:
+
+```python
+from chap_coordinator.client import HttpCoordinator, Participant, Signer
+
+desk = HttpCoordinator("http://127.0.0.1:8787/chap")
+agent = Participant(desk, "wsp_support", "agent:drafter",
+                    Signer.load_or_create("agent:drafter", "/srv/chap/keys"))
+
+
+def write_draft(ticket):  # the agent's model call
+    return {"to": ticket["customer"], "body": "Thank you for writing to us."}
+
+
+def send(reply):  # what happens to an approved reply
+    print("sending", reply)
+
+
+def draft_reply(ticket):  # enqueued for each new ticket
+    task = agent.call("task.create", kind="draft_reply", assignee=agent.uri, input=ticket,
+                      review_required=True, idempotency_key=f"ticket-{ticket['id']}")
+    if task["state"] in ("created", "in_progress"):
+        agent.call("task.complete", task_id=task["task_id"], output=write_draft(ticket))
+    return task["task_id"]
+
+
+def send_when_decided(task_id):  # run on a schedule; None while the review is open
+    view = agent.task(task_id)
+    if view["state"] == "review_requested":
+        return None
+    if view["state"] == "completed":
+        send(view["output"])
+    return view["state"]
+```
+
+The agent joins once, with `agent.join("agent", "drafter")`, and every
+worker loads the same key file. The idempotency key lets a retried job find
+the task it opened before, and a job that finds its draft already submitted
+leaves it. A rejection that asks for a revision leaves the task
+`in_progress`, and running `draft_reply` again submits a new draft.
+
+**Backups and chain heads.** With WAL, the SQLite store's default, copy
+the file while the server runs with SQLite's online backup:
+`sqlite3 data/chap.db ".backup backup.db"`, or
+`sqlite3.Connection.backup`. The chain head stays in that file, where
+whoever runs the server can rewrite it. To show later that an entry
+existed, keep the head where they cannot change it: publish the
+`chain_head` that `audit.verify_chain` returns, or hand the entries to a
+transparency service with `audit.submit_to_scitt` and keep its receipts.
+
 ## What is implemented
 
 This package implements **CHAP Core plus every profile**:
@@ -128,8 +335,8 @@ response = coord.dispatch(envelope)
 
 Where `envelope` is a JSON-RPC 2.0 request and `response` is the
 JSON-RPC 2.0 response. Bind whichever HTTP, WebSocket, or in-process
-transport you like. State is held in memory; persist by subscribing
-to the audit listener.
+transport you like. State is held in memory, and kept in a store when
+one is set: see [Running it for real](#running-it-for-real).
 
 `dispatch` holds a lock, so calls from several threads are handled one at
 a time. With a `store` option (`SqliteStore`, or a store of your own),
@@ -143,7 +350,8 @@ reloads a workspace another instance has written; a write another instance
 got to first runs the call once more on what the store holds
 ([SPECIFICATION.md §10.3](../../SPECIFICATION.md#103-writers)).
 
-A minimal stdlib HTTP server is at
+`chap_coordinator.server` binds HTTP with the desk included. A minimal
+stdlib HTTP server is at
 [`reference/python/server.py`](https://github.com/BrightbeamAI/chap/tree/main/reference/python) in the parent repo.
 
 ## Determinism for tests
@@ -291,8 +499,8 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The suite covers the core library, the MCP and A2A transports, and the
-wrap helpers.
+The suite covers the core library, the desk server, the client and the
+command, the MCP and A2A transports, and the wrap helpers.
 
 ## Spec fidelity
 
