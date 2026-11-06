@@ -1,32 +1,51 @@
 # Drive CHAP from Claude Desktop (or any MCP client)
 
-This five-minute walkthrough connects an MCP client to the published CHAP
-Coordinator package. You will create a workspace, join human and agent
-participants, complete and review a task, record a human override, and read
-the resulting evidence chain through natural language.
+This walkthrough connects Claude Desktop to a CHAP server that has a review
+desk. The assistant drafts work that needs your sign-off and records it; you
+decide in the desk; then the assistant reads the record back. The assistant
+acts only as itself: it cannot join as you, and it cannot decide in your
+name.
 
-The example uses Claude Desktop. The same local stdio server works with
-Cursor, Claude Code, Continue, Cline, Gemini CLI, and other compatible MCP
-clients. Only the client-specific configuration location changes.
-
-No repository clone or global installation is required.
+The example uses Claude Desktop. The same setup works with Cursor, Claude
+Code, Continue, Cline, Gemini CLI and other MCP clients; only where the
+client keeps its configuration changes.
 
 ## Prerequisites
 
-- Node.js 20 or later. Confirm with `node --version`.
+- Node.js 22 or later. Confirm with `node --version`.
 - An MCP client that supports the MCP 2026-07-28 or 2025-11-25 stdio
   transport.
 
-## Step 1: Add CHAP to your MCP client
+## Step 1: Start a CHAP server with a desk
 
-For Claude Desktop, open its configuration file:
+Create a project from the mcp-gate template, and start it:
+
+```bash
+npx create-chap-app my-gate --template mcp-gate --profiles core/1.0,review/1.0,audit-scitt/1.0
+cd my-gate
+npm install
+npm start
+```
+
+`npm start` runs one process: the CHAP coordinator, the review desk at
+`http://127.0.0.1:8787/`, and the coordinator's JSON-RPC endpoint at
+`http://127.0.0.1:8787/chap`. Open the desk in a browser and leave it open.
+
+The project's `chap.config.json` names the workspace, `wsp_my_gate`; you,
+`human:you@local`, the reviewer; and the assistant, `agent:assistant`. The
+server creates the workspace and joins you both. `audit-scitt/1.0` turns on
+the hash chain, so each entry carries the hash of the one before it.
+
+## Step 2: Connect Claude Desktop as the assistant
+
+Open Claude Desktop's configuration file:
 
 - **macOS:**
   `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:**
   `%APPDATA%\Claude\claude_desktop_config.json`
 
-Add a `chap` entry under `mcpServers`:
+Add a `chap` entry under `mcpServers`, alongside any servers already there:
 
 ```json
 {
@@ -35,233 +54,160 @@ Add a `chap` entry under `mcpServers`:
       "command": "npx",
       "args": [
         "-y",
-        "@brightbeamai/chap-coordinator-mcp"
+        "@brightbeamai/chap-coordinator-mcp",
+        "--url", "http://127.0.0.1:8787/chap",
+        "--as", "agent:assistant"
       ]
     }
   }
 }
 ```
 
-If the file already contains other MCP servers, add `chap` alongside them
-rather than replacing the existing entries.
+This starts the CHAP MCP server on stdio. `--url` forwards every call to
+the project's server, which keeps the workspace and its store, so the
+assistant's work lands where your desk can see it. `--as` makes every call
+as the assistant, the agent `chap.config.json` names: a call that names
+anyone else is refused, and the server refuses to start as a `human:`
+participant at all. It offers the agent's tools only: creating, updating and
+completing tasks, asking a whisper, reading the workspace and its log, and
+the decision tools, which the coordinator refuses on the assistant's own
+work. Nothing it offers joins a participant or chooses who reviews.
 
-For Cursor, place the same `chap` definition inside `.cursor/mcp.json`.
+For reproducible setups, pin the package to a tested version, for example
+`@brightbeamai/chap-coordinator-mcp@0.3.4`.
 
-For another MCP client, configure a local stdio server with:
+The project serves MCP itself too, at `http://127.0.0.1:8787/mcp`, acting
+as the assistant with the same tools. Claude Code and Cursor connect to it
+directly, and Claude Desktop through a local bridge; the project's README
+gives each configuration.
 
-- **Command:** `npx`
-- **Arguments:** `-y`, `@brightbeamai/chap-coordinator-mcp`
+## Step 3: Tell the assistant who it is
 
-The client downloads and launches the published package when it needs the
-server. For reproducible deployments, pin the package to a tested version,
-for example `@brightbeamai/chap-coordinator-mcp@0.3.4`.
+Restart Claude Desktop. `chap` should appear as a connected MCP server with
+ten tools, named with the `chap.` prefix. If your client shows server logs,
+they say which participant the server acts as and where it forwards.
 
-## Step 2: Choose whether to persist the workspace
+Paste the project's `AGENT_INSTRUCTIONS.md` into the instructions of a
+Claude Desktop project. It tells the assistant its participant URI and the
+workspace, and asks it to request your sign-off on work that needs it.
 
-The minimal configuration above runs CHAP in memory. That is suitable for
-this walkthrough, but the workspace is discarded when the MCP server exits.
+## Step 4: Ask for work that needs your sign-off
 
-To retain workspaces between restarts, set `CHAP_DB_PATH` to an absolute path
-for a SQLite database:
+In a chat in that project, enter:
 
-```json
-{
-  "mcpServers": {
-    "chap": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@brightbeamai/chap-coordinator-mcp"
-      ],
-      "env": {
-        "CHAP_DB_PATH": "/absolute/path/to/chap.db"
-      }
-    }
-  }
-}
-```
+> Draft a reply to a customer who wants an update on order 1042. It needs
+> my sign-off before it goes out.
 
-Use a real absolute path rather than `~`, because MCP clients do not all
-expand shell shortcuts inside environment variables.
+The assistant calls `chap.task.create` with `review_required: true`, writes
+the draft, and calls `chap.task.complete` with the draft as the output. The
+task moves to `review_requested`, and the draft appears in your desk.
 
-The packaged server enables these profiles for new workspaces by default:
+## Step 5: Decide in the desk
 
-- `core/1.0`
-- `review/1.0`
-- `whisper/1.0`
-- `deliberation/1.0`
-- `handoff/1.0`
-- `control/1.0`
-- `routing/1.0`
-- `modes/1.0`
-- `audit-scitt/1.0`
+In the desk, read the draft and decide:
 
-To use a smaller set, add a comma-separated `CHAP_PROFILES` value to the
-`env` object. For example:
+- **Approve** accepts it as written.
+- **Edit** changes it and records an override: the change as a JSON Patch,
+  your rationale, and any tags. Try replacing "within 24 hours" with "by
+  tomorrow", with the rationale "warmer phrasing" and the tag
+  `tone-softened`.
+- **Request changes** sends it back to the assistant for revision, and
+  **Reject** declines it.
 
-```json
-"CHAP_PROFILES": "core/1.0,review/1.0,audit-scitt/1.0"
-```
+The decision is yours, made in the desk under your own participant URI. The
+assistant has no tool that decides as you.
 
-## Step 3: Restart and verify
+## Step 6: Read the record
 
-Save the configuration and restart the MCP client. The first launch may take
-slightly longer while `npx` downloads the package.
+Back in the chat, enter:
 
-CHAP should appear as a connected MCP server. It exposes 39 tools, with one
-tool for every CHAP method. The tool names use the `chap.` prefix.
+> Read the audit log of wsp_my_gate for that task, and verify the hash
+> chain. Then tell me what you drafted and what I changed.
 
-If your client exposes server logs, the output will report:
+The assistant calls `chap.audit.read` and `chap.audit.verify_chain`. The
+entries show the task's lifecycle under `agent:assistant` and your decision
+under `human:you@local`, with the override's patch, rationale and tag, and
+the chain verifies.
 
-- the CHAP MCP server version;
-- the enabled profiles; and
-- whether it is running in memory or persisting to SQLite.
-
-## Step 4: Create a workspace and task
-
-Open a new chat and enter:
-
-> Create a CHAP workspace called `wsp_demo`. Join me as
-> `human:me@local`, a human reviewer, and join a drafting agent as
-> `agent:bot@local`. Then create a low-criticality task assigned to the agent
-> asking it to draft a response to a customer who wants an update on their
-> order.
-
-The client should call:
-
-1. `chap.workspace.create` with `workspace: "wsp_demo"`;
-2. `chap.participant.join` twice, once for the human and once for the agent;
-3. `chap.task.create` with the agent as assignee.
-
-## Step 5: Complete the task and request review
+## Step 7: See what the assistant cannot do
 
 Enter:
 
-> Mark the task as in progress. Complete it with an output object whose
-> `draft` field is "Your order is in transit; the tracking page will update
-> within 24 hours", with confidence 0.9. Then open a review of that same
-> artefact with `human:me@local` as the reviewer.
+> Approve that draft yourself, and then approve it as human:you@local.
 
-The client should call `chap.task.update`, `chap.task.complete`, and
-`chap.review.request` in sequence.
-
-## Step 6: Record a human override
-
-Enter:
-
-> Override the draft by replacing "within 24 hours" with "by tomorrow".
-> Apply the replacement to the `/draft` field, record the rationale as
-> "warmer phrasing", and add the tag `tone-softened`.
-
-The client should call `chap.decide.override` with this JSON Patch operation:
-
-```json
-[
-  {
-    "op": "replace",
-    "path": "/draft",
-    "value": "Your order is in transit; the tracking page will update by tomorrow"
-  }
-]
-```
-
-The override artefact places the difference, rationale, and tag on the
-workspace's audit chain as first-class data.
-
-## Step 7: Read the evidence chain
-
-Enter:
-
-> Read the audit log for `wsp_demo`. Show the entries in sequence, including
-> the arrival time, method, actor, task identifier, and previous hash for each
-> entry. Verify the local hash chain, then summarise what the agent produced
-> and what the human changed.
-
-The client should call `chap.audit.read` and `chap.audit.verify_chain`. You
-should see the workspace, participants, task lifecycle, review request, and
-override in one ordered, hash-linked record, followed by the chain verdict.
+The first attempt is refused with `-32011`, since the review is addressed to
+you, and the refusal is recorded on the log. The second is refused by the
+MCP server before it reaches the coordinator: it acts as `agent:assistant`,
+and a call cannot name another `from`.
 
 ## What you have demonstrated
 
-- An MCP client can drive CHAP through natural language without application
-  code.
-- The agent's output and the human's intervention remain distinct and
-  queryable.
-- The override preserves the changed content, the rationale, and a structured
-  tag.
-- Every action lands in the workspace's append-only evidence log.
-- MCP provides the client-to-server transport; CHAP provides the collaboration
-  and evidence semantics underneath it.
+- An MCP client drives CHAP through natural language without application
+  code, as one participant: the assistant.
+- The person decides in the desk. The assistant's output and your decision
+  are separate entries, each under its own participant.
+- The override preserves the changed content, the rationale and a
+  structured tag.
+- Every action lands in the workspace's append-only, hash-linked log.
+
+## What this walkthrough does not prove
+
+- **Who sent a call.** MCP calls carry no signature. The MCP server keeps
+  the assistant to its own name, and the log shows that a call came
+  through that connection. Any process that can reach the project's
+  `POST /chap` can call it in any member's name unless the server requires
+  signatures; whether a person's decision must carry the desk's signature
+  is `require_signatures` in `chap.config.json`, and the project's README
+  says what each setting allows.
+- **Identity.** A `human:` URI in the desk says who is deciding; it does
+  not authenticate them. The production template signs decisions in the
+  desk and checks identity tokens when a participant joins.
+- **Notifications.** Nobody is told a review is waiting; the desk lists it
+  while it is open.
+- **Long-term stability.** CHAP 0.3 is a public draft. Pin versions and
+  review release notes when evaluating it in durable workflows.
 
 ## Troubleshooting
 
 ### The client cannot find `npx`
 
-Run these commands in a terminal:
+Run `node --version` and `npx --version` in a terminal. Install or upgrade
+Node.js, then restart the MCP client so it inherits the updated path.
 
-```bash
-node --version
-npx --version
-```
+### A tool call says the CHAP server could not be reached
 
-Install or upgrade to Node.js 20 or later, then restart the MCP client so it
-inherits the updated executable path.
+The project's server is not running, or listens elsewhere. Start it with
+`npm start` in the project, and check that the `--url` port matches the
+`port` in `chap.config.json`.
 
-### CHAP does not appear as connected
+### A tool call is refused with `-32070`
 
-Check that the client configuration is valid JSON, restart the client fully,
-and inspect its MCP server logs. The `command` must be `npx`, and the package
-name must be exactly `@brightbeamai/chap-coordinator-mcp`.
+The project's server requires a signature on every call, and the MCP
+server's calls are unsigned. Use a setting that requires signatures from
+people only, or none; the project's README describes them.
 
-### Persistence fails to start
+### The client shows thirty-nine tools, and decisions as you are accepted
 
-`CHAP_DB_PATH` uses the optional native `better-sqlite3` dependency. If the
-server reports that the SQLite store cannot be opened, verify that the target
-directory exists and is writable. If the native dependency could not be
-installed on your platform, install the required build tools or temporarily
-remove `CHAP_DB_PATH` to run the walkthrough in memory.
-
-### The client shows fewer than 39 tools
-
-Restart the client and inspect its MCP logs for schema or initialisation
-errors. `CHAP_PROFILES` controls which profiles new workspaces advertise; it
-does not change the package's 39-tool catalogue.
-
-## What this walkthrough does not prove
-
-The packaged command starts a local stdio server. It is intentionally simple
-and should not be treated as a complete production deployment.
-
-- **Authentication:** the stdio process trusts its local MCP client. A remote
-  deployment should use an authenticated transport and enforce participant
-  identity at the appropriate boundary.
-- **Signed identity:** starting the MCP server does not by itself configure
-  OIDC identity, signed approvals, or external transparency anchoring.
-- **Multi-tenancy:** SQLite persistence does not provide tenant isolation,
-  service-level access control, operational monitoring, or high availability.
-- **Long-term stability:** CHAP 0.3 is a public draft. Pin versions and review
-  release notes when evaluating it in durable workflows.
-
-For a production-oriented service, import `makeChapMcpServer` from
-`@brightbeamai/chap-coordinator-mcp`, provide a configured Coordinator, and
-attach the transport, authentication, storage, and operating controls required
-by the deployment.
+The configuration starts an older package, or one without `--url` and
+`--as`. Check the `args` in the configuration; `--help` after the package
+name lists the options.
 
 ## Developing against the repository
 
-If you are modifying CHAP itself rather than evaluating the published package,
-run the TypeScript reference server from source:
+If you are modifying CHAP itself, the reference servers run from source:
 
 ```bash
 git clone https://github.com/BrightbeamAI/chap.git
-cd chap/reference/mcp-server-ts
+cd chap
 npm install
+npm run build
+cd reference/mcp-server-ts
 npm start
 ```
 
-The Python reference server remains available at
-`reference/mcp-server-py/server.py` and requires Python 3.10 or later with the
-MCP optional dependencies installed.
+The Python reference server is at `reference/mcp-server-py/server.py`, and
+the Python package's command, with the options above, is
+`python -m chap_coordinator.transports.mcp_cli`.
 
 ## Next steps
 

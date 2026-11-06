@@ -8,9 +8,15 @@ Spec target: A2A 1.0, serving A2A 0.3 clients as well. CHAP 0.3.
 
 ## Install
 
+From the repository root, install the workspaces and build the packages this
+server imports:
+
 ```bash
 npm install
+npm run build
 ```
+
+Then run it from this directory.
 
 ## Run
 
