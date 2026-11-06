@@ -142,6 +142,15 @@ export function registerHandoff(coord: Coordinator): void {
         return { error: rpcError(E.PARAMS, `Task ${tid} not in this handoff`) };
       }
     }
+    // The proposer offered tasks it held. One routed, superseded or handed
+    // to someone else since is no longer the proposer's to give, and taking
+    // it would move it away from whoever holds it now.
+    for (const tid of acceptedIds) {
+      if (ws.tasks.get(tid)?.assignee !== ho.proposer) {
+        return { error: rpcError(E.HANDOFF_TASKS_NOT_ASSIGNED_TO_PROPOSER,
+          `Task ${tid} is not currently assigned to ${ho.proposer}`) };
+      }
+    }
     const now = coord.now();
     for (const tid of acceptedIds) {
       const task = ws.tasks.get(tid)!;

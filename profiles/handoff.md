@@ -82,6 +82,12 @@ On accept, the Coordinator atomically:
 1. Updates each accepted task's `assignee` to the accepter.
 2. Records the assignee change in the audit log.
 
+Each accepted task MUST still be assigned to the proposer when the accept
+arrives, and the accept is refused with `-32050` otherwise, changing
+nothing. A task routed, superseded or handed to someone else since the
+proposal is no longer the proposer's to give, and taking it would move it
+away from whoever holds it now.
+
 Accepting makes the accepter the assignee, so an accepter paused under
 `control/1.0` is refused with `-32063` ([`control.md`](./control.md) §2).
 The handoff stays open, and the accepter can take it once resumed.
@@ -138,7 +144,7 @@ accepts.
 
 | Code      | Meaning                                          |
 |-----------|--------------------------------------------------|
-| `-32050`  | One or more task ids are not currently assigned to the proposer. |
+| `-32050`  | One or more task ids are not currently assigned to the proposer, at `handoff.propose` or at `handoff.accept`. |
 | `-32051`  | Handoff has already been accepted/declined.      |
 | `-32052`  | The recipient is not a workspace member, or the accepter is not the named recipient. |
 | `-32063`  | The accepter is a paused participant.            |

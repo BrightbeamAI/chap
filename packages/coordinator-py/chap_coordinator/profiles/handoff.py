@@ -165,6 +165,15 @@ def register_handoff(coord: "Coordinator") -> None:
             if tid not in valid_ids:
                 return {"error": rpc_error(E.PARAMS,
                                            f"Task {tid} not in this handoff")}
+        # The proposer offered tasks it held. One routed, superseded or
+        # handed to someone else since is no longer the proposer's to give,
+        # and taking it would move it away from whoever holds it now.
+        for tid in accepted_ids:
+            task = ws.tasks.get(tid)
+            if task is None or task.assignee != ho.proposer:
+                return {"error": rpc_error(
+                    E.HANDOFF_TASKS_NOT_ASSIGNED_TO_PROPOSER,
+                    f"Task {tid} is not currently assigned to {ho.proposer}")}
 
         # Atomically reassign
         now = coord.now_iso()
