@@ -38,7 +38,8 @@ Whichever server runs them, the routes check every request:
 One process owns one store. The coordinator is a single writer, and the
 server makes every call and every read under one lock, ``ChapDesk.lock``;
 code of your own that uses the same coordinator in the same process takes
-it too. Other processes reach the server over HTTP.
+it too. Other processes reach the server over HTTP, with
+:mod:`chap_coordinator.client`.
 
 A ``human:`` URI labels a participant; it does not authenticate a person.
 Under security-signed/1.0 the desk signs each decision in the browser with
