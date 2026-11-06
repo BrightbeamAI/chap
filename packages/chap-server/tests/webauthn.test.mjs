@@ -218,6 +218,30 @@ test("opened at the loopback address, a desk that wants a passkey goes to localh
   }
 });
 
+test("a desk from before 0.3.5 keeps signing at 127.0.0.1 with its key, and the desk at localhost, refused, says where that key is", async () => {
+  const { chap, base, port } = await gate();
+  const authenticator = softwareAuthenticator({ platform: true });
+  // The 0.3.4 desk's key, as it left it in localStorage at 127.0.0.1, and on record.
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  const { legacyKid } = await import("../desk/chap-client.mjs");
+  await makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN }).call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [{ kty: "OKP", crv: "Ed25519", kid: await legacyKid(HUMAN), use: "sig", alg: "EdDSA", x: jwk.x }] } });
+  let desk = await openDesk(`http://127.0.0.1:${port}`, { authenticator, storage: { [`chap-desk-key:wsp_test:${HUMAN}`]: JSON.stringify(jwk) } });
+  try {
+    assert.ok(await desk.until(() => desk.$("signing").classList.contains("warn")), "the moved key signs, marked");
+    assert.match(desk.text("setup-text"), /^The desk is open at an IP address, where no passkey can sign, so it signs with the key it kept in this browser for this address\./);
+    desk.close();
+    desk = await openDesk(base, { authenticator });
+    assert.ok(await desk.until(() => !desk.$("setup-action").hidden));
+    desk.$("setup-action").click();
+    assert.ok(await desk.until(() => !desk.$("key-alert").hidden));
+    assert.match(desk.text("key-alert"), new RegExp(`Desks before 0\\.3\\.5 were opened at http://127\\.0\\.0\\.1:${port}/, and this browser keeps a key it made there for that address alone: if you decided there, open the desk there\\.`));
+  } finally {
+    desk.close();
+    await chap.close();
+  }
+});
+
 test("what the desk signs with, by desk_signing, the browser and the address", async () => {
   const PKC = (platform) => class { static isUserVerifyingPlatformAuthenticatorAvailable() { return Promise.resolve(platform); } };
   const at = (href) => new URL(href);

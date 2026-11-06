@@ -12,7 +12,7 @@
 
 import { contentHash, deepEqual, fingerprint, jsonPatch, makeClient } from "./chap-client.mjs";
 import { browserKey, keepSigner, makePasskey, storedSigner } from "./keystore.js";
-import { atLocalhost, signingFor } from "./signing.js";
+import { atLocalhost, isAddress, signingFor } from "./signing.js";
 import { ago, artefactAnomalies, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
 import { parsePatch } from "./diff.js";
 import { decisionsOf, outcomeOf, renderInsights, renderMarkdown } from "./insights.js";
@@ -336,7 +336,10 @@ function showKey() {
   if (status === "another key") {
     const how = state.key.refused ? `The workspace refused this browser's key when the desk joined you, because another key already holds ${uri} in ${state.config.workspace}.` : `Another key holds ${uri} in ${state.config.workspace}.`;
     $("key-alert-title").textContent = "This browser's key is not the reviewer's.";
-    $("key-alert-text").textContent = `${how} Decisions signed in this browser would not count, so the desk sends none. If that key is yours, in another browser or a profile since cleared, decide there. If it is not, someone joined under your name first: whoever runs the workspace must find out who, and a trust policy that pins your key keeps them out.`;
+    // Desks before 0.3.5 were opened at 127.0.0.1, and the browser keeps a
+    // key made there for that address alone.
+    const before = location.hostname === "localhost" ? ` Desks before 0.3.5 were opened at http://127.0.0.1${location.port ? `:${location.port}` : ""}/, and this browser keeps a key it made there for that address alone: if you decided there, open the desk there.` : "";
+    $("key-alert-text").textContent = `${how} Decisions signed in this browser would not count, so the desk sends none. If that key is yours, in another browser or a profile since cleared, decide there.${before} If that key is not yours, someone joined under your name first: whoever runs the workspace must find out who, and a trust policy that pins your key keeps them out.`;
   } else if (status === "no key") {
     $("key-alert-title").textContent = "The workspace holds no key for you now.";
     $("key-alert-text").textContent = `The key this browser signed with for ${uri} in ${state.config.workspace} was revoked or rotated away, so decisions signed here would not count, and the desk sends none. Whoever runs the workspace can say why.`;
@@ -376,6 +379,8 @@ function showSetup() {
       text = `The desk signs with a key it kept in this browser before. ${risk} This browser can make a passkey, which asks for your fingerprint, face or PIN each time: move your name to it.`;
       action.textContent = "Move to a passkey";
       action.hidden = false;
+    } else if (isAddress(location.hostname)) {
+      text = `The desk is open at an IP address, where no passkey can sign, so it signs with the key it kept in this browser for this address. ${risk}`;
     } else {
       text = `This browser has no passkey with a fingerprint, face or PIN check, so the desk signs with a key it keeps in the browser. ${risk} A passkey asks you each time.`;
     }
