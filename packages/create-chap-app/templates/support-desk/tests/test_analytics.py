@@ -57,3 +57,20 @@ def test_the_pages_come_from_the_store(tmp_path):
     corrected = next(c for c in cases if c["outcome"] == "overridden")
     assert corrected["corrected_output"]["body"] == "Hello, we are on it."
     assert json.loads((out / "summary.json").read_text(encoding="utf-8"))["workspace"] == ws
+
+
+def test_a_store_under_the_home_directory_is_found_from_a_tilde(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config = load_config(ROOT / "chap.config.json")
+    config.update(store=str(tmp_path / "chap-review.db"), require_signatures=False)
+    coord = make_coordinator(config)
+    agent = config["agent"]["uri"]
+    call(coord, config["workspace"], "task.create", **{"from": agent}, kind="draft_reply", assignee=agent, input={})
+    coord.options.store.close()
+
+    monkeypatch.setenv("CHAP_DB_PATH", "~/chap-review.db")
+    assert analytics.main(["--workspace", config["workspace"], "--out", str(tmp_path / "pages")]) == 0
+    assert json.loads((tmp_path / "pages" / "summary.json").read_text(encoding="utf-8"))["tasks"] == 1
+    monkeypatch.delenv("CHAP_DB_PATH")
+    assert analytics.main(["--store", "~/chap-review.db", "--workspace", config["workspace"],
+                           "--out", str(tmp_path / "again")]) == 0

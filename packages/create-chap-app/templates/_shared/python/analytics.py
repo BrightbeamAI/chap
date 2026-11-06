@@ -238,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--watch", type=int, metavar="SECONDS", help="write the pages again every so many seconds")
     parser.add_argument("--no-rationales", action="store_true", help="leave the reviewers' rationales out of the report")
     args = parser.parse_args(argv)
-    store = args.store
+    store = os.path.expanduser(args.store)
     if store == ":memory:":
         raise SystemExit("The server runs with an in-memory store, so there is nothing to read. Start it with CHAP_DB_PATH set to a file.")
     if not Path(store).is_absolute():
