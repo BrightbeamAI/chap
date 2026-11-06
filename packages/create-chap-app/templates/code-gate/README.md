@@ -612,10 +612,14 @@ same either way.
   for `production` is refused (`-32040`).
 - `control/1.0`: a paused agent is assigned nothing (`-32063`) until it is
   resumed.
-- `security-signed/1.0`: every call after the join is signed with the
-  sender's key or refused (`-32070`); the signatures on the agent's proposal
-  and the reviewers' decisions are what the note carries and the verifier
-  checks against the policy.
+- `security-signed/1.0`: a person's calls are signed with their key or
+  refused (`-32070`), under `"require_signatures": "humans"` in
+  `chap.config.json`, the default here, which leaves an agent member's call
+  unsigned where it chooses; `true` has every call after the join signed.
+  `propose.mjs` signs the agent's proposals either way: the signatures on
+  the agent's proposal and the reviewers' decisions are what the note
+  carries and the verifier checks against the policy. A coordinator from
+  before 0.3.5 has no such policy and treats "humans" as `true`.
 - `audit-scitt/1.0`: the chain is on, `audit.verify_chain` checks it, and
   the chain head at the decision is a trailer on the commit.
 

@@ -12,7 +12,7 @@
   "max_envelope_bytes": 16777216,
   "agent": { "uri": "__AGENT_URI__", "display_name": "The coding agent", "role": "drafter" },
   "mcp": true,
-  "require_signatures": true,
+  "require_signatures": "humans",
   "chain": true,
   "oidc": null
 }

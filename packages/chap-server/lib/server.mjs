@@ -25,6 +25,7 @@
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { readFile, readdir, mkdir, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Coordinator, MemoryStore } from "@brightbeamai/chap-coordinator";
@@ -44,7 +45,15 @@ const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.u
  * CHAP_CHAIN and CHAP_MCP (1 or true) replace the flags; CHAP_ALLOWED_HOSTS
  * adds host names, comma separated; OIDC_ISSUER, OIDC_JWKS_URL and
  * OIDC_AUDIENCE set the token verifier. `dir` is the directory that holds
- * the file: the project.
+ * the file: the project. A relative store path, in the file or in
+ * CHAP_DB_PATH, is taken from there, and a leading ~ is the home directory,
+ * so a server started from anywhere opens the project's store.
+ *
+ * require_signatures is true (every call after the join is signed), false,
+ * or "humans" (a person's calls are signed and an agent member's need not
+ * be), and CHAP_REQUIRE_SIGNATURES takes the same values. It comes out as
+ * `require_signatures`, whether signatures are checked at all, and
+ * `signature_policy`, "all", "humans" or null.
  */
 export async function loadConfig(path = process.env.CHAP_CONFIG ?? "chap.config.json") {
   const file = resolve(path);
@@ -52,17 +61,37 @@ export async function loadConfig(path = process.env.CHAP_CONFIG ?? "chap.config.
   config.dir = dirname(file);
   config.port = Number(process.env.PORT ?? config.port ?? 8787);
   config.host = process.env.CHAP_HOST ?? config.host ?? "127.0.0.1";
-  config.store = process.env.CHAP_DB_PATH ?? config.store ?? "./data/chap.db";
+  config.store = storePath(process.env.CHAP_DB_PATH ?? config.store ?? "./data/chap.db", config.dir);
   // A profile in the list is enforced. security-signed/1.0 requires
   // signatures, and the coordinator turns the chain on for a workspace that
   // advertises audit-scitt/1.0 whatever the flag says, so each flag reports
   // the profile as well as its own setting.
-  config.require_signatures = envFlag("CHAP_REQUIRE_SIGNATURES", !!config.require_signatures) || hasProfile(config.profiles, "security-signed");
+  const asked = signatureSetting(process.env.CHAP_REQUIRE_SIGNATURES || config.require_signatures);
+  config.signature_policy = asked ?? (hasProfile(config.profiles, "security-signed") ? "all" : null);
+  config.require_signatures = config.signature_policy !== null;
   config.chain = envFlag("CHAP_CHAIN", !!config.chain) || hasProfile(config.profiles, "audit-scitt");
   config.mcp = envFlag("CHAP_MCP", config.mcp ?? false);
   config.oidc = oidcFromEnv(config.oidc);
   config.allowed_hosts = [...(config.allowed_hosts ?? []), ...envList("CHAP_ALLOWED_HOSTS")];
   return config;
+}
+
+/** A store path as the server opens it: ":memory:" as it is, ~ as the home directory, a relative path from `dir`. */
+export function storePath(store, dir) {
+  if (store === ":memory:") return store;
+  const home = /^~(?=$|[\\/])/.test(store) ? homedir() + store.slice(1) : store;
+  return resolve(dir, home);
+}
+
+/** The signature policy require_signatures asks for: "all", "humans", or null for none. */
+function signatureSetting(value) {
+  if (value === undefined || value === null || value === false || value === "") return null;
+  if (value === true) return "all";
+  const v = String(value).toLowerCase();
+  if (v === "humans") return "humans";
+  if (v === "1" || v === "true") return "all";
+  if (v === "0" || v === "false") return null;
+  throw new Error(`require_signatures in chap.config.json, or CHAP_REQUIRE_SIGNATURES, is ${JSON.stringify(value)}; it is true, false or "humans"`);
 }
 
 /** Whether a profile list names `name` at any version. */
@@ -155,6 +184,9 @@ export async function makeCoordinator(config, { enrol = [], log = console.log, .
     defaultProfiles: config.profiles,
     enableChain: !!config.chain,
     requireSignatures: !!config.require_signatures,
+    // The workspace's signature policy, which a coordinator that has one
+    // applies: under "humans" an agent member's call need not be signed.
+    ...(config.signature_policy ? { signaturePolicy: config.signature_policy } : {}),
     ...(config.max_envelope_bytes ? { maxEnvelopeBytes: config.max_envelope_bytes } : {}),
     ...extra,
   };
@@ -384,6 +416,7 @@ export function publicConfig(config) {
     max_envelope_bytes: config.max_envelope_bytes ?? 1_048_576,
     agent: config.agent ?? null,
     require_signatures: !!config.require_signatures,
+    signature_policy: config.signature_policy ?? null,
     chain_enabled: !!config.chain,
     persistent: config.store !== ":memory:",
     // Where this project lives, so a prompt the desk writes can name its commands.

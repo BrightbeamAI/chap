@@ -39,9 +39,15 @@ to the desk, which uses it in the commands it writes for an agent.
 }
 ```
 
-- `store`: a SQLite file, or `":memory:"` to keep nothing.
-- `require_signatures`: whether every call after `participant.join` must be
-  signed (`security-signed/1.0`); the desk signs in the browser.
+- `store`: a SQLite file, or `":memory:"` to keep nothing. A relative path is
+  taken from the project's directory, wherever the server is started, and a
+  leading `~` is the home directory; the banner prints the path in full.
+- `require_signatures`: `"humans"` has every call from a person signed and
+  leaves an agent member's unsigned where it chooses, so the desk signs and
+  `/mcp`, which acts as the agent, needs no key; `true` has every call after
+  `participant.join` signed (`security-signed/1.0`); `false` none. The
+  coordinator option `signaturePolicy` carries "humans"; a coordinator from
+  before 0.3.5 has no such policy and treats it as `true`.
 - `chain`: the hash chain over the log; `audit-scitt/1.0` turns it on too.
 - `mcp`: serve `/mcp`, which acts as `agent.uri` with the tools the agent's
   own work needs, `AGENT_MCP_TOOLS`.
@@ -54,8 +60,8 @@ to the desk, which uses it in the commands it writes for an agent.
 
 The environment overrides it: `CHAP_CONFIG` names the file; `PORT`,
 `CHAP_HOST` and `CHAP_DB_PATH` replace the port, the host and the store;
-`CHAP_REQUIRE_SIGNATURES`, `CHAP_CHAIN` and `CHAP_MCP` (`1` or `true`)
-replace the flags; `CHAP_ALLOWED_HOSTS` adds host names, comma separated;
+`CHAP_REQUIRE_SIGNATURES` (`1`, `true`, `humans`, `0` or `false`),
+`CHAP_CHAIN` and `CHAP_MCP` (`1` or `true`) replace the flags; `CHAP_ALLOWED_HOSTS` adds host names, comma separated;
 `OIDC_ISSUER`, `OIDC_JWKS_URL` and `OIDC_AUDIENCE` set the token verifier.
 
 ## What it refuses

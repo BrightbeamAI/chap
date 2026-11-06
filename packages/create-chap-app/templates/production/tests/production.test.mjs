@@ -59,6 +59,7 @@ test("the configuration asks for signatures, the chain and the production profil
   assert.ok(!config.profiles.includes("identity-oidc/1.0"));
   const cfg = await (await fetch(`${base}/api/config`)).json();
   assert.equal(cfg.require_signatures, true);
+  assert.equal(cfg.signature_policy, "humans");
   assert.equal(cfg.chain_enabled, true);
   assert.equal(cfg.oidc, null);
   assert.deepEqual(cfg.profiles, config.profiles);
@@ -79,9 +80,9 @@ test("npm run keys writes the private key once, readable by its owner only, name
   assert.equal(again.publicJwk.x, jwk.x);
 });
 
-test("an unsigned call is refused with -32070", async () => {
-  const r = await post(base, { jsonrpc: "2.0", id: "u1", method: "task.create",
-    params: { workspace: config.workspace, from: config.agent.uri, kind: "draft_message", input: {}, assignee: config.agent.uri } });
+test("an unsigned decision in the reviewer's name is refused with -32070", async () => {
+  const r = await post(base, { jsonrpc: "2.0", id: "u1", method: "decide.approve",
+    params: { workspace: config.workspace, from: config.humans[0].uri, task_id: "tsk_x" } });
   assert.equal(r.error?.code, -32070);
 });
 

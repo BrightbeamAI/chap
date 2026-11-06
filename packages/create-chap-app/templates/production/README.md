@@ -2,8 +2,8 @@
 
 The Handbook's production set, running: `core/1.0`, `review/1.0`,
 `modes/1.0`, `identity-oidc/1.0` and `security-signed/1.0`, with the chain
-on. One coordinator process owns a SQLite store on a volume and refuses
-every unsigned call. An agent runs as a second process with its own key,
+on. One coordinator process owns a SQLite store on a volume and refuses an
+unsigned call from a person. An agent runs as a second process with its own key,
 drafts a message for each row of `messages.csv`, and waits for your decision.
 The review desk signs in the browser with a key it generates there. An
 approved message is written to `outbox/`; a rejected one is written nowhere.
@@ -148,7 +148,8 @@ the file the coordinator writes. The checks:
 - `/api/config` says signatures are required, the chain is on, and the
   profiles include `security-signed/1.0`, and `identity-oidc/1.0` when an
   issuer is set;
-- an unsigned `task.create` as the agent is refused with `-32070`;
+- an unsigned `decide.approve` in the reviewer's name is refused with
+  `-32070`;
 - `workspace.describe`, signed as the agent with the key file, advertises the
   profiles the coordinator enforces and publishes a chain head;
 - `audit.verify_chain` answers `verified` with `ok: true`;
@@ -189,9 +190,14 @@ chap-analytics`; `--watch 300` keeps the pages current.
 - `identity-oidc/1.0`: a join that presents a token has it verified against
   the issuer's keys, and the token's `cnf.jwk` becomes the member's signing
   key (`-32403`, `-32404`).
-- `security-signed/1.0`: every call except `workspace.create` and
-  `participant.join` carries a signature that verifies against the sender's
-  registered key, or is refused (`-32070`).
+- `security-signed/1.0`: a call that carries a signature is checked against
+  the sender's registered key, and refused when it does not verify
+  (`-32070`). `"require_signatures": "humans"` in `chap.config.json`, the
+  default here, has every call from a person signed, so nobody decides as
+  the reviewer without the desk's key, and leaves an agent member's call
+  unsigned where it chooses; the agent here signs every call all the same.
+  `true` has every call after the join signed; `false` none. A coordinator
+  from before 0.3.5 has no such policy and treats "humans" as `true`.
 
 The chain is on through the coordinator's option, so `audit.verify_chain`
 checks it and `workspace.describe` publishes its head, without

@@ -10,7 +10,7 @@
   ],
   "agent": { "uri": "__AGENT_URI__", "display_name": "The drafter", "role": "drafter" },
   "mcp": false,
-  "require_signatures": true,
+  "require_signatures": "humans",
   "chain": true,
   "oidc": null
 }

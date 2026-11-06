@@ -107,6 +107,7 @@ test("the desk is served with its client module", async () => {
   const cfg = await (await fetch(`${base}/api/config`)).json();
   assert.equal(cfg.workspace, config.workspace);
   assert.equal(cfg.mcp, true);
+  assert.equal(cfg.chain_enabled, true, "the chain is on");
 });
 
 test("an MCP client on the 2026-07-28 revision is answered at /mcp, as the agent, with the agent's tools", async () => {

@@ -8,7 +8,7 @@
 //   health     the server answers GET /api/health
 //   config     /api/config says signatures are required, the chain is on, and the
 //              profiles include security-signed/1.0, and identity-oidc/1.0 when an issuer is set
-//   unsigned   an unsigned task.create as the agent is refused with -32070
+//   unsigned   an unsigned decision as the reviewer is refused with -32070
 //   describe   workspace.describe, signed as the agent, advertises the profiles the
 //              coordinator enforces and publishes a chain head
 //   chain      audit.verify_chain answers status verified with ok true
@@ -23,9 +23,9 @@
 // runChecks is exported, so the tests run the same checks in-process.
 
 import { readFile, stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isMain } from "@brightbeamai/chap-server";
+import { isMain, storePath as resolveStore } from "@brightbeamai/chap-server";
 import { makeClient, signerFromJwk } from "@brightbeamai/chap-server/client";
 import { keyPathFor, readKeyFile } from "@brightbeamai/chap-server/keys";
 
@@ -43,8 +43,8 @@ export async function runChecks({ url = process.env.CHAP_URL ?? "http://127.0.0.
   const record = (name, status, detail) => { results.push({ name, status, detail }); return status === "ok"; };
   const config = JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8"));
   const agentUri = config.agent?.uri;
-  const store = storePath ?? process.env.CHAP_DB_PATH ?? config.store ?? "./data/chap.db";
-  const storeFile = store === ":memory:" ? null : (isAbsolute(store) ? store : resolve(dir, store));
+  const store = resolveStore(storePath ?? process.env.CHAP_DB_PATH ?? config.store ?? "./data/chap.db", dir);
+  const storeFile = store === ":memory:" ? null : store;
 
   // health
   let health;
@@ -71,13 +71,15 @@ export async function runChecks({ url = process.env.CHAP_URL ?? "http://127.0.0.
       problems.length ? problems.join("; ") : `signatures required, chain on, profiles ${cfg.profiles.join(", ")}${oidcOn ? `, oidc ${cfg.oidc.issuer}` : ", no oidc issuer"}`);
   }
 
-  // unsigned
+  // unsigned: a decision in the reviewer's name, with no signature. Under
+  // either signature policy a person's call must be signed.
   {
-    const r = await post(`${base}/chap`, { jsonrpc: "2.0", id: "doctor-unsigned", method: "task.create",
-      params: { workspace: cfg.workspace, from: agentUri, kind: "doctor", input: {}, assignee: agentUri } });
+    const reviewer = config.humans?.[0]?.uri;
+    const r = await post(`${base}/chap`, { jsonrpc: "2.0", id: "doctor-unsigned", method: "decide.approve",
+      params: { workspace: cfg.workspace, from: reviewer, task_id: "tsk_doctor" } });
     const code = r.error?.code;
     record("unsigned", code === -32070 ? "ok" : "FAIL",
-      code === -32070 ? `an unsigned task.create as ${agentUri} is refused with -32070` : `expected -32070, got ${r.error ? `${code} ${r.error.message}` : "an accepted call"}`);
+      code === -32070 ? `an unsigned decide.approve as ${reviewer} is refused with -32070` : `expected -32070, got ${r.error ? `${code} ${r.error.message}` : "an accepted call"}`);
   }
 
   // the agent's signer, for the signed checks; the join is the call the store check watches

@@ -35,6 +35,7 @@ const online = () => ({ gate: g.gate });
 
 test("the gate runs the production shape, and the demo repository is under its hooks", async () => {
   assert.equal(g.config.require_signatures, true);
+  assert.equal(g.config.signature_policy, "humans", "a person's calls are signed; under a coordinator with the policy, an agent member's need not be");
   assert.equal(g.config.chain, true);
   assert.equal(g.config.mode, "trial");
   const cfg = await (await fetch(`${g.base}/api/config`)).json();

@@ -9,5 +9,5 @@
   "agent": { "uri": "__AGENT_URI__", "display_name": "The assistant" },
   "mcp": true,
   "require_signatures": false,
-  "chain": false
+  "chain": true
 }
