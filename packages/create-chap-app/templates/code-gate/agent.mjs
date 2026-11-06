@@ -14,8 +14,10 @@
 // applied before the commit, so what lands is what the reviewer approved.
 // A rejection that asks for a revision has the agent draft again with the
 // reviewer's note. A rejection takes the change back out of the working
-// tree. A restarted agent finds its tasks by their idempotency keys and
-// commits what was approved and not yet committed.
+// tree. A restarted agent finds its tasks by their idempotency keys,
+// commits what was approved and not yet committed, and carries on with a
+// draft it made and had not yet submitted, which it records in the
+// repository's git directory until it does.
 //
 // The agent works one task at a time on one branch, since a working tree
 // holds one change at a time. Claude Code, Cursor and other agents work in
@@ -250,6 +252,32 @@ test("subtract subtracts", () => {
 
 // -- the loop -------------------------------------------------------------------
 
+// A draft the agent made and has not submitted yet: the task's key and the
+// patch the working tree held, kept in the repository's git directory, so a
+// restarted agent knows the change in the working tree is its own.
+const draftFile = async (repo) => join((await git(repo, ["rev-parse", "--absolute-git-dir"])).trim(), "chap-agent-draft.json");
+
+async function keptDraft(repo) {
+  try { return JSON.parse(await readFile(await draftFile(repo), "utf8")); } catch { return null; }
+}
+
+async function keepDraft(repo, key) {
+  await writeFile(await draftFile(repo), JSON.stringify({ key, patch: await workingTreePatch(repo) }));
+}
+
+async function forgetDraft(repo) {
+  await rm(await draftFile(repo), { force: true });
+}
+
+/** Whether the working tree holds the draft the agent kept for `key`. */
+async function holdsDraft(repo, key) {
+  const kept = await keptDraft(repo);
+  return !!kept && kept.key === key && kept.patch === await workingTreePatch(repo);
+}
+
+/** The artefact for the change the working tree holds, as the agent proposes it. */
+const artefactOf = (repo, provider, task) => describeChange(repo, { summary: task.title, drafted_by: "the built-in agent", model: modelName(provider.model_id), requested_by: "tasks.csv" });
+
 /** Draft the task into the working tree and return the artefact, or null when nothing changed. */
 async function draft(repo, provider, task, { revision = null, previousPatch = null, log } = {}) {
   const context = await contextFiles(repo, task);
@@ -257,13 +285,15 @@ async function draft(repo, provider, task, { revision = null, previousPatch = nu
   let answer;
   try { answer = parseAnswer(text); } catch (e) { log(`${task.key}: the model's answer could not be used (${e.message})`); return null; }
   await applyAnswer(repo, answer);
-  return describeChange(repo, { summary: task.title, drafted_by: "the built-in agent", model: modelName(provider.model_id), requested_by: "tasks.csv" });
+  await keepDraft(repo, task.key);
+  return artefactOf(repo, provider, task);
 }
 
 /** Take back whatever the working tree holds beyond HEAD. */
 async function discardWorkingTree(repo) {
   const patch = await workingTreePatch(repo);
   if (patch.trim() && (await patchApplies(repo, patch, { reverse: true }))) await applyToWorkingTree(repo, patch, { reverse: true });
+  await forgetDraft(repo);
 }
 
 /**
@@ -308,7 +338,10 @@ export async function handleTask({ gate, client, provider, repo, task, log, poll
     const revision = view.state === "in_progress" && decision?.kind === "reject" ? decision.comment ?? "no note" : null;
     const previousPatch = revision ? await workingTreePatch(repo) : null;
     if (++attempts > 3) { log(`${task.key}: no usable change after three attempts; the task stays open for a person`); return view.state; }
-    const artefact = await draft(repo, provider, task, { revision, previousPatch, log });
+    // A draft made before a restart, and never submitted, is proposed as it stands.
+    const resumed = await holdsDraft(repo, task.key);
+    if (resumed) log(`${task.key}: the working tree holds the draft made before the restart; proposing it`);
+    const artefact = resumed ? await artefactOf(repo, provider, task) : await draft(repo, provider, task, { revision, previousPatch, log });
     if (!artefact) { log(`${task.key}: the draft changed nothing; trying again`); continue; }
     // The review is addressed to the human members, so until enough have
     // joined for the rule the submission would be refused and the refusal
@@ -321,6 +354,7 @@ export async function handleTask({ gate, client, provider, repo, task, log, poll
       while (!(ready = await reviewersReady(client, review)).ok) await new Promise((r) => setTimeout(r, pollMs));
     }
     const r = await propose(client, artefact, { taskId: id, review });
+    await forgetDraft(repo);
     log(`${task.key}: ${revision ? "revised" : "drafted"} with ${provider.model_id}, ${artefact.files.length} file${artefact.files.length === 1 ? "" : "s"}, ${r.state} as ${id}`);
     view = await readTask(gate, id);
   }
@@ -335,10 +369,10 @@ export async function run({ source, repo: repoPath, branch, once = false, pollMs
   // waited for review: carry on when it holds exactly the patch of one of
   // this agent's open changes, and refuse anything else.
   const dirty = await workingTreePatch(repo);
-  if (dirty.trim()) {
+  if (dirty.trim() && (await keptDraft(repo))?.patch !== dirty) {
     const open = (await api(gate, "/api/tasks?kind=code_change&state=review_requested,in_progress,completed"))?.tasks ?? [];
     if (!open.some((t) => t.assignee === client.from && (t.artefact?.patch === dirty || t.output?.patch === dirty))) {
-      throw new Error(`${repo} has uncommitted changes that are not a change waiting for review; commit, stash or remove them first`);
+      throw new Error(`${repo} has uncommitted changes that are not a change waiting for review and not a draft of this agent's; commit, stash or remove them, or start the demo again with npm run demo -- --fresh`);
     }
   }
   const provider = makeProvider(scriptedDraft);

@@ -56,8 +56,9 @@ node ../verify.mjs main..agent/demo
 cd .. && npm run report
 ```
 
-`npm run demo -- --fresh` starts again from nothing; a demo stopped while a
-change waits carries on where it was. `npm test` runs the whole path
+`npm run demo -- --fresh` starts again from nothing; a demo stopped at any
+point carries on where it was, a draft the agent had not yet submitted
+included. `npm test` runs the whole path
 in-process with no model and no network, the ways an unapproved change could
 try to land included.
 

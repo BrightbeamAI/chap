@@ -88,7 +88,7 @@ export async function api(gate, path) {
 export async function served(gate) {
   let cfg;
   try { cfg = await api(gate, "/api/config"); } catch (e) {
-    throw Object.assign(new Error(`The gate at ${gate.base} is not answering (${e.cause?.code ?? e.message}). Start it with: npm start`), { unreachable: true });
+    throw Object.assign(new Error(`The gate at ${gate.base} is not answering (${e.cause?.code ?? e.message}). Start it with: node ${JSON.stringify(join(gate.dir, "server.mjs"))}`), { unreachable: true });
   }
   if (cfg.workspace !== gate.config.workspace) {
     throw new Error(`${gate.base} serves ${cfg.workspace}, and chap.config.json here names ${gate.config.workspace}`);
