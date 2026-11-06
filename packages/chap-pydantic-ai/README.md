@@ -130,7 +130,8 @@ decision made in CHAP.
 With a desk from `create-chap-app`, the coordinator runs in the desk
 process. The templates' `chap_client.py` reaches it: `HttpCoordinator`
 answers `dispatch` and `Participant` reads a task with `task(task_id)`,
-which the bridge takes as `client`. In a project made with the
+which the bridge takes as `client` (a coordinator client with
+`task(task_id)` of its own needs none). In a project made with the
 support-desk template, with `python desk.py` running:
 
 ```python

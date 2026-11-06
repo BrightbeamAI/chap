@@ -196,7 +196,8 @@ class ChapBridge:
     on_envelope: Optional[Callable[[str, dict], None]] = None
     # Reads a task for wait_for_decision: anything with task(task_id)
     # returning the GET /api/tasks/<id> view. Leave it unset with an
-    # in-process Coordinator, which is read directly.
+    # in-process Coordinator, which is read directly, or with a
+    # coordinator client that has task(task_id) itself.
     client: Any = None
     _reviewer_joined: bool = field(default=False, init=False, repr=False)
 

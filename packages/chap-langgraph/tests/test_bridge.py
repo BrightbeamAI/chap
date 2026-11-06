@@ -309,6 +309,29 @@ def test_wait_for_decision_reads_a_client_with_task(coord: Coordinator) -> None:
         "override", {"reply": "edited"}, ("tone",))
 
 
+def test_a_coordinator_client_with_task_needs_no_client(coord: Coordinator) -> None:
+    """A coordinator client that reads tasks itself, as the desk's
+    HttpCoordinator does, is read directly."""
+
+    class DeskCoordinator:
+        def __init__(self, inner):
+            self.inner = inner
+            self.workspaces = inner.workspaces
+
+        def dispatch(self, envelope):
+            return self.inner.dispatch(envelope)
+
+        def task(self, task_id):
+            return {"task_id": task_id, "state": "declined", "output": None,
+                    "review": {"decisions": [{"reviewer": REVIEWER, "kind": "reject",
+                                              "comment": "no"}]}}
+
+    bridge = ChapBridge(DeskCoordinator(coord), workspace="wsp_lg_test",
+                        agent="agent:drafter#v1", reviewer=REVIEWER)
+    decision = bridge.wait_for_decision("tsk_remote", timeout=1)
+    assert (decision.kind, decision.comment, decision.approved) == ("reject", "no", False)
+
+
 def test_wait_for_decision_times_out(bridge: ChapBridge) -> None:
     state = hil_review(bridge, {"reply": "draft"}, "draft")
     with pytest.raises(TimeoutError):

@@ -158,7 +158,8 @@ Resume the graph once the person has decided; until then
 seconds. A `Decision` read back is applied and not recorded again. With an
 in-process coordinator the bridge reads the task directly; over HTTP, pass
 a client whose `task(task_id)` returns the desk's `GET /api/tasks/<id>`
-view as `ChapBridge(..., client=...)`.
+view as `ChapBridge(..., client=...)`; a coordinator client with
+`task(task_id)` of its own needs none.
 
 ## What you get in the audit chain
 
