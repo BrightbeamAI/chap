@@ -13,6 +13,17 @@ rather not install anything, start at
 If you'd rather watch the same flow run as a scripted client, see
 [`../reference/core/client.ts`](../reference/core/client.ts).
 
+## What you need
+
+- A clone of this repository:
+  `git clone https://github.com/BrightbeamAI/chap.git`, then `cd chap`.
+  The commands below run from there.
+- Node.js 22 or later, which runs the reference server. Confirm with
+  `node --version`.
+- `curl`, and `jq` to print the responses and to read the task's id out of
+  one. Without jq, leave off `| jq`, and in step 4 run the `curl` on its
+  own and set `TASK` to the `task_id` it returns.
+
 ---
 
 ## Step 0: start the server
@@ -27,6 +38,8 @@ You should see:
 
 ```
 CHAP Core reference listening on http://localhost:8080/chap
+Try: curl -X POST http://localhost:8080/chap -H 'Content-Type: application/json' \
+     -d '{"jsonrpc":"2.0","id":"1","method":"workspace.describe","params":{"workspace":"wsp_demo"}}'
 ```
 
 Leave it running. In another terminal:
@@ -108,32 +121,14 @@ curl -s -X POST http://localhost:8080/chap \
   }' | jq
 ```
 
-You'll see both members, the workspace state, and `profiles: ["core/0.2"]`.
+You'll see both members, the workspace state, and `profiles: ["core/1.0"]`.
 
 ---
 
 ## Step 4: alice delegates a task to the bot
 
-```bash
-curl -s -X POST http://localhost:8080/chap \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": "4",
-    "method": "task.create",
-    "params": {
-      "workspace": "wsp_demo",
-      "from":      "human:alice@example.org",
-      "to":        "agent:triage-bot",
-      "ts":        "2026-05-17T09:01:00Z",
-      "kind":      "draft_response",
-      "assignee":  "agent:triage-bot",
-      "input":     { "ticket_id": "INC-48219", "customer_message": "Where is my order?" }
-    }
-  }' | jq
-```
-
-The response includes a `task_id`. Save it for the next steps:
+The response is `{ "task_id": "tsk_…", "state": "created" }`. This keeps
+the `task_id` for the next steps:
 
 ```bash
 TASK=$(curl -s -X POST http://localhost:8080/chap \

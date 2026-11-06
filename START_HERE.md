@@ -57,7 +57,7 @@ a reviewer sees what they are signing.
 | --- | --- |
 | The coordinator as a library, in your own process | `npm install @brightbeamai/chap-coordinator` or `pip install chap-coordinator`, from [`packages/coordinator/`](./packages/coordinator/) and [`packages/coordinator-py/`](./packages/coordinator-py/) |
 | A project that runs against your own agent and data | `npx create-chap-app`, from [`packages/create-chap-app/`](./packages/create-chap-app/): the code gate, an MCP gate for Claude Desktop, Cursor and Claude Code, a support desk, an outbound approval gate or a production set |
-| Every commit your coding agent makes reviewed, signed and verifiable | The code gate: `npx create-chap-app my-gate`, then `npm run demo` |
+| Every commit your coding agent makes reviewed, signed and verifiable | The code gate, on Node.js: `npx create-chap-app my-gate`, then `cd my-gate`, `npm install` and `npm run demo` |
 | What each profile changes | [`docs/profile-explorer.md`](./docs/profile-explorer.md) |
 | To see the envelopes themselves | [`examples/00-five-minute-start.md`](./examples/00-five-minute-start.md) |
 | CHAP as MCP tools in Claude Desktop or Cursor | [`examples/drive-chap-from-claude-desktop.md`](./examples/drive-chap-from-claude-desktop.md) |
