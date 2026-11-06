@@ -36,11 +36,16 @@ import json
 import os
 import sys
 import time
-import urllib.error
 from pathlib import Path
 from typing import Callable
 
-from chap_client import ChapError, HttpCoordinator, Participant, Signer
+try:
+    from chap_coordinator.client import ChapEndpointError, ChapError, HttpCoordinator, Participant, Signer
+except ModuleNotFoundError as exc:  # no chap-coordinator, or one from before the client was in it
+    if exc.name not in ("chap_coordinator", "chap_coordinator.client"):
+        raise
+    raise SystemExit("This project needs chap-coordinator 0.3.5 or later. "
+                     "Run: python -m pip install -r requirements.txt") from exc
 from providers import Provider, make_provider
 
 HERE = Path(__file__).resolve().parent
@@ -261,7 +266,7 @@ def run(agent: Participant, provider: Provider, source: str | os.PathLike, outbo
                 if outcome is not None:
                     outcomes[item["message"]["message_id"]] = outcome
                     del pending[task_id]
-        except (ChapError, urllib.error.URLError, OSError) as exc:
+        except (ChapError, ChapEndpointError, OSError) as exc:
             log(f"error: {exc}")
         if once and not pending and all(m["message_id"] in seen for m in rows):
             return outcomes
@@ -273,8 +278,8 @@ def connect(config: dict, url: str) -> Participant:
     client = HttpCoordinator(url)
     try:
         client.get("/api/health")
-    except (urllib.error.URLError, OSError) as exc:
-        raise SystemExit(f"The desk process at {url} is not answering ({exc}). Start it with: python desk.py")
+    except ChapEndpointError as exc:
+        raise SystemExit(f"{exc}\nThe desk process starts with: python desk.py") from exc
     public = client.get("/api/config") or {}
     # A join names a workspace, and the coordinator creates one it does not
     # have, so a mismatch with the desk's configuration would leave the

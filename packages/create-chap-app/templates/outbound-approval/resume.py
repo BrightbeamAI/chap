@@ -2,7 +2,7 @@
 next task.create is accepted again.
 """
 from agent import approver, load_config
-from chap_client import ChapError
+from chap_coordinator.client import ChapError
 
 
 def main() -> None:

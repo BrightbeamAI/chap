@@ -4,9 +4,6 @@
   "language": "python",
   "description": "Tickets come from a CSV; the agent drafts a reply to each, the draft waits for your decision in the desk, and only the reply you approved is written to replies/.",
   "shared": {
-    "desk": "desk",
-    "python/chap_server.py": "chap_server.py",
-    "python/chap_client.py": "chap_client.py",
     "python/providers.py": "providers.py",
     "python/profiles_diff.py": "lib/profiles_diff.py",
     "python/analytics.py": "analytics.py"

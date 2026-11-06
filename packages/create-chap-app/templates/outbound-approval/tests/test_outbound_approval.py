@@ -24,8 +24,8 @@ sys.path.insert(0, str(ROOT))
 os.environ["CHAP_MODEL_PROVIDER"] = "scripted"
 
 import agent as drafter  # noqa: E402
-from chap_client import HttpCoordinator, Participant  # noqa: E402
-from chap_server import load_config, make_coordinator, make_server  # noqa: E402
+from chap_coordinator.client import HttpCoordinator, Participant  # noqa: E402
+from chap_coordinator.server import load_config, make_coordinator, make_server  # noqa: E402
 from providers import make_provider  # noqa: E402
 
 

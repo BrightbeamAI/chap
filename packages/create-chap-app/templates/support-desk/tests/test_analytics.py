@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import analytics  # noqa: E402
-from chap_server import load_config, make_coordinator  # noqa: E402
+from chap_coordinator.server import load_config, make_coordinator  # noqa: E402
 
 
 def call(coord, workspace, method, **params):

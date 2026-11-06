@@ -7,7 +7,7 @@ refused with -32063 until resume.py runs, and the refusal is on the chain.
 import sys
 
 from agent import approver, load_config
-from chap_client import ChapError
+from chap_coordinator.client import ChapError
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -55,13 +55,13 @@ replace `draft` in `agent.py`: it returns the JSON object the approver sees.
 **Your agent.** Anything that can POST JSON can take the agent's place: send
 JSON-RPC envelopes to `http://127.0.0.1:8789/chap` with `task.create`, then
 `task.complete`, and poll `GET /api/tasks/<id>` until the state changes.
-`chap_client.py` wraps that for Python, and a framework bridge written
-against an in-process coordinator runs unchanged over HTTP, because
+`chap_coordinator.client` wraps that for Python, and a framework bridge
+written against an in-process coordinator runs unchanged over HTTP, because
 `HttpCoordinator` answers `dispatch(envelope)` the way a `Coordinator` does:
 
 ```python
 import json
-from chap_client import HttpCoordinator
+from chap_coordinator.client import HttpCoordinator
 from chap_langgraph import ChapBridge, hil_review
 
 config = json.load(open("chap.config.json"))

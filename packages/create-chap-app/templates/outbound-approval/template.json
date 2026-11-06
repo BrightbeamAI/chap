@@ -4,9 +4,6 @@
   "language": "python",
   "description": "The agent drafts outbound messages; each one is held until the named approver decides in the desk, and only an approved message reaches outbox/. A pause stops the agent until a person resumes it.",
   "shared": {
-    "desk": "desk",
-    "python/chap_server.py": "chap_server.py",
-    "python/chap_client.py": "chap_client.py",
     "python/providers.py": "providers.py",
     "python/profiles_diff.py": "lib/profiles_diff.py",
     "python/analytics.py": "analytics.py"
