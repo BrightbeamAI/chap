@@ -15,21 +15,44 @@ npm install
 ## Run
 
 ```bash
-npm start              # default port 9090
+npm start                                  # 127.0.0.1:9090
 npm start -- --port 9091
+npm start -- --as agent:planner@example.org
+npm start -- --db ~/chap-a2a.db            # keep the workspaces
 ```
 
-The server binds `127.0.0.1` by default. Set `CHAP_HOST` to bind elsewhere;
-it has no authentication, so a non-loopback host warns on startup. Only expose
-it on a trusted network.
+| Option | Environment | Effect |
+|--------|-------------|--------|
+| `--host <address>` | `CHAP_HOST` | The address to listen on. Default `127.0.0.1`. |
+| `--port <number>` | | The port. Default `9090`. |
+| `--as <uri>` | `CHAP_PARTICIPANT` | The participant every call is made as. Default `agent:orchestrator@local`. `from` is filled in, a call naming anyone else is refused with `-32011`, and a `human:` URI is refused at start: a person decides in a desk, never through an orchestrator. |
+| `--db <path>` | `CHAP_DB_PATH` | Keep the workspaces in this SQLite file; a leading `~` is the home directory. Without it, state is in memory only. |
+| `--allowed-host <name>` | `CHAP_ALLOWED_HOSTS` (comma separated) | Another name the server answers to, as a `Host` header carries it, such as `a2a.internal:9090`. Repeatable. |
 
 You should see, on stderr:
 
 ```
-CHAP A2A reference server starting on http://localhost:9090/
+CHAP A2A reference server starting on http://localhost:9090/, acting as agent:orchestrator@local
 Agent Card: http://localhost:9090/.well-known/agent-card.json
-Profiles enabled: core, review, whisper, deliberation, handoff, control, routing, audit-scitt.
+Profiles enabled: core/1.0, review/1.0, whisper/1.0, deliberation/1.0, handoff/1.0, control/1.0, routing/1.0, modes/1.0, audit-scitt/1.0.
+State is in memory only: the workspaces are lost when this process exits.
 ```
+
+## What it checks
+
+The server answers only under its own names: a request whose `Host` is not
+`127.0.0.1`, `localhost` or `[::1]` on its port, or an allowed host, is
+refused with 421, so a page that rebinds its own name to this address gets
+nothing. A request from a browser on another origin is refused with 403; a
+client that is not a browser sends no `Origin`. A POST must be
+`application/json` (415), and a body over 1,114,112 bytes is refused with
+413. Each refusal is a short JSON body, and a fault inside the coordinator
+or the server reaches the client without its detail, which stays in this
+process's log.
+
+It has no authentication. Any local process can call it, as the one
+participant `--as` names. It binds `127.0.0.1` by default, and warns when
+bound to another address. Only expose it on a trusted network.
 
 ## Smoke test
 
@@ -37,7 +60,8 @@ Profiles enabled: core, review, whisper, deliberation, handoff, control, routing
 curl http://localhost:9090/.well-known/agent-card.json | head -30
 ```
 
-Send a `message/send`, as an A2A 0.3 client does:
+Send a `message/send`, as an A2A 0.3 client does. `from` is filled in as the
+participant:
 
 ```bash
 curl -X POST http://localhost:9090/ \
@@ -81,11 +105,14 @@ curl -X POST http://localhost:9090/ \
   }'
 ```
 
+A call CHAP refuses comes back as a task in state `TASK_STATE_REJECTED`
+(`rejected` to a 0.3 client), whose status message carries the CHAP error.
+
 ## What it exposes
 
 Every CHAP method, as an A2A skill named `chap.<method>` on the
-agent card. The Coordinator instance enables every profile. State is
-in-memory and lost on exit.
+agent card, made as the one participant. New workspaces get the profiles
+listed above.
 
 ## Walkthrough
 

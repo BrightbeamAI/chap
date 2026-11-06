@@ -44,6 +44,9 @@
 export { makeChapAgentCard, CHAP_MEDIA_TYPE } from "./card.js";
 export type { ChapAgentCardOptions } from "./card.js";
 
+export { chapA2aGuard } from "./guard.js";
+export type { ChapA2aGuardOptions } from "./guard.js";
+
 export {
   ChapAgentExecutor,
   makeChapAgentExecutor,

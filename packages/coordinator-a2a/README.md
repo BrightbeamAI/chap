@@ -26,7 +26,7 @@ adapter's own dependencies are `@brightbeamai/chap-coordinator` and
 ```typescript
 import express from "express";
 import { Coordinator } from "@brightbeamai/chap-coordinator";
-import { makeChapAgentCard, makeChapAgentExecutor } from "@brightbeamai/chap-coordinator-a2a";
+import { chapA2aGuard, makeChapAgentCard, makeChapAgentExecutor } from "@brightbeamai/chap-coordinator-a2a";
 import { AGENT_CARD_PATH } from "@a2a-js/sdk";
 import { DefaultRequestHandler, InMemoryTaskStore } from "@a2a-js/sdk/server";
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from "@a2a-js/sdk/server/express";
@@ -36,9 +36,11 @@ const coord = new Coordinator({
 });
 
 const card = makeChapAgentCard({ baseUrl: "http://127.0.0.1:9090/" });
-const handler = new DefaultRequestHandler(card, new InMemoryTaskStore(), makeChapAgentExecutor(coord));
+const executor = makeChapAgentExecutor(coord, { participant: "agent:orchestrator@local" });
+const handler = new DefaultRequestHandler(card, new InMemoryTaskStore(), executor);
 
 const app = express();
+app.use(chapA2aGuard());   // first: Host, Origin, JSON only, and a size limit
 app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: handler, legacyCompat: { enabled: true } }));
 app.use("/", jsonRpcHandler({
   requestHandler: handler,
@@ -50,6 +52,36 @@ app.listen(9090, "127.0.0.1");
 
 A runnable reference server is at
 [`reference/a2a-server-ts/`](../../reference/a2a-server-ts/).
+
+## What a local server checks
+
+A browser sends a request to a loopback address from any page the user
+visits, so an A2A server on the user's machine checks every request before
+its routes. `chapA2aGuard(options)` makes the create-chap-app servers'
+checks, as Connect-style middleware for Express:
+
+- a `Host` that is not one of the server's names is refused with 421, so a
+  page that rebinds its own name to 127.0.0.1 gets nothing. The loopback
+  names on the server's own port are allowed, and `allowedHosts` adds
+  others, each as the `Host` header carries it, such as `a2a.internal:9090`;
+- an `Origin` naming another site, or `null`, is refused with 403. A client
+  that is not a browser sends none, and is let through;
+- a POST must be `application/json` (415), which a page cannot send across
+  origins without a preflight;
+- a body over `maxBodyBytes`, 1,114,112 bytes by default, is refused with
+  413 before the rest is read, and one that is not JSON with 400.
+
+Every refusal is a short JSON body. The guard reads and parses the body, so
+the SDK's JSON-RPC route finds it parsed and its own 100 kB parser never
+runs. Add a final error handler that answers with JSON, as the reference
+server does, so no error reaches a client as Express's HTML page.
+
+The guard does not authenticate. Any local process can call the server, as
+whichever participant the executor acts as; with `participant` set, as that
+one only. A call carries no signature, so the log shows the call came
+through this server and does not show who sent it. A2A's security schemes,
+declared on the card and enforced at the transport, are how a deployment
+names its callers.
 
 ## What gets exposed
 
@@ -138,7 +170,9 @@ The integration tests cover the Agent Card shape, dispatch via data
 part, dispatch via metadata, error surfacing, the full
 workflow including override, and the deliberation flow.
 `round_trip.test.ts` serves the adapter with the SDK's server and drives
-it with the SDK's 1.0 client, and with a 0.3 client's requests.
+it with the SDK's 1.0 client, and with a 0.3 client's requests;
+`participant_and_refusals.test.ts` and `guard.test.ts` cover the participant
+pin, refusals as rejected tasks, and the guard's checks.
 
 ## See also
 

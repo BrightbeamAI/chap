@@ -16,11 +16,13 @@ Usage::
     from chap_coordinator.transports.a2a_server import make_chap_agent_executor, make_chap_agent_card
 
     coord = Coordinator()
-    executor = make_chap_agent_executor(coord)
+    executor = make_chap_agent_executor(coord, participant="agent:orchestrator@local")
     agent_card = make_chap_agent_card(base_url="http://localhost:9000")
 
-    # Plumb into the a2a-sdk's request handler and ASGI app per the
-    # reference at reference/a2a-server-py/server.py.
+    # chap_coordinator.transports.a2a_app.make_chap_a2a_app builds the
+    # a2a-sdk request handler and routes from these, behind the checks a
+    # server on the user's machine needs; python -m
+    # chap_coordinator.transports.a2a_cli serves it.
 
 Architecture notes
 ------------------
