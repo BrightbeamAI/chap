@@ -18,7 +18,10 @@
 //     hooked up before 0.3.5 runs them by path;
 //   - names every file it kept that differs from the template's, which
 //     --diff shows with git diff, and leaves chap.config.json as it is apart
-//     from the stamp, which it brings up to this release.
+//     from the stamp, which it brings up to this release;
+//   - adds keys/ to a .gitignore it keeps, where the template's has it and
+//     the project's does not, since an agent's private key is kept there
+//     and never belongs in the repository.
 // A project without a stamp, from 0.3.1 to 0.3.4, is recognised by the
 // released copies it holds, or named with --template. --dry-run says what
 // would change and changes nothing.
@@ -234,6 +237,13 @@ async function plan({ root, scratch, config, configText, pkg, name, from, recogn
     }
   }
 
+  // A private key never belongs in git. A .gitignore a release wrote is
+  // replaced above; one the owner changed is kept, and gains keys/ where
+  // the template's has it and the project's ignores no keys/ directory.
+  const ignoreKeys = written.includes(".gitignore") && files.differs.includes(".gitignore")
+    && (await readFile(join(fresh, ".gitignore"), "utf8")).split("\n").some((l) => l.trim() === "keys/")
+    && !(await readFile(join(root, ".gitignore"), "utf8")).split("\n").some((l) => /^\/?keys\/?\**$/.test(l.trim()));
+
   // The settings the template now writes that the project's configuration does not have.
   const settings = [];
   const ourConfig = JSON.parse(nextConfig);
@@ -244,7 +254,8 @@ async function plan({ root, scratch, config, configText, pkg, name, from, recogn
   }
 
   return {
-    root, fresh, scratch, name, from, recognised, stamp, files, packages, scripts, settings, language: manifest.language,
+    root, fresh, scratch, name, from, recognised, stamp, files, packages, scripts, settings, ignoreKeys, language: manifest.language,
+    devRequirements: written.includes("requirements-dev.txt"),
     nextPkg: nextPkg && JSON.stringify(nextPkg) !== JSON.stringify(pkg) ? nextPkg : null,
     nextRequirements,
     nextConfig: nextConfig !== configText ? nextConfig : null,
@@ -277,6 +288,10 @@ export async function applyUpgrade(plan) {
   if (plan.nextPkg) await writeFile(join(root, "package.json"), `${JSON.stringify(plan.nextPkg, null, 2)}\n`);
   if (plan.nextRequirements !== null) await writeFile(join(root, "requirements.txt"), plan.nextRequirements);
   if (plan.nextConfig) await writeFile(join(root, "chap.config.json"), plan.nextConfig);
+  if (plan.ignoreKeys) {
+    const text = await readFile(join(root, ".gitignore"), "utf8");
+    await writeFile(join(root, ".gitignore"), `${text}${text === "" || text.endsWith("\n") ? "" : "\n"}# CHAP: the agent's private key\nkeys/\n`);
+  }
 }
 
 /** The plan in words. */
@@ -304,15 +319,21 @@ export function describe(plan, { dryRun = false } = {}) {
   list("Kept whatever they hold, since a repository hooked up before 0.3.5 runs them by path:", files.keptByRule);
   list("Scripts kept as they are, each different from the template's and from every release's:", scripts.kept.map((s) => `${s.name}: the template's is ${JSON.stringify(s.template)}`));
   if (plan.nextConfig) lines.push("", `chap.config.json: ${would("stamped", "to be stamped")} ${plan.stamp.name} ${plan.stamp.version}.`);
+  if (plan.ignoreKeys) lines.push("", `.gitignore: keys/ ${would("added", "to be added")}, so the agent's private key stays out of the repository.`);
   if (plan.settings.length) {
     lines.push("", "chap.config.json keeps your settings. The template's differ in:",
       ...plan.settings.map((s) => `  ${s.key}: ${JSON.stringify(s.template)} (yours: ${s.yours === undefined ? "not set" : JSON.stringify(s.yours)})`),
       "The template's tests check its own settings, so a test that reads one of these fails until chap.config.json has the template's value.");
   }
-  const changed = packages.length || files.add.length || files.replace.length || files.remove.length || scripts.add.length || scripts.replace.length || scripts.remove.length;
+  const changed = packages.length || files.add.length || files.replace.length || files.remove.length || scripts.add.length || scripts.replace.length || scripts.remove.length || plan.ignoreKeys;
   if (!changed) lines.push("", "Nothing to bring forward: the project has what this release's template has.");
   if (dryRun) lines.push("", "Nothing was changed: --dry-run.");
-  else if (changed) lines.push("", plan.language === "python" ? "Next: python -m pip install -r requirements.txt, then run the project's tests." : "Next: npm install, then npm test.");
+  else if (changed) {
+    const next = plan.language !== "python" ? "Next: npm install, then npm test."
+      : plan.devRequirements ? "Next: python -m pip install -r requirements-dev.txt, which installs requirements.txt and pytest, then python -m pytest tests -q."
+        : "Next: python -m pip install -r requirements.txt, then run the project's tests.";
+    lines.push("", next);
+  }
   return lines.join("\n");
 }
 

@@ -53,13 +53,18 @@ release, and leaves the project its own:
   template has gained is added. A file a release wrote that the template no
   longer ships is removed on the same condition: a project from 0.3.1 to
   0.3.4 carried the server, the desk and the gate's library as copies, which
-  `@brightbeamai/chap-server` and `@brightbeamai/chap-code-gate` hold now.
-  `hooks/` and `gate-hook.mjs` stay whatever they hold, since a repository
-  hooked up before 0.3.5 runs them by path.
+  `@brightbeamai/chap-server` and `@brightbeamai/chap-code-gate` hold now,
+  and a Python project `chap_server.py`, `chap_client.py` and `desk/`, which
+  the `chap-coordinator` package holds. `hooks/` and `gate-hook.mjs` stay
+  whatever they hold, since a repository hooked up before 0.3.5 runs them
+  by path.
 - Every file kept because it differs is named, and `--diff` shows how with
   `git diff`. `chap.config.json` keeps its settings; upgrade brings its
   `template` stamp up to date and names each setting the template now
-  writes differently.
+  writes differently. A `.gitignore` kept because it differs gains `keys/`
+  where it lacks it, since an agent's private key is kept there.
+- A Python project gains `requirements-dev.txt`, which installs the project
+  and pytest for its tests; upgrade's next step says so.
 
 A project from before the stamp is recognised by the released copies it
 holds; `--template` names its template where none are left. `--dry-run`

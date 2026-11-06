@@ -128,12 +128,44 @@ test("a Python project's chap- requirements take the template's later pins, and 
   const { text } = await upgrade([dir]);
   assert.equal(await readFile(join(dir, "requirements.txt"), "utf8"), `${pin}\nrequests>=2.31\n`);
   assert.match(text, /chap-coordinator: chap-coordinator\[crypto\]>=0\.3\.0,<0\.4 -> /);
-  assert.match(text, /Next: python -m pip install -r requirements\.txt/);
+  assert.match(text, /Next: python -m pip install -r requirements-dev\.txt, which installs requirements\.txt and pytest, then python -m pytest tests -q\./);
   assert.deepEqual(JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8")).template, { name: "support-desk", version: VERSION });
   // A pin later than the template's is never moved back.
   await writeFile(join(dir, "requirements.txt"), "chap-coordinator[crypto]>=9.0.0\nrequests>=2.31\n");
   await upgrade([dir]);
   assert.equal(await readFile(join(dir, "requirements.txt"), "utf8"), "chap-coordinator[crypto]>=9.0.0\nrequests>=2.31\n");
+});
+
+test("a Python project from 0.3.1 to 0.3.4 loses the copies the package now holds, gains requirements-dev.txt, and keeps keys/ out of git", async () => {
+  for (const [version, template] of [["0.3.1", "support-desk"], ["0.3.4", "outbound-approval"]]) {
+    const dir = await releasedProject(version, template, join(await scratch(`py-${template}`), "project"));
+    const copies = (await walk(dir)).filter((f) => f === "chap_server.py" || f === "chap_client.py" || f.startsWith("desk/"));
+    assert.ok(copies.includes("chap_server.py") && copies.includes("chap_client.py") && copies.some((f) => f.startsWith("desk/")), `${template} ${version} holds the copies`);
+    // The owner's own line in .gitignore, so upgrade keeps the file.
+    await appendFile(join(dir, ".gitignore"), "notes/\n");
+    const { text } = await upgrade([dir]);
+    const files = await walk(dir);
+    assert.deepEqual(files.filter((f) => copies.includes(f)), [], `${template} ${version}: each copy, as a release wrote it, is removed`);
+    for (const f of copies) assert.ok(text.includes(`  ${f}\n`), `${f} is named`);
+    assert.ok(files.includes("requirements-dev.txt"));
+    assert.equal(await readFile(join(dir, "requirements-dev.txt"), "utf8"), await readFile(new URL(`../templates/${template}/requirements-dev.txt`, import.meta.url), "utf8"));
+    const ignored = await readFile(join(dir, ".gitignore"), "utf8");
+    assert.match(ignored, /^notes\/$/m, "the owner's line stays");
+    assert.match(ignored, /^# CHAP: the agent's private key\nkeys\/\n$/m);
+    assert.match(text, /\.gitignore: keys\/ added, so the agent's private key stays out of the repository\./);
+    assert.match(text, /Next: python -m pip install -r requirements-dev\.txt, which installs requirements\.txt and pytest, then python -m pytest tests -q\./);
+    const again = await upgrade([dir]);
+    assert.doesNotMatch(again.text, /\.gitignore: keys\//, "keys/ is added once");
+  }
+});
+
+test("a copy from a Python project its owner changed is kept and named", async () => {
+  const dir = await releasedProject("0.3.4", "support-desk", join(await scratch("py-own"), "desk"));
+  await appendFile(join(dir, "chap_server.py"), "\n# the owner's route\n");
+  const { text } = await upgrade([dir]);
+  assert.ok((await walk(dir)).includes("chap_server.py"));
+  assert.match(text, /Kept, no longer in the template, since each differs from every released copy:\n {2}chap_server\.py/);
+  assert.ok(!(await walk(dir)).includes("chap_client.py"), "the copy nobody changed goes");
 });
 
 test("a released hook no longer in the template stays whatever it holds", async () => {
