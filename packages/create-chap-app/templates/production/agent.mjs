@@ -25,6 +25,7 @@ import { createHash } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isMain } from "@brightbeamai/chap-server";
 import { makeClient, signerFromJwk } from "@brightbeamai/chap-server/client";
 import { makeProvider } from "@brightbeamai/chap-server/providers";
 import { keyPathFor, readKeyFile } from "@brightbeamai/chap-server/keys";
@@ -258,7 +259,7 @@ async function exists(path) {
   try { await access(path); return true; } catch { return false; }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (isMain(import.meta.url)) {
   run({ once: process.argv.includes("--once") }).catch((e) => {
     console.error(e instanceof Error ? e.message : String(e));
     process.exit(1);

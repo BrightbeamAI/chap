@@ -359,3 +359,13 @@ test("the agent reads messages.csv, keys each row and drafts without a model", a
   assert.ok(scriptedDraft(buildPrompt(rows[0], "shorter please")).includes("shorter please"));
   assert.deepEqual(parseCsv('a,b\n"x, y","say ""hi"""\n'), [{ a: "x, y", b: 'say "hi"' }]);
 });
+
+test("through a symbolic link to the project, doctor runs its checks and fails when nothing answers", async () => {
+  const { symlink } = await import("node:fs/promises");
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const link = join(await mkdtemp(join(tmpdir(), "chap-link-")), "project");
+  await symlink(projectDir, link);
+  await assert.rejects(promisify(execFile)(process.execPath, [join(link, "doctor.mjs")], { env: { ...process.env, CHAP_URL: "http://127.0.0.1:1/chap" } }),
+    (e) => e.code === 1 && /FAIL health/.test(e.stdout));
+});

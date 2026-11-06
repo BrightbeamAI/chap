@@ -25,6 +25,7 @@
 import { lstat, readFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isMain } from "@brightbeamai/chap-server";
 import { makeProvider, modelName } from "@brightbeamai/chap-server/providers";
 import { agentClient, commitSigning, api, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "@brightbeamai/chap-code-gate/gate";
 import { applyToWorkingTree, commitAll, commitsWithApproval, currentBranch, git, head, patchApplies, repoRoot, workingTreePatch } from "@brightbeamai/chap-code-gate/git";
@@ -380,6 +381,6 @@ export function parseArgs(argv) {
   return out;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  run(parseArgs(process.argv.slice(2))).catch((e) => { console.error(e instanceof Error ? e.message : String(e)); process.exit(1); });
+if (isMain(import.meta.url)) {
+  Promise.resolve().then(() => run(parseArgs(process.argv.slice(2)))).catch((e) => { console.error(e instanceof Error ? e.message : String(e)); process.exit(1); });
 }

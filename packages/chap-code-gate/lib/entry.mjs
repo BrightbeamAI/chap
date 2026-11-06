@@ -19,8 +19,14 @@ export async function entry(name, importMetaUrl, argv = process.argv.slice(2)) {
   }
 }
 
-/** Run the git hook named in argv for the gate project that holds the file at `importMetaUrl`, then exit with its code. */
+/**
+ * Run the git hook named in argv for the gate project that holds the file
+ * at `importMetaUrl`, then exit with its code. Until the hook has given its
+ * answer the exit code is a refusal, so a hook that does not run to the end
+ * fails closed.
+ */
 export async function hookEntry(importMetaUrl, argv = process.argv.slice(2)) {
+  process.exitCode = 1;
   try {
     process.exit(await hook(argv[0], argv.slice(1), process.cwd(), { gateDir: gateDirOf(importMetaUrl) }));
   } catch (e) {

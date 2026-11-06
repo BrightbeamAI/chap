@@ -20,7 +20,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { access, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, start } from "@brightbeamai/chap-server";
+import { isMain, loadConfig, start } from "@brightbeamai/chap-server";
 import { generateKeyFile, sshKeyFiles } from "@brightbeamai/chap-server/keys";
 import { createDemoRepo } from "@brightbeamai/chap-code-gate";
 import { run as runAgent } from "./agent.mjs";
@@ -70,7 +70,7 @@ export async function demo({ fresh = false, once = false, log = console.log } = 
   return outcomes;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (isMain(import.meta.url)) {
   const argv = process.argv.slice(2);
   demo({ fresh: argv.includes("--fresh"), once: argv.includes("--once") }).catch((e) => {
     console.error(e instanceof Error ? e.message : String(e));
