@@ -53,7 +53,8 @@ default, `commit`, reviews each change before it is committed.
   each chosen profile changes in this project's own chain, and what the
   deployment supplies.
 - `chap.config.json`: the workspace, the participants, the profiles and the
-  store path. A profile change is one edit.
+  store path. A profile change is one edit. Its `template` entry names the
+  template and the create-chap-app release that wrote the project.
 - A desk: one process owns the SQLite store, serves the review desk and
   answers CHAP calls at `POST /chap`. The agent is a separate process. The
   desk has a review view shaped by the artefact (a diff for code, a letter

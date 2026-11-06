@@ -39,6 +39,8 @@ to the desk, which uses it in the commands it writes for an agent.
 }
 ```
 
+- `template`: the template and the create-chap-app release that wrote the
+  project, which `create-chap-app upgrade` reads; the server leaves it alone.
 - `store`: a SQLite file, or `":memory:"` to keep nothing. A relative path is
   taken from the project's directory, wherever the server is started, and a
   leading `~` is the home directory; the banner prints the path in full.

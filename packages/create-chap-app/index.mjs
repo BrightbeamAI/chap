@@ -10,7 +10,7 @@
 // project. It installs nothing.
 
 import { readFile, readdir, mkdir, copyFile, writeFile, stat, access, chmod } from "node:fs/promises";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -19,6 +19,8 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const TEMPLATES_DIR = join(here, "templates");
+/** This package's version, which a generated project's stamp records. */
+export const VERSION = JSON.parse(readFileSync(join(here, "package.json"), "utf8")).version;
 /** The template generated when none is named. */
 export const DEFAULT_TEMPLATE = "code-gate";
 
@@ -151,11 +153,13 @@ export function dotted(rel) {
  * the directory, the files written, the template's manifest, the
  * placeholders' values and the project's chap.config.json as generated.
  *
- * `answers`: { name, template, profiles, human_uri, human_name, human_email,
- * agent_uri, review_at }. Placeholders replaced in text files:
- * __PROJECT_NAME__, __PROJECT_DIR__ (the absolute path written to),
- * __WORKSPACE__, __PROFILES_JSON__, __PROFILES_CSV__, __HUMAN_URI__,
- * __HUMAN_NAME__, __HUMAN_EMAIL__, __AGENT_URI__, __REVIEW_AT__.
+ * `answers`: { name, template, profiles, workspace, human_uri, human_name,
+ * human_email, agent_uri, review_at, project_dir }. Placeholders replaced in
+ * text files: __PROJECT_NAME__, __PROJECT_DIR__ (project_dir, or else the
+ * absolute path written to), __WORKSPACE__, __PROFILES_JSON__,
+ * __PROFILES_CSV__, __HUMAN_URI__, __HUMAN_NAME__, __HUMAN_EMAIL__,
+ * __AGENT_URI__, __REVIEW_AT__, and the stamp chap.config.json carries,
+ * __TEMPLATE_NAME__ and __TEMPLATE_VERSION__, this package's version.
  */
 export async function generate(answers, { templatesDir = TEMPLATES_DIR, targetDir } = {}) {
   const manifest = JSON.parse(await readFile(join(templatesDir, answers.template, "template.json"), "utf8"));
@@ -166,8 +170,10 @@ export async function generate(answers, { templatesDir = TEMPLATES_DIR, targetDi
   }
   const defaults = manifest.defaults ?? {};
   const fill = {
+    __TEMPLATE_NAME__: answers.template,
+    __TEMPLATE_VERSION__: VERSION,
     __PROJECT_NAME__: answers.name,
-    __PROJECT_DIR__: target,
+    __PROJECT_DIR__: answers.project_dir ?? target,
     __WORKSPACE__: (answers.workspace ?? defaults.workspace ?? "wsp_{name}").replace("{name}", slug(answers.name)),
     __PROFILES_JSON__: JSON.stringify(answers.profiles),
     __PROFILES_CSV__: answers.profiles.join(","),

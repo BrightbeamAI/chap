@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_TEMPLATE, generate, gitIdentity, listTemplates, parseArgs } from "../index.mjs";
+import { DEFAULT_TEMPLATE, VERSION, generate, gitIdentity, listTemplates, parseArgs } from "../index.mjs";
 
 async function walk(dir, prefix = "") {
   const out = [];
@@ -43,6 +43,8 @@ test("every template generates with its placeholders filled", async () => {
     const config = JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8"));
     assert.equal(config.workspace, fill.__WORKSPACE__);
     assert.deepEqual(config.profiles, t.default_profiles);
+    // The stamp says which template, from which release, so upgrade knows what the project started as.
+    if (t.language === "typescript") assert.deepEqual(config.template, { name: t.name, version: VERSION }, `${t.name} is stamped`);
     await rm(dir, { recursive: true });
   }
 });
