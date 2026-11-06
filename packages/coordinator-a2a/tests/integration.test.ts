@@ -1,11 +1,10 @@
 /**
  * Integration tests for the @brightbeamai/chap-coordinator-a2a adapter.
  *
- * The @a2a-js/sdk doesn't ship an in-memory transport, so we exercise
- * the dispatch path directly: build a ``ChapAgentExecutor``, hand it
- * a synthesized ``RequestContext`` carrying a Message, capture the
- * events it publishes to a recording ``ExecutionEventBus``, and
- * verify the response shape.
+ * The executor is driven directly here: a ``RequestContext`` built as the
+ * SDK builds one, carrying a Message, and a recording ``ExecutionEventBus``
+ * that keeps what the executor publishes. round_trip.test.ts drives the same
+ * executor through the SDK's server and client over HTTP.
  *
  * Mirrors packages/coordinator-py/tests/test_a2a_integration.py.
  */
@@ -13,12 +12,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
-import type {
-  AgentExecutionEvent,
-  ExecutionEventBus,
-  RequestContext as A2ARequestContext,
+import {
+  RequestContext,
+  ServerCallContext,
+  type AgentExecutionEvent,
+  type ExecutionEventBus,
 } from "@a2a-js/sdk/server";
-import type { DataPart, Message } from "@a2a-js/sdk";
+import { Role, type Message } from "@a2a-js/sdk";
 
 import { Coordinator } from "@brightbeamai/chap-coordinator";
 import { TOOL_NAMES } from "@brightbeamai/chap-coordinator-mcp/schemas";
@@ -32,19 +32,9 @@ import {
 
 class RecordingBus extends EventEmitter implements ExecutionEventBus {
   readonly events: AgentExecutionEvent[] = [];
-  private finishedFlag = false;
-
-  publish(event: AgentExecutionEvent): void {
-    this.events.push(event);
-  }
-
-  finished(): void {
-    this.finishedFlag = true;
-  }
-
-  get isFinished(): boolean {
-    return this.finishedFlag;
-  }
+  isFinished = false;
+  publish(event: AgentExecutionEvent): void { this.events.push(event); }
+  finished(): void { this.isFinished = true; }
 }
 
 function makeCoord(): Coordinator {
@@ -59,50 +49,37 @@ function makeCoord(): Coordinator {
   });
 }
 
-function buildMessage(
-  skillId: string,
-  params: Record<string, unknown>,
-  opts: { metadata?: Record<string, unknown> } = {},
-): Message {
-  const dataPart: DataPart = {
-    kind: "data",
-    data: { skill: skillId, params },
-  };
+function buildMessage(skillId: string, params: Record<string, unknown>, metadata?: Record<string, unknown>): Message {
   return {
-    kind: "message",
     messageId: "m1",
-    role: "user",
-    parts: [dataPart],
-    ...(opts.metadata ? { metadata: opts.metadata } : {}),
+    contextId: "",
+    taskId: "",
+    role: Role.ROLE_USER,
+    parts: [{ content: { $case: "data", value: { skill: skillId, params } }, metadata: undefined, filename: "", mediaType: "application/json" }],
+    metadata,
+    extensions: [],
+    referenceTaskIds: [],
   };
 }
 
-function buildRequestContext(message: Message): A2ARequestContext {
-  // The RequestContext class is constructed by the SDK; we simulate it
-  // with the same shape our executor reads from.
-  return {
-    userMessage: message,
-    taskId: "tsk-test-1",
-    contextId: "ctx-test-1",
-  } as A2ARequestContext;
+function requestContext(message: Message): RequestContext {
+  return new RequestContext({ tenant: "", message, configuration: undefined, metadata: undefined },
+                            "tsk-test-1", "ctx-test-1", new ServerCallContext());
 }
 
-function extractDataBlob(msg: Message): Record<string, unknown> {
-  for (const part of msg.parts) {
-    if (part.kind === "data") {
-      return (part as DataPart).data;
-    }
-  }
-  throw new Error("response message had no data part");
-}
-
-async function run(
-  executor: ChapAgentExecutor,
-  message: Message,
-): Promise<RecordingBus> {
+async function run(executor: ChapAgentExecutor, message: Message): Promise<RecordingBus> {
   const bus = new RecordingBus();
-  await executor.execute(buildRequestContext(message), bus);
+  await executor.execute(requestContext(message), bus);
   return bus;
+}
+
+/** The JSON of a published message's first part. */
+function dataOf(event: AgentExecutionEvent): Record<string, any> {
+  assert.equal(event.kind, "message");
+  const part = (event.data as Message).parts[0];
+  assert.equal(part.content?.$case, "data");
+  assert.equal(part.mediaType, "application/json");
+  return (part.content as { value: Record<string, any> }).value;
 }
 
 // ============================================================
@@ -118,8 +95,24 @@ test("agent card lists every CHAP method", () => {
   assert.ok(ids.has("chap.task.create"));
   assert.ok(ids.has("chap.decide.override"));
   assert.ok(ids.has("chap.deliberate.open"));
-  assert.equal(card.url, "http://localhost:9000");
-  assert.equal(card.protocolVersion, "0.3.0");
+});
+
+test("agent card offers the endpoint at A2A 1.0, and at 0.3 for clients not yet moved", () => {
+  const card = makeChapAgentCard({ baseUrl: "http://localhost:9000" });
+  assert.deepEqual(card.supportedInterfaces, [
+    { url: "http://localhost:9000", protocolBinding: "JSONRPC", tenant: "", protocolVersion: "1.0" },
+    { url: "http://localhost:9000", protocolBinding: "JSONRPC", tenant: "", protocolVersion: "0.3" },
+  ]);
+});
+
+test("agent card names its input and output modes by media type", () => {
+  const card = makeChapAgentCard({ baseUrl: "http://localhost:9000" });
+  assert.deepEqual(card.defaultInputModes, ["application/json"]);
+  assert.deepEqual(card.defaultOutputModes, ["application/json"]);
+  for (const skill of card.skills) {
+    assert.deepEqual(skill.inputModes, ["application/json"], skill.id);
+    assert.deepEqual(skill.outputModes, ["application/json"], skill.id);
+  }
 });
 
 test("agent card skill descriptions are non-trivial", () => {
@@ -152,37 +145,27 @@ test("agent card without baseUrl throws", () => {
 
 test("dispatch via skill in data part", () => {
   const coord = makeCoord();
-  const msg = buildMessage("chap.workspace.create", { workspace: "wsp_a" });
-  const resp = dispatchA2aMessage(coord, msg);
+  const resp = dispatchA2aMessage(coord, buildMessage("chap.workspace.create", { workspace: "wsp_a" }));
   assert.ok("result" in resp && !resp.error);
   assert.equal((resp.result as { workspace: string }).workspace, "wsp_a");
 });
 
 test("dispatch via skill in metadata takes precedence", () => {
   const coord = makeCoord();
-  const msg: Message = {
-    kind: "message",
-    messageId: "m1",
-    role: "user",
-    metadata: { skill: "chap.workspace.create" },
-    parts: [{ kind: "data", data: { workspace: "wsp_b" } } satisfies DataPart],
-  };
+  const msg = buildMessage("chap.audit.read", {}, { skill: "chap.workspace.create" });
+  msg.parts[0].content = { $case: "data", value: { workspace: "wsp_b" } };
   const resp = dispatchA2aMessage(coord, msg);
   assert.ok("result" in resp && !resp.error);
   assert.equal((resp.result as { workspace: string }).workspace, "wsp_b");
 });
 
 test("dispatch unknown skill returns -32601", () => {
-  const coord = makeCoord();
-  const msg = buildMessage("not.a.chap.skill", {});
-  const resp = dispatchA2aMessage(coord, msg);
+  const resp = dispatchA2aMessage(makeCoord(), buildMessage("not.a.chap.skill", {}));
   assert.equal(resp.error?.code, -32601);
 });
 
 test("dispatch CHAP error returns intact", () => {
-  const coord = makeCoord();
-  const msg = buildMessage("chap.workspace.describe", { workspace: "missing" });
-  const resp = dispatchA2aMessage(coord, msg);
+  const resp = dispatchA2aMessage(makeCoord(), buildMessage("chap.workspace.describe", { workspace: "missing" }));
   assert.equal(resp.error?.code, -32602);
 });
 
@@ -190,44 +173,14 @@ test("dispatch CHAP error returns intact", () => {
 // ChapAgentExecutor (async path through the SDK interface)
 // ============================================================
 
-test("executor publishes success as a data message", async () => {
-  const coord = makeCoord();
-  const executor = makeChapAgentExecutor(coord);
-  const msg = buildMessage("chap.workspace.create", { workspace: "wsp_x" });
-  const bus = await run(executor, msg);
-
+test("executor publishes success as an agent message carrying JSON", async () => {
+  const bus = await run(makeChapAgentExecutor(makeCoord()), buildMessage("chap.workspace.create", { workspace: "wsp_x" }));
   assert.equal(bus.events.length, 1);
   assert.ok(bus.isFinished);
-  const responseMsg = bus.events[0] as Message;
-  assert.equal(responseMsg.kind, "message");
-  assert.equal(responseMsg.role, "agent");
-  const blob = extractDataBlob(responseMsg);
-  assert.equal(blob.workspace, "wsp_x");
-});
-
-test("executor publishes error with is_error metadata", async () => {
-  const coord = makeCoord();
-  const executor = makeChapAgentExecutor(coord);
-  const msg = buildMessage("chap.workspace.describe", { workspace: "nope" });
-  const bus = await run(executor, msg);
-
-  assert.equal(bus.events.length, 1);
-  const responseMsg = bus.events[0] as Message;
-  const part = responseMsg.parts[0] as DataPart;
-  assert.equal(part.data.chap_error, -32602);
-  assert.equal((part.metadata as { is_error?: boolean } | undefined)?.is_error, true);
-});
-
-test("executor rejects unknown skill cleanly", async () => {
-  const coord = makeCoord();
-  const executor = makeChapAgentExecutor(coord);
-  const msg = buildMessage("not.a.chap.skill", {});
-  const bus = await run(executor, msg);
-
-  assert.equal(bus.events.length, 1);
-  const responseMsg = bus.events[0] as Message;
-  const part = responseMsg.parts[0] as DataPart;
-  assert.equal(part.data.chap_error, -32601);
+  const reply = bus.events[0].data as Message;
+  assert.equal(reply.role, Role.ROLE_AGENT);
+  assert.equal(reply.contextId, "ctx-test-1");
+  assert.equal(dataOf(bus.events[0]).workspace, "wsp_x");
 });
 
 test("executor full workflow exercises every shipped profile via A2A", async () => {
@@ -237,7 +190,7 @@ test("executor full workflow exercises every shipped profile via A2A", async () 
   const dispatch = async (skill: string, params: Record<string, unknown>) => {
     const bus = await run(executor, buildMessage(skill, params));
     assert.equal(bus.events.length, 1, `${skill}: expected 1 event`);
-    const blob = extractDataBlob(bus.events[0] as Message);
+    const blob = dataOf(bus.events[0]);
     if (typeof blob.chap_error === "number") {
       throw new Error(`${skill} errored: ${JSON.stringify(blob)}`);
     }
@@ -289,12 +242,9 @@ test("executor full workflow exercises every shipped profile via A2A", async () 
 });
 
 test("executor deliberation flow", async () => {
-  const coord = makeCoord();
-  const executor = makeChapAgentExecutor(coord);
-  const dispatch = async (skill: string, params: Record<string, unknown>) => {
-    const bus = await run(executor, buildMessage(skill, params));
-    return extractDataBlob(bus.events[0] as Message);
-  };
+  const executor = makeChapAgentExecutor(makeCoord());
+  const dispatch = async (skill: string, params: Record<string, unknown>) =>
+    dataOf((await run(executor, buildMessage(skill, params))).events[0]);
 
   await dispatch("chap.workspace.create", { workspace: "wsp_d" });
   for (const u of ["human:a", "human:b", "human:c"]) {
@@ -318,18 +268,9 @@ test("executor deliberation flow", async () => {
   assert.deepEqual(close.tally, { yea: 2, nay: 0 });
 });
 
-test("cancelTask marks subsequent executions canceled", async () => {
-  const coord = makeCoord();
-  const executor = makeChapAgentExecutor(coord);
+test("cancelTask publishes nothing: a CHAP call has taken effect before it could be cancelled", async () => {
   const bus = new RecordingBus();
-  await executor.cancelTask("tsk-test-1", bus);
-
-  const msg = buildMessage("chap.workspace.create", { workspace: "wsp_cancel" });
-  const bus2 = await run(executor, msg);
-
-  // Should publish a status-update with state canceled.
-  assert.ok(bus2.events.length >= 1);
-  const firstEvent = bus2.events[0] as { kind: string; status?: { state?: string }};
-  assert.equal(firstEvent.kind, "status-update");
-  assert.equal(firstEvent.status?.state, "canceled");
+  await makeChapAgentExecutor(makeCoord()).cancelTask("tsk-test-1", bus);
+  assert.equal(bus.events.length, 0);
+  assert.ok(bus.isFinished);
 });

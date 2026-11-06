@@ -1,10 +1,12 @@
 /**
  * CHAP A2A reference server (TypeScript, HTTP/JSON-RPC).
  *
- * Wraps a CHAP Coordinator and serves it as an A2A 0.3.0 agent over
+ * Wraps a CHAP Coordinator and serves it as an A2A 1.0 agent over
  * Express. Other A2A-aware orchestrators can register this agent by
  * its base URL, discover capabilities at the agent-card endpoint,
- * and delegate work to it via JSON-RPC ``message/send``.
+ * and delegate work to it via JSON-RPC ``SendMessage``. A client still
+ * on A2A 0.3 is answered too, ``message/send`` included, through the
+ * SDK's compatibility layer.
  *
  * Usage:
  *
@@ -13,16 +15,16 @@
  * The coordinator runs in-memory in this process. State is lost when
  * the process exits.
  *
- * Spec target: A2A 0.3.0 (the version implemented by @a2a-js/sdk).
- * CHAP 0.3.
+ * Spec target: A2A 1.0, serving 0.3 clients as well. CHAP 0.3.
  */
 
 import express from "express";
+import { AGENT_CARD_PATH } from "@a2a-js/sdk";
 import {
   DefaultRequestHandler,
   InMemoryTaskStore,
 } from "@a2a-js/sdk/server";
-import { A2AExpressApp } from "@a2a-js/sdk/server/express";
+import { agentCardHandler, jsonRpcHandler, UserBuilder } from "@a2a-js/sdk/server/express";
 
 import { Coordinator } from "@brightbeamai/chap-coordinator";
 import {
@@ -40,7 +42,7 @@ function parsePort(): number {
 }
 
 const port = parsePort();
-const baseUrl = `http://localhost:${port}`;
+const baseUrl = `http://localhost:${port}/`;
 
 const coord = new Coordinator({
   defaultProfiles: [
@@ -60,10 +62,18 @@ const executor = makeChapAgentExecutor(coord);
 const taskStore = new InMemoryTaskStore();
 
 const handler = new DefaultRequestHandler(card, taskStore, executor);
-const app = new A2AExpressApp(handler).setupRoutes(express(), "");
+const app = express();
+// legacyCompat serves a client on A2A 0.3 at the same endpoint: the card in
+// its 0.3 shape when the request names no A2A-Version, and message/send.
+app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: handler, legacyCompat: { enabled: true } }));
+app.use("/", jsonRpcHandler({
+  requestHandler: handler,
+  userBuilder: UserBuilder.noAuthentication,
+  legacyCompat: { enabled: true },
+}));
 
 process.stderr.write(`CHAP A2A reference server starting on ${baseUrl}\n`);
-process.stderr.write(`Agent Card: ${baseUrl}/.well-known/agent-card.json\n`);
+process.stderr.write(`Agent Card: ${baseUrl}${AGENT_CARD_PATH}\n`);
 process.stderr.write(
   "Profiles enabled: core, review, whisper, deliberation, handoff, control, routing, audit-scitt.\n",
 );

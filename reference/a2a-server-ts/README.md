@@ -4,8 +4,7 @@ An HTTP/JSON-RPC A2A server that wraps a CHAP Coordinator over
 Express. Point an A2A-aware orchestrator at this and drive a CHAP
 workspace as if it were any other A2A agent.
 
-Spec target: A2A 0.3.0 (the version implemented by `@a2a-js/sdk`).
-CHAP 0.3.
+Spec target: A2A 1.0, serving A2A 0.3 clients as well. CHAP 0.3.
 
 ## Install
 
@@ -27,7 +26,7 @@ it on a trusted network.
 You should see, on stderr:
 
 ```
-CHAP A2A reference server starting on http://localhost:9090
+CHAP A2A reference server starting on http://localhost:9090/
 Agent Card: http://localhost:9090/.well-known/agent-card.json
 Profiles enabled: core, review, whisper, deliberation, handoff, control, routing, audit-scitt.
 ```
@@ -38,7 +37,7 @@ Profiles enabled: core, review, whisper, deliberation, handoff, control, routing
 curl http://localhost:9090/.well-known/agent-card.json | head -30
 ```
 
-Send a `message/send`:
+Send a `message/send`, as an A2A 0.3 client does:
 
 ```bash
 curl -X POST http://localhost:9090/ \
@@ -55,6 +54,27 @@ curl -X POST http://localhost:9090/ \
             "skill": "chap.workspace.create",
             "params": {"workspace": "wsp_demo"}
           }
+        }]
+      }
+    }
+  }'
+```
+
+An A2A 1.0 client sends `SendMessage` with `A2A-Version: 1.0`, and parts
+as `{data, mediaType}`:
+
+```bash
+curl -X POST http://localhost:9090/ \
+  -H "Content-Type: application/json" -H "A2A-Version: 1.0" \
+  -d '{
+    "jsonrpc": "2.0", "id": "2",
+    "method": "SendMessage",
+    "params": {
+      "message": {
+        "messageId": "m2", "role": "ROLE_USER",
+        "parts": [{
+          "data": {"skill": "chap.workspace.describe", "params": {"workspace": "wsp_demo"}},
+          "mediaType": "application/json"
         }]
       }
     }

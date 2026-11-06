@@ -11,12 +11,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
-import type { AgentExecutionEvent, ExecutionEventBus, RequestContext } from "@a2a-js/sdk/server";
-import type { DataPart, Message } from "@a2a-js/sdk";
+import {
+  RequestContext,
+  ServerCallContext,
+  type AgentExecutionEvent,
+  type ExecutionEventBus,
+} from "@a2a-js/sdk/server";
+import { Role, type Message } from "@a2a-js/sdk";
 
 import { Coordinator } from "@brightbeamai/chap-coordinator";
 
-import { makeChapAgentExecutor } from "../src/index.js";
+import { dispatchA2aMessage, makeChapAgentExecutor } from "../src/index.js";
 
 class RecordingBus extends EventEmitter implements ExecutionEventBus {
   readonly events: AgentExecutionEvent[] = [];
@@ -25,34 +30,46 @@ class RecordingBus extends EventEmitter implements ExecutionEventBus {
 }
 
 function message(skill: string, params: Record<string, unknown>): Message {
-  return { kind: "message", messageId: "m1", role: "user",
-           parts: [{ kind: "data", data: { skill, params } } as DataPart] };
+  return {
+    messageId: "m1", contextId: "", taskId: "", role: Role.ROLE_USER,
+    parts: [{ content: { $case: "data", value: { skill, params } }, metadata: undefined, filename: "", mediaType: "application/json" }],
+    metadata: undefined, extensions: [], referenceTaskIds: [],
+  };
 }
 
-async function run(executor: ReturnType<typeof makeChapAgentExecutor>, msg: Message) {
+/** The JSON the executor's first event carries. */
+async function run(executor: ReturnType<typeof makeChapAgentExecutor>, msg: Message): Promise<Record<string, any>> {
   const bus = new RecordingBus();
-  await executor.execute({ userMessage: msg, taskId: "t1", contextId: "c1" } as RequestContext, bus);
-  return (bus.events[0] as Message).parts[0] as DataPart;
+  await executor.execute(new RequestContext({ tenant: "", message: msg, configuration: undefined, metadata: undefined },
+                                            "t1", "c1", new ServerCallContext()), bus);
+  return ((bus.events[0].data as Message).parts[0].content as { value: Record<string, any> }).value;
 }
 
 test("a skill the filter excludes is refused and runs nothing", async () => {
   const coord = new Coordinator({ deterministicIds: true });
   const executor = makeChapAgentExecutor(coord, { skillFilter: (id) => id !== "chap.workspace.create" });
-  const part = await run(executor, message("chap.workspace.create", { workspace: "w" }));
-  assert.equal(part.data.chap_error, -32601);
-  assert.match(String(part.data.message), /not offered by this server: chap\.workspace\.create/);
+  const data = await run(executor, message("chap.workspace.create", { workspace: "w" }));
+  assert.equal(data.chap_error, -32601);
+  assert.match(String(data.message), /not offered by this server: chap\.workspace\.create/);
   assert.equal(coord.workspaces.get("w"), undefined);
 });
 
 test("a skill the filter keeps runs as before", async () => {
   const coord = new Coordinator({ deterministicIds: true });
   const executor = makeChapAgentExecutor(coord, { skillFilter: (id) => id === "chap.workspace.create" });
-  const part = await run(executor, message("chap.workspace.create", { workspace: "w" }));
-  assert.equal(part.data.workspace, "w");
+  const data = await run(executor, message("chap.workspace.create", { workspace: "w" }));
+  assert.equal(data.workspace, "w");
 });
 
 test("without a filter every skill runs", async () => {
   const coord = new Coordinator({ deterministicIds: true });
-  const part = await run(makeChapAgentExecutor(coord), message("chap.workspace.create", { workspace: "w" }));
-  assert.equal(part.data.workspace, "w");
+  const data = await run(makeChapAgentExecutor(coord), message("chap.workspace.create", { workspace: "w" }));
+  assert.equal(data.workspace, "w");
+});
+
+test("dispatchA2aMessage refuses an excluded skill", () => {
+  const coord = new Coordinator({ deterministicIds: true });
+  const reply = dispatchA2aMessage(coord, message("chap.workspace.create", { workspace: "w" }), { skillFilter: () => false });
+  assert.equal(reply.error?.code, -32601);
+  assert.equal(coord.workspaces.get("w"), undefined);
 });

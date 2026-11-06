@@ -7,43 +7,45 @@ any A2A-aware orchestrator (Azure AI Foundry, Amazon Bedrock
 AgentCore, Google ADK, custom multi-agent systems) can register the
 coordinator by URL and delegate work to it.
 
-Spec target: **A2A 0.3.0** (the version implemented by `@a2a-js/sdk`).
-CHAP 0.3.
+Spec target: **A2A 1.0**, through `@a2a-js/sdk` 1.x, serving A2A 0.3
+clients as well. CHAP 0.3.
 
 ## Install
 
 ```bash
-npm install @brightbeamai/chap-coordinator-a2a
+npm install @brightbeamai/chap-coordinator-a2a @a2a-js/sdk express
 ```
 
-Node 20+ required. Runtime dependencies: `@brightbeamai/chap-coordinator`,
-`@brightbeamai/chap-coordinator-mcp` (for the shared schemas), and `@a2a-js/sdk`.
+Node 20+ required. `@a2a-js/sdk` 1.3 or later is a peer dependency, and
+`express` is the SDK's peer dependency for its Express handlers. The
+adapter's own dependencies are `@brightbeamai/chap-coordinator` and
+`@brightbeamai/chap-coordinator-mcp`, for the shared schemas.
 
 ## Quick start
 
 ```typescript
 import express from "express";
 import { Coordinator } from "@brightbeamai/chap-coordinator";
-import {
-  makeChapAgentCard,
-  makeChapAgentExecutor,
-} from "@brightbeamai/chap-coordinator-a2a";
-import {
-  DefaultRequestHandler,
-  InMemoryTaskStore,
-} from "@a2a-js/sdk/server";
-import { A2AExpressApp } from "@a2a-js/sdk/server/express";
+import { makeChapAgentCard, makeChapAgentExecutor } from "@brightbeamai/chap-coordinator-a2a";
+import { AGENT_CARD_PATH } from "@a2a-js/sdk";
+import { DefaultRequestHandler, InMemoryTaskStore } from "@a2a-js/sdk/server";
+import { agentCardHandler, jsonRpcHandler, UserBuilder } from "@a2a-js/sdk/server/express";
 
 const coord = new Coordinator({
   defaultProfiles: ["core/1.0", "review/1.0", "audit-scitt/1.0"],
 });
 
-const card = makeChapAgentCard({ baseUrl: "http://localhost:9090" });
-const executor = makeChapAgentExecutor(coord);
+const card = makeChapAgentCard({ baseUrl: "http://127.0.0.1:9090/" });
+const handler = new DefaultRequestHandler(card, new InMemoryTaskStore(), makeChapAgentExecutor(coord));
 
-const handler = new DefaultRequestHandler(card, new InMemoryTaskStore(), executor);
-const app = new A2AExpressApp(handler).setupRoutes(express(), "");
-app.listen(9090);
+const app = express();
+app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: handler, legacyCompat: { enabled: true } }));
+app.use("/", jsonRpcHandler({
+  requestHandler: handler,
+  userBuilder: UserBuilder.noAuthentication,
+  legacyCompat: { enabled: true },
+}));
+app.listen(9090, "127.0.0.1");
 ```
 
 A runnable reference server is at
@@ -55,27 +57,31 @@ All 39 CHAP methods become A2A skills named `chap.<method>`,
 matching the MCP transport's tool naming so callers fluent in one
 are fluent in the other.
 
-A2A messages carry the CHAP params in a `DataPart`. The skill id
-identifies which CHAP method to dispatch, looked up in this order:
-`message.metadata.skill` first, then `part.data.skill` on the first
-data part.
+A message carries the CHAP params in a data part, a part whose
+`content` is JSON data with media type `application/json`, the type the
+card names for every skill's input and output. The skill id is looked up in
+`message.metadata.skill` first, then in `skill` on the first data part; the
+params are that part's `params`, or the rest of the part when there are
+none. The answer is an agent message with one data part.
 
-## Spec version asymmetry
+## A2A 0.3 clients
 
-The two official A2A SDKs are at different points of the spec
-evolution. This adapter targets **A2A 0.3.0** via `@a2a-js/sdk`. The
-Python counterpart in `chap_coordinator.transports.a2a_server`
-targets **A2A 1.0** via `a2a-sdk`. The CHAP adapter layer is
-identical across both; the spec-version difference is a property of
-the SDK ecosystem we depend on. Both Agent Cards advertise the
-correct version for each implementation.
+The card lists the JSON-RPC endpoint twice: at protocol version 1.0, and at
+0.3. With `legacyCompat: { enabled: true }` on the SDK's agent-card and
+JSON-RPC handlers, as above, a client still on A2A 0.3 reads the card in its
+0.3 shape and calls `message/send` with `kind`-tagged parts at the same
+URL, and the SDK translates in both directions; a 1.0 client sends
+`A2A-Version: 1.0` and calls `SendMessage`. The executor sees only 1.0
+types. The Python counterpart serves the same two versions.
 
 ## Architecture
 
 - **One Coordinator, one A2A agent.** Multi-workspace handled
   inside the Coordinator.
-- **Stateless adapter.** Each `message/send` translates to a
-  JSON-RPC envelope and dispatches through `coord.dispatch()`.
+- **Stateless adapter.** Each `SendMessage` translates to a
+  JSON-RPC envelope and dispatches through `coord.dispatch()`. A CHAP
+  call takes effect before the executor returns, so there is never one
+  running to cancel.
 - **Auth deferred.** A2A's security schemes attach to the Agent
   Card and are enforced at the HTTP transport.
 
@@ -87,7 +93,9 @@ npm test
 
 The integration tests cover the Agent Card shape, dispatch via data
 part, dispatch via metadata, error surfacing, the full
-workflow including override, deliberation flow, and cancellation.
+workflow including override, and the deliberation flow.
+`round_trip.test.ts` serves the adapter with the SDK's server and drives
+it with the SDK's 1.0 client, and with a 0.3 client's requests.
 
 ## See also
 
