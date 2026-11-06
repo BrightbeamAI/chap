@@ -248,3 +248,7 @@ def test_the_project_ships_with_people_signing_and_the_chain_on():
     assert shipped["require_signatures"] == "humans" and shipped["chain"] is True
     assert shipped["template"]["name"] == "outbound-approval" and shipped["template"]["version"]
     assert "keys/" in (ROOT / ".gitignore").read_text(encoding="utf-8").split()
+
+
+def test_the_tests_name_what_they_need():
+    assert (ROOT / "requirements-dev.txt").read_text(encoding="utf-8").split() == ["-r", "requirements.txt", "pytest>=7"]

@@ -7,11 +7,12 @@ for your decision in the desk, and the reply as you decided it is written to
 ## Run it
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python desk.py                  # owns the store, serves the desk and POST /chap
 python agent.py tickets.csv     # in a second terminal: drafts, then waits for you
-open http://127.0.0.1:8788/     # decide in the desk
 ```
+
+Then decide in the desk at http://127.0.0.1:8788/.
 
 `desk.py` creates the workspace and keeps the SQLite store under `data/`
 beside `chap.config.json`, wherever you start it from. Opening the desk
@@ -29,9 +30,10 @@ restarted agent finds the tasks it opened before and opens no duplicates; a
 ticket whose text changed keeps its task, and a new id gets a new one. Until
 a reviewer has joined the workspace the agent holds each draft and says so
 once, since a review with nobody to address it to is refused. The tests run
-with no model and no network:
+with no model and no network; `requirements-dev.txt` adds pytest:
 
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m pytest tests -q
 ```
 

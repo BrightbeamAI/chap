@@ -32,9 +32,8 @@
     "agent_uri": "agent:drafter"
   },
   "run": [
-    "pip install -r requirements.txt",
+    "python -m pip install -r requirements.txt",
     "python desk.py",
-    "python agent.py messages.csv",
-    "open http://127.0.0.1:8789/"
+    "python agent.py messages.csv"
   ]
 }

@@ -8,12 +8,13 @@ it is paused the coordinator assigns it nothing.
 ## Run it
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python desk.py                   # owns the store, serves the desk and POST /chap
 python agent.py messages.csv     # in a second terminal: drafts, then waits for you
-open http://127.0.0.1:8789/      # decide in the desk
 python pause.py                  # hold the agent; python resume.py lets it go on
 ```
+
+Then decide in the desk at http://127.0.0.1:8789/.
 
 `desk.py` creates the workspace in trial mode and keeps the SQLite store
 under `data/` beside `chap.config.json`, wherever you start it from.
@@ -38,9 +39,10 @@ run. `pause.py` and `resume.py` act as the operator's console,
 `service:operator@local`, a member of its own: your key is in the desk's
 browser, so a call from the command line cannot carry your signature, and
 the log records the pause as the console's. The tests run with no model and
-no network:
+no network; `requirements-dev.txt` adds pytest:
 
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m pytest tests -q
 ```
 

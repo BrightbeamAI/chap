@@ -17,4 +17,5 @@ except ModuleNotFoundError as exc:  # no chap-coordinator, or one from before th
                      "Run: python -m pip install -r requirements.txt") from exc
 
 if __name__ == "__main__":
+    print("The desk runs until you stop it. In a second terminal: python agent.py tickets.csv")
     sys.exit(main(["serve", "--config", str(Path(__file__).resolve().with_name("chap.config.json")), *sys.argv[1:]]))
