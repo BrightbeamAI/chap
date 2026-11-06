@@ -64,6 +64,14 @@ Client → Coordinator: CHAP messages signed with K (security-signed profile)
 The VP is the analogue of the OIDC ID token. The deployment's verifier
 checks the VP, and the Coordinator pins the key it returns.
 
+Where a verifier is configured (`verifyVc` or `verify_vc`) and the
+workspace advertises this profile, a join of type `human` MUST carry a
+`vc_presentation`, and is refused with `-32410` otherwise. Where
+`identity-oidc/1.0` also applies, a token in its place will do. The
+Coordinator records the join with `vc_presentation` replaced by
+`sha256:` and the hex SHA-256 of its JCS form, so a presentation never
+reaches the chain.
+
 ---
 
 ## 4. Sample VP
@@ -163,7 +171,7 @@ either yet (milestone 0.6).
 
 | Code      | Meaning                                                |
 |-----------|--------------------------------------------------------|
-| `-32410`  | VP signature verification failed.                      |
+| `-32410`  | VP signature verification failed, or a person's join with no presentation where this profile applies (§3). |
 | `-32411`  | Holder binding failed: a join under an existing member's name presents another holder, or the member has no recorded holder (§4). |
 | `-32412`  | VC has been revoked.                                   |
 | `-32413`  | Credential schema not recognised by this workspace.    |

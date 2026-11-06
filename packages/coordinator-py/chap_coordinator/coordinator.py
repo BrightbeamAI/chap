@@ -35,7 +35,8 @@ from typing import Any, Callable
 from .audit import (
     entry_call, entry_record, is_signed, link_hash, refusal_is_recorded, signed_digest,
 )
-from .canonical import ZERO_HASH, canonicalize, content_hash
+from .canonical import ZERO_HASH, canonicalize, content_hash, sha256_hex
+from .crypto import jwk_thumbprint
 from .ids import IdFactory
 from .tracked import Scope, TrackedDict
 from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
@@ -391,6 +392,39 @@ def _raw_member(ws: Workspace, uri: Any) -> Member | None:
     return dict.get(ws.members, uri) if isinstance(uri, str) else None
 
 
+#: The participant types SPECIFICATION 5.1 names, each the scheme of its URIs.
+_PARTICIPANT_TYPES = ("human", "agent", "service", "group", "workspace")
+
+
+def _signing_keys(jwks: Any) -> list[dict]:
+    """The keys of a join's ``jwks`` a signature can name: objects with a
+    non-empty string kid."""
+    keys = jwks.get("keys") if isinstance(jwks, dict) else None
+    if not isinstance(keys, list):
+        return []
+    return [j for j in keys if isinstance(j, dict) and isinstance(j.get("kid"), str) and j["kid"]]
+
+
+def _recorded_form(envelope: dict) -> dict:
+    """A call as the log holds it.
+
+    A participant.join keeps its credentials off the chain: an
+    ``oidc_token`` is recorded as the SHA-256 of its UTF-8 bytes and a
+    ``vc_presentation`` as the SHA-256 of its JCS form, so the log shows which
+    credential a member joined with and never holds one a reader could
+    present again.
+    """
+    params = envelope.get("params")
+    if envelope.get("method") != "participant.join" or not isinstance(params, dict):
+        return envelope
+    params = dict(params)
+    if isinstance(params.get("oidc_token"), str):
+        params["oidc_token"] = sha256_hex(params["oidc_token"].encode("utf-8"))
+    if isinstance(params.get("vc_presentation"), dict):
+        params["vc_presentation"] = content_hash(params["vc_presentation"])
+    return {**envelope, "params": params}
+
+
 def _authors_of(task: Task, completer: Any) -> list[str]:
     """Who made the work: the task's assignee, then whoever completed it,
     once each."""
@@ -700,7 +734,7 @@ class Coordinator:
         target = self.workspaces.get(target_id) if isinstance(target_id, str) else None
         if target is not None and is_signed(envelope):
             index = self._signed_index(target)
-            digest = signed_digest(envelope)
+            digest = signed_digest(_recorded_form(envelope))
             prior = index["refused"].get(digest)
             if prior is not None:
                 seq, code = prior
@@ -833,7 +867,7 @@ class Coordinator:
         if isinstance(ws_id, str) and method not in _READ_ONLY_METHODS:
             ws = self.workspaces.get(ws_id)
             if ws is not None:
-                self._record_audit(ws, envelope)
+                self._record_audit(ws, _recorded_form(envelope))
 
         return make_response(env_id, result=copy.deepcopy(out.get("result")))
 
@@ -1291,25 +1325,38 @@ class Coordinator:
     # ============================================================
 
     def _op_workspace_create(self, p: dict) -> dict:
+        ws, error = self._build_workspace(p)
+        if error is not None:
+            return error
+        self._add_workspace(ws)
+        return {"result": {"workspace": ws.id, "created": ws.created}}
+
+    def _build_workspace(self, p: dict) -> tuple[Workspace | None, dict | None]:
+        """The workspace a workspace.create with these params makes, or why it
+        cannot be made.
+
+        Nothing is registered, so participant.join can judge a join by the
+        workspace it would make and make it only once the join passes.
+        """
         bad = params_error(p, [
             ("profiles", "strings"), ("mode", "string"),
             ("mode_ceiling", "string"), ("routing_policy_uri", "string"),
             ("step_up_window_sec", "integer"), ("min_acr", "string"),
         ])
         if bad:
-            return bad
+            return None, bad
         for name in ("mode", "mode_ceiling"):
             if p.get(name) is not None and p[name] not in _MODE_ORDER:
-                return {"error": rpc_error(
+                return None, {"error": rpc_error(
                     E.PARAMS, f"{name} must be shadow, trial or production")}
         policy = p.get("signature_policy")
         if policy is None:
             policy = self.options.signature_policy
         if policy not in ("all", "humans"):
-            return {"error": rpc_error(E.PARAMS, "signature_policy must be all or humans")}
+            return None, {"error": rpc_error(E.PARAMS, "signature_policy must be all or humans")}
         ws_id = p.get("workspace") or self.ids.workspace_id()
         if ws_id in self.workspaces:
-            return {"error": rpc_error(E.PARAMS, f"workspace already exists: {ws_id}")}
+            return None, {"error": rpc_error(E.PARAMS, f"workspace already exists: {ws_id}")}
         requested = p.get("profiles")
         profiles = list(requested if requested is not None else self.options.default_profiles)
 
@@ -1327,7 +1374,7 @@ class Coordinator:
         if self.options.verify_oidc_token is not None and not oidc:
             profiles.append("identity-oidc/1.0")
         elif oidc and self.options.verify_oidc_token is None:
-            return {"error": rpc_error(
+            return None, {"error": rpc_error(
                 E.PARAMS,
                 "identity-oidc/1.0 is advertised but no token verifier is configured. "
                 "A workspace that advertises it and does not enforce it "
@@ -1349,11 +1396,13 @@ class Coordinator:
         if "audit-scitt/1.0" in profiles or self.options.enable_chain:
             ws.chain_enabled = True
             ws.chain_head = ZERO_HASH
-        self.workspaces[ws_id] = ws
+        return ws, None
+
+    def _add_workspace(self, ws: Workspace) -> None:
+        self.workspaces[ws.id] = ws
         if self._tracking:
             # New here, so the store holds nothing of it yet.
             self._track(ws, _Persisted(seq=0))
-        return {"result": {"workspace": ws_id, "created": ws.created}}
 
     def _op_workspace_describe(self, p: dict) -> dict:
         miss = _missing(p, ["workspace"])
@@ -1433,27 +1482,60 @@ class Coordinator:
         for f in ("from", "type"):
             if not isinstance(p[f], str):
                 return {"error": rpc_error(E.PARAMS, f"{f} must be a string")}
+        # SPECIFICATION 5.1: a participant is one of five types, and the
+        # scheme of its URI names the type. Otherwise "human:mallory" could
+        # join as an agent, which the "humans" signature policy lets call
+        # unsigned, and still read as a person on the log.
+        kind = p["type"]
+        if kind not in _PARTICIPANT_TYPES:
+            return {"error": rpc_error(
+                E.PARAMS, "type must be human, agent, service, group or workspace")}
+        if not p["from"].startswith(f"{kind}:"):
+            return {"error": rpc_error(E.PARAMS, f'from must start with "{kind}:" for type {kind}')}
         bad = params_error(p, [
             ("role", "string"), ("display_name", "string"), ("scopes", "strings"),
             ("capabilities", "object"), ("jwks", "object"), ("jwks.keys", "list"),
+            ("oidc_token", "string"), ("vc_presentation", "object"),
         ])
         if bad:
             return bad
+        # A join may make its workspace. It is judged by the workspace it
+        # would make, which is registered only once the join passes, so a
+        # refused join leaves nothing behind.
         ws_id = p["workspace"]
         ws = self.workspaces.get(ws_id)
-        if not ws:
-            create = self._op_workspace_create({"workspace": ws_id})
-            if "error" in create:
-                return create
-            ws = self.workspaces[ws_id]
+        made = ws is None
+        if ws is None:
+            ws, error = self._build_workspace({"workspace": ws_id})
+            if error is not None:
+                return error
         uri = p["from"]
         now = self.now_iso()
         existing = ws.members.get(uri)
         token_verified = False
 
+        # identity-oidc/1.0 and identity-vc/1.0: where a verifier is
+        # configured and the workspace advertises its profile, a person joins
+        # with the credential it checks. Otherwise a workspace that says its
+        # people are verified would admit one on nobody's word. Where both
+        # apply either will do, since the two coexist (identity-vc/1.0 2).
+        if kind == "human":
+            oidc = self.options.verify_oidc_token is not None and ws.has_profile("identity-oidc")
+            vc = self.options.verify_vc is not None and ws.has_profile("identity-vc")
+            presented = ((oidc and isinstance(p.get("oidc_token"), str))
+                         or (vc and isinstance(p.get("vc_presentation"), dict)))
+            if (oidc or vc) and not presented:
+                if oidc:
+                    return {"error": rpc_error(E.OIDC_TOKEN_INVALID, (
+                        "An oidc_token or a vc_presentation is required to join as a human "
+                        "participant") if vc else (
+                        "An oidc_token is required to join as a human participant"))}
+                return {"error": rpc_error(
+                    E.VC_VP_INVALID, "A vc_presentation is required to join as a human participant")}
+
         member = Member(
             uri=uri,
-            type=p["type"],
+            type=kind,
             role=p.get("role") or "participant",
             joined=now,
             display_name=p.get("display_name"),
@@ -1501,6 +1583,16 @@ class Coordinator:
                 member.keys.append(KeyRecord(
                     jwk=cnf_jwk, kid=cnf_jwk["kid"], valid_from=now,
                 ))
+            elif cnf_jwk is None and isinstance(claims.get("nonce"), str):
+                # A token with no cnf.jwk binds the one key of the join whose
+                # RFC 7638 thumbprint is its nonce. A client that cannot have
+                # the key put in the token puts the key's thumbprint in the
+                # nonce it asks the identity provider for, so the token
+                # attests the key all the same.
+                bound = [j for j in _signing_keys(p.get("jwks"))
+                         if jwk_thumbprint(j) == claims["nonce"]]
+                if len(bound) == 1:
+                    member.keys.append(KeyRecord(jwk=bound[0], kid=bound[0]["kid"], valid_from=now))
 
         # identity-vc/1.0 binding
         if self.options.verify_vc and isinstance(p.get("vc_presentation"), dict):
@@ -1527,18 +1619,27 @@ class Coordinator:
         attested = list(member.keys)
 
         # Self-asserted JWKs are ignored for an identity-bound participant: the
-        # verifier-pinned cnf.jwk / vp_jwk is the signing key (proof of possession).
-        jwks = p.get("jwks")
-        if isinstance(jwks, dict) and not attested:
-            for j in jwks.get("keys") or []:
-                # A key without a string kid cannot be named by a signature tag.
-                if isinstance(j, dict) and isinstance(j.get("kid"), str) and j["kid"]:
-                    if not any(k.kid == j["kid"] for k in member.keys):
-                        member.keys.append(KeyRecord(
-                            jwk=j, kid=j["kid"], valid_from=now,
-                        ))
+        # verifier-pinned key is the signing key (proof of possession).
+        if not attested:
+            for j in _signing_keys(p.get("jwks")):
+                if not any(k.kid == j["kid"] for k in member.keys):
+                    member.keys.append(KeyRecord(jwk=j, kid=j["kid"], valid_from=now))
 
         if existing is not None:
+            # A member's keys change through participant.rotate_key, which the
+            # old key signs. A join under the member's name that brings only
+            # keys the member does not hold, and no identity binding one, is
+            # refused: the name is held by other keys, and answering it as
+            # joined would leave its sender holding a key nothing here
+            # accepts.
+            if not attested:
+                kids = list(dict.fromkeys(j["kid"] for j in _signing_keys(p.get("jwks"))))
+                if kids and not any(k.kid == kid for kid in kids for k in existing.keys):
+                    return {"error": rpc_error(
+                        E.NOT_AUTHORISED,
+                        f"{uri} is already a member, with other keys; a new key arrives "
+                        "through participant.rotate_key",
+                        data={"kids": kids})}
             for f in ("oidc_sub", "oidc_auth_time", "oidc_acr", "vc_holder"):
                 v = getattr(member, f)
                 if v is not None:
@@ -1549,6 +1650,8 @@ class Coordinator:
                 if not any(x.kid == k.kid for x in existing.keys):
                     existing.keys.append(k)
             return {"result": {"joined": True, "as": uri}}
+        if made:
+            self._add_workspace(ws)
         ws.members[uri] = member
         return {"result": {"joined": True, "as": uri}}
 

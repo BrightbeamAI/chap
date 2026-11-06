@@ -15,6 +15,7 @@ success.
 - State-machine enforcement: illegal transitions rejected.
 - Filter correctness: `audit.read` filters work.
 - Member enforcement: assigning to non-members fails.
+- `participant.join` refuses a `type` its `from` URI does not name.
 
 **Review profile (optional)** covers:
 

@@ -145,7 +145,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "group",
                     "workspace",
                 ],
-                "description": "The kind of participant. Only members of type 'human' are eligible for the review that chap.task.complete opens on a task marked review_required, and a completion with no eligible human is refused with -32011.",
+                "description": "The kind of participant, which the scheme of from must name: 'agent:' for an agent, and so on. Any other join is refused with -32602. Only members of type 'human' are eligible for the review that chap.task.complete opens on a task marked review_required, and a completion with no eligible human is refused with -32011.",
             },
             "role": {
                 "type": "string",

@@ -16,6 +16,7 @@ import {
   randomBytes,
   createHash,
 } from "node:crypto";
+import { canonicalize } from "./canonical.js";
 
 const ED25519_OID = Buffer.from("302a300506032b6570032100", "hex");
 
@@ -114,6 +115,22 @@ export function verifyEnvelope(canonical: Buffer, sigTag: string, publicKey: Key
 /** Parse a JWK x (base64url) into a Node public KeyObject. */
 export function publicKeyFromJwk(jwk: Jwk): KeyObject {
   return publicKeyFromRaw(b64urlDecode(jwk.x));
+}
+
+/**
+ * The RFC 7638 thumbprint of a public JWK: SHA-256 over the JSON of its
+ * required members in lexicographic order, base64url without padding.
+ * The members are {crv, kty, x} for an OKP key and {crv, kty, x, y} for an
+ * EC key, and for any other key, or one whose members are not strings,
+ * there is none.
+ */
+export function jwkThumbprint(jwk: unknown): string | undefined {
+  if (jwk === null || typeof jwk !== "object" || Array.isArray(jwk)) return undefined;
+  const key = jwk as Record<string, unknown>;
+  const names = key.kty === "OKP" ? ["crv", "kty", "x"] : key.kty === "EC" ? ["crv", "kty", "x", "y"] : undefined;
+  if (!names || names.some((n) => typeof key[n] !== "string")) return undefined;
+  const members = Object.fromEntries(names.map((n) => [n, key[n]]));
+  return b64urlNoPad(createHash("sha256").update(canonicalize(members)).digest());
 }
 
 /** Demo helper: build a deterministic keypair + JWK for a URI. */

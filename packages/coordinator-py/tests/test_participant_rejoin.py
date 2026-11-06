@@ -2,7 +2,9 @@
 Regression: participant.join must not replace an existing member. A re-join
 keeps the member's role, scopes and keys, refreshes only the verified identity
 binding, and never accepts self-asserted jwks for an already-admitted URI.
-Guards the 0.2.9 fix.
+Guards the 0.2.9 fix. A re-join that brings only keys the member does not hold
+is refused with -32011, where it was answered as joined and its keys dropped
+(6 November review, item 4).
 
 A verified token or presentation binds only to the participant it belongs to:
 a re-join must carry the member's own subject or holder, or, for a member
@@ -13,6 +15,7 @@ another member and sign as that member. Mirrors participant_rejoin.test.ts.
 from __future__ import annotations
 
 from chap_coordinator import Coordinator, CoordinatorOptions
+from chap_coordinator.storage.store import MemoryStore
 
 
 def _ready(**opts):
@@ -27,36 +30,53 @@ def _ready(**opts):
     return c, s
 
 
-def test_rejoin_keeps_role_scopes_and_key():
+def test_rejoin_with_only_other_keys_is_refused_and_the_member_is_unchanged():
     c, s = _ready()
-    s("participant.join", workspace="w", **{"from": "human:alice"}, type="human",
-      role="owner", jwks={"keys": [{"kid": "attacker", "x": "E"}]})
+    r = s("participant.join", workspace="w", **{"from": "human:alice"}, type="human",
+          role="owner", jwks={"keys": [{"kid": "attacker", "x": "E"}, {"kid": "attacker", "x": "E"}]})
+    assert r["error"] == {
+        "code": -32011,
+        "message": "human:alice is already a member, with other keys; a new key arrives "
+                   "through participant.rotate_key",
+        "data": {"kids": ["attacker"]}}
     m = c.get_workspace("w").members["human:alice"]
     assert m.role == "reviewer"
     assert m.scopes == ["approve"]
     assert [k.kid for k in m.keys] == ["alice-1"]
 
 
-def test_rejoin_ignores_self_asserted_jwks():
+def test_rejoin_with_a_registered_key_or_with_none_keeps_role_scopes_and_keys():
     c, s = _ready()
-    s("participant.join", workspace="w", **{"from": "human:alice"}, type="human",
-      jwks={"keys": [{"kid": "attacker", "x": "E"}]})
-    m = c.get_workspace("w").members["human:alice"]
-    assert all(k.kid != "attacker" for k in m.keys)
+    for jwks in ({"keys": [{"kid": "alice-1", "x": "A"}, {"kid": "attacker", "x": "E"}]}, None):
+        extra = {"jwks": jwks} if jwks else {}
+        r = s("participant.join", workspace="w", **{"from": "human:alice"}, type="human",
+              role="owner", **extra)
+        assert r["result"] == {"joined": True, "as": "human:alice"}
+        m = c.get_workspace("w").members["human:alice"]
+        assert m.role == "reviewer"
+        assert m.scopes == ["approve"]
+        assert [k.kid for k in m.keys] == ["alice-1"]
 
 
 def test_rejoin_refreshes_verified_binding():
     claims = {"good": {"sub": "alice", "auth_time": 111,
                        "chap_participant_uri": "human:alice"}}
-    c = Coordinator(CoordinatorOptions(deterministic_ids=True,
+    # Alice joined before the deployment configured a token verifier, so the
+    # workspace does not advertise identity-oidc/1.0 and she holds no subject.
+    store = MemoryStore()
+    before = Coordinator(CoordinatorOptions(deterministic_ids=True, store=store))
+    before.dispatch({"jsonrpc": "2.0", "id": "c", "method": "workspace.create",
+                     "params": {"workspace": "w"}})
+    before.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
+                     "params": {"workspace": "w", "from": "human:alice", "type": "human"}})
+    c = Coordinator(CoordinatorOptions(deterministic_ids=True, store=store,
                                        verify_oidc_token=lambda t: claims.get(t)))
 
     def s(method, **params):
         return c.dispatch({"jsonrpc": "2.0", "id": method, "method": method, "params": params})
 
-    s("workspace.create", workspace="w")
-    s("participant.join", workspace="w", **{"from": "human:alice"}, type="human")
-    s("participant.join", workspace="w", **{"from": "human:alice"}, type="human", oidc_token="good")
+    assert "error" not in s("participant.join", workspace="w", **{"from": "human:alice"},
+                            type="human", oidc_token="good")
     m = c.get_workspace("w").members["human:alice"]
     assert m.oidc_sub == "alice"
     assert m.oidc_auth_time == 111
@@ -88,16 +108,32 @@ TOKENS = {
 }
 
 
-def _oidc_ready():
-    c = Coordinator(CoordinatorOptions(deterministic_ids=True,
+def _oidc_ready(unbound=()):
+    """A workspace under a token verifier.
+
+    The members in ``unbound`` joined with a key of their own before the
+    verifier was configured, so the workspace does not advertise
+    identity-oidc/1.0 and they hold no verified subject.
+    """
+    store = MemoryStore()
+    create = {"jsonrpc": "2.0", "id": "c", "method": "workspace.create",
+              "params": {"workspace": "w"}}
+    if unbound:
+        before = Coordinator(CoordinatorOptions(deterministic_ids=True, store=store))
+        before.dispatch(create)
+        for uri in unbound:
+            before.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
+                             "params": {"workspace": "w", "from": uri, "type": "human",
+                                        "jwks": {"keys": [_key(f"{uri[len('human:'):]}-self")]}}})
+    c = Coordinator(CoordinatorOptions(deterministic_ids=True, store=store,
                                        verify_oidc_token=lambda t: TOKENS.get(t)))
 
     def join(uri, **extra):
         return c.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
                            "params": {"workspace": "w", "from": uri, "type": "human", **extra}})
 
-    c.dispatch({"jsonrpc": "2.0", "id": "c", "method": "workspace.create",
-                "params": {"workspace": "w"}})
+    if not unbound:
+        c.dispatch(create)
     return c, join
 
 
@@ -134,8 +170,7 @@ def test_rejoin_with_the_same_subject_adds_a_key_and_refreshes():
 
 
 def test_binding_an_unbound_member_needs_a_token_naming_it():
-    c, join = _oidc_ready()
-    join("human:alice", jwks={"keys": [_key("alice-self")]})
+    c, join = _oidc_ready(unbound=["human:alice"])
     r = join("human:alice", oidc_token="alice-unnamed")
     assert r["error"]["code"] == -32404
     m = _member(c)
@@ -204,13 +239,12 @@ def test_a_presentation_cannot_bind_an_unbound_member():
 # ------------------------------------------------------------- edge cases
 
 def test_the_four_refusals_carry_their_messages():
-    c, join = _oidc_ready()
+    c, join = _oidc_ready(unbound=["human:bob"])
     assert join("human:alice", oidc_token="naming-mallory")["error"]["message"] == \
         "OIDC token is bound to another participant"
     join("human:alice", oidc_token="alice-1")
     assert join("human:alice", oidc_token="mallory")["error"]["message"] == \
         "OIDC token subject does not match the member"
-    join("human:bob", jwks={"keys": [_key("bob-self")]})
     assert join("human:bob", oidc_token="alice-unnamed")["error"]["message"] == \
         "OIDC token does not name this member"
     v, vjoin = _vc_ready()

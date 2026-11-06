@@ -338,11 +338,11 @@ test("a refused join is not recorded, even from a member's URI", () => {
   // participant.join is exempt from signature checks, so its refusal proves
   // nothing about who sent it.
   const c = new Coordinator({ requireSignatures: true, deterministicIds: true, deterministicClock: true,
-                              verifyOidcToken: () => null,
+                              verifyOidcToken: (t: string) => (t === "good" ? { sub: "a" } : null),
                               defaultProfiles: ["core/1.0", "review/1.0"] } as never);
   const { jwk } = deriveKeypair("human:a");
   c.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
-    params: { workspace: "w", from: "human:a", type: "human", jwks: { keys: [jwk] } } } as never);
+    params: { workspace: "w", from: "human:a", type: "human", oidc_token: "good", jwks: { keys: [jwk] } } } as never);
   const ws = c.workspaces.get("w") as any;
   const before = ws.audit.length;
   const r = c.dispatch({ jsonrpc: "2.0", id: "forged", method: "participant.join",

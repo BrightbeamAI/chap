@@ -1,0 +1,186 @@
+"""
+participant.join: types and URIs, identity required of people, credentials
+kept off the chain, and a key bound through the token's nonce
+(6 November review, items 4 and 5).
+
+A join took any type with any URI, so "human:mallory" could join as an agent.
+Where a token verifier was configured a person could join with no token at
+all, and a join's token or presentation was written to the log, where
+audit.read handed it to any reader. Mirrors joins.test.ts.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+
+from chap_coordinator import Coordinator, CoordinatorOptions
+from chap_coordinator.canonical import canonicalize
+from chap_coordinator.crypto import jwk_thumbprint
+
+RFC8037_KEY = {"kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}
+
+
+def _key(kid, x=None):
+    return {"kty": "OKP", "crv": "Ed25519", "kid": kid, "x": x or kid.upper()}
+
+
+def _ec_key(kid):
+    return {"kty": "EC", "crv": "P-256", "kid": kid,
+            "x": "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+            "y": "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0"}
+
+
+def _coordinator(**options):
+    c = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True, **options))
+    n = [0]
+
+    def join(frm, kind, workspace="w", **extra):
+        n[0] += 1
+        return c.dispatch({"jsonrpc": "2.0", "id": f"j{n[0]}", "method": "participant.join",
+                           "params": {"workspace": workspace, "from": frm, "type": kind, **extra}})
+
+    return c, join
+
+
+def _keys_of(c, uri):
+    return [k.kid for k in c.workspaces["w"].members[uri].keys]
+
+
+# ------------------------------------------------------------- types and URIs
+
+def test_a_participant_is_one_of_five_types_and_its_uris_scheme_names_the_type():
+    c, join = _coordinator()
+    for kind in ("human", "agent", "service", "group", "workspace"):
+        assert join(f"{kind}:x", kind)["result"] == {"joined": True, "as": f"{kind}:x"}
+    assert join("bot:x", "bot")["error"] == {
+        "code": -32602, "message": "type must be human, agent, service, group or workspace"}
+    assert join("human:mallory", "agent")["error"] == {
+        "code": -32602, "message": 'from must start with "agent:" for type agent'}
+    assert join("alice", "human")["error"] == {
+        "code": -32602, "message": 'from must start with "human:" for type human'}
+    assert len(c.workspaces["w"].members) == 5
+
+
+def test_a_credential_of_the_wrong_type_is_refused():
+    _, join = _coordinator()
+    assert join("human:a", "human", oidc_token={"t": 1})["error"] == {
+        "code": -32602, "message": "oidc_token must be a string"}
+    assert join("human:a", "human", vc_presentation="vp")["error"] == {
+        "code": -32602, "message": "vc_presentation must be an object"}
+
+
+# --------------------------------------------------- identity required of people
+
+TOKENS = {"alice": {"sub": "alice", "cnf": {"jwk": _key("alice-k1")}}, "bob": {"sub": "bob"}}
+PRESENTATIONS = {"carol": {"holder": "did:example:carol", "cnf_jwk": _key("carol-vp")}}
+
+
+def _verify_oidc_token(t):
+    return TOKENS.get(t)
+
+
+def _verify_vc(vp):
+    return PRESENTATIONS.get(vp.get("who"))
+
+
+def test_where_a_token_verifier_is_configured_and_advertised_a_person_joins_with_a_token():
+    c, join = _coordinator(verify_oidc_token=_verify_oidc_token)
+    assert join("human:alice", "human")["error"] == {
+        "code": -32403, "message": "An oidc_token is required to join as a human participant"}
+    # The join would have made the workspace, and made nothing.
+    assert "w" not in c.workspaces
+    assert "error" not in join("human:alice", "human", oidc_token="alice")
+    assert "error" not in join("agent:bot", "agent")
+    # A member joining again is a join like any other.
+    assert join("human:alice", "human")["error"]["code"] == -32403
+
+
+def test_where_a_presentation_verifier_is_configured_and_advertised_a_person_joins_with_one():
+    _, join = _coordinator(verify_vc=_verify_vc,
+                           default_profiles=["core/1.0", "review/1.0", "identity-vc/1.0"])
+    assert join("human:carol", "human")["error"] == {
+        "code": -32410, "message": "A vc_presentation is required to join as a human participant"}
+    assert "error" not in join("human:carol", "human", vc_presentation={"who": "carol"})
+
+
+def test_where_both_apply_either_credential_admits_a_person():
+    _, join = _coordinator(verify_oidc_token=_verify_oidc_token, verify_vc=_verify_vc,
+                           default_profiles=["core/1.0", "review/1.0", "identity-vc/1.0"])
+    assert join("human:dan", "human")["error"] == {
+        "code": -32403,
+        "message": "An oidc_token or a vc_presentation is required to join as a human participant"}
+    assert "error" not in join("human:carol", "human", vc_presentation={"who": "carol"})
+    assert "error" not in join("human:bob", "human", oidc_token="bob")
+
+
+def test_a_workspace_that_does_not_advertise_the_profile_takes_a_person_without_one():
+    _, join = _coordinator(verify_vc=_verify_vc)
+    assert "error" not in join("human:carol", "human")
+
+
+# ------------------------------------------------------- credentials off the chain
+
+def test_a_joins_token_and_presentation_are_recorded_as_their_digests():
+    c, join = _coordinator(verify_oidc_token=_verify_oidc_token, verify_vc=_verify_vc,
+                           enable_chain=True,
+                           default_profiles=["core/1.0", "review/1.0", "identity-vc/1.0"])
+    vp = {"who": "carol", "proof": {"value": "secret"}}
+    join("human:bob", "human", oidc_token="bob")
+    join("human:carol", "human", vc_presentation=vp)
+    bob, carol = (e.envelope["params"] for e in c.workspaces["w"].audit)
+    assert bob["oidc_token"] == "sha256:" + hashlib.sha256(b"bob").hexdigest()
+    assert carol["vc_presentation"] == "sha256:" + hashlib.sha256(canonicalize(vp)).hexdigest()
+    assert "secret" not in json.dumps([e.to_dict() for e in c.workspaces["w"].audit])
+    verified = c.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
+                           "params": {"workspace": "w"}})
+    assert verified["result"]["status"] == "verified"
+
+
+def test_a_signed_join_with_a_token_takes_effect_once():
+    c, _ = _coordinator(verify_oidc_token=_verify_oidc_token)
+    envelope = {"jsonrpc": "2.0", "id": "s", "method": "participant.join",
+                "sig": "ed25519:k:" + "A" * 86 + "==",
+                "params": {"workspace": "w", "from": "human:bob", "type": "human",
+                           "oidc_token": "bob"}}
+    assert "error" not in c.dispatch(envelope)
+    again = c.dispatch(envelope)
+    assert again["error"]["code"] == -32075
+    assert again["error"]["data"] == {"accepted_at_seq": 0}
+
+
+# ----------------------------------------------------------- the nonce binding
+
+def test_the_key_whose_thumbprint_is_the_nonce_is_bound_and_the_joins_other_keys_are_not():
+    assert jwk_thumbprint(RFC8037_KEY) == "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k"
+    tokens = {"okp": {"sub": "erin", "nonce": jwk_thumbprint(_key("erin-1"))},
+              "ec": {"sub": "fay", "nonce": jwk_thumbprint(_ec_key("fay-1"))}}
+    c, join = _coordinator(verify_oidc_token=tokens.get)
+    join("human:erin", "human", oidc_token="okp", jwks={"keys": [_key("erin-2"), _key("erin-1")]})
+    assert _keys_of(c, "human:erin") == ["erin-1"]
+    join("human:fay", "human", oidc_token="ec", jwks={"keys": [_key("fay-2"), _ec_key("fay-1")]})
+    assert _keys_of(c, "human:fay") == ["fay-1"]
+
+
+def test_a_nonce_that_names_no_key_or_two_binds_none_and_a_cnf_jwk_comes_first():
+    tokens = {"none": {"sub": "g", "nonce": "not-a-thumbprint"},
+              "two": {"sub": "h", "nonce": jwk_thumbprint(_key("g-1"))},
+              "cnf": {"sub": "i", "nonce": jwk_thumbprint(_key("i-1")),
+                      "cnf": {"jwk": _key("i-cnf")}}}
+    c, join = _coordinator(verify_oidc_token=tokens.get)
+    join("human:g", "human", oidc_token="none", jwks={"keys": [_key("g-1"), _key("g-2")]})
+    assert _keys_of(c, "human:g") == ["g-1", "g-2"]
+    join("human:h", "human", oidc_token="two",
+         jwks={"keys": [_key("h-1", "G-1"), _key("h-2", "G-1")]})
+    assert _keys_of(c, "human:h") == ["h-1", "h-2"]
+    join("human:i", "human", oidc_token="cnf", jwks={"keys": [_key("i-1")]})
+    assert _keys_of(c, "human:i") == ["i-cnf"]
+
+
+def test_a_member_joining_again_with_a_key_its_token_binds_adds_it():
+    tokens = {"first": {"sub": "jo", "cnf": {"jwk": _key("jo-1")}},
+              "second": {"sub": "jo", "nonce": jwk_thumbprint(_key("jo-2"))}}
+    c, join = _coordinator(verify_oidc_token=tokens.get)
+    join("human:jo", "human", oidc_token="first")
+    r = join("human:jo", "human", oidc_token="second", jwks={"keys": [_key("jo-2"), _key("jo-3")]})
+    assert "error" not in r
+    assert _keys_of(c, "human:jo") == ["jo-1", "jo-2"]

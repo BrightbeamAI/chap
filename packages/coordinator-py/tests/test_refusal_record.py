@@ -373,11 +373,12 @@ def test_a_refused_join_is_not_recorded_even_from_a_members_uri():
     # nothing about who sent it.
     coord = Coordinator(CoordinatorOptions(
         require_signatures=True, deterministic_ids=True, deterministic_clock=True,
-        verify_oidc_token=lambda token: None, default_profiles=["core/1.0", "review/1.0"]))
+        verify_oidc_token=lambda token: {"sub": "a"} if token == "good" else None,
+        default_profiles=["core/1.0", "review/1.0"]))
     jwk = public_jwk("human:a", derive_private_key("human:a"))
     coord.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
                     "params": {"workspace": "w", "from": "human:a", "type": "human",
-                               "jwks": {"keys": [jwk]}}})
+                               "oidc_token": "good", "jwks": {"keys": [jwk]}}})
     ws = coord.get_workspace("w")
     before = len(ws.audit)
     r = coord.dispatch({"jsonrpc": "2.0", "id": "forged", "method": "participant.join",

@@ -327,7 +327,12 @@ Response:
 ```
 
 `workspace`, `from` and `type` are required; a missing one is refused with
-`-32602`.
+`-32602`. `type` is `human`, `agent`, `service`, `group` or `workspace`,
+and `from` starts with it as its scheme (`agent:` for an agent); any
+other join is refused with `-32602`. A join naming an existing member
+changes none of its type, role, scopes or keys, and one that brings only
+keys the member does not hold is refused with `-32011`: a member's keys
+change through `participant.rotate_key` (SPECIFICATION.md §6.3.2).
 
 ### 4.3 `participant.leave`
 

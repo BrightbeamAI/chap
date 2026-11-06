@@ -20,9 +20,9 @@
  *   - identity-oidc/1.0 + identity-vc/1.0 (binding hooks at join)
  */
 
-import { canonicalize, contentHash, ZERO_HASH } from "./canonical.js";
+import { canonicalize, contentHash, sha256Hex, ZERO_HASH } from "./canonical.js";
 import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "./catalogue.js";
-import { publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
+import { jwkThumbprint, publicKeyFromJwk, verifyEnvelope } from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
 import { paramsError } from "./params.js";
@@ -232,6 +232,31 @@ function reviewSatisfied(review: { requested_to: string[]; rule: string; decisio
 /** Whether a workspace advertises a profile, matched by name as the gate matches it. */
 function advertises(ws: Workspace, name: string): boolean {
   return ws.profiles.some((p) => p === name || p.startsWith(name + "/"));
+}
+
+/** The participant types SPECIFICATION 5.1 names, each the scheme of its URIs. */
+const PARTICIPANT_TYPES = ["human", "agent", "service", "group", "workspace"];
+
+/** The keys of a join's `jwks` a signature can name: objects with a non-empty string kid. */
+function signingKeys(jwks: unknown): Array<Record<string, unknown> & { kid: string }> {
+  const keys = isObject(jwks) && Array.isArray(jwks.keys) ? jwks.keys : [];
+  return keys.filter((j): j is Record<string, unknown> & { kid: string } =>
+    isObject(j) && typeof j.kid === "string" && j.kid !== "");
+}
+
+/**
+ * A call as the log holds it. A participant.join keeps its credentials off
+ * the chain: an `oidc_token` is recorded as the SHA-256 of its UTF-8 bytes
+ * and a `vc_presentation` as the SHA-256 of its JCS form, so the log shows
+ * which credential a member joined with and never holds one a reader could
+ * present again.
+ */
+function recordedForm(envelope: Envelope): Envelope {
+  if (envelope.method !== "participant.join" || !isObject(envelope.params)) return envelope;
+  const params = { ...envelope.params };
+  if (typeof params.oidc_token === "string") params.oidc_token = sha256Hex(params.oidc_token);
+  if (isObject(params.vc_presentation)) params.vc_presentation = contentHash(params.vc_presentation);
+  return { ...envelope, params };
 }
 
 /**
@@ -1006,7 +1031,7 @@ export class Coordinator {
       const ws = typeof wsId === "string" ? this.workspaces.get(wsId) : undefined;
       if (ws) {
         const index = this.signedIndex(ws);
-        const digest = signedDigest(envelope);
+        const digest = signedDigest(recordedForm(envelope));
         const prior = index.refused.get(digest);
         if (prior) {
           return reply(envelope, { error: rpcError(prior.code,
@@ -1138,7 +1163,7 @@ export class Coordinator {
       : params.workspace as string | undefined;
     if (typeof wsId === "string" && !READ_ONLY_METHODS.has(method)) {
       const ws = this.workspaces.get(wsId);
-      if (ws) this.recordAudit(ws, envelope);
+      if (ws) this.recordAudit(ws, recordedForm(envelope));
     }
     return reply(envelope, { result: ownCopy(out.result) });
   }
@@ -1400,6 +1425,20 @@ export class Coordinator {
   // ==========================================================
 
   private opWorkspaceCreate(p: Record<string, unknown>): ReturnType<Handler> {
+    const built = this.buildWorkspace(p);
+    if (built.error) return { error: built.error };
+    this.addWorkspace(built.ws);
+    return { result: { workspace: built.ws.id, created: built.ws.created } };
+  }
+
+  /**
+   * The workspace a workspace.create with these params makes, or why it
+   * cannot be made. Nothing is registered, so participant.join can judge a
+   * join by the workspace it would make and make it only once the join
+   * passes.
+   */
+  private buildWorkspace(p: Record<string, unknown>):
+      { ws: Workspace; error?: undefined } | { ws?: undefined; error: ReturnType<typeof rpcError> } {
     const bad = paramsError(p, [
       ["profiles", "strings"], ["mode", "string"], ["mode_ceiling", "string"],
       ["routing_policy_uri", "string"], ["step_up_window_sec", "integer"], ["min_acr", "string"],
@@ -1461,10 +1500,13 @@ export class Coordinator {
       chain_enabled: chainEnabled,
       chain_head: chainEnabled ? ZERO_HASH : undefined,
     };
-    this.workspaces.set(id, ws);
+    return { ws };
+  }
+
+  private addWorkspace(ws: Workspace): void {
+    this.workspaces.set(ws.id, ws);
     // New here, so the store holds nothing of it yet.
     this.persisted.set(ws, { seq: 0, replace: false, keys: new Set() });
-    return { result: { workspace: id, created: ws.created } };
   }
 
   private opWorkspaceDescribe(p: Record<string, unknown>): ReturnType<Handler> {
@@ -1537,25 +1579,59 @@ export class Coordinator {
     for (const f of ["from", "type"]) {
       if (typeof p[f] !== "string") return { error: rpcError(E.PARAMS, `${f} must be a string`) };
     }
+    // SPECIFICATION 5.1: a participant is one of five types, and the scheme
+    // of its URI names the type. Otherwise "human:mallory" could join as an
+    // agent, which the "humans" signature policy lets call unsigned, and
+    // still read as a person on the log.
+    const type = p.type as string;
+    if (!PARTICIPANT_TYPES.includes(type)) {
+      return { error: rpcError(E.PARAMS, "type must be human, agent, service, group or workspace") };
+    }
+    if (!(p.from as string).startsWith(`${type}:`)) {
+      return { error: rpcError(E.PARAMS, `from must start with "${type}:" for type ${type}`) };
+    }
     const bad = paramsError(p, [
       ["role", "string"], ["display_name", "string"], ["scopes", "strings"],
       ["capabilities", "object"], ["jwks", "object"], ["jwks.keys", "list"],
+      ["oidc_token", "string"], ["vc_presentation", "object"],
     ]);
     if (bad) return bad;
+    // A join may make its workspace. It is judged by the workspace it would
+    // make, which is registered only once the join passes, so a refused join
+    // leaves nothing behind.
     let ws = this.workspaces.get(p.workspace as string);
+    const made = ws === undefined;
     if (!ws) {
-      const create = this.opWorkspaceCreate({ workspace: p.workspace });
-      if (create.error) return create;
-      ws = this.workspaces.get(p.workspace as string)!;
+      const built = this.buildWorkspace({ workspace: p.workspace });
+      if (built.error) return { error: built.error };
+      ws = built.ws;
     }
     const uri = p.from as ParticipantUri;
     const now = this.now();
     const existing = ws.members.get(uri);
     let tokenVerified = false;
 
+    // identity-oidc/1.0 and identity-vc/1.0: where a verifier is configured
+    // and the workspace advertises its profile, a person joins with the
+    // credential it checks. Otherwise a workspace that says its people are
+    // verified would admit one on nobody's word. Where both apply either
+    // will do, since the two coexist (identity-vc/1.0 2).
+    if (type === "human") {
+      const oidc = this.options.verifyOidcToken !== undefined && advertises(ws, "identity-oidc");
+      const vc = this.options.verifyVc !== undefined && advertises(ws, "identity-vc");
+      const presented = (oidc && typeof p.oidc_token === "string") || (vc && isObject(p.vc_presentation));
+      if ((oidc || vc) && !presented) {
+        return { error: oidc
+          ? rpcError(E.OIDC_TOKEN_INVALID, vc
+            ? "An oidc_token or a vc_presentation is required to join as a human participant"
+            : "An oidc_token is required to join as a human participant")
+          : rpcError(E.VC_VP_INVALID, "A vc_presentation is required to join as a human participant") };
+      }
+    }
+
     const member: Member = {
       uri,
-      type: p.type as Member["type"],
+      type: type as Member["type"],
       role: (p.role as string) || "participant",
       joined: now,
       display_name: p.display_name as string | undefined,
@@ -1596,12 +1672,21 @@ export class Coordinator {
       const cnfJwk = cnf?.jwk as Record<string, unknown> | undefined;
       if (cnfJwk && typeof cnfJwk.kid === "string" && cnfJwk.kid) {
         member.keys.push({ jwk: cnfJwk as unknown as KeyRecord["jwk"], kid: cnfJwk.kid as string, valid_from: now });
+      } else if (cnfJwk == null && typeof claims.nonce === "string") {
+        // A token with no cnf.jwk binds the one key of the join whose RFC 7638
+        // thumbprint is its nonce. A client that cannot have the key put in
+        // the token puts the key's thumbprint in the nonce it asks the
+        // identity provider for, so the token attests the key all the same.
+        const nonce = claims.nonce;
+        const bound = signingKeys(p.jwks).filter((j) => jwkThumbprint(j) === nonce);
+        if (bound.length === 1) {
+          member.keys.push({ jwk: bound[0] as unknown as KeyRecord["jwk"], kid: bound[0].kid, valid_from: now });
+        }
       }
     }
     // identity-vc/1.0
-    if (this.options.verifyVc && typeof p.vc_presentation === "object" && p.vc_presentation !== null
-        && !Array.isArray(p.vc_presentation)) {
-      const subject = this.options.verifyVc(p.vc_presentation as Record<string, unknown>);
+    if (this.options.verifyVc && isObject(p.vc_presentation)) {
+      const subject = this.options.verifyVc(p.vc_presentation);
       if (subject === null) return { error: rpcError(E.VC_VP_INVALID, "VC presentation invalid") };
       const holder = [subject.holder, subject.id].find(
         (h): h is string => typeof h === "string" && h !== "");
@@ -1620,19 +1705,29 @@ export class Coordinator {
     const attested = [...member.keys];
 
     // Self-asserted JWKs are ignored for an identity-bound participant: the
-    // verifier-pinned cnf.jwk / vp_jwk is the signing key (proof of possession).
-    const jwks = p.jwks as { keys?: unknown[] } | undefined;
-    if (jwks?.keys && attested.length === 0) {
-      for (const j of jwks.keys as Array<Record<string, unknown> | null>) {
-        // A key without a string kid cannot be named by a signature tag.
-        const kid = j !== null && typeof j === "object" && !Array.isArray(j) ? j.kid : undefined;
-        if (typeof kid === "string" && kid && !member.keys.some(k => k.kid === kid)) {
-          member.keys.push({ jwk: j as unknown as KeyRecord["jwk"], kid, valid_from: now });
+    // verifier-pinned key is the signing key (proof of possession).
+    if (attested.length === 0) {
+      for (const j of signingKeys(p.jwks)) {
+        if (!member.keys.some(k => k.kid === j.kid)) {
+          member.keys.push({ jwk: j as unknown as KeyRecord["jwk"], kid: j.kid, valid_from: now });
         }
       }
     }
 
     if (existing) {
+      // A member's keys change through participant.rotate_key, which the old
+      // key signs. A join under the member's name that brings only keys the
+      // member does not hold, and no identity binding one, is refused: the
+      // name is held by other keys, and answering it as joined would leave
+      // its sender holding a key nothing here accepts.
+      if (attested.length === 0) {
+        const kids = [...new Set(signingKeys(p.jwks).map((j) => j.kid))];
+        if (kids.length > 0 && !kids.some((kid) => existing.keys.some((k) => k.kid === kid))) {
+          return { error: rpcError(E.NOT_AUTHORISED,
+            `${uri} is already a member, with other keys; a new key arrives through participant.rotate_key`,
+            { kids }) };
+        }
+      }
       if (member.oidc_sub !== undefined) existing.oidc_sub = member.oidc_sub;
       if (member.oidc_auth_time !== undefined) existing.oidc_auth_time = member.oidc_auth_time;
       if (member.oidc_acr !== undefined) existing.oidc_acr = member.oidc_acr;
@@ -1643,6 +1738,7 @@ export class Coordinator {
       }
       return { result: { joined: true, as: uri } };
     }
+    if (made) this.addWorkspace(ws);
     ws.members.set(uri, member);
     return { result: { joined: true, as: uri } };
   }

@@ -54,7 +54,8 @@ CHAP conformance.
 ### C3 · The 7 methods
 
 - [ ] `workspace.describe` returns `id`, `created`, `state`, `members`, `profiles`, `audit_count`.
-- [ ] `participant.join` adds the participant to `members`; rejects with `-32602` for missing fields.
+- [ ] `participant.join` adds the participant to `members`; rejects with `-32602` for missing fields, for a `type` other than `human`, `agent`, `service`, `group` and `workspace`, and for a `from` whose scheme is not its `type` (SPECIFICATION.md §5.1). Verified by harness vector `cm-13`.
+- [ ] A `participant.join` naming an existing member changes none of its type, role, scopes or keys, and one that carries only keys the member does not hold and binds none through an identity profile is refused with `-32011`, with `data.kids` (SPECIFICATION.md §6.3.2).
 - [ ] `participant.leave` removes the caller, who must be a current member; a second leave is refused with `-32011` and changes nothing.
 - [ ] `task.create` validates that the assignee is a current member; returns `task_id` and `state: "created"`.
 - [ ] Every actor-action method validates that `from` (the actor) is a current member, rejecting a non-member with `-32011` (SPECIFICATION.md §6.3.1). Harness vector `rv-07` verifies this for `decide.approve`; `rv-08` tests the reviewer set.
@@ -182,7 +183,9 @@ a profile it does not pass.**
 
 ### Profile: `identity-oidc/1.0`
 
-- [ ] Participant signing keys are bound via OIDC `cnf.jwk` (RFC 7800).
+- [ ] Participant signing keys are bound via OIDC `cnf.jwk` (RFC 7800), or, where the token carries none, through a `nonce` equal to the RFC 7638 thumbprint of exactly one key in the join's `jwks`.
+- [ ] Where a token verifier is configured and the workspace advertises the profile, a join of type `human` without an `oidc_token` is refused with `-32403`.
+- [ ] A join is recorded with its `oidc_token` replaced by `sha256:<hex>` of the token's UTF-8 bytes.
 - [ ] When step-up is enforced, privileged operations apply a window (default 5 minutes) and return `-32402` when it is exceeded.
 - [ ] ID-token verification covers `iss`, `aud`, `exp` and the signature; a token binds only to its participant (`-32404`).
 - [ ] Returns `-32402` … `-32405` for identity-specific failures.
@@ -192,6 +195,7 @@ a profile it does not pass.**
 - [ ] Participant identity is established via a W3C Verifiable Presentation with a Data Integrity Proof.
 - [ ] Holder binding (proof of possession) is verified at presentation time.
 - [ ] A join under an existing member's name accepts a presentation only from its recorded holder (`-32411`).
+- [ ] Where a presentation verifier is configured and the workspace advertises the profile, a join of type `human` without a `vc_presentation` is refused with `-32410`, and a join is recorded with its `vc_presentation` replaced by `sha256:<hex>` of its JCS form.
 - [ ] Issuer trust is configurable per workspace.
 - [ ] Revocation is checked at presentation time and periodically thereafter.
 - [ ] Returns `-32410` … `-32413` for VC-specific failures.

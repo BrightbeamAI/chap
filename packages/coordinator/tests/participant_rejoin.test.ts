@@ -2,7 +2,9 @@
  * Regression: participant.join must not replace an existing member. A re-join
  * keeps the member's role, scopes and keys, refreshes only the verified identity
  * binding, and never accepts self-asserted jwks for an already-admitted URI.
- * Guards the 0.2.9 fix.
+ * Guards the 0.2.9 fix. A re-join that brings only keys the member does not
+ * hold is refused with -32011, where it was answered as joined and its keys
+ * dropped (6 November review, item 4).
  *
  * A verified token or presentation binds only to the participant it belongs
  * to: a re-join must carry the member's own subject or holder, or, for a member
@@ -13,6 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Coordinator } from "../src/coordinator.ts";
+import { MemoryStore } from "../src/storage/store.ts";
 
 function ready(opts: Record<string, unknown> = {}) {
   const c = new Coordinator({ deterministicIds: true, ...opts });
@@ -24,34 +27,49 @@ function ready(opts: Record<string, unknown> = {}) {
   return { c, s };
 }
 
-test("a re-join keeps role, scopes and key", () => {
+test("a re-join with only other keys is refused, and the member is unchanged", () => {
   const { c, s } = ready();
-  s("participant.join", { workspace: "w", from: "human:alice", type: "human",
-    role: "owner", jwks: { keys: [{ kid: "attacker", x: "E" }] } });
+  const r = s("participant.join", { workspace: "w", from: "human:alice", type: "human",
+    role: "owner", jwks: { keys: [{ kid: "attacker", x: "E" }, { kid: "attacker", x: "E" }] } });
+  assert.deepEqual(r.error, { code: -32011,
+    message: "human:alice is already a member, with other keys; a new key arrives through participant.rotate_key",
+    data: { kids: ["attacker"] } });
   const m = (c.workspaces.get("w") as any).members.get("human:alice");
   assert.equal(m.role, "reviewer");
   assert.deepEqual(m.scopes, ["approve"]);
   assert.deepEqual(m.keys.map((k: any) => k.kid), ["alice-1"]);
 });
 
-test("a re-join ignores self-asserted jwks", () => {
+test("a re-join with a registered key, or with none, keeps role, scopes and keys", () => {
   const { c, s } = ready();
-  s("participant.join", { workspace: "w", from: "human:alice", type: "human",
-    jwks: { keys: [{ kid: "attacker", x: "E" }] } });
-  const m = (c.workspaces.get("w") as any).members.get("human:alice");
-  assert.ok(m.keys.every((k: any) => k.kid !== "attacker"));
+  for (const jwks of [{ keys: [{ kid: "alice-1", x: "A" }, { kid: "attacker", x: "E" }] }, undefined]) {
+    const r = s("participant.join", { workspace: "w", from: "human:alice", type: "human", role: "owner",
+      ...(jwks ? { jwks } : {}) });
+    assert.deepEqual(r.result, { joined: true, as: "human:alice" });
+    const m = (c.workspaces.get("w") as any).members.get("human:alice");
+    assert.equal(m.role, "reviewer");
+    assert.deepEqual(m.scopes, ["approve"]);
+    assert.deepEqual(m.keys.map((k: any) => k.kid), ["alice-1"]);
+  }
 });
 
 test("a re-join refreshes the verified binding", () => {
   const claims: Record<string, unknown> = {
     good: { sub: "alice", auth_time: 111, chap_participant_uri: "human:alice" },
   };
-  const c = new Coordinator({ deterministicIds: true, verifyOidcToken: (t: string) => (claims[t] as any) ?? null });
+  // Alice joined before the deployment configured a token verifier, so the
+  // workspace does not advertise identity-oidc/1.0 and she holds no subject.
+  const store = new MemoryStore();
+  const before = new Coordinator({ deterministicIds: true, store });
+  before.dispatch({ jsonrpc: "2.0", id: "c", method: "workspace.create", params: { workspace: "w" } } as never);
+  before.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
+    params: { workspace: "w", from: "human:alice", type: "human" } } as never);
+  const c = new Coordinator({ deterministicIds: true, store,
+    verifyOidcToken: (t: string) => (claims[t] as any) ?? null });
   const s = (method: string, params: unknown): any =>
     c.dispatch({ jsonrpc: "2.0", id: method, method, params } as never);
-  s("workspace.create", { workspace: "w" });
-  s("participant.join", { workspace: "w", from: "human:alice", type: "human" });
-  s("participant.join", { workspace: "w", from: "human:alice", type: "human", oidc_token: "good" });
+  assert.equal(s("participant.join", { workspace: "w", from: "human:alice", type: "human", oidc_token: "good" }).error,
+    undefined);
   const m = (c.workspaces.get("w") as any).members.get("human:alice");
   assert.equal(m.oidc_sub, "alice");
   assert.equal(m.oidc_auth_time, 111);
@@ -79,13 +97,29 @@ const TOKENS: Record<string, Record<string, unknown>> = {
   "alice-unnamed": { sub: "alice", auth_time: 444, cnf: { jwk: key("alice-k9") } },
 };
 
-function oidcReady() {
-  const c = new Coordinator({ deterministicIds: true,
+/**
+ * A workspace under a token verifier. The members in `unbound` joined with a
+ * key of their own before the verifier was configured, so the workspace does
+ * not advertise identity-oidc/1.0 and they hold no verified subject.
+ */
+function oidcReady(unbound: string[] = []) {
+  const store = new MemoryStore();
+  const create = { jsonrpc: "2.0", id: "c", method: "workspace.create", params: { workspace: "w" } };
+  if (unbound.length) {
+    const before = new Coordinator({ deterministicIds: true, store });
+    before.dispatch(create as never);
+    for (const uri of unbound) {
+      before.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
+        params: { workspace: "w", from: uri, type: "human",
+                  jwks: { keys: [key(`${uri.slice("human:".length)}-self`)] } } } as never);
+    }
+  }
+  const c = new Coordinator({ deterministicIds: true, store,
     verifyOidcToken: (t: string) => (TOKENS[t] as any) ?? null });
   const join = (uri: string, extra: Record<string, unknown> = {}): any =>
     c.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
       params: { workspace: "w", from: uri, type: "human", ...extra } } as never);
-  c.dispatch({ jsonrpc: "2.0", id: "c", method: "workspace.create", params: { workspace: "w" } } as never);
+  if (!unbound.length) c.dispatch(create as never);
   return { c, join };
 }
 
@@ -121,8 +155,7 @@ test("a re-join with the same subject adds a key and refreshes", () => {
 });
 
 test("binding an unbound member needs a token naming it", () => {
-  const { c, join } = oidcReady();
-  join("human:alice", { jwks: { keys: [key("alice-self")] } });
+  const { c, join } = oidcReady(["human:alice"]);
   const r = join("human:alice", { oidc_token: "alice-unnamed" });
   assert.equal(r.error.code, -32404);
   const m = memberOf(c);
@@ -184,13 +217,12 @@ test("a presentation cannot bind an unbound member", () => {
 // ------------------------------------------------------------- edge cases
 
 test("the four refusals carry their messages", () => {
-  const { join } = oidcReady();
+  const { join } = oidcReady(["human:bob"]);
   assert.equal(join("human:alice", { oidc_token: "naming-mallory" }).error.message,
     "OIDC token is bound to another participant");
   join("human:alice", { oidc_token: "alice-1" });
   assert.equal(join("human:alice", { oidc_token: "mallory" }).error.message,
     "OIDC token subject does not match the member");
-  join("human:bob", { jwks: { keys: [key("bob-self")] } });
   assert.equal(join("human:bob", { oidc_token: "alice-unnamed" }).error.message,
     "OIDC token does not name this member");
   const v = vcReady();

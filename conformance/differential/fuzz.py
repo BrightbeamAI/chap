@@ -294,7 +294,7 @@ class Recorder:
         live = self._by_state("created", "in_progress")
         menu = ["create", "create", "update", "complete", "complete",
                 "whisper", "deliberate", "snapshot", "miss", "pause_participant",
-                "ceiling", "leave_and_rejoin", "malformed", "malformed", "malformed"]
+                "ceiling", "leave_and_rejoin", "rejoin", "malformed", "malformed", "malformed"]
         if self._paused_participants():
             menu += ["resume_participant"] * 2
         if self.signed:
@@ -442,6 +442,24 @@ class Recorder:
             self._send("participant.leave", who)
             self._send("participant.join", who,
                        type="human" if who.startswith("human:") else "agent")
+            return
+        if a == "rejoin":
+            # A member joins again: with nothing new, with a key it does not
+            # hold, under the other type, or carrying credentials no verifier
+            # here reads, which the log keeps as their digests.
+            who = rnd.choice([*HUMANS, *AGENTS])
+            kind = "human" if who.startswith("human:") else "agent"
+            roll = rnd.random()
+            if roll < 0.25:
+                self._send("participant.join", who, type=kind)
+            elif roll < 0.5:
+                self._send("participant.join", who, type=kind, jwks={"keys": [
+                    {"kty": "OKP", "crv": "Ed25519", "kid": f"k{rnd.randint(0, 3)}", "x": "AAAA"}]})
+            elif roll < 0.75:
+                self._send("participant.join", who, type="agent" if kind == "human" else "human")
+            else:
+                self._send("participant.join", who, type=kind, oidc_token=f"token-{rnd.randint(0, 3)}",
+                           vc_presentation={"holder": "did:example:x", "n": rnd.randint(0, 3)})
             return
         if a == "resolve_handoff":
             hid = rnd.choice(self._open_handoffs())

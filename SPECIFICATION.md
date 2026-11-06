@@ -332,6 +332,13 @@ build. Two URIs that differ only in `#version` are different
 Participants for the purposes of authorisation but MAY be aliased
 in human-readable UI.
 
+A Participant's `type` is one of the five schemes, and the scheme of its
+URI is its type. A Coordinator MUST refuse with `-32602` a
+`participant.join` whose `type` is not one of the five, or whose `from`
+does not start with `<type>:`. A member's type decides what it may do,
+deciding a review that needs a person for one, and its URI is how the
+log names it, so the two cannot disagree.
+
 ### 5.2 Signing algorithm
 
 > **Note.** [`core/SPEC.md`](./core/SPEC.md) §2 describes the messages
@@ -438,7 +445,33 @@ OIDC ID token. The binding follows DPoP ([RFC 9449]) in spirit:
 4. The Coordinator MAY require periodic re-binding (token refresh +
    key rotation) for long-lived sessions.
 
+A client whose identity provider cannot put its key in `cnf.jwk` asks
+for the token with the key's RFC 7638 ([RFC 7638]) thumbprint as its
+`nonce`: SHA-256 over `{crv, kty, x}` for an OKP key or
+`{crv, kty, x, y}` for an EC key, base64url without padding. Where the
+verified token carries no `cnf.jwk` and its `nonce` is the thumbprint of
+exactly one key in the join's `jwks`, the Coordinator binds that key as it
+would a `cnf.jwk`, and ignores the join's other keys.
+
+Where a Coordinator has a token verifier and the workspace advertises
+`identity-oidc/1.0`, a `participant.join` of type `human` MUST carry an
+`oidc_token`, and is otherwise refused with `-32403`. Likewise a
+`vc_presentation` where it has a presentation verifier and the workspace
+advertises `identity-vc/1.0` (`-32410`). Where both apply, either
+credential admits the person, since the two coexist. A workspace that
+advertises an identity profile tells a relying party its people are
+verified, and a person who joined with no credential is not.
+
+The log keeps credentials off the chain. A `participant.join` is recorded
+with its `oidc_token` replaced by `sha256:` and the hex SHA-256 of the
+token's UTF-8 bytes, and its `vc_presentation` by `sha256:` and the hex
+SHA-256 of its JCS form. Anyone who can read the log could otherwise
+present a member's credential, and a holder can still match a credential
+to its entry. A signed join is compared with the log in the form the log
+records (§10.1).
+
 [RFC 9449]: https://www.rfc-editor.org/rfc/rfc9449
+[RFC 7638]: https://www.rfc-editor.org/rfc/rfc7638
 
 This pattern guarantees that:
 
@@ -622,6 +655,22 @@ records the entry into the workspace as its own audit event. Outside
 the exemptions above, there is no path by which a non-member acts; the
 exceptional nature of an admission is captured in how, and under what
 role, the Participant joined.
+
+#### 6.3.2 Joining again
+
+A `participant.join` naming an existing member does not replace it. The
+member keeps its type, role, scopes and keys; the join refreshes a
+verified identity binding (§5.4) and adds a key that an identity profile
+binds. A member's keys otherwise change through `participant.rotate_key`,
+signed with the old key (§5.7). So a join that carries `jwks` keys, none
+of which the member holds, and binds no key through an identity profile,
+MUST be refused with `-32011`, "`<uri>` is already a member, with other
+keys; a new key arrives through participant.rotate_key", with
+`data.kids` naming the keys it carried. Answered as joined, it would leave
+its sender holding a key the Coordinator does not accept, and where the
+sender is someone else, it is told the name is taken. A join with a key
+the member holds, or with no `jwks`, is answered as joined and changes
+nothing else.
 
 ### 6.4 Policy
 
@@ -1874,7 +1923,9 @@ advertises, or the deployment.
 8. `identity-oidc/1.0`: verify the OIDC token a `participant.join`
    presents, refuse one that does not verify (`-32403`), refuse one that
    does not bind to the joining participant (`-32404`, §5.4), and pin
-   its `cnf.jwk` as the member's key.
+   its `cnf.jwk`, or the key its `nonce` names, as the member's key.
+   Where a token verifier is configured, refuse a person's join that
+   carries no token (`-32403`), and record a token as its digest (§5.4).
 
 Step-up is a Coordinator option, independent of the advertised set
 (§6.5); where it is on, a human member, or one with an OIDC binding,
@@ -2020,9 +2071,12 @@ resembles another's. *Countermeasures:* Participant URIs in
 `human:`, `agent:`, `service:` namespaces MUST be bound to a verified
 identity (OIDC subject claim or VC subject DID) before being
 admitted to a workspace via `participant.join`. The binding is
-recorded in the participant descriptor and signed. Neither reference
-requires a verified identity at a first join or signs a descriptor;
-until milestone 0.6, deployments authenticate joins at the transport.
+recorded in the participant descriptor and signed. Both references
+refuse a URI whose scheme is not the participant's type (§5.1), and a
+person's join without a credential where a verifier is configured and the
+workspace advertises its identity profile (§5.4). Neither requires a
+verified identity of an agent or a service, or signs a descriptor; until
+milestone 0.6, deployments authenticate those joins at the transport.
 
 **Out of scope.** CHAP does not defend against: a Participant who
 chooses to lie within the schema (a human who clicks Approve having

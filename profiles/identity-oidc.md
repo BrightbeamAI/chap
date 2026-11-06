@@ -60,6 +60,22 @@ rejected token refuses the join with `-32403`. The Coordinator keeps
 `sub`, `auth_time` and `acr`, and pins `cnf.jwk` as the participant's
 key when it carries a `kid`, ignoring self-asserted `jwks`.
 
+An identity provider that cannot put the key in `cnf.jwk` can still
+attest it through the nonce. The client asks for the token with `nonce`
+set to the key's RFC 7638 thumbprint (SHA-256 over `{crv, kty, x}` for an
+OKP key, or `{crv, kty, x, y}` for an EC key, base64url without padding),
+and joins with the key in `jwks`. Where the verified claims carry no
+`cnf.jwk` and the nonce is the thumbprint of exactly one key with a `kid`
+in the join's `jwks`, the Coordinator pins that key, and ignores the
+join's other keys.
+
+Where a verifier is configured and the workspace advertises this profile,
+a join of type `human` MUST carry an `oidc_token`, and is refused with
+`-32403` otherwise; a person who joined with no token would sit in a
+workspace that says its people are verified. Where `identity-vc/1.0`
+also applies, a presentation in its place will do. Agents and services
+join without one.
+
 A token binds only to the participant it belongs to:
 
 - Where the token carries `chap_participant_uri`, it MUST equal the
@@ -70,15 +86,16 @@ A token binds only to the participant it belongs to:
   MUST name the member.
 
 Any other such join is refused with `-32404`, and nothing about the
-member changes. A join under an existing member's name with neither a
-token nor a presentation keeps the member as it is. The Coordinator
-compares `sub` alone, so a verifier that accepts more than one issuer
-returns a `sub` unique across them, for instance prefixed with `iss`.
+member changes. A join under an existing member's name that binds no key
+and brings only keys the member does not hold is refused with `-32011`
+(SPECIFICATION.md §6.3.2). The Coordinator compares `sub` alone, so a
+verifier that accepts more than one issuer returns a `sub` unique across
+them, for instance prefixed with `iss`.
 
-The Coordinator records the `participant.join` call as sent,
-`oidc_token` included, and `audit.read` returns it to any caller unless
-the Coordinator requires read membership. Deployments SHOULD require
-read membership and use short-lived tokens.
+The Coordinator records the `participant.join` call with `oidc_token`
+replaced by `sha256:` and the hex SHA-256 of the token's UTF-8 bytes, so
+the token never reaches the chain, where `audit.read` would return it to
+any reader, and its holder can still match it to the entry.
 
 ---
 
@@ -204,7 +221,7 @@ with the now-discarded key.
 | Code      | Meaning                                                  |
 |-----------|----------------------------------------------------------|
 | `-32402`  | Step-up authentication required.                         |
-| `-32403`  | ID token invalid (signature, expiry, audience).          |
+| `-32403`  | ID token invalid (signature, expiry, audience), or a person's join with no token where this profile applies (§2). |
 | `-32404`  | The token does not bind to this participant: its `chap_participant_uri` names another participant, or a join under an existing member's name carries a token that is not for that member (§2). |
 | `-32405`  | Required OIDC scope not present. Allocated; neither reference Coordinator returns it. |
 

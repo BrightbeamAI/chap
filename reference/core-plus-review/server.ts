@@ -444,6 +444,14 @@ const handlers: Record<string, Handler> = {
   "participant.join": (p) => {
     const missing = requireFields(p, ["workspace", "from", "type"]);
     if (missing) return { error: err(E.PARAMS, `Missing field: ${missing}`) };
+    // SPECIFICATION 5.1: one of five types, named by the scheme of the URI.
+    const type = p.type;
+    if (typeof type !== "string" || !["human", "agent", "service", "group", "workspace"].includes(type)) {
+      return { error: err(E.PARAMS, "type must be human, agent, service, group or workspace") };
+    }
+    if (typeof p.from !== "string" || !p.from.startsWith(`${type}:`)) {
+      return { error: err(E.PARAMS, `from must start with "${type}:" for type ${type}`) };
+    }
     const ws = ensureWorkspace(p.workspace as string);
     const uri  = p.from as string;
     ws.members.set(uri, {

@@ -17,6 +17,8 @@ import base64
 import hashlib
 from typing import Any
 
+from .canonical import canonicalize
+
 
 def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
@@ -62,6 +64,24 @@ def public_jwk(uri: str, key: Any | None = None) -> dict:
         "alg": "EdDSA",
         "x": _b64url_nopad(raw),
     }
+
+
+def jwk_thumbprint(jwk: Any) -> str | None:
+    """The RFC 7638 thumbprint of a public JWK: SHA-256 over the JSON of its
+    required members in lexicographic order, base64url without padding.
+
+    The members are {crv, kty, x} for an OKP key and {crv, kty, x, y} for an
+    EC key, and for any other key, or one whose members are not strings,
+    there is none.
+    """
+    if not isinstance(jwk, dict):
+        return None
+    kty = jwk.get("kty")
+    names = ("crv", "kty", "x") if kty == "OKP" else ("crv", "kty", "x", "y") if kty == "EC" else None
+    if names is None or any(not isinstance(jwk.get(n), str) for n in names):
+        return None
+    members = {n: jwk[n] for n in names}
+    return _b64url_nopad(hashlib.sha256(canonicalize(members)).digest())
 
 
 def sign(canonical_bytes: bytes, key: Any, kid: str) -> str:

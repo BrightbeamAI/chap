@@ -525,7 +525,7 @@ piece of the protocol is plumbing.
 | Code      | Meaning                                                |
 |-----------|--------------------------------------------------------|
 | `-32010`  | Task is not in a reviewable state: no open review for a decision or an acknowledgement, or a `review.request` on a cancelled, superseded or paused task. |
-| `-32011`  | Actor is not authorised to decide or acknowledge the review: not a workspace member, an author of the work under review, a member who is not human on a task that requires review, or a member who was not an addressed reviewer for this task. Also a `review.request` on a task that requires review whose `to` names an author or a member who is not human, and a completion that would leave a review with no reviewer. |
+| `-32011`  | Actor is not authorised to decide or acknowledge the review: not a workspace member, an author of the work under review, a member who is not human on a task that requires review, or a member who was not an addressed reviewer for this task. Also a `review.request` on a task that requires review whose `to` names an author or a member who is not human, and a completion that would leave a review with no reviewer. Core uses the code too, for a `participant.join` naming an existing member that brings only keys the member does not hold (SPECIFICATION.md §6.3.2). |
 | `-32012`  | JSON Patch application failed; the message names the failure and any failing path. |
 | `-32013`  | Reserved for a lapsed review. No Coordinator returns it, and the review `deadline` is not enforced. |
 | `-32014`  | A review is already open on this task with different content, or the request would change the decision rule of an open review. |

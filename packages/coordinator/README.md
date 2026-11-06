@@ -172,7 +172,12 @@ const coord = new Coordinator({
 
 If a `participant.join` envelope includes `oidc_token` or
 `vc_presentation`, the relevant hook is called and the bound key is
-added to the participant's key history.
+added to the participant's key history. A token with no `cnf.jwk` binds
+the key in the join's `jwks` whose RFC 7638 thumbprint is the token's
+`nonce`. Where a hook is configured and the workspace advertises its
+profile, a `human` joins with the credential it checks or is refused
+(`-32403`, `-32410`), and the log records the credential as its SHA-256
+digest, never the credential itself.
 
 ## Signed envelopes (security-signed/1.0)
 

@@ -322,6 +322,20 @@ async function runCoreTests(client: HapClient, ws: string): Promise<void> {
     const stillThere = d.members.some((m: any) => m.uri === "agent:test-bot");
     assert(!stillThere, "agent:test-bot should no longer be a member");
   });
+
+  await test("Core methods", "cm-13", "participant.join refuses a type its URI does not name", async () => {
+    const join = (from: string, type: string) => client.call("participant.join", {
+      workspace: ws, from, to: "service:coordinator@example.org", ts: new Date().toISOString(), type,
+    });
+    const { error: mismatched } = await join("human:mallory@example.org", "agent");
+    assertEq(mismatched?.code, -32602, "a human: URI joining as an agent");
+    assertEq(mismatched?.message, 'from must start with "agent:" for type agent', "the refusal names the scheme");
+    const { error: unknown } = await join("bot:mallory", "bot");
+    assertEq(unknown?.code, -32602, "a type SPECIFICATION 5.1 does not name");
+    const { result: d } = await client.call("workspace.describe", { workspace: ws });
+    assert(!d.members.some((m: any) => m.uri === "human:mallory@example.org" || m.uri === "bot:mallory"),
+      "a refused join adds no member");
+  });
 }
 
 // ============================================================
