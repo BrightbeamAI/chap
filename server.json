@@ -19,10 +19,28 @@
       "transport": {
         "type": "stdio"
       },
+      "packageArguments": [
+        {
+          "type": "named",
+          "name": "--url",
+          "description": "Forward every call to a running CHAP server's JSON-RPC endpoint, such as a create-chap-app desk server's, where a person decides on the assistant's work. Without it the server runs its own coordinator.",
+          "format": "string",
+          "isRequired": false,
+          "placeholder": "http://127.0.0.1:8787/chap"
+        }
+      ],
       "environmentVariables": [
         {
+          "name": "CHAP_PARTICIPANT",
+          "description": "The participant every call is made as. Defaults to agent:assistant@local. A call naming anyone else is refused, and so is a human: URI here, since a person decides in a desk.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false,
+          "placeholder": "agent:assistant@local"
+        },
+        {
           "name": "CHAP_DB_PATH",
-          "description": "Path to a SQLite file. Without it the coordinator runs in memory and workspaces are lost when the client restarts.",
+          "description": "Path to a SQLite file; a leading ~ is the home directory. Without it, and without --url, the coordinator runs in memory and workspaces are lost when the client restarts.",
           "format": "filepath",
           "isRequired": false,
           "isSecret": false,

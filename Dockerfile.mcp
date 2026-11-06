@@ -1,36 +1,72 @@
 # The CHAP MCP server, over stdio.
 #
 # This is the image a directory or an MCP client builds to launch and inspect
-# the server. It reproduces what the registry entry advertises,
+# the server. It builds @brightbeamai/chap-coordinator-mcp from this
+# repository, with every dependency at the version package-lock.json pins,
+# and runs its command, chap-mcp-server, so what an inspector sees here is
+# what
 #
 #   npx -y @brightbeamai/chap-coordinator-mcp
 #
-# so what an inspector sees here is what a user gets. The root `Dockerfile`
-# builds something else: the playground, a web UI on port 8080. An inspector
-# pointed at that finds an HTTP server rather than a tool list.
+# gives a user. The root `Dockerfile` builds something else: the playground,
+# a web UI on port 8080. An inspector pointed at that finds an HTTP server,
+# and no tool list.
 #
 #   docker build -f Dockerfile.mcp -t chap-mcp .
 #   docker run --rm -i chap-mcp
+#   docker run --rm -i -e CHAP_PARTICIPANT=agent:claude@example.org chap-mcp --tools all
 #
 # The server speaks JSON-RPC on stdin and stdout and logs to stderr, so `-i`
-# matters and `-t` must not be used.
+# matters and `-t` must not be used. Options after the image name go to
+# chap-mcp-server; `--help` lists them. With `--url <endpoint>` it forwards
+# every call to a running CHAP server, which must accept the container's
+# requests under the host name the container reaches it by: a create-chap-app
+# server listens on 127.0.0.1, and takes other names in CHAP_ALLOWED_HOSTS.
 
-FROM node:20-bookworm-slim
+FROM node:24-bookworm-slim AS build
 
-# Pin the release the image serves. Bump on each publish, or override:
-#   docker build -f Dockerfile.mcp --build-arg CHAP_MCP_VERSION=0.3.0 .
+# better-sqlite3, the store behind CHAP_DB_PATH, builds from source where no
+# prebuilt binary matches the platform.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /chap
+
+# npm ci installs exactly what the lock file pins, for the two workspaces the
+# server needs, and stops if the lock file disagrees with their manifests.
+COPY package.json package-lock.json ./
+COPY packages/coordinator/package.json     packages/coordinator/
+COPY packages/coordinator-mcp/package.json packages/coordinator-mcp/
+RUN npm ci --no-audit --no-fund \
+      --workspace=@brightbeamai/chap-coordinator \
+      --workspace=@brightbeamai/chap-coordinator-mcp
+
+COPY packages/coordinator     packages/coordinator/
+COPY packages/coordinator-mcp packages/coordinator-mcp/
+RUN npm run build --workspace=@brightbeamai/chap-coordinator \
+    && npm run build --workspace=@brightbeamai/chap-coordinator-mcp
+
+FROM node:24-bookworm-slim
+
+# The release the image serves: the version of the source it is built from.
 ARG CHAP_MCP_VERSION=0.3.4
+LABEL org.opencontainers.image.version="${CHAP_MCP_VERSION}"
 
-# --omit=optional skips better-sqlite3, an optional dependency of the
-# coordinator. A stdio server holds its workspaces in memory for the life of
-# the process and never opens the store, so the native module is dead weight
-# here and its prebuilt binaries are the one thing that could fail the build.
-RUN npm install -g --omit=optional --no-audit --no-fund \
-      "@brightbeamai/chap-coordinator-mcp@${CHAP_MCP_VERSION}" \
-    && npm cache clean --force
+WORKDIR /chap
+COPY --from=build /chap/node_modules node_modules/
+COPY --from=build /chap/packages/coordinator/package.json     packages/coordinator/
+COPY --from=build /chap/packages/coordinator/dist             packages/coordinator/dist/
+COPY --from=build /chap/packages/coordinator-mcp/package.json packages/coordinator-mcp/
+COPY --from=build /chap/packages/coordinator-mcp/dist         packages/coordinator-mcp/dist/
 
-# Persist workspaces by mounting a volume here and setting CHAP_DB_PATH.
-# Left unset, the coordinator runs in memory and a restart starts clean.
+# The participant every call is made as, as --as does. Unset means
+# agent:assistant@local; a human: URI is refused, since a person decides in a
+# desk. Reach a desk server with --url, and the person decides there.
+ENV CHAP_PARTICIPANT=""
+
+# Persist workspaces by mounting a volume and setting CHAP_DB_PATH to a file
+# on it. Left unset, the coordinator runs in memory and a restart starts
+# clean. With --url the server at that address keeps them.
 ENV CHAP_DB_PATH=""
 
 # Comma-separated profile set for new workspaces. Unset means Core plus
@@ -40,4 +76,4 @@ ENV CHAP_PROFILES=""
 
 USER node
 
-ENTRYPOINT ["chap-mcp-server"]
+ENTRYPOINT ["node", "/chap/packages/coordinator-mcp/dist/cli.js"]
