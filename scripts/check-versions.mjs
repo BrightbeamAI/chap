@@ -122,7 +122,7 @@ const SITES = [
   ["IMPLEMENTATIONS.md", /\| ([0-9]+\.[0-9]+\.[0-9]+) +\|/g, "implementations table", "all"],
   ...["ag2", "google-adk", "langgraph", "llama-index", "pydantic-ai"].flatMap(a => [
     [`packages/chap-${a}/README.md`, /`chap-coordinator>=([^`]+)`/, "dependency floor"],
-    [`packages/chap-${a}/README.md`, /^- `chap-coordinator` ([0-9][^\s]*)$/m, "dependency table"],
+    [`packages/chap-${a}/README.md`, /^- `chap-coordinator` ([0-9][^\s]*)(?: and later)?$/m, "dependency table"],
   ]),
 ];
 
