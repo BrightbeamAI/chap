@@ -123,6 +123,7 @@ test("the desk is served with its client module", async () => {
   assert.equal(cfg.workspace, config.workspace);
   assert.equal(cfg.mcp, true);
   assert.equal(cfg.chain_enabled, true, "the chain is on");
+  assert.equal(cfg.desk_signing, "browser-key");
 });
 
 test("an MCP client on the 2026-07-28 revision is answered at /mcp, as the agent, with the agent's tools", async () => {

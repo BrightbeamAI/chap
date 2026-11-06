@@ -3,8 +3,9 @@
 //
 // It does four things: send a JSON-RPC call to POST /chap, canonicalise an
 // envelope the way both coordinators do (RFC 8785 JCS over I-JSON), sign an
-// envelope with an Ed25519 key held in WebCrypto, and compute an RFC 6902
-// patch between two JSON values for decide.override.
+// envelope, with an Ed25519 key held in WebCrypto or with a passkey through
+// WebAuthn, and compute an RFC 6902 patch between two JSON values for
+// decide.override.
 
 // -- canonical JSON -----------------------------------------------------------
 //
@@ -85,9 +86,14 @@ export async function thumbprint(jwk) {
   return b64url(await sha256(new TextEncoder().encode(JSON.stringify(members))));
 }
 
-/** A key's fingerprint as ssh-keygen and the code gate's trust command print it: SHA256 of the raw public key, base64. */
+/**
+ * A key's fingerprint as the code gate's trust command prints it: SHA-256
+ * of the raw public key, base64. An Ed25519 key's raw form is its 32 bytes;
+ * a P-256 key's is the uncompressed point, 0x04 then x and y.
+ */
 export async function fingerprint(jwk) {
-  return "SHA256:" + b64(await sha256(fromB64url(jwk.x))).replace(/=+$/, "");
+  const raw = jwk.kty === "EC" ? Uint8Array.from([4, ...fromB64url(jwk.x), ...fromB64url(jwk.y)]) : fromB64url(jwk.x);
+  return "SHA256:" + b64(await sha256(raw)).replace(/=+$/, "");
 }
 
 /** The kid the desk gave a key before 0.3.5: the first sixteen hex characters of the SHA-256 of the URI. */
@@ -117,6 +123,7 @@ export async function signerFromJwk(uri, privateJwk) {
 export function signerFromKey({ uri, privateKey, publicJwk }) {
   const kid = publicJwk.kid;
   return {
+    scheme: "ed25519",
     uri,
     kid,
     publicJwk,
@@ -128,6 +135,55 @@ export function signerFromKey({ uri, privateKey, publicJwk }) {
       const bytes = new TextEncoder().encode(canonicalize(unsigned));
       const sig = await crypto.subtle.sign({ name: "Ed25519" }, privateKey, bytes);
       return { ...unsigned, sig: `ed25519:${kid}:${b64(sig)}` };
+    },
+  };
+}
+
+// -- passkeys -----------------------------------------------------------------
+//
+// A passkey's private key never leaves the authenticator, which signs only
+// what WebAuthn asks of it, and only once the person is verified, with a
+// fingerprint, a face or a PIN. An envelope is signed by asking for an
+// assertion whose challenge is the SHA-256 of the envelope's canonical form
+// without its `sig`; the tag carries the assertion whole, and the
+// coordinator checks it as a relying party does (security-signed/1.0 3):
+//
+//   webauthn:<kid>:<authenticatorData>.<clientDataJSON>.<signature>
+//
+// The key is registered at participant.join as a P-256 JWK naming the
+// relying party, the desk's host, and the one origin assertions may come
+// from, the desk's own.
+
+/** The JWK the coordinator registers for a passkey's P-256 public key, named by its RFC 7638 thumbprint. */
+export async function webauthnJwk({ x, y, rpId, origin }) {
+  const kid = await thumbprint({ kty: "EC", crv: "P-256", x, y });
+  return { kty: "EC", crv: "P-256", x, y, alg: "ES256", kid, use: "sig", webauthn: { rp_id: rpId, origins: [origin] } };
+}
+
+/**
+ * A signer for a passkey: the credential's id and its public JWK. Each
+ * signature is an assertion `credentials` makes, navigator.credentials by
+ * default, with user verification required, so each one asks the person.
+ */
+export function passkeySigner({ uri, credentialId, publicJwk, credentials = globalThis.navigator?.credentials }) {
+  const kid = publicJwk.kid;
+  return {
+    scheme: "webauthn",
+    uri,
+    kid,
+    publicJwk,
+    credentialId,
+    /** Returns the envelope with its `sig` set. The input is not changed. */
+    async sign(envelope) {
+      const unsigned = { ...envelope };
+      delete unsigned.sig;
+      const challenge = new Uint8Array(await sha256(new TextEncoder().encode(canonicalize(unsigned))));
+      const assertion = await credentials.get({ publicKey: {
+        challenge, rpId: publicJwk.webauthn.rp_id, userVerification: "required", timeout: 120_000,
+        allowCredentials: [{ type: "public-key", id: credentialId }],
+      } });
+      const { authenticatorData, clientDataJSON, signature } = assertion.response;
+      return { ...unsigned, sig: `webauthn:${kid}:${b64url(authenticatorData)}.${b64url(clientDataJSON)}.${b64url(signature)}` };
     },
   };
 }

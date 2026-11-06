@@ -161,11 +161,14 @@ server joins the assistant the first time `/mcp` is used. Whoever joins
 first under your URI holds it, and the desk says so when another key holds
 your name and then signs nothing. The key is one no script can read out of
 the browser; a program running as you on this machine can still have the
-browser sign with it, so run an assistant with a shell as another user, in
-a container or in a sandbox, where that matters. `true` has every call
-signed, `/mcp`'s too, which refuses them, since the MCP server's calls are
-unsigned; `false` signs nothing, and then any process that reaches the
-server can decide as you. The server listens on the loopback address,
+browser sign with it. `"desk_signing": "webauthn"`, or `"auto"`, has the
+desk sign with a passkey, which asks for your fingerprint, face or PIN for
+each decision, so such a program cannot sign without you (the chap-server
+package's README says how); with the browser key, run an assistant with a
+shell as another user, in a container or in a sandbox, where that matters.
+`true` has every call signed, `/mcp`'s too, which refuses them, since the
+MCP server's calls are unsigned; `false` signs nothing, and then any
+process that reaches the server can decide as you. The server listens on the loopback address,
 refuses a request from another origin or under a host name it was not
 given, and takes JSON only on `POST /chap`, so a page open elsewhere cannot
 call it as the reviewer. Its pages say no other page may frame them, so a

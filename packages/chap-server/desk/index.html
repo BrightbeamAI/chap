@@ -33,6 +33,7 @@
         <button class="tab" role="tab" data-view="insights" aria-selected="false">Insights</button>
       </div>
       <div class="alert key-alert" id="key-alert" role="alert" hidden><b id="key-alert-title">This browser's key is not the reviewer's.</b> <span id="key-alert-text"></span></div>
+      <div class="alert setup" id="setup" role="status" hidden><span id="setup-text"></span> <span class="setup-actions"><button class="btn small primary" id="setup-action" hidden></button><button class="btn small" id="setup-close" hidden>Understood</button></span></div>
       <section class="view" id="view-review" role="tabpanel">
         <div id="review-empty" class="empty">Pick a task on the left. The ones waiting for your decision are at the top.</div>
         <div id="review" hidden>
@@ -106,11 +107,12 @@
     <div class="card-head"><h3 id="key-title">Your signing key</h3><span class="spacer"></span><button class="btn small" id="key-close">Close</button></div>
     <div class="card-body"><dl class="kv">
       <dt>Deciding as</dt><dd id="key-uri"></dd>
+      <dt>Kind</dt><dd id="key-kind"></dd>
       <dt>Fingerprint</dt><dd class="mono" id="key-fingerprint"></dd>
       <dt>Key id</dt><dd class="mono" id="key-id"></dd>
       <dt>On record</dt><dd id="key-status"></dd>
     </dl>
-    <p class="small muted">The key was made in this browser and is kept where no page can read it out. Give the fingerprint to whoever keeps the trust policy, and check it against theirs in full: approvals count only under the key they pin.</p></div>
+    <p class="small muted">The key was made in this browser, and no page can read it out. Give the fingerprint to whoever keeps the trust policy, and check it against theirs in full: approvals count only under the key they pin.</p></div>
   </div>
 </div>
 <div class="help" id="confirm" hidden>

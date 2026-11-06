@@ -54,7 +54,9 @@ const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.u
  * or "humans" (a person's calls are signed and an agent member's need not
  * be), and CHAP_REQUIRE_SIGNATURES takes the same values. It comes out as
  * `require_signatures`, whether signatures are checked at all, and
- * `signature_policy`, "all", "humans" or null.
+ * `signature_policy`, "all", "humans" or null. desk_signing, or
+ * CHAP_DESK_SIGNING, says how the desk signs: "auto", "webauthn" or
+ * "browser-key", the last where none is given.
  */
 export async function loadConfig(path = process.env.CHAP_CONFIG ?? "chap.config.json") {
   const file = resolve(path);
@@ -72,6 +74,7 @@ export async function loadConfig(path = process.env.CHAP_CONFIG ?? "chap.config.
   config.require_signatures = config.signature_policy !== null;
   config.chain = envFlag("CHAP_CHAIN", !!config.chain) || hasProfile(config.profiles, "audit-scitt");
   config.mcp = envFlag("CHAP_MCP", config.mcp ?? false);
+  config.desk_signing = deskSigning(process.env.CHAP_DESK_SIGNING || config.desk_signing);
   config.oidc = oidcFromEnv(config.oidc);
   config.allowed_hosts = [...(config.allowed_hosts ?? []), ...envList("CHAP_ALLOWED_HOSTS")];
   return config;
@@ -100,6 +103,25 @@ const SIGNING = {
   all: "every call after the join is signed",
   humans: "people sign every call; an agent member's calls need no signature",
   null: "off: whoever reaches this server can decide as a person",
+};
+
+/**
+ * How the desk signs where signatures are required: "auto", a passkey where
+ * the browser has one that verifies its user and a key kept in the browser
+ * otherwise; "webauthn", a passkey always; "browser-key", the kept key. A
+ * configuration that names none has the kept key, as before 0.3.5.
+ */
+function deskSigning(value) {
+  if (value === undefined || value === null || value === "") return "browser-key";
+  if (["auto", "webauthn", "browser-key"].includes(value)) return value;
+  throw new Error(`desk_signing in chap.config.json, or CHAP_DESK_SIGNING, is ${JSON.stringify(value)}; it is "auto", "webauthn" or "browser-key"`);
+}
+
+/** How the desk signs, as the console says it. */
+const DESK_SIGNING = {
+  auto: "the desk signs with a passkey where the browser has one, and otherwise with a key it keeps in the browser",
+  webauthn: "the desk signs with a passkey",
+  "browser-key": "the desk signs with a key it keeps in the browser",
 };
 
 /** Whether a profile list names `name` at any version. */
@@ -477,6 +499,7 @@ export function publicConfig(config) {
     agent: config.agent ?? null,
     require_signatures: !!config.require_signatures,
     signature_policy: config.signature_policy ?? null,
+    desk_signing: config.desk_signing ?? "browser-key",
     chain_enabled: !!config.chain,
     persistent: config.store !== ":memory:",
     // Where this project lives, so a prompt the desk writes can name its commands.
@@ -812,6 +835,7 @@ export async function createChapServer(options = {}) {
       log(`  profiles ${config.profiles.join(", ")}`);
       log(`  store    ${config.store}${config.chain ? ", chain on" : ""}${config.oidc ? `, oidc ${config.oidc.issuer}` : ""}`);
       log(`  signing  ${SIGNING[config.signature_policy]}`);
+      if (config.require_signatures) log(`           ${DESK_SIGNING[config.desk_signing ?? "browser-key"]}`);
       return { base };
     },
     close: () => new Promise((resolve) => server.close(resolve)),

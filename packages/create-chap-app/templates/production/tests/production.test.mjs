@@ -60,6 +60,7 @@ test("the configuration asks for signatures, the chain and the production profil
   const cfg = await (await fetch(`${base}/api/config`)).json();
   assert.equal(cfg.require_signatures, true);
   assert.equal(cfg.signature_policy, "humans");
+  assert.equal(cfg.desk_signing, "auto", "the desk signs with a passkey where the browser has one");
   assert.equal(cfg.chain_enabled, true);
   assert.equal(cfg.oidc, null);
   assert.deepEqual(cfg.profiles, config.profiles);

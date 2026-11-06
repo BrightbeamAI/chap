@@ -59,6 +59,8 @@ to the desk, which uses it in the commands it writes for an agent.
 - `chain`: the hash chain over the log; `audit-scitt/1.0` turns it on too.
 - `mcp`: serve `/mcp`, which acts as `agent.uri` with the tools the agent's
   own work needs, `AGENT_MCP_TOOLS`.
+- `desk_signing`: how the desk signs where signatures are required,
+  `"auto"`, `"webauthn"` or `"browser-key"` (the reviewer's key, below).
 - `allowed_hosts`: host names, with their ports, the server answers to
   besides its own loopback names, for a proxy or a Compose service.
 - `max_envelope_bytes`: the largest call accepted, 1 MiB by default.
@@ -69,7 +71,7 @@ to the desk, which uses it in the commands it writes for an agent.
 The environment overrides it: `CHAP_CONFIG` names the file; `PORT`,
 `CHAP_HOST` and `CHAP_DB_PATH` replace the port, the host and the store;
 `CHAP_REQUIRE_SIGNATURES` (`1`, `true`, `humans`, `0` or `false`),
-`CHAP_CHAIN` and `CHAP_MCP` (`1` or `true`) replace the flags; `CHAP_ALLOWED_HOSTS` adds host names, comma separated;
+`CHAP_CHAIN` and `CHAP_MCP` (`1` or `true`) replace the flags; `CHAP_DESK_SIGNING` replaces `desk_signing`; `CHAP_ALLOWED_HOSTS` adds host names, comma separated;
 `OIDC_ISSUER`, `OIDC_JWKS_URL` and `OIDC_AUDIENCE` set the token verifier.
 
 ## What it refuses
@@ -110,27 +112,60 @@ either is named at start. On a wildcard address the desk is printed at
 
 ## The reviewer's key
 
-Under `security-signed/1.0` the desk signs each call with an Ed25519 key it
-makes in the browser as a key that cannot be exported, kept in IndexedDB for
-the desk's address and named by its RFC 7638 thumbprint. Its signing badge
-opens a panel with the whole fingerprint. The desk reads the members from
-`GET /api/members` to see whether the workspace holds this key for the
-reviewer, and joins only while it does not. A join under a URI that
-another key holds is refused with `-32011`, and the desk then signs
-nothing and says so; so it does when a decision is refused because the
-workspace holds the key no longer (`-32070` to `-32072`). A key an earlier
-desk kept in `localStorage` moves to IndexedDB on the first visit, under
-the id it was registered with.
+Under `security-signed/1.0` the desk signs what it sends in the reviewer's
+name. `desk_signing` in `chap.config.json`, or `CHAP_DESK_SIGNING`, says
+with what:
+
+- `"webauthn"`: a passkey. The browser's authenticator holds the private
+  key, and signs only once the reviewer is verified, by a fingerprint, a
+  face or a PIN, each time. The desk makes the passkey when the reviewer
+  asks it to, and registers its public key at `participant.join` as a
+  P-256 JWK (`kty` EC, `alg` ES256) whose `webauthn` member names the
+  relying party, the desk's host, and the one origin assertions may come
+  from, the desk's own. It signs each call with
+  `navigator.credentials.get`, user verification required, over the
+  SHA-256 of the call's canonical form without its `sig`, and the call
+  carries the assertion in a `webauthn:` tag, which the coordinator checks
+  as a relying party does.
+- `"browser-key"`: an Ed25519 key the desk makes in the browser as a key
+  that cannot be exported, kept in IndexedDB for the desk's address. It
+  signs without asking anyone. This is what a configuration that names
+  nothing gets, as before 0.3.5.
+- `"auto"`: a passkey where the browser has an authenticator built in
+  that verifies its user, such as Touch ID or Windows Hello, and the
+  browser key otherwise, with a notice in the desk of what that key cannot
+  protect against. The code gate and production templates ship with it.
+
+Each key is named by its RFC 7638 thumbprint, and the signing badge opens
+a panel with its kind and whole fingerprint. A passkey is made for a
+domain name, never an IP address, so the desk is opened at `localhost`
+(above); one opened at 127.0.0.1 that wants a passkey goes there. Under
+`"webauthn"`, a reviewer whose name the browser key holds moves it to a
+passkey from the desk, with a `participant.rotate_key` the browser key
+signs.
+
+The desk reads the members from `GET /api/members` to see whether the
+workspace holds its key for the reviewer, and joins only while it does
+not. A join under a URI that another key holds is refused with `-32011`,
+and the desk then signs nothing and says so; so it does when a decision is
+refused because the workspace holds the key no longer (`-32070` to
+`-32072`). A key an earlier desk kept in `localStorage` moves to IndexedDB
+on the first visit, under the id it was registered with.
 
 The desk reads the chain from `GET /api/chain?from_seq=&to_seq=` and its
 verification from `GET /api/chain/verify`, which run the coordinator's
 `audit.read` and `audit.verify_chain` in the server's process, so a read
 needs no signature and the desk signs only what it sends in the reviewer's
-name. Like the rest of `/api/`, they answer whoever reaches the server.
+name; with a passkey, each such call asks the reviewer. Like the rest of
+`/api/`, these answer whoever reaches the server.
 
-A program running as the reviewer's own user can drive their browser and
-have it sign; a key that needs a gesture for each signature is what stops
-that.
+The browser key keeps the reviewer's authority from pages elsewhere, and
+from a script that runs on the desk's address and leaves. A program running
+as the reviewer's own user, a coding agent with a shell among them, can
+have the browser sign with it, or copy it from the browser's files. A
+passkey asks the reviewer for each signature, which such a program cannot
+give; it can still put a request in front of them, so a passkey prompt the
+reviewer did not expect is one to refuse.
 
 ## What the desk marks
 

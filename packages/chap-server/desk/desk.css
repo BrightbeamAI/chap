@@ -180,6 +180,10 @@ textarea.code.field { min-height: 80px; }
 .badge.refusal { margin-left: 6px; }
 button.chip { cursor: pointer; font-family: inherit; }
 .key-alert { margin: 1rem 1.125rem 0; }
+.alert.setup { margin: 1rem 1.125rem 0; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); color: var(--ink); }
+.alert.setup.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: var(--warn-soft); color: var(--warn); }
+.alert.setup.bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); background: var(--bad-soft); color: var(--bad); }
+.setup-actions { display: inline-flex; gap: .5rem; }
 #key-fingerprint, #key-id { word-break: break-all; }
 pre.json { margin: 0; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-s); overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .notice { min-height: 1.2em; font-size: var(--text-s); }

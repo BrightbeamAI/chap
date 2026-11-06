@@ -66,3 +66,18 @@ test("require_signatures \"humans\" asks for signatures with the humans policy, 
   assert.equal(fromEnv.signature_policy, "humans");
   await assert.rejects(loadConfig((await project({ require_signatures: "agents" })).configPath), /require_signatures .* is true, false or "humans"/);
 });
+
+test("desk_signing is auto, webauthn or browser-key, the browser key where none is given, and /api/config and the console say which", async () => {
+  const none = await loadConfig((await project()).configPath);
+  assert.equal(none.desk_signing, "browser-key");
+  const auto = await project({ require_signatures: "humans", desk_signing: "auto" });
+  const config = await loadConfig(auto.configPath);
+  assert.equal(publicConfig(config).desk_signing, "auto");
+  assert.equal((await withEnv({ CHAP_DESK_SIGNING: "webauthn" }, () => loadConfig(auto.configPath))).desk_signing, "webauthn");
+  await assert.rejects(loadConfig((await project({ desk_signing: "passkey" })).configPath), /desk_signing in chap\.config\.json, or CHAP_DESK_SIGNING, is "passkey"; it is "auto", "webauthn" or "browser-key"/);
+  const lines = [];
+  const chap = await createChapServer({ config, log: () => {} });
+  await chap.listen({ port: 0, host: "127.0.0.1", log: (l) => lines.push(l) });
+  await chap.close();
+  assert.ok(lines.includes("           the desk signs with a passkey where the browser has one, and otherwise with a key it keeps in the browser"), lines.join("\n"));
+});

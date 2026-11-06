@@ -11,7 +11,8 @@
 // what happened.
 
 import { contentHash, deepEqual, fingerprint, jsonPatch, makeClient } from "./chap-client.mjs";
-import { signerFor as heldSigner } from "./keystore.js";
+import { browserKey, keepSigner, makePasskey, storedSigner } from "./keystore.js";
+import { atLocalhost, signingFor } from "./signing.js";
 import { ago, artefactAnomalies, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
 import { parsePatch } from "./diff.js";
 import { decisionsOf, outcomeOf, renderInsights, renderMarkdown } from "./insights.js";
@@ -159,35 +160,91 @@ async function boot() {
   showView(hashParams().get("view") || "review");
   $("signing").onclick = () => { $("key").hidden = false; };
   $("key-close").onclick = () => { $("key").hidden = true; };
+  $("setup-action").onclick = () => makeKey();
+  $("setup-close").onclick = () => { localStorage.setItem(`chap-desk-browser-key-note:${state.config.workspace}`, "seen"); showSetup(); };
   setInterval(() => { if (!document.hidden && !state.busy) refresh().catch(lost); }, POLL_MS);
   probeAnalytics();
   setInterval(() => { if (!document.hidden) probeAnalytics(); }, 30_000);
 }
 
-// Under security-signed/1.0 the desk signs in the browser. The key is
-// generated here, kept where no script can read it out, and registered at
-// participant.join, which the coordinator accepts unsigned. Whoever joins
-// first under a URI holds it: a later join that brings another key is
-// refused with -32011, and the desk then signs nothing and says so. The
-// desk joins only while the workspace does not hold its key, and reads
-// that from the members the server lists, with no signed call.
+// Under security-signed/1.0 the desk signs what it sends in the reviewer's
+// name. It signs with a passkey or with a key it makes and keeps in the
+// browser, as desk_signing and the browser allow (signing.js), and
+// registers the public key at participant.join, which the coordinator
+// accepts unsigned. Whoever joins first under a URI holds it: a later join
+// that brings another key is refused with -32011, and the desk then signs
+// nothing and says so. The desk joins only while the workspace does not
+// hold its key, and reads that from the members the server lists, with no
+// signed call.
 async function setReviewer(uri) {
   setHash({ reviewer: uri });
   let signer = null;
+  let setup = null;
   if (state.config.require_signatures) {
-    const held = await heldSigner(state.config.workspace, uri);
-    signer = held.signer;
-    if (held.moved) toast("Your signing key was in this browser's local storage, where any page on this address could read it. It is now kept where no page can read it out.", "ok");
+    const ws = state.config.workspace;
+    signer = await storedSigner(ws, uri);
+    // A key a desk from before 0.3.5 left in localStorage is moved first,
+    // whatever this desk would make now: it may be the key on record.
+    if (!signer && localStorage.getItem(`chap-desk-key:${ws}:${uri}`)) {
+      signer = (await browserKey(ws, uri)).signer;
+      toast("Your signing key was in this browser's local storage, where any page on this address could read it. It is now kept where no page can read it out.", "ok");
+    }
+    const want = await signingFor(state.config.desk_signing, location);
+    state.passkeyHere = want === "passkey";
+    if (!signer) {
+      if (want === "browser-key") signer = (await browserKey(ws, uri)).signer;
+      else setup = { need: want };
+    } else if (signer.scheme === "ed25519" && state.config.desk_signing === "webauthn") {
+      setup = { need: want === "passkey" ? "move" : want };
+    }
   }
+  await useSigner(uri, signer, setup);
+}
+
+/** Sign as `uri` with `signer`, joining where the workspace does not hold its key; `setup` is what the reviewer must do first. */
+async function useSigner(uri, signer, setup = null) {
   state.client = makeClient({ url: "chap", workspace: state.config.workspace, from: uri, signer });
-  state.key = { signer, fingerprint: signer ? await fingerprint(signer.publicJwk) : null, status: signer ? "unchecked" : "unsigned", refused: false };
+  state.key = { signer, fingerprint: signer ? await fingerprint(signer.publicJwk) : null, status: !state.config.require_signatures ? "unsigned" : signer ? "unchecked" : "setup", refused: false, setup };
   if (signer) {
     await checkKey();
-    if (state.key.status !== "on record") await join();
+    if (state.key.status !== "on record" && !setup) await join();
   }
+  if (setup?.need === "localhost") location.replace(atLocalhost(location));
   showKey();
   state.chainShown = -1;
   await refresh().catch(lost);
+}
+
+/** The configured person a URI names, for the role and name a join gives. */
+const humanOf = (uri) => state.config.humans.find((h) => h.uri === uri);
+
+/**
+ * Make a passkey for the reviewer, on their click, and sign with it. Where
+ * the workspace holds the browser key this desk kept for them before, the
+ * name is moved to the passkey with participant.rotate_key, which that key
+ * signs, and the browser key is given up once the move is accepted.
+ */
+async function makeKey() {
+  const uri = state.client.from;
+  const ws = state.config.workspace;
+  const before = state.key.signer;
+  let passkey;
+  try {
+    passkey = await makePasskey(ws, uri, { displayName: humanOf(uri)?.display_name, platform: state.config.desk_signing === "auto" });
+  } catch (e) {
+    notice(e.name === "NotAllowedError" ? "No passkey was made: the browser's check was cancelled, or timed out." : `No passkey was made: ${e.message}`, "bad");
+    return;
+  }
+  if (before && state.key.status === "on record") {
+    try {
+      await state.client.call("participant.rotate_key", { old_kid: before.kid, new_jwk: passkey.publicJwk });
+    } catch (e) {
+      notice(`Your name stays with the key this browser kept: the move to the passkey was refused, ${e.message}`, "bad");
+      return;
+    }
+    toast("Your name is held by the passkey now; the key this browser kept is given up.", "ok");
+  }
+  await useSigner(uri, await keepSigner(ws, uri, passkey));
 }
 
 /**
@@ -198,7 +255,7 @@ async function setReviewer(uri) {
  */
 async function join() {
   const uri = state.client.from;
-  const me = state.config.humans.find((h) => h.uri === uri);
+  const me = humanOf(uri);
   try {
     await state.client.call("participant.join", { type: "human", role: me?.role ?? "reviewer", display_name: me?.display_name, jwks: { keys: [state.key.signer.publicJwk] } });
   } catch (e) {
@@ -236,16 +293,23 @@ async function checkKey() {
   } catch { /* asked again on the next poll */ }
 }
 
-/** Whether decisions from this browser would count: signatures are off, or the workspace holds this key. */
-const canSign = () => state.key.status === "unsigned" || state.key.status === "on record";
+/** Whether decisions from this browser would count: signatures are off, or the workspace holds this key and the desk has nothing left to set up. */
+const canSign = () => state.key.status === "unsigned" || (state.key.status === "on record" && !state.key.setup);
 
-/** The signing chip, the key dialog and, when another key holds the reviewer's name, the banner that says so. */
+/** Whether the browser key is what this desk signs with under desk_signing "auto": the browser had no passkey to offer. */
+const browserKeyUnderAuto = () => state.config.desk_signing === "auto" && state.key.signer?.scheme === "ed25519";
+
+/** The signing chip, the key dialog, the banner when another key holds the reviewer's name, and what the reviewer must set up. */
 function showKey() {
   const { signer, fingerprint: print, status } = state.key;
   const uri = state.client.from;
-  if (!signer) {
+  const kind = signer?.scheme === "webauthn" ? "passkey" : "browser key";
+  if (!state.config.require_signatures) {
     chip("signing", "unsigned", "");
     $("signing").title = "This workspace does not require signatures";
+  } else if (!signer) {
+    chip("signing", "no key yet", "bad");
+    $("signing").title = `Nothing signs for ${uri} in this browser yet`;
   } else if (status === "another key") {
     chip("signing", "not signing", "bad");
     $("signing").title = `Another key holds ${uri} in this workspace, so this browser signs nothing`;
@@ -253,20 +317,22 @@ function showKey() {
     chip("signing", status, "bad");
     $("signing").title = status === "no key" ? `The workspace holds no key for ${uri} now, so this browser signs nothing` : `${uri} has not joined this workspace with this browser's key`;
   } else {
-    chip("signing", `signed · ${print.slice(7, 15)}`, status === "on record" ? "good" : "");
-    $("signing").title = `Decisions are signed in this browser as ${uri}, with the key whose fingerprint is ${print}`;
+    chip("signing", `${kind} · ${print.slice(7, 15)}`, status !== "on record" ? "" : browserKeyUnderAuto() ? "warn" : "good");
+    $("signing").title = `Decisions are signed in this browser as ${uri}, with the ${kind} whose fingerprint is ${print}`;
   }
   $("key-uri").textContent = uri;
-  $("key-fingerprint").textContent = print ?? "none: this workspace does not require signatures";
+  $("key-kind").textContent = !signer ? "none yet" : signer.scheme === "webauthn"
+    ? "A passkey: the browser's authenticator signs, and asks for your fingerprint, face or PIN each time."
+    : "A key the desk made and keeps in this browser, which signs without asking you.";
+  $("key-fingerprint").textContent = print ?? (state.config.require_signatures ? "none yet" : "none: this workspace does not require signatures");
   $("key-id").textContent = signer?.kid ?? "none";
-  $("key-status").textContent = !signer ? "Decisions from this browser are not signed." : status === "on record"
+  $("key-status").textContent = !state.config.require_signatures ? "Decisions from this browser are not signed." : !signer ? "Not set up yet." : status === "on record"
     ? `The workspace holds this key for ${uri}, so decisions signed here count.`
     : status === "another key" ? `The workspace holds another key for ${uri}, so decisions signed here would not count.`
       : status === "not joined" ? `${uri} has not joined the workspace with this key, so decisions signed here would not count.`
         : status === "no key" ? `The workspace holds no key for ${uri} now, so decisions signed here would not count.`
           : "Not checked with the workspace yet.";
   $("key-alert").hidden = status !== "another key" && status !== "no key";
-  setDecisionButtons();
   if (status === "another key") {
     const how = state.key.refused ? `The workspace refused this browser's key when the desk joined you, because another key already holds ${uri} in ${state.config.workspace}.` : `Another key holds ${uri} in ${state.config.workspace}.`;
     $("key-alert-title").textContent = "This browser's key is not the reviewer's.";
@@ -275,6 +341,49 @@ function showKey() {
     $("key-alert-title").textContent = "The workspace holds no key for you now.";
     $("key-alert-text").textContent = `The key this browser signed with for ${uri} in ${state.config.workspace} was revoked or rotated away, so decisions signed here would not count, and the desk sends none. Whoever runs the workspace can say why.`;
   }
+  showSetup();
+  setDecisionButtons();
+}
+
+/** The setup banner: what the reviewer does before the desk can sign, or what the browser key cannot protect against. */
+function showSetup() {
+  const { setup, status } = state.key;
+  const box = $("setup");
+  const action = $("setup-action");
+  const close = $("setup-close");
+  action.hidden = true;
+  close.hidden = true;
+  box.className = "alert setup";
+  const ws = state.config.workspace;
+  const noteSeen = localStorage.getItem(`chap-desk-browser-key-note:${ws}`) === "seen";
+  let text = null;
+  if (setup?.need === "passkey") {
+    text = "Your decisions here are signed with a passkey, which asks for your fingerprint, face or PIN each time, so nothing signs in your name without you. Make one to start.";
+    action.textContent = "Make a passkey";
+    action.hidden = false;
+  } else if (setup?.need === "move") {
+    text = "This desk signs with a passkey, and the workspace holds the key this browser kept for you before. Make a passkey, and the desk moves your name to it with a request that key signs.";
+    action.textContent = "Move to a passkey";
+    action.hidden = status !== "on record";
+  } else if (setup?.need === "localhost") {
+    text = `A passkey is made for a name, never an IP address, so the desk opens at ${atLocalhost(location)}.`;
+  } else if (setup?.need === "no passkey") {
+    text = "This desk signs with a passkey, and this browser can make none here. Open the desk by its name in a browser that offers passkeys or a security key.";
+    box.className = "alert setup bad";
+  } else if (browserKeyUnderAuto() && !noteSeen) {
+    const risk = "A program running as you on this machine, a coding agent with a shell among them, can have the browser sign with that key, or copy it from the browser's files, and so approve in your name.";
+    if (state.passkeyHere && status === "on record") {
+      text = `The desk signs with a key it kept in this browser before. ${risk} This browser can make a passkey, which asks for your fingerprint, face or PIN each time: move your name to it.`;
+      action.textContent = "Move to a passkey";
+      action.hidden = false;
+    } else {
+      text = `This browser has no passkey with a fingerprint, face or PIN check, so the desk signs with a key it keeps in the browser. ${risk} A passkey asks you each time.`;
+    }
+    box.className = "alert setup warn";
+    close.hidden = false;
+  }
+  box.hidden = !text;
+  $("setup-text").textContent = text ?? "";
 }
 
 function lost(e) {
@@ -663,7 +772,8 @@ async function decide(kind) {
     const next = state.tasks.find((x) => mine(x));
     if (next) select_(next.task_id); else { state.selectedId = null; setHash({ task: null }); renderQueue(); renderReview(); }
   } catch (e) {
-    notice(e.message, "bad");
+    // A passkey the reviewer did not confirm signs nothing, and nothing is sent.
+    notice(e.name === "NotAllowedError" ? "Nothing was sent: the passkey check was cancelled, or timed out." : e.message, "bad");
     // A refusal of the signature itself: the workspace may no longer hold
     // this key, revoked or rotated away since it was last read.
     if (KEY_REFUSALS.has(e.code)) { await checkKey(); showKey(); }

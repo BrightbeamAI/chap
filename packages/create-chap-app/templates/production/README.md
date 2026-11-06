@@ -69,31 +69,39 @@ signs every later call. A re-join cannot change a member's key, so a new
 key means `participant.rotate_key` signed with the old one, or a new
 participant URI.
 
-## The browser key
+## The reviewer's key
 
-Under `security-signed/1.0` the desk generates an Ed25519 key in the
-browser as a key that cannot be exported, keeps it in the browser's
-IndexedDB for the desk's address, registers its public half at
-`participant.join`, and signs each decision with it. A page on the desk's
-address can ask the browser to sign with it, and no script can read the key
-out to sign somewhere else. The key's id is its RFC 7638 thumbprint, and the
-signing badge opens a panel with its whole fingerprint, the form
-`npm run trust` prints. The desk reads the members the server lists to see
-whether the workspace holds this key for you, and joins you only while it
-does not; a join under a URI another key holds is refused (`-32011`), and
-the desk then signs nothing and says so. A desk from before 0.3.5 kept
-the key in `localStorage`; the first visit moves it into IndexedDB under the
-id it was registered with.
+Under `security-signed/1.0` the desk signs your decisions in the browser.
+With `"desk_signing": "auto"`, the setting here, it signs with a passkey
+where the browser has an authenticator built in that verifies you, such as
+Touch ID or Windows Hello: the authenticator holds the private key and asks
+for your fingerprint, face or PIN for each signature, so nothing signs in
+your name without you. The desk makes the passkey when you ask it to, at
+`http://localhost:8790/`, since a passkey is made for a name and never an
+IP address, and registers its public key at `participant.join`. Where the
+browser has no such authenticator, the desk makes an Ed25519 key in the
+browser as a key that cannot be exported, keeps it in IndexedDB for the
+desk's address, and says in a notice what that key cannot protect against:
+a program running as you on this machine, an agent with a shell included,
+can have the browser sign with it, or copy it from the browser's files.
+`"webauthn"` asks for a passkey always, a security key or a phone included,
+and `"browser-key"` for the kept key. chap-server's README says how each
+signs.
 
-The key protects you from pages elsewhere and from a script that runs on the
-desk's address and then leaves. It does not protect you from a program
-running as your own user on this machine, an agent with a shell included:
-that program can drive your browser profile and have it sign, unless each
-signature needs a gesture of yours. Run such an agent as another user, in a
-container or in a sandbox. Clearing the browser's storage loses the key:
-the member on record keeps the old public key, so the desk then needs a new
-participant URI, or a `participant.rotate_key` signed with the old key
-before it is cleared.
+Each key's id is its RFC 7638 thumbprint, and the signing badge opens a
+panel with its kind and whole fingerprint. The desk reads the members the
+server lists to see whether the workspace holds this key for you, and joins
+you only while it does not; a join under a URI another key holds is
+refused (`-32011`), and the desk then signs nothing and says so. A desk
+from before 0.3.5 kept the key in `localStorage`, at `127.0.0.1`; open the
+desk there and it moves the key into IndexedDB under the id it was
+registered with, and goes on signing with it.
+
+Run an agent with a shell as another user, in a container or in a sandbox
+all the same: a passkey prompt you did not expect is one to refuse.
+Clearing the browser's storage loses a browser key, and with it the member's
+key: the desk then needs a new participant URI, or a
+`participant.rotate_key` signed with the old key before it is cleared.
 
 ## OIDC
 

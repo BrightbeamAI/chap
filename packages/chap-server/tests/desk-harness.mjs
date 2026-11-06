@@ -18,16 +18,20 @@ const NODE_SET_INTERVAL = globalThis.setInterval;
 const BLOCKED_MARKUP = /<(script|style)\b|\sstyle\s*=|\son[a-z]+\s*=/i;
 
 /**
- * Open the desk at `base` (with `hash`), as a browser that already holds
- * `storage` (localStorage entries) and `indexedDB` (an IDBFactory). Waits
- * `waitMs` for it to settle. Returns the window, a log of the CHAP calls it
- * made, what a policy would have blocked, and close().
+ * Open the desk at `base` (with `path`, a query and a hash after the
+ * slash), as a browser that already holds `storage` (localStorage entries),
+ * `session` (sessionStorage entries) and `indexedDB` (an IDBFactory), with
+ * `authenticator` as its WebAuthn authenticator, if it has one
+ * (webauthn-authenticator.mjs). Waits `waitMs` for it to settle. Returns
+ * the window, a log of the CHAP calls it made, what a policy would have
+ * blocked, and close().
  */
-export async function openDesk(base, { hash = "", waitMs = 1500, storage = {}, indexedDB = new IDBFactory() } = {}) {
+export async function openDesk(base, { hash = "", path = "", waitMs = 1500, storage = {}, session = {}, indexedDB = new IDBFactory(), authenticator = null } = {}) {
   const html = await (await NODE_FETCH(`${base}/`)).text();
-  const dom = new JSDOM(html, { url: `${base}/${hash}`, pretendToBeVisual: true });
+  const dom = new JSDOM(html, { url: `${base}/${path}${hash}`, pretendToBeVisual: true });
   const w = dom.window;
   for (const [k, v] of Object.entries(storage)) w.localStorage.setItem(k, v);
+  for (const [k, v] of Object.entries(session)) w.sessionStorage.setItem(k, v);
   const blocked = [];
   const setAttribute = w.Element.prototype.setAttribute;
   w.Element.prototype.setAttribute = function (name, value) {
@@ -44,8 +48,9 @@ export async function openDesk(base, { hash = "", waitMs = 1500, storage = {}, i
     saved.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
     Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
   };
-  for (const k of ["window", "document", "localStorage", "location", "history", "Node", "HTMLElement", "getSelection", "navigator", "MutationObserver"]) install(k, k === "window" ? w : w[k]);
+  for (const k of ["window", "document", "localStorage", "sessionStorage", "location", "history", "Node", "HTMLElement", "getSelection", "navigator", "MutationObserver"]) install(k, k === "window" ? w : w[k]);
   install("indexedDB", indexedDB);
+  install("PublicKeyCredential", authenticator ? authenticator.install(w) : undefined);
   install("matchMedia", () => ({ matches: false, addEventListener() {} }));
   w.Element.prototype.scrollIntoView = () => {};
   const calls = [];
@@ -57,7 +62,8 @@ export async function openDesk(base, { hash = "", waitMs = 1500, storage = {}, i
     const res = await NODE_FETCH(url, { ...init, headers });
     if (init.method === "POST" && new URL(url).pathname.endsWith("/chap")) {
       const copy = res.clone();
-      calls.push({ method: JSON.parse(init.body).method, params: JSON.parse(init.body).params, reply: await copy.json() });
+      const envelope = JSON.parse(init.body);
+      calls.push({ method: envelope.method, params: envelope.params, envelope, reply: await copy.json() });
     }
     return res;
   });
