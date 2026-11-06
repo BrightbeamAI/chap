@@ -78,5 +78,6 @@ screen, and waits for their decision. The rules:
    command again; on 0, your commits are sealed with the review, and pushed
    with `--push`.
 9. The gate also answers as an MCP server at `http://127.0.0.1:8791/mcp`
-   with the `chap.*` tools, for reading your tasks and the chain. Reading
-   is free; writing happens through the commands above.
+   with the `chap.*` tools, for reading your tasks and the chain. Propose
+   changes with the commands above: a change proposed over MCP is unsigned,
+   and the hooks refuse it.

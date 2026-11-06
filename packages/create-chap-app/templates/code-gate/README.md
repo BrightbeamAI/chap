@@ -128,6 +128,13 @@ its tasks and the chain:
 claude mcp add --transport http chap http://127.0.0.1:8791/mcp
 ```
 
+`/mcp` acts as the agent `chap.config.json` names, with the tools the
+agent's own work needs. Under `"require_signatures": "humans"`, as here,
+the agent's calls need no signature and a person's do, so these reads work
+over `/mcp`; under `true` every call must be signed, and `/mcp`, whose calls
+are unsigned, is refused. A change goes through `propose.mjs` either way:
+its proposal is signed, and the hooks refuse an unsigned one.
+
 **Cursor and other assistants.** The same file goes into the project rules.
 An assistant that cannot run a command leaves `propose.mjs` to you: edit with
 the assistant, then propose and commit yourself.
@@ -320,13 +327,16 @@ into IndexedDB under the id it was registered with.
 ## Where the gate holds
 
 The hooks run on the developer's machine, and whoever controls that machine
-can switch them off: `CHAP_GATE=off`, `git commit --no-verify`, or another
-`core.hooksPath`. They stop an agent working there from committing a change
-nobody approved, and they record the evidence while the decision is fresh.
-The boundary is the check on every pull request (step 6 below): the verifier
-and the trust policy from the base branch, run over the commits the pull
-request adds, with branch protection that requires the check to pass. A
-commit made around the hooks fails there.
+can switch them off: `CHAP_GATE=off`, `git commit --no-verify`, another
+`core.hooksPath`, or an edit to the gate project itself. A coding agent with
+a shell there can do any of these. So the hooks are a guard against
+mistakes, a commit made before its review or a change other than the one
+approved, and they record the evidence while the decision is fresh; they do
+not hold an agent set on committing around them. The boundary is the check
+on every pull request (step 6 below): the verifier and the trust policy from
+the base branch, run over the commits the pull request adds, with branch
+protection that requires the check to pass. A commit made around the hooks
+fails there.
 
 Beyond each commit's approval, the check asks three things of a pull
 request:
