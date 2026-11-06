@@ -36,16 +36,16 @@ async function submit(artefact, { to = null, client = g.agent } = {}) {
   return t.task_id;
 }
 
-test("an agent that addresses a review to itself and approves it commits nothing", async () => {
+test("an agent cannot approve its own change: the coordinator refuses, and nothing is committed", async () => {
   const repo = await demoRepo();
   await appendTo(repo, "lib/calc.mjs", "\nexport const BACKDOOR = true;\n");
   const artefact = await describeChange(repo, { summary: "harmless", drafted_by: "x" });
-  for (const to of [[g.agent.from], [`workspace:${g.config.workspace}`]]) {
-    const id = await submit(artefact, { to });
-    const d = await g.agent.call("decide.approve", { task_id: id, approved_artefact_digest: await contentHash(artefact) });
-    assert.equal(d.state, "completed", "the coordinator accepts the agent's approval of a review addressed to itself");
-  }
-  await assert.rejects(commit(g, repo, "harmless"), (e) => /is an agent/.test(e.stderr) && !/approved as/.test(e.stderr));
+  const digest = await contentHash(artefact);
+  await assert.rejects(submit(artefact, { to: [g.agent.from] }), (e) => e.code === -32011, "a review addressed to its own author is refused");
+  const id = await submit(artefact, { to: [`workspace:${g.config.workspace}`] });
+  await assert.rejects(g.agent.call("decide.approve", { task_id: id, approved_artefact_digest: digest }),
+    (e) => e.code === -32011, "the author cannot decide a review addressed to the whole workspace");
+  await assert.rejects(commit(g, repo, "harmless"), (e) => !/approved as/.test(e.stderr));
   assert.equal((await git(repo, ["status", "--porcelain"])).trim().length > 0, true, "nothing was committed");
 });
 
