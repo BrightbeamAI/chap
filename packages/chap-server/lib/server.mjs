@@ -31,6 +31,7 @@ import { fileURLToPath } from "node:url";
 import { Coordinator, MemoryStore } from "@brightbeamai/chap-coordinator";
 import { AGENT_MCP_TOOLS, chapMcpHttpHandler } from "@brightbeamai/chap-coordinator-mcp";
 import { keyPathFor, publicJwkOf } from "./keys.mjs";
+import { makeNotifier, notifySettings } from "./notify.mjs";
 
 /** The desk's files, served by every project from this package. */
 export const DESK_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "desk");
@@ -56,7 +57,9 @@ const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.u
  * `require_signatures`, whether signatures are checked at all, and
  * `signature_policy`, "all", "humans" or null. desk_signing, or
  * CHAP_DESK_SIGNING, says how the desk signs: "auto", "webauthn" or
- * "browser-key", the last where none is given.
+ * "browser-key", the last where none is given. notify tells people that a
+ * review or a question waits (notify.mjs), with a link to the desk at
+ * desk_url, or CHAP_DESK_URL, which is by default where the server listens.
  */
 export async function loadConfig(path = process.env.CHAP_CONFIG ?? "chap.config.json") {
   const file = resolve(path);
@@ -75,6 +78,8 @@ export async function loadConfig(path = process.env.CHAP_CONFIG ?? "chap.config.
   config.chain = envFlag("CHAP_CHAIN", !!config.chain) || hasProfile(config.profiles, "audit-scitt");
   config.mcp = envFlag("CHAP_MCP", config.mcp ?? false);
   config.desk_signing = deskSigning(process.env.CHAP_DESK_SIGNING || config.desk_signing);
+  config.notify = notifySettings(config.notify);
+  config.desk_url = process.env.CHAP_DESK_URL || config.desk_url || null;
   config.oidc = oidcFromEnv(config.oidc);
   config.allowed_hosts = [...(config.allowed_hosts ?? []), ...envList("CHAP_ALLOWED_HOSTS")];
   return config;
@@ -227,6 +232,7 @@ export async function makeCoordinator(config, { enrol = [], log = console.log, .
   const coord = new Coordinator(options);
   await coord.start();
   await bootstrap(coord, config, { enrol, log });
+  if (config.notify) coord.onAudit(makeNotifier(config.notify, config.workspace, { deskUrl: () => config.desk_url, log, userAgent: `chap-server/${VERSION}` }));
   return coord;
 }
 
@@ -825,6 +831,7 @@ export async function createChapServer(options = {}) {
       if (LOOPBACK.has(host)) ipv6 = await listenOnLoopback(server, handler, port);
       else await listenOn(server, port, host).catch((e) => { throw listenError(e, port, host); });
       const base = deskBase(host, server.address().port);
+      config.desk_url ??= `${base}/`;
       log(`CHAP ${config.workspace} on ${base}`);
       log(`  desk     ${base}/`);
       log(`  calls    POST ${base}/chap`);
@@ -836,6 +843,7 @@ export async function createChapServer(options = {}) {
       log(`  store    ${config.store}${config.chain ? ", chain on" : ""}${config.oidc ? `, oidc ${config.oidc.issuer}` : ""}`);
       log(`  signing  ${SIGNING[config.signature_policy]}`);
       if (config.require_signatures) log(`           ${DESK_SIGNING[config.desk_signing ?? "browser-key"]}`);
+      if (config.notify) log(`  notify   ${[config.notify.console ? "console" : null, config.notify.webhook ? `webhook ${new URL(config.notify.webhook.url).origin}` : null].filter(Boolean).join(", ") || "nothing"}, linking ${config.desk_url}`);
       return { base };
     },
     close: () => new Promise((resolve) => server.close(resolve)),

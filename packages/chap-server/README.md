@@ -61,6 +61,9 @@ to the desk, which uses it in the commands it writes for an agent.
   own work needs, `AGENT_MCP_TOOLS`.
 - `desk_signing`: how the desk signs where signatures are required,
   `"auto"`, `"webauthn"` or `"browser-key"` (the reviewer's key, below).
+- `notify`: tell people a review or a question waits, on the console and
+  through a webhook (below); `desk_url` is the desk's address its links
+  name, by default where the server listens.
 - `allowed_hosts`: host names, with their ports, the server answers to
   besides its own loopback names, for a proxy or a Compose service.
 - `max_envelope_bytes`: the largest call accepted, 1 MiB by default.
@@ -71,7 +74,7 @@ to the desk, which uses it in the commands it writes for an agent.
 The environment overrides it: `CHAP_CONFIG` names the file; `PORT`,
 `CHAP_HOST` and `CHAP_DB_PATH` replace the port, the host and the store;
 `CHAP_REQUIRE_SIGNATURES` (`1`, `true`, `humans`, `0` or `false`),
-`CHAP_CHAIN` and `CHAP_MCP` (`1` or `true`) replace the flags; `CHAP_DESK_SIGNING` replaces `desk_signing`; `CHAP_ALLOWED_HOSTS` adds host names, comma separated;
+`CHAP_CHAIN` and `CHAP_MCP` (`1` or `true`) replace the flags; `CHAP_DESK_SIGNING` replaces `desk_signing` and `CHAP_DESK_URL` `desk_url`; `CHAP_ALLOWED_HOSTS` adds host names, comma separated;
 `OIDC_ISSUER`, `OIDC_JWKS_URL` and `OIDC_AUDIENCE` set the token verifier.
 
 ## What it refuses
@@ -175,6 +178,39 @@ well as when they decided it, and the review shows who has. A passkey asks
 for each signature, so with one the desk acknowledges only a review the
 reviewer opens from the queue. A coordinator from before 0.3.5 answers
 `-32601`, and the desk then sends none.
+
+## Telling people a review waits
+
+`notify` in `chap.config.json` tells the people a review or a question is
+addressed to that it waits:
+
+```json
+"notify": { "console": true, "webhook": { "url": "https://hooks.example.org/chap", "secret": "..." } }
+```
+
+A notice goes out when a review opens, or opens again, by an accepted
+`task.complete` or `review.request` that leaves its task under review, and
+when a question is asked, by an accepted `whisper.ask`. `console` prints
+its summary and link, and `webhook` POSTs it as JSON:
+
+```json
+{ "event": "review.requested", "workspace": "wsp_support", "task_id": "tsk_01J...", "kind": "draft",
+  "from": "agent:drafter", "to": ["human:you@local"],
+  "summary": "agent:drafter asks human:you@local to review draft tsk_01J...",
+  "link": "http://localhost:8788/#task=tsk_01J...", "seq": 7, "at": "2026-11-06T09:30:00.000Z" }
+```
+
+A question's notice is `"event": "whisper.asked"`, with its `whisper_id`;
+the desk shows the task it is about, and the answer is a `whisper.answer`
+call. `X-Chap-Signature: sha256=<hex>` is the HMAC-SHA256 of the body
+under `secret`: compare it with your own, in constant time, before acting
+on a notice. The link opens the desk at the task and grants nothing, and
+the summary names the participants, the task's kind and its id, and none of
+the agent's text. `desk_url` puts the address people reach the desk at,
+through a proxy say, in the link. A notice goes out once the call that
+caused it is answered, and one the webhook refuses, or does not take
+within ten seconds, is logged, naming the webhook by its origin alone, and
+dropped.
 
 ## What the desk marks
 

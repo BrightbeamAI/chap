@@ -10,9 +10,9 @@
 #
 # The port is published on 127.0.0.1 only; a browser that tries ::1 first for
 # localhost finds nothing there and goes on to it. A production deployment puts TLS
-# and its own login in front of the coordinator, and delivers notifications
-# to the people named on a review (SPECIFICATION.md section 15.1, items 9
-# and 10). None of that is in this file.
+# and its own login in front of the coordinator, and has the notices that
+# "notify" in chap.config.json sends reach the people named on a review
+# (SPECIFICATION.md section 15.1, items 9 and 10). None of that is in this file.
 #
 # Both containers run as the node user, uid 1000. The project ships ./data,
 # ./outbox and ./analytics, each with a .gitkeep, so they exist and belong to

@@ -688,8 +688,10 @@ and `--dry-run` changes nothing.
 - Branch protection that requires the verify check, CODEOWNERS on the trust
   policy, the gate project and the workflows, and notes pushed with the
   commits.
-- Delivery: telling reviewers a change waits. The desk polls; nothing here
-  pushes a notification.
+- Delivery beyond a webhook: `notify` in `chap.config.json` prints a line
+  and POSTs a signed notice to a webhook when a change waits for review,
+  and turning that into a message a reviewer reads, in chat or by email, is
+  the receiver's (chap-server's README shows the notice).
 - A key per reviewer and per agent, kept where the gate's `keys/` directory
   is not: a passkey for each reviewer, and a secrets store, an HSM or the
   team's identity provider for the agents.

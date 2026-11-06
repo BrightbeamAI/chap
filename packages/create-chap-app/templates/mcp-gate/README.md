@@ -148,9 +148,11 @@ at start.
 
 ## What the deployment supplies
 
-This project does not notify anyone: the desk lists the open reviews
-addressed to the reviewer it is asked about, and delivering a review to the
-people named on it is the deployment's job (SPECIFICATION 15.1). The MCP
+`"notify": {"console": true}` in `chap.config.json` prints a line when a
+review waits for you, with a link to it in the desk, and a webhook takes a
+notice signed with HMAC-SHA256 (chap-server's README shows it); taking it
+on to the people named on a review is the deployment's job (SPECIFICATION
+15.1). The MCP
 endpoint, the desk, `POST /chap` and the read API under `/api/` have no
 login, and a `human:` URI in the desk names who is deciding; the key behind
 it is what makes a decision theirs. Under `"require_signatures": "humans"`,

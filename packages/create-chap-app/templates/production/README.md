@@ -251,9 +251,12 @@ and `--dry-run` changes nothing.
 - Its own login, which authenticates each person, obtains the OIDC token
   with the browser key in `cnf.jwk`, and checks that each caller sends only
   its own `from`.
-- Delivery: notifying the people named on a review, and showing shadow-mode
-  output only to its observers. The desk polls the coordinator; nothing here
-  pushes.
+- Delivery beyond a webhook, and showing shadow-mode output only to its
+  observers. `notify` in `chap.config.json` prints a line and POSTs a notice,
+  signed with HMAC-SHA256, to a webhook when a review opens or a question is
+  asked, with `desk_url` for the address reviewers reach the desk at; the
+  receiver turns it into a message they read (chap-server's README shows the
+  notice).
 - Running more than one coordinator process: each workspace has one writer,
   so partition workspaces across processes and start a standby from the
   store on failover.
