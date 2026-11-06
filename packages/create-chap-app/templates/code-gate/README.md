@@ -496,9 +496,16 @@ offered for editing only when the contents that came with it agree with its
 patch. A patch the desk cannot show as git would apply it (text before the
 first file, names that differ between its header lines, a binary section for
 a text file), or a change that lists a file twice, is marked, and the desk
-offers to reject it or request changes. Characters a reader cannot see in a
-changed line (bidirectional controls, zero-width characters, a carriage
-return inside a line) are shown as markers, with a warning above the diff.
+offers to reject it or request changes. A character a reader cannot see, or
+one that changes how the text around it reads (bidirectional controls,
+zero-width characters, the Hangul fillers, the soft hyphen, variation
+selectors, tag characters, a carriage return inside a line, a space other
+than the ASCII one), is shown as a marker naming its code point, in file
+names, changed and unchanged lines, commit messages and the context note,
+with a warning above the diff. A character outside ASCII in a file name, a
+branch name or a changed line is outlined, with a warning, unless it is a
+Latin-1 letter or common punctuation such as curly quotes and dashes: a
+Cyrillic а passes for a Latin a.
 Every decision carries the digest of the artefact you saw and of the
 submission that opened the round, so a decision on a draft that changed
 under you is refused, and the verifier counts it in its own round only.

@@ -323,6 +323,7 @@ svg.chart { width: 100%; height: 10rem; display: block; }
 .alert.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: var(--warn-soft); color: var(--warn); }
 .invisible { display: inline-block; padding: 0 3px; margin: 0 1px; border-radius: 3px; background: var(--bad-soft); color: var(--bad); font-weight: 700; font-size: .75rem; }
 .invisible.eol { background: none; color: var(--muted); font-weight: 400; }
+.outside { outline: 1px dashed var(--warn); outline-offset: 1px; border-radius: 2px; background: var(--warn-soft); }
 
 /* A branch: its commits in order, and the one on show. */
 .branch .stats .add, .commits .stats .add { color: var(--ok); }

@@ -97,6 +97,19 @@ A program running as the reviewer's own user can drive their browser and
 have it sign; a key that needs a gesture for each signature is what stops
 that.
 
+## What the desk marks
+
+A character a reader cannot see, or one that changes how the text around it
+reads, is shown as a marker naming its code point wherever the agent's text
+is shown: every default-ignorable code point (zero-width characters, the
+bidirectional controls, the soft hyphen, the Hangul fillers, variation
+selectors, tag characters), every format character, line and paragraph
+separators, control characters other than a tab, spaces other than the
+ASCII space, and U+2800. A character outside ASCII in a file name, a branch
+name or a changed line is outlined, unless it is a Latin-1 letter or common
+punctuation such as curly quotes, dashes and the euro sign. Either kind
+puts a warning above the artefact.
+
 ## In a server of your own
 
 ```js

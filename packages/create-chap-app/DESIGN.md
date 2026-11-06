@@ -103,8 +103,13 @@ artefact the desk showed, so the coordinator refuses a decision on an
 artefact the reviewer did not see, and `round`, the hash of the submission
 that opened the review round, which the coordinator records with the call. A
 code change whose patch the desk cannot show as git would apply it, or that
-lists a file twice, can be rejected or sent back and offers no approval;
-characters a reader cannot see in a changed line are shown as markers.
+lists a file twice, can be rejected or sent back and offers no approval.
+A character a reader cannot see, or one that changes how the text around it
+reads, is shown as a marker naming its code point wherever the agent's text
+is shown: file names, diff lines, commit messages, a message's fields, text,
+JSON and the context note. A character outside ASCII in a file name, a
+branch name or a changed line is outlined unless it is a Latin-1 letter or
+common punctuation.
 
 A `human:` URI in the desk is a label: it says who is deciding and does not
 authenticate them. The desk and its read API have no login of their own;
