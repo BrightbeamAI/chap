@@ -101,7 +101,7 @@ This package implements **CHAP Core plus every profile**:
 | `control/1.0`         | `control.pause`, `control.resume`, `control.cancel`, `control.snapshot`, `control.rollback`, `control.supersede`, `control.set_mode_ceiling`; pause/resume take `scope: task/participant/workspace` |
 | `routing/1.0`         | `task.route`, `review.depth`, `escalate.auto`; each emits a `route_decision` artefact |
 | `modes/1.0`           | Mode handling at `task.create`; `trial` mode forces `review_required`; `control.set_mode_ceiling` shared with control/1.0 |
-| `security-signed/1.0` | `participant.rotate_key`, `participant.revoke_key`; top-level `sig` field verified at dispatch when `options.require_signatures=True` |
+| `security-signed/1.0` | `participant.rotate_key`, `participant.revoke_key`; top-level `sig` field verified at dispatch where the workspace advertises the profile or `options.require_signatures=True`, under the workspace's `signature_policy` |
 | `audit-scitt/1.0`     | `audit.submit_to_scitt`, `audit.verify_receipt`, `audit.verify_chain`; SCITT statements assembled and passed to a deployment-supplied submitter; local prev-hash chain linkage retained |
 | `identity-oidc/1.0`   | `participant.join` binding via `options.verify_oidc_token`; `cnf.jwk` pinning, step-up auth via `enforce_step_up=True` |
 | `identity-vc/1.0`     | `participant.join` binding via `options.verify_vc`; holder-key pinning |
@@ -181,6 +181,14 @@ To require signatures on every envelope:
 ```python
 coord = Coordinator(CoordinatorOptions(require_signatures=True))
 ```
+
+A workspace also requires signatures when it advertises
+`security-signed/1.0`, and cannot stop advertising it once it does. Its
+`signature_policy`, a `workspace.create` param that falls back to the
+`signature_policy` option, is `"all"` by default; under `"humans"` an
+unsigned call is taken from a member that is not human, so an agent on the
+server's own transport works unsigned, and every person's decision is
+still signed.
 
 Each participant registers one or more JWKs at `participant.join` via
 `jwks: {keys: [...]}`. Senders sign the JCS canonicalisation of the

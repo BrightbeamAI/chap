@@ -81,7 +81,8 @@ CHAP conformance.
 ### C6 · Profile discovery
 
 - [ ] `workspace.describe`'s `profiles` array lists every active profile as `<name>/<version>`.
-- [ ] `core/1.0` is in the default profile set, and `workspace.set_profiles` adds it when missing. `workspace.create` advertises an explicit `profiles` list as given, adding `security-signed/1.0` or `identity-oidc/1.0` when the Coordinator enforces it.
+- [ ] `core/1.0` is in the default profile set, and `workspace.set_profiles` adds it when missing. `workspace.create` advertises an explicit `profiles` list as given, adding `security-signed/1.0` or `identity-oidc/1.0` when the Coordinator enforces it, and refuses `identity-oidc/1.0` with `-32602` where no token verifier is configured.
+- [ ] A workspace advertising `security-signed/1.0` verifies signatures whatever the Coordinator's options, under its `signature_policy` (`"all"` or `"humans"`), and `workspace.set_profiles` that would drop the profile is refused with `-32011`.
 
 ---
 

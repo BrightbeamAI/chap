@@ -41,6 +41,7 @@ import type {
   Member,
   Mode,
   OverrideArtefact,
+  SignaturePolicy,
   ParticipantUri,
   SnapshotArtefact,
   Task,
@@ -136,7 +137,17 @@ export interface CoordinatorOptions {
   deterministicIds?: boolean;
   deterministicClock?: boolean;
   enableChain?: boolean;
+  /**
+   * Require signatures on every workspace, as advertising
+   * `security-signed/1.0` does on one.
+   */
   requireSignatures?: boolean;
+  /**
+   * The signature policy of a workspace whose `workspace.create` names none:
+   * "all" (the default) verifies every call, and "humans" takes an unsigned
+   * call from a member that is not human.
+   */
+  signaturePolicy?: SignaturePolicy;
   enforceStepUp?: boolean;
   requireReadMembership?: boolean;
   /** Largest envelope accepted (default 1 MiB), published in the descriptor. */
@@ -771,6 +782,7 @@ export class Coordinator {
       routing_policy_uri: ws.routing_policy_uri,
       step_up_window_sec: ws.step_up_window_sec,
       min_acr:      ws.min_acr,
+      signature_policy: ws.signature_policy,
       chain_head:   ws.chain_head,
       chain_enabled: ws.chain_enabled,
     };
@@ -833,6 +845,8 @@ export class Coordinator {
       routing_policy_uri: w.routing_policy_uri as string | undefined,
       step_up_window_sec: (w.step_up_window_sec as number) ?? 300,
       min_acr: w.min_acr as string | undefined,
+      // A workspace written before the policy existed verified every call.
+      signature_policy: w.signature_policy === "humans" ? "humans" : "all",
       members: this.newMap(),
       tasks: this.newMap(),
       overrides: this.newMap(),
@@ -1005,11 +1019,20 @@ export class Coordinator {
       }
     }
 
-    // security-signed/1.0: verify top-level sig if required.
-    // participant.join and workspace.create are bootstrap operations that
-    // run before any signing key is registered for the actor, so they cannot
-    // be signature-verified; every other method must verify.
-    if (this.options.requireSignatures && method !== "participant.join" && method !== "workspace.create") {
+    // security-signed/1.0: verify the top-level sig where the workspace
+    // requires signatures, because it advertises the profile or this
+    // coordinator is configured to require them. participant.join and
+    // workspace.create are bootstrap operations that run before any signing
+    // key is registered for the actor, so they cannot be signature-verified.
+    // Under the "humans" policy a call that carries no signature is taken
+    // from a member that is not human, such as an agent on the server's own
+    // transport; every other call must verify.
+    const target = typeof params.workspace === "string" ? this.workspaces.get(params.workspace) : undefined;
+    if ((this.options.requireSignatures || (target && advertises(target, "security-signed")))
+        && method !== "participant.join" && method !== "workspace.create"
+        && !(target?.signature_policy === "humans" && !isSigned(envelope)
+             && rawMember(target, params.from) !== undefined
+             && rawMember(target, params.from)!.type !== "human")) {
       const sigErr = this.verifySignature(envelope);
       if (sigErr) return reply(envelope, { error: sigErr });
       if (method === "participant.rotate_key") {
@@ -1383,32 +1406,30 @@ export class Coordinator {
         return { error: rpcError(E.PARAMS, `${name} must be shadow, trial or production`) };
       }
     }
+    const policy = p.signature_policy ?? this.options.signaturePolicy ?? "all";
+    if (policy !== "all" && policy !== "humans") {
+      return { error: rpcError(E.PARAMS, "signature_policy must be all or humans") };
+    }
     const id = (p.workspace as string) || this.ids.workspaceId();
     if (this.workspaces.has(id)) return { error: rpcError(E.PARAMS, `workspace already exists: ${id}`) };
     const profiles: string[] = Array.isArray(p.profiles) ? [...(p.profiles as string[])] : [...(this.options.defaultProfiles ?? ["core/1.0", "review/1.0"])];
 
-    // SPECIFICATION 15.4: the descriptor and the enforcement agree, and the
-    // workspace boundary is where a disagreement surfaces.
-    //
-    // Advertising a security profile does not turn its enforcement on: that
-    // would break every workspace advertising it today without signing, and
-    // break it at the second call rather than at configuration time. The rule
-    // runs the other way, where it costs nothing. Enforcement on adds the
-    // profile, so the descriptor never understates what is enforced; the
-    // profile advertised with enforcement off is a configuration error.
-    for (const [profile, enforced, option] of [
-      ["security-signed/1.0", !!this.options.requireSignatures, "requireSignatures"],
-      ["identity-oidc/1.0", this.options.verifyOidcToken !== undefined, "verifyOidcToken"],
-    ] as [string, boolean, string][]) {
-      const name = profile.split("/")[0];
-      const advertised = profiles.some(x => x === name || x.startsWith(name + "/"));
-      if (enforced && !advertised) profiles.push(profile);
-      else if (advertised && !enforced) {
-        return { error: rpcError(E.PARAMS,
-          `${profile} is advertised but ${option} is not configured. ` +
-          `A workspace that advertises it and does not enforce it ` +
-          `describes a guarantee it does not give.`) };
-      }
+    // SPECIFICATION 6.5: the descriptor and the enforcement agree. Signatures
+    // are enforced wherever security-signed/1.0 is advertised, so enforcing
+    // them through the option adds the profile, and advertising it needs
+    // nothing configured. A token verifier cannot follow the profile, so
+    // identity-oidc/1.0 advertised with none configured describes a
+    // guarantee the workspace does not give, and is refused here, where the
+    // misconfiguration surfaces at once.
+    const signed = profiles.some(x => x === "security-signed" || x.startsWith("security-signed/"));
+    if (this.options.requireSignatures && !signed) profiles.push("security-signed/1.0");
+    const oidc = profiles.some(x => x === "identity-oidc" || x.startsWith("identity-oidc/"));
+    if (this.options.verifyOidcToken !== undefined && !oidc) profiles.push("identity-oidc/1.0");
+    else if (oidc && this.options.verifyOidcToken === undefined) {
+      return { error: rpcError(E.PARAMS,
+        "identity-oidc/1.0 is advertised but no token verifier is configured. " +
+        "A workspace that advertises it and does not enforce it " +
+        "describes a guarantee it does not give.") };
     }
 
     const chainEnabled = profiles.includes("audit-scitt/1.0") || !!this.options.enableChain;
@@ -1422,6 +1443,7 @@ export class Coordinator {
       routing_policy_uri: p.routing_policy_uri as string | undefined,
       step_up_window_sec: (p.step_up_window_sec as number | null | undefined) ?? 300,
       min_acr: p.min_acr as string | undefined,
+      signature_policy: policy,
       members: this.newMap(),
       tasks: this.newMap(),
       overrides: this.newMap(),
@@ -1458,6 +1480,7 @@ export class Coordinator {
       mode_ceiling: ws.mode_ceiling,
       max_envelope_bytes: this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES,
       step_up_window_sec: ws.step_up_window_sec,
+      signature_policy: ws.signature_policy,
       profiles: ws.profiles,
       members: Array.from(rawValues(ws.members)).map(memberToDict),
       audit_count: ws.audit.length,
@@ -1484,7 +1507,15 @@ export class Coordinator {
     if (ws.members.get(p.from as string)!.role !== "admin") {
       return { error: rpcError(E.NOT_AUTHORISED, "workspace.set_profiles requires the admin role") };
     }
+    // A workspace that requires signatures keeps requiring them. Removing the
+    // profile would turn the checks off for every call after this one, and
+    // the calls the log holds from then on would carry no assurance of who
+    // sent them.
     const newProfiles = [...(p.profiles as string[])];
+    if (advertises(ws, "security-signed")
+        && !newProfiles.some(x => x === "security-signed" || x.startsWith("security-signed/"))) {
+      return { error: rpcError(E.NOT_AUTHORISED, "security-signed/1.0 cannot be removed once advertised") };
+    }
     if (!newProfiles.some(pr => pr.startsWith("core/"))) newProfiles.push("core/1.0");
     ws.profiles = newProfiles;
     if (newProfiles.includes("audit-scitt/1.0") && !ws.chain_enabled) {

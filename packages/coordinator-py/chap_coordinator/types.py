@@ -612,6 +612,9 @@ class Workspace:
     routing_policy_uri: str | None = None
     step_up_window_sec: int = 300  # identity-oidc/1.0 step-up window
     min_acr: str | None = None  # required OIDC acr for privileged methods
+    # Which calls are verified where the workspace requires signatures: "all",
+    # or "humans", which takes an unsigned call from a member that is not human.
+    signature_policy: str = "all"
     members: dict[str, Member] = field(default_factory=dict)
     tasks: dict[str, Task] = field(default_factory=dict)
     overrides: dict[str, OverrideArtefact] = field(default_factory=dict)

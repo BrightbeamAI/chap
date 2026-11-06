@@ -32,6 +32,33 @@ A single new field on every envelope except `participant.join` and
 The `sig` field is at the top level of the envelope (outside
 `params`) so it can be elided during canonicalisation.
 
+### Where signatures are required
+
+A workspace requires signatures when it advertises this profile, or when
+its Coordinator is configured to require them (`requireSignatures`,
+`require_signatures`). Advertising the profile is enough: a workspace an
+admin moved onto it with `workspace.set_profiles`, or one whose store a
+Coordinator without the option reopened, verifies every call as one
+created under the option does. A `workspace.set_profiles` that would stop
+advertising the profile MUST be refused with `-32011`.
+
+The workspace's `signature_policy`, a `workspace.create` param that falls
+back to the Coordinator's `signaturePolicy` or `signature_policy` option,
+says which calls are verified, and `workspace.describe` returns it:
+
+| Policy | Verified |
+|---|---|
+| `"all"` (the default) | Every call except `workspace.create` and `participant.join`. |
+| `"humans"` | The same, except a call that carries no `sig` and names in `from` an existing member whose `type` is not `human`. |
+
+Under `"humans"` the people who decide sign, and an agent on the server's
+own transport, such as `/mcp`, works unsigned. A signed call is verified
+whoever sends it, and a call from a sender who is not a member is
+verified, so a person cannot be impersonated by leaving a signature off,
+and an unsigned call never decides a review that requires a person (review
+profile §3.1). The policy relies on the transport to establish who the
+agent is.
+
 ---
 
 ## 2. Standards reused

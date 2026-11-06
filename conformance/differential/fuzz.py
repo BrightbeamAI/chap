@@ -82,7 +82,7 @@ AGENTS = ["agent:b", "agent:d"]
 # compared like any other call's.
 METHOD_PARAMS: dict[str, tuple[str, ...]] = {
     "workspace.create": ("profiles", "mode", "mode_ceiling", "routing_policy_uri",
-                         "step_up_window_sec", "min_acr"),
+                         "step_up_window_sec", "min_acr", "signature_policy"),
     "workspace.describe": (),
     "workspace.set_profiles": ("profiles",),
     "participant.join": ("type", "role", "display_name", "capabilities", "scopes", "jwks",
@@ -757,7 +757,7 @@ def _project_workspace(coord: Coordinator, workspace: str) -> dict | None:
     data = json.loads(json.dumps(asdict(ws), default=str))
     out: dict = {k: data[k] for k in (
         "id", "created", "state", "profiles", "mode", "mode_ceiling",
-        "routing_policy_uri", "step_up_window_sec", "min_acr",
+        "routing_policy_uri", "step_up_window_sec", "min_acr", "signature_policy",
         "chain_head", "chain_enabled")}
     out["members"] = sorted(data["members"].values(), key=lambda m: str(m.get("uri")))
     tasks = []

@@ -42,6 +42,12 @@
       "default": 300,
       "description": "Seconds within which a privileged operation requires recent auth_time."
     },
+    "signature_policy": {
+      "type": "string",
+      "enum": ["all", "humans"],
+      "default": "all",
+      "description": "Which calls are verified where the workspace requires signatures (SPECIFICATION 5.2): every call, or every call except an unsigned one from a member whose type is not human."
+    },
     "max_envelope_bytes": {
       "type": "integer",
       "minimum": 1024,

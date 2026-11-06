@@ -26,6 +26,12 @@ export interface Envelope {
 }
 
 export type Mode = "shadow" | "trial" | "production";
+
+/**
+ * Which calls a workspace that requires signatures verifies: every call, or
+ * every call except an unsigned one from a member that is not human.
+ */
+export type SignaturePolicy = "all" | "humans";
 export type WorkspaceState = "active" | "paused" | "closed";
 export type PauseScope = "task" | "participant" | "workspace";
 
@@ -365,6 +371,8 @@ export interface Workspace {
   routing_policy_uri?: string;
   step_up_window_sec: number;
   min_acr?: string;
+  /** Which calls are verified where the workspace requires signatures. */
+  signature_policy: SignaturePolicy;
   members:         Map<ParticipantUri, Member>;
   tasks:           Map<TaskId, Task>;
   overrides:       Map<ArtefactId, OverrideArtefact>;

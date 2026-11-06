@@ -133,16 +133,19 @@ test("signing on adds the profile it enforces", () => {
   assert.ok((c.workspaces.get("w") as any).profiles.includes("security-signed/1.0"));
 });
 
-test("advertising a security profile without enforcing it is refused", () => {
+test("advertising security-signed turns its enforcement on", () => {
   const c = new Coordinator({} as never);
-  const refused = c.dispatch({ jsonrpc: "2.0", id: "c", method: "workspace.create",
+  const created = c.dispatch({ jsonrpc: "2.0", id: "c", method: "workspace.create",
     params: { workspace: "w", profiles: ["core/1.0", "security-signed/1.0"] } } as never) as any;
-  assert.equal(refused.error.code, -32602);
-  assert.match(refused.error.message, /requireSignatures/);
-  assert.equal(c.workspaces.has("w"), false);
+  assert.equal(created.error, undefined);
+  c.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
+               params: { workspace: "w", from: "agent:b", type: "agent" } } as never);
+  const unsigned = c.dispatch({ jsonrpc: "2.0", id: "t", method: "task.create",
+    params: { workspace: "w", from: "agent:b", kind: "k", input: {}, assignee: "agent:b" } } as never) as any;
+  assert.equal(unsigned.error.code, -32070);
 });
 
-test("the same rule holds for identity-oidc", () => {
+test("identity-oidc advertised with no verifier is refused", () => {
   const enforcing = new Coordinator({ verifyOidcToken: () => ({}) } as never);
   enforcing.dispatch({ jsonrpc: "2.0", id: "c", method: "workspace.create",
                        params: { workspace: "w", profiles: ["core/1.0"] } } as never);

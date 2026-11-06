@@ -162,7 +162,13 @@ class CoordinatorOptions:
     """Compute prev_hash on every audit entry (audit-scitt/1.0 supplement)."""
 
     require_signatures: bool = False
-    """Reject envelopes lacking a verifiable signature (security-signed/1.0)."""
+    """Require signatures on every workspace, as advertising
+    security-signed/1.0 does on one."""
+
+    signature_policy: str = "all"
+    """The signature policy of a workspace whose workspace.create names none:
+    "all" verifies every call, and "humans" takes an unsigned call from a
+    member that is not human."""
 
     enforce_step_up: bool = False
     """Reject privileged methods when OIDC auth_time is stale."""
@@ -355,6 +361,9 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
                      "route_decisions", "audit"}
     }
     ws = Workspace(**ws_kwargs)
+    # A workspace written before the policy existed verified every call.
+    if ws.signature_policy != "humans":
+        ws.signature_policy = "all"
     ws.members = members
     ws.tasks = tasks
     ws.overrides = overrides
@@ -702,12 +711,22 @@ class Coordinator:
                     f"Accepted at seq {accepted}; a signed request takes effect once",
                     data={"accepted_at_seq": accepted}))
 
-        # security-signed/1.0: verify top-level `sig` field if required.
-        # participant.join and workspace.create are bootstrap operations that
-        # run before any signing key is registered for the actor, so they
-        # cannot be signature-verified; every other method must verify.
-        if (self.options.require_signatures
-                and method not in ("participant.join", "workspace.create")):
+        # security-signed/1.0: verify the top-level `sig` where the workspace
+        # requires signatures, because it advertises the profile or this
+        # coordinator is configured to require them. participant.join and
+        # workspace.create are bootstrap operations that run before any
+        # signing key is registered for the actor, so they cannot be
+        # signature-verified. Under the "humans" policy a call that carries
+        # no signature is taken from a member that is not human, such as an
+        # agent on the server's own transport; every other call must verify.
+        sender = _raw_member(target, params.get("from")) if target is not None else None
+        exempt = (target is not None and target.signature_policy == "humans"
+                  and not is_signed(envelope) and sender is not None
+                  and sender.type != "human")
+        if ((self.options.require_signatures
+             or (target is not None and target.has_profile("security-signed")))
+                and method not in ("participant.join", "workspace.create")
+                and not exempt):
             sig_err = self._verify_signature(envelope)
             if sig_err:
                 return make_response(env_id, error=sig_err)
@@ -1279,35 +1298,36 @@ class Coordinator:
             if p.get(name) is not None and p[name] not in _MODE_ORDER:
                 return {"error": rpc_error(
                     E.PARAMS, f"{name} must be shadow, trial or production")}
+        policy = p.get("signature_policy")
+        if policy is None:
+            policy = self.options.signature_policy
+        if policy not in ("all", "humans"):
+            return {"error": rpc_error(E.PARAMS, "signature_policy must be all or humans")}
         ws_id = p.get("workspace") or self.ids.workspace_id()
         if ws_id in self.workspaces:
             return {"error": rpc_error(E.PARAMS, f"workspace already exists: {ws_id}")}
         requested = p.get("profiles")
         profiles = list(requested if requested is not None else self.options.default_profiles)
 
-        # SPECIFICATION 15.4: the descriptor and the enforcement agree, and the
-        # workspace boundary is where a disagreement surfaces.
-        #
-        # Advertising a security profile does not turn its enforcement on: that
-        # would break every workspace advertising it today without signing, and
-        # break it at the second call rather than at configuration time. The
-        # rule runs the other way, where it costs nothing. Enforcement on adds
-        # the profile, so the descriptor never understates what is enforced;
-        # the profile advertised with enforcement off is a configuration error.
-        for profile, enforced, option in (
-            ("security-signed/1.0", self.options.require_signatures, "require_signatures"),
-            ("identity-oidc/1.0", self.options.verify_oidc_token is not None, "verify_oidc_token"),
-        ):
-            name = profile.split("/")[0]
-            advertised = any(x == name or x.startswith(name + "/") for x in profiles)
-            if enforced and not advertised:
-                profiles.append(profile)
-            elif advertised and not enforced:
-                return {"error": rpc_error(
-                    E.PARAMS,
-                    f"{profile} is advertised but {option} is not configured. "
-                    f"A workspace that advertises it and does not enforce it "
-                    f"describes a guarantee it does not give.")}
+        # SPECIFICATION 6.5: the descriptor and the enforcement agree.
+        # Signatures are enforced wherever security-signed/1.0 is advertised,
+        # so enforcing them through the option adds the profile, and
+        # advertising it needs nothing configured. A token verifier cannot
+        # follow the profile, so identity-oidc/1.0 advertised with none
+        # configured describes a guarantee the workspace does not give, and is
+        # refused here, where the misconfiguration surfaces at once.
+        signed = any(x == "security-signed" or x.startswith("security-signed/") for x in profiles)
+        if self.options.require_signatures and not signed:
+            profiles.append("security-signed/1.0")
+        oidc = any(x == "identity-oidc" or x.startswith("identity-oidc/") for x in profiles)
+        if self.options.verify_oidc_token is not None and not oidc:
+            profiles.append("identity-oidc/1.0")
+        elif oidc and self.options.verify_oidc_token is None:
+            return {"error": rpc_error(
+                E.PARAMS,
+                "identity-oidc/1.0 is advertised but no token verifier is configured. "
+                "A workspace that advertises it and does not enforce it "
+                "describes a guarantee it does not give.")}
 
         ws = Workspace(
             id=ws_id,
@@ -1320,6 +1340,7 @@ class Coordinator:
             step_up_window_sec=(300 if p.get("step_up_window_sec") is None
                                 else int(p["step_up_window_sec"])),
             min_acr=p.get("min_acr"),
+            signature_policy=policy,
         )
         if "audit-scitt/1.0" in profiles or self.options.enable_chain:
             ws.chain_enabled = True
@@ -1349,6 +1370,7 @@ class Coordinator:
             "mode_ceiling": ws.mode_ceiling,
             "max_envelope_bytes": self.options.max_envelope_bytes,
             "step_up_window_sec": ws.step_up_window_sec,
+            "signature_policy": ws.signature_policy,
             "profiles": ws.profiles,
             "members": [m.to_dict() for m in dict.values(ws.members)],
             "audit_count": len(ws.audit),
@@ -1380,7 +1402,15 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_AUTHORISED,
                 "workspace.set_profiles requires the admin role")}
+        # A workspace that requires signatures keeps requiring them. Removing
+        # the profile would turn the checks off for every call after this
+        # one, and the calls the log holds from then on would carry no
+        # assurance of who sent them.
         new_profiles = list(p["profiles"])
+        if ws.has_profile("security-signed") and not any(
+                x == "security-signed" or x.startswith("security-signed/") for x in new_profiles):
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED, "security-signed/1.0 cannot be removed once advertised")}
         if not any(prof.startswith("core/") for prof in new_profiles):
             new_profiles.append("core/1.0")
         ws.profiles = new_profiles

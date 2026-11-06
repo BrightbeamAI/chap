@@ -133,17 +133,21 @@ def test_signing_on_adds_the_profile_it_enforces():
     assert "security-signed/1.0" in coord.get_workspace("w").profiles
 
 
-def test_advertising_a_security_profile_without_enforcing_it_is_refused():
+def test_advertising_security_signed_turns_its_enforcement_on():
     coord = Coordinator(CoordinatorOptions())
-    refused = coord.dispatch({"jsonrpc": "2.0", "id": "c", "method": "workspace.create",
+    created = coord.dispatch({"jsonrpc": "2.0", "id": "c", "method": "workspace.create",
                               "params": {"workspace": "w",
                                          "profiles": ["core/1.0", "security-signed/1.0"]}})
-    assert refused["error"]["code"] == -32602
-    assert "require_signatures" in refused["error"]["message"]
-    assert "w" not in coord.workspaces
+    assert "error" not in created
+    coord.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
+                    "params": {"workspace": "w", "from": "agent:b", "type": "agent"}})
+    unsigned = coord.dispatch({"jsonrpc": "2.0", "id": "t", "method": "task.create",
+                               "params": {"workspace": "w", "from": "agent:b", "kind": "k",
+                                          "input": {}, "assignee": "agent:b"}})
+    assert unsigned["error"]["code"] == -32070
 
 
-def test_the_same_rule_holds_for_identity_oidc():
+def test_identity_oidc_advertised_with_no_verifier_is_refused():
     enforcing = Coordinator(CoordinatorOptions(verify_oidc_token=lambda token: {}))
     enforcing.dispatch({"jsonrpc": "2.0", "id": "c", "method": "workspace.create",
                         "params": {"workspace": "w", "profiles": ["core/1.0"]}})

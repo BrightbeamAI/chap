@@ -342,10 +342,22 @@ in human-readable UI.
 > covers, for the whole specification. The procedure below signs the
 > envelope of §4.1.
 
-Signing is the `security-signed/1.0` profile (§6.5). A Coordinator that
-requires signatures MUST verify one on every call except
-`workspace.create` and `participant.join`, which run before the sender
-has a registered key. The signature algorithm is **Ed25519**
+Signing is the `security-signed/1.0` profile (§6.5). A workspace requires
+signatures when it advertises that profile, or when its Coordinator is
+configured to require them, and a Coordinator MUST then verify a signature
+on every call except `workspace.create` and `participant.join`, which run
+before the sender has a registered key. A workspace's `signature_policy`,
+set at `workspace.create` and `"all"` by default, says which calls:
+
+- `"all"`: every call.
+- `"humans"`: every call except one that carries no signature and names in
+  `from` an existing member whose `type` is not `human`. A signed call is
+  verified whoever sends it. This is how an agent on the server's own
+  transport, such as `/mcp`, works unsigned, and every decision a person
+  makes is still signed. It is safe only where the transport itself
+  establishes who the agent is.
+
+The signature algorithm is **Ed25519**
 ([RFC 8032]). The signed input is the **JCS canonicalisation**
 ([RFC 8785]) of the envelope **with the `evidence.sig` field removed**
 but `evidence.prev_hash` retained.
@@ -522,6 +534,7 @@ after `closed`, is likewise specified and not yet built.
   "mode_ceiling": "production",
   "max_envelope_bytes": 1048576,
   "step_up_window_sec": 300,
+  "signature_policy": "all",
   "profiles": ["core/1.0", "review/1.0", "audit-scitt/1.0"],
   "members": [
     { "uri": "human:alice@example.org", "type": "human",
@@ -537,9 +550,10 @@ after `closed`, is likewise specified and not yet built.
 ```
 
 `evidence_head` appears only where the workspace keeps a chain, and
-`routing_policy_uri` only where set. Member entries add `display_name`,
-`capabilities`, `scopes`, `jwks`, `key_history`, `paused`, `oidc_sub`
-and `vc_holder` when set.
+`routing_policy_uri` only where set. `signature_policy` is always present,
+and matters where the workspace requires signatures (§5.2). Member entries
+add `display_name`, `capabilities`, `scopes`, `jwks`, `key_history`,
+`paused`, `oidc_sub` and `vc_holder` when set.
 
 ### 6.3 Membership and roles
 
@@ -639,8 +653,8 @@ entry means. §15.4's dispatch rule follows from it.
 | `handoff/1.0` | Admits `handoff.propose`, `handoff.accept` and `handoff.decline`. |
 | `routing/1.0` | Admits `task.route`, `review.depth` and `escalate.auto`. |
 | `audit-scitt/1.0` | Turns the hash-linked chain on, and admits `audit.submit_to_scitt`. The reads are never gated and are listed below. |
-| `security-signed/1.0` | States that every accepted call except `workspace.create` and `participant.join` carries a verified signature. A Coordinator configured to require signatures MUST add this entry at `workspace.create`, and MUST refuse a `workspace.create` carrying it where signatures are not required; `workspace.set_profiles` repeats neither check. |
-| `identity-oidc/1.0` | States that a token verifier is configured, under the same rules as `security-signed/1.0`. Step-up freshness is a separate option. |
+| `security-signed/1.0` | Turns signature checks on (§5.2): every accepted call except `workspace.create` and `participant.join` carries a verified signature, apart from the unsigned calls of members who are not human under the `"humans"` policy. A Coordinator configured to require signatures MUST add this entry at `workspace.create`. Once advertised it MUST NOT be removed: `workspace.set_profiles` that leaves it out is refused with `-32011`. |
+| `identity-oidc/1.0` | States that a token verifier is configured. A Coordinator configured with one MUST add this entry at `workspace.create`, and MUST refuse a `workspace.create` carrying it where none is configured; `workspace.set_profiles` repeats neither check. Step-up freshness is a separate option. |
 | `identity-vc/1.0` | Informational: no reference checks it against its configuration. |
 
 Two sets of methods are never refused for want of an entry, whichever profile
@@ -656,12 +670,15 @@ owns them:
   deployment. A conformant Coordinator answers them whatever the workspace
   advertises.
 
-Advertising a security profile does not turn its enforcement on. The rule
-runs one way only: what is enforced MUST be advertised. A deployment advertising
-`security-signed/1.0` today without signing would otherwise break at its second
-call rather than at configuration time, and the descriptor understating
-enforcement is the failure that matters, because a relying party reads the
-descriptor to decide what the chain is worth.
+What is enforced MUST be advertised, because a relying party reads the
+descriptor to decide what the chain is worth. Advertising `security-signed/1.0`
+also turns its checks on, so the descriptor never states a guarantee the
+Coordinator does not keep: a store reopened by a Coordinator not configured to
+require signatures, and a workspace an admin moved onto the profile with
+`workspace.set_profiles`, keep verifying. A workspace cannot move off it, for
+the same reason. `identity-oidc/1.0` needs a token verifier the Coordinator is
+configured with, so a `workspace.create` advertising it where none is
+configured MUST be refused with `-32602`.
 
 ---
 
@@ -1246,7 +1263,8 @@ with the first that fails:
    `-32601`, `-32602`).
 2. Whether it is a signed copy of a call on the log, a recorded refusal or
    an accepted call (below).
-3. The signature, where signatures are required (`-32070` to `-32073`).
+3. The signature, where the workspace requires signatures under its
+   `signature_policy` (§5.2) (`-32070` to `-32073`).
 4. Step-up freshness for a privileged method, where it is enforced
    (`-32402`).
 5. The profile gate (§15.4).
@@ -1829,8 +1847,8 @@ advertises, or the deployment.
 3. Refuse a method whose owning profile the workspace does not advertise
    (§15.4). At `workspace.create`, add `security-signed/1.0` or
    `identity-oidc/1.0` where the Coordinator enforces it and the request
-   omits it, and refuse a request advertising either while the
-   Coordinator does not enforce it (§6.5).
+   omits it, and refuse a request advertising `identity-oidc/1.0` where no
+   token verifier is configured (§6.5).
 4. Enforce the authorisation the workspace holds: membership where a profile
    requires it, and the role checks the method defines. A `required_scope` is
    declared per method in the catalogue and is not yet enforced by either
@@ -1843,9 +1861,14 @@ advertises, or the deployment.
 `workspace.create`:**
 
 7. `security-signed/1.0`: verify every signature before accepting a message
-   into the chain, and refuse a message that does not verify.
-   `workspace.create` and `participant.join` are exempt, since they run
-   before the sender has a registered key.
+   into the chain, and refuse a message that does not verify, wherever the
+   workspace advertises the profile or the Coordinator is configured to
+   require signatures. `workspace.create` and `participant.join` are exempt,
+   since they run before the sender has a registered key, and so are the
+   unsigned calls of members who are not human where the workspace's
+   `signature_policy` is `"humans"` (§5.2). Refuse a
+   `workspace.set_profiles` that would stop advertising the profile with
+   `-32011`.
 8. `identity-oidc/1.0`: verify the OIDC token a `participant.join`
    presents, refuse one that does not verify (`-32403`), refuse one that
    does not bind to the joining participant (`-32404`, §5.4), and pin
@@ -1917,10 +1940,12 @@ support, hoping to suppress a defensive profile (e.g.
 `security-signed/1.0` or `audit-scitt/1.0`). *Countermeasures:* the
 advertised set is on the log: the `workspace.create` call sets the
 first list, and each change is a recorded `workspace.set_profiles`
-call, which needs the admin role. `workspace.create` is never
-signature-checked, and `workspace.set_profiles` can narrow or widen the
-set without the checks §6.5 applies at creation, so a relying party
-SHOULD read the set's history from the log. Deployments concerned about
+call, which needs the admin role. A workspace that advertises
+`security-signed/1.0` cannot stop: the call that would remove it is
+refused with `-32011`, and recorded. `workspace.create` is never
+signature-checked, and `workspace.set_profiles` can otherwise narrow or
+widen the set, so a relying party SHOULD read the set's history from the
+log. Deployments concerned about
 downgrade SHOULD treat the profile set as policy: any participant whose
 `participant.join` declares a lower profile set than the workspace's
 mandatory minimum MUST be refused.

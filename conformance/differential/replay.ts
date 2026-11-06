@@ -42,7 +42,8 @@ function projectWorkspace(coord: Coordinator, workspace: string): unknown {
     id: ws.id, created: ws.created, state: ws.state, profiles: ws.profiles,
     mode: ws.mode, mode_ceiling: ws.mode_ceiling,
     routing_policy_uri: ws.routing_policy_uri, step_up_window_sec: ws.step_up_window_sec,
-    min_acr: ws.min_acr, chain_head: ws.chain_head, chain_enabled: ws.chain_enabled,
+    min_acr: ws.min_acr, signature_policy: ws.signature_policy,
+    chain_head: ws.chain_head, chain_enabled: ws.chain_enabled,
   };
   out.members = values(ws.members).sort(byId("uri"));
   out.tasks = values(ws.tasks).map((t) => {

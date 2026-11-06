@@ -1706,6 +1706,7 @@
           "mode_ceiling": "production",
           "max_envelope_bytes": 1048576,
           "step_up_window_sec": 300,
+          "signature_policy": "all",
           "profiles": [
             "core/1.0",
             "review/1.0",
