@@ -32,9 +32,10 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 from starlette.testclient import TestClient
 
+from chap_coordinator.client import HttpCoordinator, Participant, Signer
 from chap_coordinator.server import (
     ANALYTICS_CSP, DESK_CSP, MAX_BODY_BYTES, ChapDesk, load_config, make_coordinator, make_server,
-    read_desk, serve,
+    public_config, read_desk, serve,
 )
 
 HUMAN = "human:you@local"
@@ -51,6 +52,29 @@ def write_config(directory: Path, **fields) -> Path:
     path = directory / "chap.config.json"
     path.write_text(json.dumps(config), encoding="utf-8")
     return path
+
+
+@pytest.fixture
+def desk_of(tmp_path, monkeypatch):
+    """Start the standard library server on a free port, with the store in
+    memory and these fields in chap.config.json; returns its port."""
+    for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS"):
+        monkeypatch.delenv(name, raising=False)
+    servers = []
+
+    def start(**fields) -> int:
+        config = load_config(write_config(tmp_path / f"project{len(servers)}", **fields))
+        server = make_server(config, make_coordinator(config))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        servers.append(server)
+        return server.server_port
+
+    try:
+        yield start
+    finally:
+        for server in servers:
+            server.shutdown()
+            server.server_close()
 
 
 @pytest.fixture
@@ -137,9 +161,9 @@ def test_a_leading_tilde_is_the_home_directory(tmp_path, monkeypatch):
 @pytest.mark.parametrize("in_file, in_env, profiles, expected", [
     (True, None, [], (True, "all")),
     ("humans", None, [], (True, "humans")),
-    (False, None, [], (False, "all")),
+    (False, None, [], (False, None)),
     (False, "humans", [], (True, "humans")),
-    (True, "0", [], (False, "all")),
+    (True, "0", [], (False, None)),
     ("humans", "true", [], (True, "all")),
     (False, None, ["security-signed/1.0"], (True, "all")),
 ])
@@ -160,6 +184,77 @@ def test_a_signature_setting_that_says_neither_is_refused(tmp_path, monkeypatch)
     monkeypatch.setenv("CHAP_REQUIRE_SIGNATURES", "yes")
     with pytest.raises(ValueError, match="CHAP_REQUIRE_SIGNATURES is 'yes'; it takes 1, true, humans, 0 or false"):
         load_config(write_config(tmp_path, require_signatures=True))
+
+
+@pytest.mark.parametrize("setting, joined, policy", [
+    ("humans", {AGENT}, "humans"),
+    (True, set(), "all"),
+    (False, {HUMAN, AGENT}, None),
+])
+def test_the_signature_policy_reaches_the_coordinator_and_decides_who_is_joined(tmp_path, monkeypatch, setting,
+                                                                                 joined, policy):
+    monkeypatch.delenv("CHAP_REQUIRE_SIGNATURES", raising=False)
+    config = load_config(write_config(tmp_path, require_signatures=setting))
+    coord = make_coordinator(config)
+    ws = coord.get_workspace("wsp_test")
+    # The agent calls unsigned under "humans", as a member that is not a
+    # person, so it is joined at start; a person joins from the desk with
+    # the key the browser makes, and where every call is signed nobody is
+    # joined for them.
+    assert set(ws.members) == joined
+    assert ws.signature_policy == (policy or "all")
+    assert ("security-signed/1.0" in ws.profiles) is (policy is not None)
+    public = public_config(config)
+    assert (public["require_signatures"], public["signature_policy"]) == (policy is not None, policy)
+
+
+def test_under_humans_the_agent_calls_unsigned_and_a_person_does_not(desk_of):
+    port = desk_of(require_signatures="humans")
+    # The agent, joined at start, calls unsigned.
+    task = call(port, "task.create", **{"from": AGENT}, kind="draft", assignee=AGENT, input={},
+                review_required=True)["result"]
+    # A person's call is signed, whether or not they have joined.
+    stranger = call(port, "task.create", **{"from": "human:stranger@local"}, kind="draft", input={})
+    assert stranger["error"]["code"] == -32070
+    assert call(port, "participant.join", **{"from": HUMAN}, type="human", role="reviewer")["result"]["joined"]
+    assert call(port, "task.complete", **{"from": AGENT}, task_id=task["task_id"],
+                output={"body": "hello"})["result"]["state"] == "review_requested"
+    assert call(port, "decide.approve", **{"from": HUMAN}, task_id=task["task_id"])["error"]["code"] == -32070
+
+
+def test_signed_the_persons_decision_is_accepted_under_humans(desk_of, tmp_path):
+    port = desk_of(require_signatures="humans")
+    person = Participant(HttpCoordinator(f"http://127.0.0.1:{port}/chap"), "wsp_test", HUMAN,
+                         Signer.load_or_create(HUMAN, tmp_path / "desk-keys"))
+    person.join("human", "reviewer")
+    task = call(port, "task.create", **{"from": AGENT}, kind="draft", assignee=AGENT, input={},
+                review_required=True)["result"]
+    call(port, "task.complete", **{"from": AGENT}, task_id=task["task_id"], output={"body": "hello"})
+    assert person.call("decide.approve", task_id=task["task_id"])["state"] == "completed"
+
+
+def test_a_store_keeps_the_signature_settings_its_workspace_was_made_with(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("CHAP_REQUIRE_SIGNATURES", raising=False)
+    monkeypatch.delenv("CHAP_DB_PATH", raising=False)
+    made = load_config(write_config(tmp_path, require_signatures="humans", store="./data/chap.db"))
+    make_coordinator(made).options.store.close()
+    capsys.readouterr()
+    # Asked for every call signed, or for none, the workspace still takes
+    # the agent's calls unsigned, so the configuration says what it does:
+    # an agent that read "all" would sign, and its join with a new key
+    # would be refused.
+    for setting in (True, False):
+        config = load_config(write_config(tmp_path, require_signatures=setting, store="./data/chap.db"))
+        coord = make_coordinator(config)
+        coord.options.store.close()
+        assert (config["require_signatures"], config["signature_policy"]) == (True, "humans")
+        assert public_config(config)["signature_policy"] == "humans"
+        assert ("wsp_test was created under other settings, and runs with signatures required from people. "
+                "require_signatures in chap.config.json applies to a new store.") in capsys.readouterr().out
+    # As asked, nothing more is said.
+    make_coordinator(load_config(write_config(tmp_path, require_signatures="humans",
+                                              store="./data/chap.db"))).options.store.close()
+    assert "other settings" not in capsys.readouterr().out
 
 
 def test_a_config_without_a_workspace_or_profiles_is_refused(tmp_path):

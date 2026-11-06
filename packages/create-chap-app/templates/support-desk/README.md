@@ -17,8 +17,8 @@ Then decide in the desk at http://127.0.0.1:8788/.
 `desk.py` creates the workspace and keeps the SQLite store under `data/`
 beside `chap.config.json`, wherever you start it from. Opening the desk
 joins you to the workspace with a key it makes in your browser, and
-`agent.py` joins the agent with a key of its own (see [Signatures and the
-chain](#signatures-and-the-chain)). `agent.py`
+`desk.py` joins the agent, whose calls need no signature (see [Signatures
+and the chain](#signatures-and-the-chain)). `agent.py`
 opens a task for each of the three sample tickets, drafts a reply, submits
 it and waits for your decision; with `--once` it exits once every ticket in
 the file is decided, and without it, it keeps watching the file for new
@@ -53,12 +53,14 @@ replace `draft` in `agent.py`: it returns the JSON object the reviewer sees.
 
 **Your agent.** Anything that can POST JSON can take the agent's place: send
 JSON-RPC envelopes to `http://127.0.0.1:8788/chap` with `task.create`, then
-`task.complete`, and poll `GET /api/tasks/<id>` until the state changes. It
-joins once with `participant.join`, registering a key of its own, and signs
-each call as `security-signed/1.0` describes. `chap_coordinator.client`
-does both for Python, as `connect` in `agent.py` shows. The agent's
-`Participant` answers `dispatch(envelope)` the way a `Coordinator` does,
-signing what the agent sends, so a framework bridge written against an
+`task.complete`, and poll `GET /api/tasks/<id>` until the state changes.
+`desk.py` joins the agent `chap.config.json` names, and its calls need no
+signature. Where every call is signed, it joins once with
+`participant.join`, registering a key of its own, and signs each call as
+`security-signed/1.0` describes. `chap_coordinator.client` does this for
+Python, as `connect` in `agent.py` shows. The agent's `Participant` answers
+`dispatch(envelope)` the way a `Coordinator` does, signing what the agent
+sends when it holds a key, so a framework bridge written against an
 in-process coordinator runs over HTTP unchanged:
 
 ```python
@@ -90,14 +92,17 @@ decision with it. The coordinator refuses a call in your name that your key
 did not sign, so another program on this machine cannot decide as you
 through `POST /chap`. The key stays in this browser's storage for the
 desk's address, where a program running under your own account can still
-reach it. `agent.py` signs as well, with a key it makes in `keys/`, which
-`.gitignore` keeps out of git. `true` asks every caller to sign, and
-`false` asks no one, so any program on this machine can then decide in
-your name; `CHAP_REQUIRE_SIGNATURES` (`humans`, `1` or `0`) overrides the
-file. While signatures are required the server adds `security-signed/1.0`
-to the profiles, and says so when it starts. A participant joined without a
-key cannot add one by joining again, so to turn signatures on for a store
-written without them, start a new store: move `data/` aside.
+reach it. The agent is a member that is not a person: `desk.py` joins it
+when it starts, and the coordinator takes its calls unsigned. `true` asks
+every caller to sign, and `agent.py` then signs with a key it makes in
+`keys/`, which `.gitignore` keeps out of git. `false` asks no one, so any
+program on this machine can then decide in your name;
+`CHAP_REQUIRE_SIGNATURES` (`humans`, `1` or `0`) overrides the file. While
+signatures are required the server adds `security-signed/1.0` to the
+profiles, and says so when it starts. A workspace keeps the signature
+settings it was created with, and the server says so when it starts with
+others asked of it: to change them, start a new store, by moving `data/`
+aside.
 
 `"chain": true` links each entry on the log to the one before it by its
 hash, so an entry changed or taken out afterwards shows when the chain is

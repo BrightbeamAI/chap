@@ -128,8 +128,13 @@ The desk is then at http://127.0.0.1:8787/.
   starts, and a leading `~` is the home directory; `":memory:"` keeps
   everything in the process.
 - `require_signatures` is `true` (every call is signed), `"humans"` (a
-  person's calls are signed, and the desk signs in the browser) or
-  `false`. Signing needs the `crypto` extra.
+  person's calls are signed, by the desk in the browser, and a member that
+  is not a person calls unsigned) or `false`. Under `"humans"` the server
+  joins the `agent` when it starts, and each person joins from the desk
+  with the key it makes for them. A workspace keeps the policy it was
+  created with: the server says which when it starts, and `/api/config`
+  gives it as `signature_policy`, `"all"`, `"humans"` or `null`. Signing
+  needs the `crypto` extra.
 - `chain` links each entry on the log to the one before it by its hash.
 - PORT, CHAP_HOST, CHAP_DB_PATH, CHAP_REQUIRE_SIGNATURES, CHAP_CHAIN and
   CHAP_ALLOWED_HOSTS override the file.
@@ -145,12 +150,10 @@ other machines puts one in front.
 Every other process reaches the server with `chap_coordinator.client`:
 
 ```python
-from chap_coordinator.client import HttpCoordinator, Participant, Signer
+from chap_coordinator.client import HttpCoordinator, Participant
 
 desk = HttpCoordinator("http://127.0.0.1:8787/chap")
-agent = Participant(desk, "wsp_support", "agent:drafter",
-                    Signer.load_or_create("agent:drafter", "keys"))
-agent.join("agent", "drafter")
+agent = Participant(desk, "wsp_support", "agent:drafter")
 task = agent.call("task.create", kind="draft_reply", assignee=agent.uri,
                   input={"ticket": "T-1"}, review_required=True)
 agent.call("task.complete", task_id=task["task_id"], output={"body": "Hello"})
@@ -159,10 +162,22 @@ print(decided["state"], decided["output"])
 ```
 
 `call` raises `ChapError`, with the coordinator's code, when a call is
-refused, and `ChapEndpointError` when no JSON-RPC answer comes at all. With
-a `Signer`, every call the participant makes is signed with its own key,
-which `load_or_create` keeps in `keys/`, readable by its owner alone, and
-names by its RFC 7638 thumbprint; without one, its calls go unsigned.
+refused, and `ChapEndpointError` when no JSON-RPC answer comes at all.
+Under `"humans"` the agent calls unsigned, as above. Where every call is
+signed, the agent signs with a key of its own and joins once, which
+registers the key:
+
+```python
+from chap_coordinator.client import Signer
+
+agent = Participant(desk, "wsp_support", "agent:drafter",
+                    Signer.load_or_create("agent:drafter", "keys"))
+agent.join("agent", "drafter")
+```
+
+With a `Signer`, every call the participant makes is signed with its own
+key, which `load_or_create` keeps in `keys/`, readable by its owner alone,
+and names by its RFC 7638 thumbprint; without one, its calls go unsigned.
 `HttpCoordinator.dispatch(envelope)` answers as `Coordinator.dispatch`
 does, and a `Participant` stands in for a coordinator as well, signing what
 it sends, so a framework bridge runs against the server unchanged.
@@ -247,11 +262,10 @@ own, so each reaches the server over HTTP. One job opens the review and
 ends; a later one reads the decision, so no worker waits on a person:
 
 ```python
-from chap_coordinator.client import HttpCoordinator, Participant, Signer
+from chap_coordinator.client import HttpCoordinator, Participant
 
 desk = HttpCoordinator("http://127.0.0.1:8787/chap")
-agent = Participant(desk, "wsp_support", "agent:drafter",
-                    Signer.load_or_create("agent:drafter", "/srv/chap/keys"))
+agent = Participant(desk, "wsp_support", "agent:drafter")
 
 
 def write_draft(ticket):  # the agent's model call
@@ -279,8 +293,9 @@ def send_when_decided(task_id):  # run on a schedule; None while the review is o
     return view["state"]
 ```
 
-The agent joins once, with `agent.join("agent", "drafter")`, and every
-worker loads the same key file. The idempotency key lets a retried job find
+Under `"humans"` the server joined the agent when it started. Where every
+call is signed, every worker gives the participant the same key file, and
+the agent joins once with it. The idempotency key lets a retried job find
 the task it opened before, and a job that finds its draft already submitted
 leaves it. A rejection that asks for a revision leaves the task
 `in_progress`, and running `draft_reply` again submits a new draft.

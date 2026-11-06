@@ -1,11 +1,13 @@
 """Outbound approval, end to end, with no model and no network.
 
 The desk process runs in this process on a free port with the store in
-memory, configured as chap.config.json ships it, where people sign, and
-again with signatures off. The scripted agent runs its loop in a thread and
-connects as agent.py does, joining with its own key when signatures are
-required. The approver decides through POST /chap as the desk would,
-signing as the desk does, and outbox/ holds only what was approved. The
+memory, configured as chap.config.json ships it, where people sign and the
+agent and the operator's console call unsigned; again with every call
+signed; and again with signatures off. The scripted agent runs its loop in
+a thread and connects as agent.py does, joining with its own key where
+every call is signed. The approver decides through POST /chap as the desk
+would, signing as the desk does, and outbox/ holds only what was approved.
+One test runs the desk's own client in Node, as the browser runs it. The
 decisions here are scripted because this is a test; in the project the
 decision is made in the desk.
 """
@@ -13,6 +15,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -33,19 +37,67 @@ from chap_coordinator.client import HttpCoordinator, Participant, Signer  # noqa
 from chap_coordinator.server import load_config, make_coordinator, make_server  # noqa: E402
 from providers import make_provider  # noqa: E402
 
-MODES = {"as shipped": {}, "signatures off": {"require_signatures": False}}
+MODES = {
+    "as shipped, people sign": {},
+    "every call signed": {"require_signatures": True, "signature_policy": "all"},
+    "signatures off": {"require_signatures": False, "signature_policy": None},
+}
+
+
+def node() -> str | None:
+    """Node 20 or later, where the desk's client has Ed25519 in WebCrypto; None without it."""
+    found = shutil.which("node")
+    if found is None:
+        return None
+    version = subprocess.run([found, "--version"], capture_output=True, text=True, timeout=30).stdout
+    return found if int(version.strip().lstrip("v").split(".")[0] or 0) >= 20 else None
+
+
+NODE = node()
+
+#: The approver at the desk, in Node: the desk's client module, as the
+#: server serves it to the browser, makes a key that cannot be exported,
+#: joins with it, waits for the review addressed to them, and approves it,
+#: naming the artefact and the round as the desk does.
+DESK_PERSON = """
+import { pathToFileURL } from "node:url";
+const [base, clientFile] = process.argv.slice(1);
+const { contentHash, generateSigner, makeClient } = await import(pathToFileURL(clientFile).href);
+const get = async (path) => (await fetch(base + path)).json();
+const config = await get("/api/config");
+const me = config.humans[0];
+const signer = await generateSigner(me.uri);
+const desk = makeClient({ url: base + "/chap", workspace: config.workspace, from: me.uri, signer });
+await desk.call("participant.join", { type: "human", role: me.role, display_name: me.display_name,
+                                      jwks: { keys: [signer.publicJwk] } });
+let review;
+for (let i = 0; i < 300 && !review; i++) {
+  review = (await get("/api/reviews?reviewer=" + encodeURIComponent(me.uri))).reviews[0];
+  if (!review) await new Promise((ok) => setTimeout(ok, 50));
+}
+const task = await get("/api/tasks/" + encodeURIComponent(review.task_id));
+const decided = await desk.call("decide.approve", { task_id: task.task_id,
+  approved_artefact_digest: await contentHash(task.artefact), round: await contentHash(task.submission.envelope) });
+console.log(JSON.stringify({ kid: signer.kid, task_id: task.task_id, state: decided.state }));
+"""
+
+
+def start_desk(**overrides):
+    config = load_config(ROOT / "chap.config.json")
+    config.update(store=":memory:", port=0, host="127.0.0.1", **overrides)
+    coord = make_coordinator(config)
+    server = make_server(config, coord)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, {"config": config, "coord": coord, "base": f"http://127.0.0.1:{server.server_port}",
+                    "port": server.server_port}
 
 
 @pytest.fixture(scope="module", params=list(MODES))
 def desk(request, tmp_path_factory):
-    config = load_config(ROOT / "chap.config.json")
-    config.update(store=":memory:", port=0, host="127.0.0.1", **MODES[request.param])
-    coord = make_coordinator(config)
-    server = make_server(config, coord)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server, handle = start_desk(**MODES[request.param])
+    handle["keys"] = tmp_path_factory.mktemp("keys")
     try:
-        yield {"config": config, "coord": coord, "base": f"http://127.0.0.1:{server.server_port}",
-               "port": server.server_port, "keys": tmp_path_factory.mktemp("keys")}
+        yield handle
     finally:
         server.shutdown()
         server.server_close()
@@ -132,6 +184,10 @@ def test_only_an_approved_message_reaches_the_outbox(desk, tmp_path):
     assert view["state"] == "review_requested" and view["review"]["requested_to"] == [approver.uri]
     assert first["artefact"] == drafter.draft(provider, messages[0])
 
+    # The agent signs only where every call is signed; where people sign,
+    # its calls go unsigned and are taken from it as a member.
+    assert (agent.signer is not None) is (desk["config"]["signature_policy"] == "all")
+
     # The agent cannot approve its own work.
     assert agent.send("decide.approve", task_id=first["task_id"])["error"]["code"] == -32011
 
@@ -202,6 +258,8 @@ def test_a_paused_agent_opens_nothing_until_resumed(desk, tmp_path, monkeypatch,
     assert f"Paused {agent.uri} (hold)." in capsys.readouterr().out
     paused = [e for e in approver.call("audit.read", filter={"method": "control.pause"})["entries"]]
     assert [e["envelope"]["params"]["from"] for e in paused] == [drafter.OPERATOR]
+    # The console is a member that is not a person: it signs only where every call is signed.
+    assert ("sig" in paused[0]["envelope"]) is (desk["config"]["signature_policy"] == "all")
 
     # The first task.create is refused with -32063 and recorded; after that
     # the agent waits on workspace.describe, so the refusal stays the only one.
@@ -235,12 +293,66 @@ def test_the_desk_is_served(desk):
     assert public["workspace"] == config["workspace"] and public["mcp"] is False
     assert {"modes/1.0", "control/1.0"} <= set(public["profiles"])
     assert public["chain_enabled"] is True and public["require_signatures"] is config["require_signatures"]
+    assert public["signature_policy"] == config["signature_policy"]
     agent, _ = participants(desk)
     described = agent.describe()
     assert described["mode"] == "trial" and described["profiles"] == config["profiles"]
     with pytest.raises(urllib.error.HTTPError) as refused:
         fetch(f"{base}/api/tasks/tsk_missing")
     assert refused.value.code == 404
+
+
+@pytest.mark.skipif(NODE is None, reason="the desk's client runs in Node 20 or later, which is not installed")
+def test_the_desks_own_client_signs_the_approvers_decision(tmp_path):
+    """As shipped, the agent calls unsigned, and the approver's decision is
+    signed in the desk, with the desk's own client and a key it made."""
+    server, desk = start_desk()
+    try:
+        base, config = desk["base"], desk["config"]
+        agent = drafter.connect(config, base + "/chap", keys=tmp_path / "keys")
+        assert agent.signer is None and not (tmp_path / "keys").exists()
+        client = tmp_path / "chap-client.mjs"
+        client.write_text(fetch(f"{base}/chap-client.mjs"), encoding="utf-8")
+        source = tmp_path / "one.csv"
+        source.write_text("to,subject,brief\nkim.lau@example.com,Invoice 77,Confirm invoice 77 is paid.\n",
+                          encoding="utf-8")
+        [mid] = [m["message_id"] for m in drafter.read_messages(source)]
+        outbox = tmp_path / "outbox"
+        run = AgentRun(agent, make_provider(drafter.scripted_body), source, outbox)
+        person = subprocess.run([NODE, "--input-type=module", "-e", DESK_PERSON, base, str(client)],
+                                capture_output=True, text=True, timeout=60)
+        assert person.returncode == 0, person.stderr
+        decided = json.loads(person.stdout)
+        assert decided["state"] == "completed"
+        assert run.result() == {mid: "approve"}
+        assert json.loads((outbox / f"{mid}.json").read_text(encoding="utf-8"))["decided_by"] == config["humans"][0]["uri"]
+
+        # On the chain, the agent's submission carries no signature, and the
+        # approval is signed with the key the desk made.
+        entries = agent.call("audit.read", filter={"task_id": decided["task_id"]})["entries"]
+        calls = {e["envelope"]["method"]: e["envelope"] for e in entries if "envelope" in e}
+        assert "sig" not in calls["task.complete"]
+        assert calls["decide.approve"]["sig"].startswith(f"ed25519:{decided['kid']}:")
+        assert agent.call("audit.verify_chain")["status"] == "verified"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_where_every_call_is_signed_an_agent_with_another_key_is_told_why_it_cannot_join(tmp_path):
+    server, desk = start_desk(**MODES["every call signed"])
+    try:
+        url = desk["base"] + "/chap"
+        drafter.connect(desk["config"], url, keys=tmp_path / "keys")
+        with pytest.raises(SystemExit) as refused:
+            drafter.connect(desk["config"], url, keys=tmp_path / "other-keys")
+        message = str(refused.value)
+        assert "agent:drafter is already a member, with other keys" in message
+        assert (f"The workspace holds the key the agent first joined with, and "
+                f"{tmp_path / 'other-keys' / 'agent_drafter.jwk.json'} holds another.") in message
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_the_project_ships_with_people_signing_and_the_chain_on():

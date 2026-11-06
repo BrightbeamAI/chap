@@ -277,9 +277,13 @@ def run(agent: Participant, provider: Provider, source: str | os.PathLike, outbo
 
 
 def connect(config: dict, url: str, keys: Path | None = None) -> Participant:
-    """The agent's participant, joined with its own key when signatures are
-    required. The key is in ``keys``, by default keys/ beside this file,
-    wherever the agent is started from."""
+    """The agent's participant, as the desk process says to call.
+
+    Under "humans", the policy chap.config.json ships with, the desk process
+    joined the agent when it started, and its calls go unsigned. Where every
+    call is signed, the agent signs with its own key and joins with it. The
+    key is in ``keys``, by default keys/ beside this file, wherever the agent
+    is started from."""
     client = HttpCoordinator(url)
     try:
         client.get("/api/health")
@@ -291,10 +295,17 @@ def connect(config: dict, url: str, keys: Path | None = None) -> Participant:
     # agent's tasks in a workspace the desk never shows.
     if public.get("workspace") != config["workspace"]:
         raise SystemExit(f"{url} serves {public.get('workspace')}, and chap.config.json here names {config['workspace']}")
-    signer = Signer.load_or_create(config["agent"]["uri"], keys or KEYS) if public.get("require_signatures") else None
+    signer = Signer.load_or_create(config["agent"]["uri"], keys or KEYS) if public.get("signature_policy") == "all" else None
     agent = Participant(client, config["workspace"], config["agent"]["uri"], signer=signer)
     if signer:
-        agent.join("agent", "drafter", config["agent"].get("display_name"))
+        try:
+            agent.join("agent", "drafter", config["agent"].get("display_name"))
+        except ChapError as exc:
+            # Refused for its key, the join names the key ids it brought.
+            held = (f" The workspace holds the key the agent first joined with, and "
+                    f"{Signer.key_path(agent.uri, keys or KEYS)} holds another."
+                    if isinstance(exc.data, dict) and "kids" in exc.data else "")
+            raise SystemExit(f"{agent.uri} could not join {config['workspace']}: {exc.message}.{held}") from exc
     return agent
 
 
@@ -307,12 +318,13 @@ def operator(config: dict, url: str | None = None, keys: Path | None = None) -> 
 
     A person's key is in the desk's browser, so a call from the command
     line cannot carry the approver's signature, and the log names who made
-    it. When signatures are required the console signs with a key of its
+    it. The console is a member that is not a person, so under "humans" its
+    calls go unsigned; where every call is signed it signs with a key of its
     own, in ``keys`` beside the agent's.
     """
     client = HttpCoordinator(url or desk_url(config))
     public = client.get("/api/config") or {}
-    signer = Signer.load_or_create(OPERATOR, keys or KEYS) if public.get("require_signatures") else None
+    signer = Signer.load_or_create(OPERATOR, keys or KEYS) if public.get("signature_policy") == "all" else None
     console = Participant(client, config["workspace"], OPERATOR, signer=signer)
     console.join("service", "operator", "The operator's console")
     return console

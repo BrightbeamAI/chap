@@ -70,6 +70,20 @@ def test_serve_runs_the_desk_from_a_config_file_wherever_it_starts(tmp_path):
     assert (project / "data" / "chap.db").exists() and not (elsewhere / "data").exists()
 
 
+def test_serve_says_whose_calls_are_signed(tmp_path):
+    config = write_config(tmp_path, store=":memory:", chain=True, require_signatures="humans")
+    process = subprocess.Popen([sys.executable, "-m", "chap_coordinator", "serve", "--config", str(config),
+                                "--port", "0"], env={"PATH": "", "HOME": str(tmp_path)}, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True)
+    try:
+        lines = [process.stdout.readline() for _ in range(6)]
+    finally:
+        process.send_signal(signal.SIGINT)
+        process.wait(timeout=30)
+    assert lines[0].strip() == "security-signed/1.0 added to the profiles: signatures are required."
+    assert lines[5].rstrip() == "  store    :memory:, chain on, signatures required from people"
+
+
 def test_serve_explains_a_config_it_cannot_use(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("CHAP_CONFIG", raising=False)
     monkeypatch.delenv("CHAP_REQUIRE_SIGNATURES", raising=False)

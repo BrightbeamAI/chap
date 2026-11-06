@@ -190,8 +190,10 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
     writes the pages served under ``/analytics/``. Both come back absolute.
 
     ``require_signatures`` is ``true`` (every call is signed), ``"humans"``
-    (a person's calls are signed) or ``false``. It comes back as a flag,
-    with ``signature_policy`` saying ``"all"`` or ``"humans"``.
+    (a person's calls are signed, and a call from a member that is not a
+    person need not be) or ``false``. It comes back as a flag, with
+    ``signature_policy`` saying ``"all"``, ``"humans"``, or None where no
+    call is signed.
 
     A profile in the list is enforced: security-signed/1.0 requires
     signatures, and the coordinator turns the chain on for a workspace that
@@ -215,7 +217,7 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
     config["analytics"] = _project_path(config.get("analytics") or "./analytics", base)
     signatures = _signatures(config)
     config["require_signatures"] = signatures is not False
-    config["signature_policy"] = "humans" if signatures == "humans" else "all"
+    config["signature_policy"] = None if signatures is False else "humans" if signatures == "humans" else "all"
     config["chain"] = (env_flag("CHAP_CHAIN", bool(config.get("chain", False)))
                        or has_profile(config["profiles"], "audit-scitt"))
     config["allowed_hosts"] = [*(config.get("allowed_hosts") or []), *env_list("CHAP_ALLOWED_HOSTS")]
@@ -253,17 +255,36 @@ def make_coordinator(config: dict) -> Coordinator:
         default_profiles=list(config["profiles"]),
         enable_chain=bool(config.get("chain")),
         require_signatures=bool(config.get("require_signatures")),
+        # The policy a new workspace takes: under "humans" a call from a
+        # member that is not a person need not be signed.
+        signature_policy=config.get("signature_policy") or "all",
     ))
     bootstrap(coord, config)
     return coord
 
 
+#: What each signature policy asks, as the console says it.
+POLICY_WORDS = {"all": "signatures required from every caller", "humans": "signatures required from people",
+                None: "no signatures required"}
+
+
 def bootstrap(coord: Coordinator, config: dict) -> None:
     """Create the workspace and join the configured participants.
 
-    With signatures required, nobody is joined here: each participant joins
-    itself with its own key, since a re-join cannot add a key for someone.
-    The desk does this for a human; an agent joins with its key file.
+    With signatures off, the people and the agent are joined here. Where
+    every call is signed, nobody is: each participant joins itself with its
+    own key, since a join cannot add a key to a member who holds none. The
+    desk does this for a person, and an agent joins with its key file.
+    Under "humans" the agent is joined here, and calls unsigned as a member
+    that is not a person; each person joins from the desk, with the key the
+    browser makes for them.
+
+    A workspace keeps the signature policy it was created with, and one
+    that advertises security-signed/1.0 requires signatures whatever the
+    configuration says. Where a store holds a workspace made under other
+    settings, ``require_signatures`` and ``signature_policy`` are made to
+    say what the workspace does, so the console and /api/config tell the
+    agent and the desk how to call, and the console says what changed.
     """
     def send(method: str, params: dict) -> dict:
         return coord.dispatch({
@@ -280,11 +301,17 @@ def bootstrap(coord: Coordinator, config: dict) -> None:
         r = send("workspace.create", params)
         if "error" in r:
             raise RuntimeError(f"workspace.create: {r['error']['message']}")
-    if config.get("require_signatures"):
-        return
     ws = coord.get_workspace(config["workspace"])
-    members = [{**h, "type": "human"} for h in (config.get("humans") or [])]
-    if config.get("agent"):
+    required = bool(config.get("require_signatures")) or ws.has_profile("security-signed")
+    policy = ws.signature_policy if required else None
+    if (required, policy) != (bool(config.get("require_signatures")), config.get("signature_policy")):
+        print(f"{ws.id} was created under other settings, and runs with {POLICY_WORDS[policy]}. "
+              "require_signatures in chap.config.json applies to a new store.")
+        config["require_signatures"], config["signature_policy"] = required, policy
+    members = []
+    if policy is None:
+        members += [{**h, "type": "human"} for h in (config.get("humans") or [])]
+    if policy != "all" and config.get("agent"):
         members.append({**config["agent"], "type": "agent"})
     for m in members:
         if m["uri"] in ws.members:
@@ -483,6 +510,7 @@ def public_config(config: dict) -> dict:
                    for h in (config.get("humans") or [])],
         "agent": config.get("agent"),
         "require_signatures": bool(config.get("require_signatures")),
+        "signature_policy": config.get("signature_policy"),
         "chain_enabled": bool(config.get("chain")),
         "persistent": config["store"] != ":memory:",
         "oidc": None,
@@ -811,7 +839,7 @@ def serve(config: dict) -> int:
         return 1
     base = server.base
     flags = ((", chain on" if config.get("chain") else "")
-             + (", signatures required" if config.get("require_signatures") else ""))
+             + (f", {POLICY_WORDS[config['signature_policy']]}" if config.get("require_signatures") else ""))
     print(f"CHAP {config['workspace']} on {base}")
     print(f"  desk     {base}/")
     print(f"  calls    POST {base}/chap")
