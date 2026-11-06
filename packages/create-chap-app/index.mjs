@@ -1,8 +1,12 @@
 #!/usr/bin/env node
-// create-chap-app: generate a CHAP project from a template.
+// create-chap-app: generate a CHAP project from a template, bring one up to
+// this release (lib/upgrade.mjs), or put CHAP into a project you have
+// (lib/add.mjs).
 //
 //   npx create-chap-app my-gate
 //   npx create-chap-app my-gate --template mcp-gate --profiles core/1.0,review/1.0 --yes
+//   npx create-chap-app upgrade my-gate
+//   npx create-chap-app add
 //
 // Three questions: the template, the profiles and the project name. Each has
 // a default, and the flags answer them without a prompt. The generator
@@ -230,6 +234,7 @@ function usage(templates) {
   const lines = [
     "Usage: npx create-chap-app <name> [--template <name>] [--profiles a,b] [--yes]",
     "       npx create-chap-app upgrade [<dir>] [--dry-run] [--diff]   bring a project up to this release",
+    "       npx create-chap-app add [<dir>] [--template <name>]       put CHAP into a project you have",
     "",
     "Templates, with what each needs installed:",
     ...templates.map((t) => `  ${templateLine(t)}`),
@@ -274,6 +279,7 @@ async function ask(rl, question, fallback) {
 export async function main(argv = process.argv.slice(2), { input = stdin, output = stdout, interactive = !!input.isTTY } = {}) {
   const say = (text = "") => output.write(`${text}\n`);
   if (argv[0] === "upgrade") return (await import("./lib/upgrade.mjs")).runUpgrade(argv.slice(1), { say });
+  if (argv[0] === "add") return (await import("./lib/add.mjs")).runAdd(argv.slice(1), { say });
   const args = parseArgs(argv);
   const templates = await listTemplates();
   if (args.help) { say(usage(templates)); return 0; }

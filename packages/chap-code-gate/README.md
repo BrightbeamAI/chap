@@ -37,7 +37,7 @@ chap-code-gate propose "<summary>" [--wait --commit]   propose the working tree'
 chap-code-gate propose-branch <base>..<head> [--wait]  propose a branch for review before it is pushed
 chap-code-gate verify [<range>] [--trust <file>]       check that commits were approved through the gate
 chap-code-gate trust [--out <file>]                    write the trust policy, chap-trust.json
-chap-code-gate install-hooks --repo <path>             put a repository under the gate's git hooks
+chap-code-gate install-hooks --repo <path> [--if-repo] put a repository under the gate's git hooks
 chap-code-gate hook <name>                             run one of the git hooks, as git does
 chap-code-gate push-notes [--remote origin]            send the evidence notes with the commits
 chap-code-gate report [--json]                         what the gate recorded, as Markdown
@@ -49,10 +49,15 @@ points `core.hooksPath` there. Each gate hook runs the gate's check, then
 the repository's hook of the same name from what it ran before (husky,
 another `core.hooksPath`, `.git/hooks`), and `--remove` puts the earlier
 `core.hooksPath` back. A hook that cannot find this package refuses the
-commit.
+commit. husky points `core.hooksPath` at `.husky/_` each time its `prepare`
+script runs, so a project with husky installs the hooks after it:
+`"prepare": "husky && chap-code-gate install-hooks --gate chap --if-repo"`.
+`--if-repo` makes the install a no-op where there is no repository, as in a
+container build, where it would otherwise fail.
 
-`--gate <dir>` names the gate project; by default it is the nearest
-directory up from the working directory that holds `chap.config.json`. A
+`--gate <dir>` names the gate project, and the hooks keep it by its full
+path; by default it is the nearest directory up from the working directory
+that holds `chap.config.json`. A
 gate project keeps a small file for the commands named by path from other
 places, `propose.mjs` for an agent working in another repository and
 `verify.mjs` for CI among them; each runs the command for the project it is

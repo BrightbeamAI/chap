@@ -2,6 +2,7 @@
 // chap-code-gate: the CHAP code gate's commands. `chap-code-gate --help`
 // lists them.
 
+import { resolve } from "node:path";
 import { COMMANDS, findGateDir, run } from "../lib/cli.mjs";
 
 const USAGE = `Usage: chap-code-gate <command> [options] [--gate <dir>]
@@ -24,7 +25,8 @@ const argv = process.argv.slice(2);
 const at = argv.indexOf("--gate");
 let gateDir = null;
 if (at >= 0) {
-  gateDir = argv[at + 1];
+  // By its full path, which the hooks install-hooks writes keep whatever directory git runs them in.
+  gateDir = argv[at + 1] === undefined ? null : resolve(argv[at + 1]);
   argv.splice(at, 2);
 }
 const [name, ...rest] = argv;

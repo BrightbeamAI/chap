@@ -33,6 +33,36 @@
     "human_name": "You",
     "agent_uri": "agent:coder"
   },
+  "add": {
+    "dir": "chap",
+    "files": [
+      "chap.config.json",
+      "server.mjs",
+      "propose.mjs",
+      "propose-branch.mjs",
+      "verify.mjs",
+      "install-hooks.mjs",
+      "push-notes.mjs",
+      "claude-session.mjs",
+      "AGENT_INSTRUCTIONS.md"
+    ],
+    "scripts": {
+      "chap": "node {dir}/server.mjs",
+      "chap:hooks": "chap-code-gate install-hooks --gate {dir}",
+      "chap:report": "chap-code-gate report --gate {dir}",
+      "chap:stop": "chap-code-gate stop --gate {dir}"
+    },
+    "hooks": "chap:hooks",
+    "run": [
+      "npm run chap:hooks",
+      "npm run chap"
+    ],
+    "gitignore": [
+      "{dir}/data/",
+      "{dir}/keys/",
+      "{dir}/analytics/"
+    ]
+  },
   "run": [
     "npm install",
     "npm run demo"

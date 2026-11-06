@@ -1,4 +1,4 @@
-// Put a repository under the gate: `chap-code-gate install-hooks [--repo <path>] [--remove]`.
+// Put a repository under the gate: `chap-code-gate install-hooks [--repo <path>] [--remove] [--if-repo]`.
 //
 // Writes the repository's own hooks directory, chap/hooks in its git
 // directory, and points core.hooksPath at it, so every commit there runs the
@@ -17,6 +17,10 @@
 // names a file already, so `git log --show-signature` there says which
 // commits the agent's key signed.
 //
+// --if-repo, for an npm prepare script that also runs where there is no
+// repository, as in a container build, says so there and installs nothing,
+// where it would otherwise fail.
+//
 // --claude also registers claude-session.mjs as a Claude Code SessionStart
 // hook in the repository's .claude/settings.local.json, kept out of git, so
 // the commands Claude Code runs there find the session's model in
@@ -24,7 +28,7 @@
 
 import { access, appendFile, chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadGate } from "./gate.mjs";
 import { git, repoRoot } from "./git.mjs";
@@ -79,6 +83,11 @@ export function hookScript(stage, { cli = CLI, gateDir, chainTo = null }) {
 /** The script for a hook the gate has no check in: the one the repository ran before, as it ran it. */
 const passThrough = (stage, previous) => `#!/bin/sh\n# Written by chap-code-gate install-hooks: the ${stage} hook this repository ran before.\nexec ${sq(previous)} "$@"\n`;
 
+/** Whether the repository's own package.json installs the gate's hooks in its prepare script. */
+async function preparesHooks(repo) {
+  try { return /install-hooks/.test(JSON.parse(await readFile(join(repo, "package.json"), "utf8")).scripts?.prepare ?? ""); } catch { return false; }
+}
+
 async function configValue(repo, key, scope = []) {
   try { return (await git(repo, ["config", ...scope, "--get", key])).trim() || null; } catch { return null; }
 }
@@ -131,7 +140,10 @@ export async function installHooks(repoPath, { remove = false, log = console.log
   await access(join(ours, "pre-commit"));
   log(`core.hooksPath in ${repo} now points at ${ours}; ${(await reviewAtOf(gateDir)) === "push" ? "a branch is reviewed before it is pushed, and every push is checked" : "every commit there needs an approved change, and every push is checked"}`);
   if (theirs.length) log(`The hooks it ran before, in ${chainTo}, run after the gate's: ${theirs.join(", ")}`);
-  if (before && /(^|\/)\.husky(\/_)?\/?$/.test(before)) log("husky sets core.hooksPath again whenever its prepare script runs, on npm install: run install-hooks after it, as in \"prepare\": \"husky && chap-code-gate install-hooks\"");
+  if (before && /(^|\/)\.husky(\/_)?\/?$/.test(before) && !(await preparesHooks(repo))) {
+    const gate = relative(repo, resolve(gateDir)).split(sep).join("/") || ".";
+    log(`husky sets core.hooksPath again whenever its prepare script runs, on npm install: run install-hooks after it, as in "prepare": "husky && chap-code-gate install-hooks --gate ${gate} --if-repo"`);
+  }
   const signers = join(gateDir, "keys", "allowed_signers");
   const signersSet = await configValue(repo, "gpg.ssh.allowedSignersFile");
   try {
@@ -188,6 +200,10 @@ export async function installClaudeHook(repoPath, { log = console.log, gateDir }
 export async function main(argv, { gateDir, log = console.log } = {}) {
   const at = argv.indexOf("--repo");
   const repo = at >= 0 ? argv[at + 1] : process.cwd();
+  if (argv.includes("--if-repo") && !(await repoRoot(repo))) {
+    log(`${resolve(repo)} is not inside a git repository, so no hooks were installed`);
+    return 0;
+  }
   const done = await installHooks(repo, { remove: argv.includes("--remove"), log, gateDir });
   if (argv.includes("--claude") && done.installed) await installClaudeHook(repo, { log, gateDir });
   return 0;

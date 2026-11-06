@@ -27,6 +27,24 @@
     "human_name": "You",
     "agent_uri": "agent:assistant"
   },
+  "add": {
+    "dir": "chap",
+    "files": [
+      "chap.config.json",
+      "server.mjs",
+      "AGENT_INSTRUCTIONS.md"
+    ],
+    "scripts": {
+      "chap": "node {dir}/server.mjs"
+    },
+    "run": [
+      "npm run chap"
+    ],
+    "gitignore": [
+      "{dir}/data/",
+      "{dir}/analytics/"
+    ]
+  },
   "run": [
     "npm install",
     "npm start"

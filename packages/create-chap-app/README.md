@@ -65,6 +65,33 @@ A project from before the stamp is recognised by the released copies it
 holds; `--template` names its template where none are left. `--dry-run`
 says what would change and changes nothing.
 
+## Adding CHAP to a project you have
+
+```bash
+cd my-app
+npx create-chap-app@latest add                       # the code gate
+npx create-chap-app@latest add --template mcp-gate   # the desk and /mcp
+npm install
+```
+
+Add puts a template into a Node.js project that exists, in a directory of
+its own, `chap/` unless `--into` names another, so nothing the project has
+is overwritten: the configuration, the server's entry point and, for the
+code gate, its commands and the agent's instructions. The template's
+dependencies join `package.json`, its scripts join under names the project
+does not use (`npm run chap` starts the server), and `.gitignore` keeps
+the store and the keys out of git.
+
+The code gate's hooks run the gate's check and then the hooks the
+repository ran before, husky's or another `core.hooksPath`, and
+`npx chap-code-gate install-hooks --gate chap --remove` puts those back.
+husky points `core.hooksPath` at its own directory each time `npm install`
+runs its `prepare` script, so where `prepare` runs husky, add puts the
+hooks' install after it, and every `npm install` keeps both. `--dry-run`
+says what would change and changes nothing. A Python template with an
+`add` section in its `template.json` goes into a Python project the same
+way, with its `chap-` lines joining `requirements.txt`.
+
 ## The templates
 
 | Template | Runs on | What it does |

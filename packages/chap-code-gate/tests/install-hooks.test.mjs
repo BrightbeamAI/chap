@@ -116,3 +116,31 @@ test("a hook that cannot find the gate's package refuses the commit and says why
   await chmod(path, 0o755);
   await assert.rejects(run(path, []), (e) => e.code === 1 && /chap: the code gate is not installed at .*missing.*run npm install in \/the\/gate/.test(e.stderr));
 });
+
+test("run from a prepare script, the install says nothing of prepare, and outside a repository installs nothing", async () => {
+  const { dir: gateDir } = await gateProject({ port: 1 });
+  const repo = await repository();
+  await withHusky(repo);
+  await writeFile(join(repo, "package.json"), JSON.stringify({ scripts: { prepare: "husky && chap-code-gate install-hooks --gate chap --if-repo" } }));
+  const lines = [];
+  await installHooks(repo, { gateDir, log: (l) => lines.push(l) });
+  assert.ok(!lines.some((l) => /husky sets core\.hooksPath again/.test(l)), "prepare already runs the install");
+
+  const bin = new URL("../bin/chap-code-gate.mjs", import.meta.url).pathname;
+  const outside = await mkdtemp(join(tmpdir(), "chap-no-repo-"));
+  const { stdout } = await run(process.execPath, [bin, "install-hooks", "--gate", gateDir, "--if-repo"], { cwd: outside });
+  assert.match(stdout, /is not inside a git repository, so no hooks were installed/);
+  await assert.rejects(run(process.execPath, [bin, "install-hooks", "--gate", gateDir], { cwd: outside }), /is not inside a git repository/);
+});
+
+test("a gate named by a relative path is written into the hooks by its full path", async () => {
+  const repo = await repository();
+  const { dir: gateDir } = await gateProject({ port: 1 });
+  const { cp } = await import("node:fs/promises");
+  await cp(gateDir, join(repo, "chap"), { recursive: true });
+  const bin = new URL("../bin/chap-code-gate.mjs", import.meta.url).pathname;
+  await run(process.execPath, [bin, "install-hooks", "--gate", "chap"], { cwd: repo });
+  const hooksPath = (await git(repo, ["config", "--get", "core.hooksPath"])).trim();
+  const script = await readFile(join(hooksPath, "pre-commit"), "utf8");
+  assert.ok(script.includes(`--gate '${join(repo, "chap")}'`), script);
+});

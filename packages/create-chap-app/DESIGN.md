@@ -71,6 +71,14 @@ The decision is made by the developer, in the desk. A template never ships a
 scripted decision outside its tests and `diff-profiles`, and it says so where
 those run.
 
+A template that can go into a project that exists says how in an `add`
+section of its `template.json`: `dir`, the directory it goes into by
+default; `files`, the generated files that go there; `scripts`, merged into
+the project's `package.json`; `hooks`, the script that installs git hooks,
+for a template that has them; `run`, the steps printed after the install;
+and `gitignore`, the lines added to the project's `.gitignore`. `{dir}` in
+a script, a step or a line is the directory, as `--into` names it.
+
 ## The desk
 
 One page, the same in every template, served by the process that owns the

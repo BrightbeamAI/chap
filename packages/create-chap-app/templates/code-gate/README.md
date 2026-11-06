@@ -104,8 +104,9 @@ name, a push's refs going to both, and a hook the gate has none of runs as
 it did. `--remove` takes the gate's hooks out and puts back the
 `core.hooksPath` that was there. husky sets `core.hooksPath` again whenever
 its `prepare` script runs, on `npm install`, so run `install-hooks` after it:
-`"prepare": "husky && chap-code-gate install-hooks"` in a project that has
-the gate as a dependency. A hook that cannot find the gate's package, or
+`"prepare": "husky && chap-code-gate install-hooks --gate <this project> --if-repo"`
+in a project that has the gate as a dependency, which
+`npx create-chap-app add` sets up. A hook that cannot find the gate's package, or
 `node`, refuses the commit and says why. A repository hooked up before
 0.3.5 points at this project's `hooks/`, which still works; running
 `install-hooks` again moves it to its own hooks.
