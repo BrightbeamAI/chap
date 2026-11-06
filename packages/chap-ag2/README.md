@@ -24,8 +24,13 @@ pip install "chap-ag2[ag2]"
 ```
 
 The extra installs AG2 0.x. AG2 1.0 replaced the `autogen` package and
-its `get_human_input` hook, where this adapter connects, so the extra asks
-for `ag2>=0.9,<1`.
+its `get_human_input` hook, where the quick start connects, so the extra
+asks for `ag2>=0.9,<1`. With AG2 1.x, install it yourself and gate tools
+with `tool_approval`, below:
+
+```bash
+pip install chap-ag2 "ag2>=1.2,<2"
+```
 
 ## Quick start
 
@@ -114,6 +119,38 @@ nothing more: no signature from the approver, no sign that they saw the
 message, and no time between the request and the decision. Use it where
 your own interface is where people decide; use `request_reply` to have the
 decision made in CHAP.
+
+## AG2 1.x: approve a tool call
+
+AG2 1.x gates a tool with middleware. `bridge.tool_approval()` returns one
+that puts each call of the tool in front of a person and runs it as they
+decide:
+
+```python
+from ag2 import Agent, tool
+
+from chap_coordinator import Coordinator
+from chap_ag2 import ChapTurnBridge
+
+bridge = ChapTurnBridge(Coordinator(enable_chain=True), workspace="wsp_payments",
+                        agent="agent:payer#v1", reviewer="human:alice@example.org")
+
+
+@tool(middleware=[bridge.tool_approval()])
+def transfer(amount: int, to: str) -> str:
+    """Send money."""
+    return f"sent {amount} to {to}"
+```
+
+The call (tool name, arguments, call id) is the artefact under review, on
+a task that requires review, so only a person's decision completes it,
+made at a CHAP desk with their own key. An approval runs the call as the
+model made it; an override runs it with the reviewer's arguments. Anything
+else runs nothing and answers the model with the reviewer's note, and so
+does an edit to anything but the arguments, which the run cannot apply.
+The wait reads the task every two seconds (`poll_seconds`) for as long as
+the reviewer takes, or until `timeout` seconds, when `TimeoutError` ends
+the turn. Wire the bridge to a desk over HTTP as below.
 
 ## The decision is explicit
 
@@ -206,16 +243,19 @@ profile.
 
 ## Example
 
-`examples/01-approve-edit-reject.py` runs a real AG2 conversation (no LLM
-needed) through approve, an edit, and a reject, and prints the resulting
-chain. `tests/test_conversation.py` runs `request_reply` in a real
-conversation, with a reviewer deciding at an in-process desk.
+`examples/01-approve-edit-reject.py` runs a real AG2 0.x conversation (no
+LLM needed) through approve, an edit, and a reject, and prints the
+resulting chain. `tests/test_conversation.py` runs `request_reply` in a
+real conversation, and `tests/test_tool_approval.py` runs `tool_approval`
+on an AG2 1.x agent with a scripted model, each with a reviewer deciding at
+an in-process desk.
 
 ## Compatibility
 
 - `chap-coordinator` 0.3.4 and later
-- `ag2` 0.9 to 0.x (optional; tested with ag2 0.14.0). AG2 1.x has no
-  `autogen` module or `get_human_input`.
+- `ag2` 0.9 to 0.x for `request_reply` and `record_turn`, through
+  `get_human_input` (optional; tested with ag2 0.14.0)
+- `ag2` 1.2 and later 1.x for `tool_approval` (tested with ag2 1.2.2)
 - Python 3.10, 3.11, 3.12, 3.13
 
 ## License

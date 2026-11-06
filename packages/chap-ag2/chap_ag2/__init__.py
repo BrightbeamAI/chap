@@ -25,6 +25,10 @@ record_turn records a reply your own code took, in the reviewer's name:
     override      decide.override  (message vs reply, as a diff)
     reject        decide.reject
 
+AG2 1.x has no such hook, and gates a tool with middleware: tool_approval
+returns a middleware that puts each call of the tool in front of a person,
+through the same review, and runs it as they decide.
+
 AG2's turn is a weak signal, since the same loop carries plain dialogue,
 so `decision` is authoritative. The only inference the adapter makes is
 that an empty reply means "use the agent's output", i.e. approve. A
@@ -38,6 +42,8 @@ against real AG2 objects or plain values.
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import dataclasses
 import json
 import time
@@ -283,14 +289,82 @@ class ChapTurnBridge:
         None waits as long as the reviewer takes."""
         started = time.monotonic()
         while True:
-            view = _read_task(self.client or self.coord, self.workspace, task_id)
-            if view is None:
-                raise KeyError(f"Unknown task: {task_id}")
-            if view.get("state") not in _UNDECIDED:
-                return _decision(task_id, view)
+            decision = self._read_decision(task_id)
+            if decision is not None:
+                return decision
             if timeout is not None and time.monotonic() - started >= timeout:
                 raise TimeoutError(f"No decision on {task_id} after {timeout} seconds")
             time.sleep(poll_seconds)
+
+    # ---- AG2 1.x: approve a tool call ---------------------------------
+
+    def tool_approval(self, *, timeout: Optional[float] = None,
+                      poll_seconds: float = 2.0) -> Callable:
+        """A tool middleware for AG2 1.x that puts each call of the tool in
+        front of a person and runs it as they decide:
+
+            @tool(middleware=[bridge.tool_approval()])
+            def transfer(amount: int, to: str) -> str: ...
+
+        The call (tool name, arguments, call id) is the artefact under
+        review, on a task that requires review, so only a person's decision
+        completes it. An approval runs the call as the model made it, and an
+        override runs it with the reviewer's arguments. Anything else, an
+        edit to anything but the arguments included, runs nothing and
+        answers the model with the reviewer's note. The wait reads the task
+        every `poll_seconds`; after `timeout` seconds it raises
+        TimeoutError, which ends the turn, and None waits as long as the
+        reviewer takes.
+        """
+        if not self.reviewer.startswith("human:"):
+            raise ValueError(
+                "a review that waits for a person needs a 'human:' reviewer, "
+                f"got {self.reviewer!r}"
+            )
+
+        async def middleware(call_next: Any, event: Any, context: Any) -> Any:
+            artefact = {"tool": event.name, "args": json.loads(event.arguments or "{}"),
+                        "tool_call_id": event.id}
+            task_id = self._submit(artefact, self.reviewer, review_required=True)
+            decision = await self._await_decision(task_id, timeout, poll_seconds)
+            output = decision.output if isinstance(decision.output, dict) else {}
+            if decision.approved and all(output.get(key) == artefact[key]
+                                         for key in ("tool", "tool_call_id")):
+                edited = output.get("args")
+                if isinstance(edited, dict) and edited != artefact["args"]:
+                    event = copy.copy(event)
+                    event.arguments = json.dumps(edited)
+                    event.serialized_arguments = edited
+                return await call_next(event, context)
+            from ag2.events import ToolResultEvent
+            if decision.approved:
+                note = ("The reviewer's edit changed the call itself, which this run "
+                        "cannot apply, so the call was not made.")
+            else:
+                note = decision.comment or "The reviewer did not approve this call."
+            return ToolResultEvent.from_call(event, result=note)
+
+        return middleware
+
+    async def _await_decision(self, task_id: str, timeout: Optional[float],
+                              poll_seconds: float) -> Decision:
+        started = time.monotonic()
+        while True:
+            decision = self._read_decision(task_id)
+            if decision is not None:
+                return decision
+            if timeout is not None and time.monotonic() - started >= timeout:
+                raise TimeoutError(f"No decision on {task_id} after {timeout} seconds")
+            await asyncio.sleep(poll_seconds)
+
+    def _read_decision(self, task_id: str) -> Optional[Decision]:
+        """The decision on the task, or None as long as it is under review."""
+        view = _read_task(self.client or self.coord, self.workspace, task_id)
+        if view is None:
+            raise KeyError(f"Unknown task: {task_id}")
+        if view.get("state") in _UNDECIDED:
+            return None
+        return _decision(task_id, view)
 
     # ---- record a decision made elsewhere --------------------------
 
