@@ -636,6 +636,67 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
     assertEq(entry.outcome?.status, "refused", "the outcome marks the call refused");
     assertEq(entry.outcome?.code, -32011, "the outcome carries the refusal code");
   });
+
+  // ---- The authors of the work, and reviews that need a person ----
+
+  const BOT = "agent:reviewer-test-bot";
+  const call = (method: string, from: string, params: Record<string, unknown>) =>
+    client.call(method, { workspace: ws, from, ts: new Date().toISOString(), ...params });
+
+  await test("Review profile", "rv-14", "the author of work under a required review can neither join that review nor decide it", async () => {
+    const { result: t } = await call("task.create", "human:alice@example.org",
+      { kind: "review_test", assignee: BOT, input: {}, review_required: true });
+    await call("task.update", BOT, { task_id: t.task_id, state: "in_progress" });
+    const draft = { draft: "the bot's own" };
+    const { result: opened } = await call("task.complete", BOT, { task_id: t.task_id, output: draft });
+    assertEq(opened?.state, "review_requested", "a required review should open on completion");
+    const { error: widened } = await call("review.request", BOT, { task_id: t.task_id, artefact: draft, to: [BOT] });
+    assert(widened?.code === -32011, `the author added itself to the review, got ${JSON.stringify(widened)}`);
+    const { error: approved } = await call("decide.approve", BOT, { task_id: t.task_id });
+    assert(approved?.code === -32011, `the author approved its own work, got ${JSON.stringify(approved)}`);
+    const { result } = await call("decide.approve", "human:alice@example.org", { task_id: t.task_id });
+    assertEq(result?.state, "completed", "a person the review names should still decide it");
+  });
+
+  await test("Review profile", "rv-15", "the completer cannot decide a broadcast review of its own work", async () => {
+    const { result: t } = await call("task.create", "human:alice@example.org", { kind: "review_test", assignee: BOT, input: {} });
+    await call("task.complete", BOT, { task_id: t.task_id, output: { draft: "done" } });
+    const { result: r } = await call("review.request", BOT,
+      { task_id: t.task_id, artefact: { draft: "done" }, to: ["group:anyone"] });
+    assertEq(r?.state, "review_requested", "a broadcast review should open");
+    const { error } = await call("decide.approve", BOT, { task_id: t.task_id });
+    assert(error?.code === -32011, `the completer decided its own broadcast review, got ${JSON.stringify(error)}`);
+    const { result } = await call("decide.approve", "human:alice@example.org", { task_id: t.task_id });
+    assertEq(result?.state, "completed", "another member should decide a broadcast review");
+  });
+
+  await test("Review profile", "rv-16", "a required review is decided by a person whoever it is addressed to", async () => {
+    await call("participant.join", "agent:second-bot", { type: "agent" });
+    const { result: t } = await call("task.create", "human:alice@example.org",
+      { kind: "review_test", assignee: BOT, input: {}, review_required: true });
+    const draft = { draft: "needs a person" };
+    await call("task.complete", BOT, { task_id: t.task_id, output: draft });
+    const { error: added } = await call("review.request", "human:alice@example.org",
+      { task_id: t.task_id, artefact: draft, to: ["agent:second-bot"] });
+    assert(added?.code === -32011, `an agent was added to a required review, got ${JSON.stringify(added)}`);
+    await call("review.request", "human:alice@example.org", { task_id: t.task_id, artefact: draft, to: ["group:anyone"] });
+    const { error } = await call("decide.approve", "agent:second-bot", { task_id: t.task_id });
+    assert(error?.code === -32011, `an agent decided a required review, got ${JSON.stringify(error)}`);
+    const { result } = await call("decide.approve", "human:bystander@example.org", { task_id: t.task_id });
+    assertEq(result?.state, "completed", "a person should decide it through the broadcast entry");
+  });
+
+  await test("Review profile", "rv-17", "a task that holds a review completes only through a decision", async () => {
+    const { result: t } = await call("task.create", "human:alice@example.org", { kind: "review_test", assignee: BOT, input: {} });
+    await call("review.request", BOT, { task_id: t.task_id, artefact: { draft: "v1" }, to: ["human:alice@example.org"] });
+    await call("task.update", BOT, { task_id: t.task_id, state: "in_progress" });
+    const { error: skipped } = await call("task.update", BOT, { task_id: t.task_id, state: "completed" });
+    assert(skipped?.code === -32602, `task.update completed a task under review, got ${JSON.stringify(skipped)}`);
+    const { result: again } = await call("task.complete", BOT, { task_id: t.task_id, output: { draft: "v2" } });
+    assertEq(again?.state, "review_requested", "the completion should open a new round");
+    const { result } = await call("decide.approve", "human:alice@example.org", { task_id: t.task_id });
+    assertEq(result?.state, "completed", "the reviewer's decision completes it");
+  });
 }
 
 

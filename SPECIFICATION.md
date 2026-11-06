@@ -585,10 +585,12 @@ Membership is the floor, not the ceiling. Individual profiles MAY
 impose a stricter eligibility rule on top of it. In particular, the
 `review/1.0` profile requires that the actor of a review decision
 (`decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`)
-be one of the reviewers the review was addressed to in `review.request`'s
-`to` set; see [`profiles/review.md`](./profiles/review.md). A `to` entry
-that is a broadcast scope (`workspace:<id>` or `group:<name>`) is satisfied
-by any workspace member: the Coordinator does not model group membership,
+not be an author of the work under review, be a person where the task
+requires review, and be one of the reviewers the review was addressed to
+in `review.request`'s `to` set; see [`profiles/review.md`](./profiles/review.md).
+A `to` entry that is a broadcast scope (`workspace:<id>` or `group:<name>`)
+is satisfied by any workspace member other than the authors: the
+Coordinator does not model group membership,
 so a `group:` target means "any member", not "any member of that named
 group". Deployments that need a decision restricted to a named
 group MUST enforce that restriction externally (for example via an
@@ -766,11 +768,11 @@ categories, because several methods carry preconditions of their own.
 
 | From | Method | To |
 |------|--------|-----|
-| created, in_progress | `task.complete` (review not required) | completed |
-| created, in_progress | `task.complete` (review required) | review_requested, output held as the artefact under review |
+| created, in_progress | `task.complete` (review not required, no review held) | completed |
+| created, in_progress | `task.complete` (review required, or a review held) | review_requested, output held as the artefact under review |
 | created | `task.update` | in_progress, declined |
 | in_progress | `task.update` | in_progress, completed, declined |
-| in_progress | `task.update` to completed (review required) | refused, -32602 |
+| in_progress | `task.update` to completed (review required, or a review held) | refused, -32602 |
 | review_requested | `task.update` | in_progress |
 | paused | `task.update` | cancelled |
 | created, in_progress, completed, declined, abstained, escalated | `review.request` | review_requested |
@@ -818,11 +820,12 @@ Preconditions that are narrower or wider than "non-terminal":
   either way carries the artefact and the reviewers a decision acts on.
   `task.update` to `review_requested` is refused with `-32602`, since it
   would leave the task under review with no review to decide.
-- **`task.update` MUST NOT complete a task that requires review.**
-  `in_progress → completed` is otherwise legal, so without this the review
-  could be skipped: the task would finish carrying no artefact and no
-  `decide.*` would appear on the chain. The refusal is `-32602`, and the
-  route through is `task.complete` followed by a reviewer decision.
+- **`task.update` MUST NOT complete a task that requires review, or one
+  that holds a review.** `in_progress → completed` is otherwise legal, so
+  without this the review could be skipped: the task would finish carrying
+  no artefact and no `decide.*` would appear on the chain. The refusal is
+  `-32602`, and the route through is `task.complete` followed by a reviewer
+  decision.
 - **`review.request` compares only a rule the caller supplied.** Omitting
   `rule` on a second request for the same artefact leaves the open review's
   rule in place and widens the reviewer set; it is not a change to the rule.
@@ -835,11 +838,21 @@ is required when the task carries `review_required`, or when it runs in
 `escalate.raise` or `control.supersede` makes requires review when the task
 it replaces did, so neither removes a required review.
 
+A review once opened is decided. `task.complete` on a task that holds a
+review, taken back to `in_progress` by `task.update` or by a reject with
+`request_revision`, opens a new round of that review whether or not the
+task requires one, and only a reviewer decision then reaches `completed`.
+
 `task.complete` reads no reviewer list from `to`, so the Coordinator
 selects the reviewer set: the members of `type: "human"` other than the
 completer and the assignee. Where none qualifies the completion MUST be
-refused with `-32011`. An explicit `review.request` keeps whatever `to`
-it was given. See [`profiles/review.md`](./profiles/review.md) §3.1.
+refused with `-32011`. Every review records its authors, the assignee and
+the completer, and a Coordinator MUST refuse a decision from an author with
+`-32011`. Where review is required, a decision MUST come from a member of
+`type: "human"`, and a `review.request` whose `to` names an author or a
+member of another type MUST be refused with `-32011`; otherwise an
+explicit `review.request` keeps whatever `to` it was given. See
+[`profiles/review.md`](./profiles/review.md) §3.1.
 
 The finer-grained `task.assign` / `task.accept` / `task.start` /
 `task.progress` lifecycle reserved in [§12.3](#123-task) is not part of this
@@ -896,10 +909,10 @@ below and refuses others with `-32602`:
 
 Under every rule one `decide.reject` ends the review: `declined`, or
 `in_progress` with `request_revision`. One `decide.override` completes
-it. When a task that requires review is completed again after a
-revision, the review opens a new round with the same rule, the same named
-reviewers less the completer, and no decisions, so a decision made in an
-earlier round does not count towards the new artefact (review/1.0 §3.1).
+it. When a task that holds a review is completed again, the review opens a
+new round with the same rule, the same named reviewers less the authors of
+the new artefact, and no decisions, so a decision made in an earlier round
+does not count towards the new artefact (review/1.0 §3.1).
 Weighted rules belong to `deliberate.open` (`deliberation/1.0`), which
 takes weights and vetoes as parameters.
 

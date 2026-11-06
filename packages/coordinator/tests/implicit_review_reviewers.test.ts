@@ -156,14 +156,17 @@ test("an explicit request can still address an agent", () => {
   assert.equal(r.result.state, "completed");
 });
 
-test("an explicit request before completion is left alone", () => {
-  // task.complete only computes a reviewer set when there is no review yet.
+test("an explicit request on a task that requires review cannot address an agent", () => {
+  // A required review is decided by a person, so a request naming an agent
+  // is refused, and the completion opens the review to the humans.
   const { c, send } = ws(ONE_HUMAN_TWO_AGENTS);
   const id = send("task.create", { kind: "k", input: {}, assignee: "agent:drafter",
                                    review_required: true }).result.task_id;
-  send("review.request", { task_id: id, artefact: DRAFT, to: ["agent:other"] });
+  const r = send("review.request", { task_id: id, artefact: DRAFT, to: ["agent:other"] });
+  assert.equal(r.error?.code, E.NOT_AUTHORISED);
+  assert.equal(task(c, id).review, undefined);
   send("task.complete", { task_id: id, output: DRAFT });
-  assert.deepEqual(task(c, id).review.requested_to, ["agent:other"]);
+  assert.deepEqual(task(c, id).review.requested_to, ["human:you"]);
 });
 
 test("trial mode takes the same path", () => {

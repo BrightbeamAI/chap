@@ -110,6 +110,13 @@ the completer and the assignee; a workspace with no eligible human refuses the
 completion rather than opening a review nobody can decide. Under `modes/1.0` a
 trial-mode task has `review_required` set for it.
 
+A review records its `authors`, the task's assignee and the member that
+completed the work, and refuses a decision from either with `-32011`, however
+the review is addressed. On a task that requires review only a human member
+decides, and a `review.request` naming an author or an agent is refused. A task
+that holds a review, taken back to `in_progress`, completes only through a
+decision: its next `task.complete` opens a new round.
+
 ## Architecture
 
 The coordinator is transport-agnostic, persistence-agnostic, and

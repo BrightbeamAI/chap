@@ -106,6 +106,8 @@ interface Task {
     requested_to: ParticipantUri[];
     rule:         string;
     deadline?:    string;
+    /** The assignee, then the completer: who made the work, and may not decide it. */
+    authors:      ParticipantUri[];
     decisions:    {
       reviewer: ParticipantUri;
       kind:     "approve" | "reject" | "override" | "abstain";
@@ -380,9 +382,28 @@ function requireMember(ws: Workspace, sender: unknown): ReturnType<typeof err> |
   return null;
 }
 
-function requireReviewer(task: Task, sender: unknown): ReturnType<typeof err> | null {
+/** Who made the work: the assignee, then whoever completed it, once each. */
+function authorsOf(task: Task, completer: unknown): ParticipantUri[] {
+  return typeof completer === "string" && completer !== task.assignee ? [task.assignee, completer] : [task.assignee];
+}
+
+/** The sender of the task's latest completion, if it has one. */
+function lastCompleter(task: Task): ParticipantUri | undefined {
+  return [...task.history].reverse().find((h) => h.state === "completed")?.from;
+}
+
+// The authors of the work cannot decide it, and a task that requires review
+// is decided by a person (profiles/review.md §3.2).
+function requireReviewer(ws: Workspace, task: Task, sender: unknown): ReturnType<typeof err> | null {
   const review = task.review;
-  if (!review || !review.requested_to || review.requested_to.length === 0) return null;
+  if (!review) return null;
+  if (typeof sender === "string" && review.authors.includes(sender)) {
+    return err(E.NOT_AUTHORISED, "The author of the work under review cannot decide it");
+  }
+  if (task.review_required && ws.members.get(sender as string)?.type !== "human") {
+    return err(E.NOT_AUTHORISED, `This task requires a person's review: ${String(sender)} is not a human member`);
+  }
+  if (!review.requested_to || review.requested_to.length === 0) return null;
   // workspace:/group: scoped reviewers mean "any member"; membership floor suffices.
   if (review.requested_to.some((r) => typeof r === "string" && (r.startsWith("workspace:") || r.startsWith("group:")))) {
     return null;
@@ -485,13 +506,18 @@ const handlers: Record<string, Handler> = {
     if (!legal[task.state]?.includes(newState)) {
       return { error: err(E.PARAMS, `Illegal transition ${task.state} → ${newState}`) };
     }
-    // task.complete opens a review rather than completing when one is
-    // required. task.update reaches the same state by another route and
-    // carries no output, so completing here would record a finished task with
-    // nothing reviewed and no decision on the chain.
+    // task.complete opens a review, and does not complete, when one is
+    // required or when the task holds a review already. task.update reaches
+    // the same state by another route and carries no output, so completing
+    // here would record a finished task with nothing reviewed and no decision
+    // on the chain.
     if (newState === "completed" && task.review_required) {
       return { error: err(E.PARAMS,
         "This task requires review. Submit the output with task.complete, which opens the review; a reviewer decision completes it.") };
+    }
+    if (newState === "completed" && task.review) {
+      return { error: err(E.PARAMS,
+        "This task holds a review. Submit the output with task.complete, which opens a new round; a reviewer decision completes it.") };
     }
 
     task.state      = newState;
@@ -522,19 +548,18 @@ const handlers: Record<string, Handler> = {
     // artefact under review; only a reviewer decision then takes the task to
     // completed. Without this a review_required task reaches completed with
     // unreviewed output and no decision recorded.
-    if (task.review_required) {
+    if (task.review_required || task.review) {
       const now = new Date().toISOString();
-      task.pending_artefact = p.output;
+      const authors = authorsOf(task, p.from);
+      let note = "review required; opened on task.complete";
       if (!task.review) {
         // review_required means a person has to see this. The producer must
         // not satisfy its own review, and neither must another agent, so the
         // implicit review is addressed to the human members other than the
-        // completer and the assignee. With none, the completion is refused
-        // rather than opening a review no person can decide. An explicit
-        // review.request keeps its own `to`.
-        const producer = p.from as string;
+        // authors. With none, the completion is refused: a review no person
+        // can decide would never close.
         const eligible = [...ws.members.entries()]
-          .filter(([uri, member]) => uri !== producer && uri !== task.assignee && member.type === "human")
+          .filter(([uri, member]) => !authors.includes(uri) && member.type === "human")
           .map(([uri]) => uri);
         if (eligible.length === 0) {
           return { error: err(E.NOT_AUTHORISED,
@@ -542,12 +567,24 @@ const handlers: Record<string, Handler> = {
             "(needs a human member other than its assignee and completer)") };
         }
         task.review = { requested_at: now, requested_to: eligible,
-                        rule: "any_one_approves", decisions: [] };
+                        rule: "any_one_approves", decisions: [], authors };
+      } else {
+        // A task that holds a review completes only through a decision: the
+        // completion opens a new round with no decisions, the same rule, and
+        // the reviewers less the authors of the new artefact.
+        const reviewers = task.review.requested_to.filter((r) => !authors.includes(r)
+          && !(task.review_required && ws.members.has(r) && ws.members.get(r)!.type !== "human"));
+        if (reviewers.length === 0) {
+          return { error: err(E.NOT_AUTHORISED,
+            "No reviewer of this task remains once the authors of the work are left out") };
+        }
+        task.review = { ...task.review, requested_at: now, requested_to: reviewers, decisions: [], authors };
+        note = "a new round of the review; opened on task.complete";
       }
+      task.pending_artefact = p.output;
       task.state      = "review_requested";
       task.updated_at = now;
-      task.history.push({ ts: now, from: p.from as string, state: "review_requested",
-                          note: "review required; opened on task.complete" });
+      task.history.push({ ts: now, from: p.from as string, state: "review_requested", note });
       return { result: { state: "review_requested", review_id: task.id } };
     }
 
@@ -611,24 +648,41 @@ const handlers: Record<string, Handler> = {
     const rule = declaredRule ?? "any_one_approves";
 
     // CEP-001: an open review may be widened, not swapped underneath.
-    if (task.state === "review_requested" && task.review) {
+    const open = task.state === "review_requested" ? task.review : undefined;
+    if (open) {
       if (contentDigest(task.pending_artefact) !== contentDigest(p.artefact)) {
         return { error: err(E.REVIEW_ALREADY_OPEN,
           "A review is already open on this task with different content. " +
           "Decide, abstain, escalate or cancel it before requesting review of a new artefact.") };
       }
       // Only a rule the caller actually supplied can be a change.
-      if (declaredRule !== undefined && declaredRule !== task.review.rule) {
+      if (declaredRule !== undefined && declaredRule !== open.rule) {
         return { error: err(E.REVIEW_ALREADY_OPEN,
-          `Cannot change the decision rule of an open review (currently ${task.review.rule})`) };
+          `Cannot change the decision rule of an open review (currently ${open.rule})`) };
       }
+    }
+    // A review the task requires names people other than the authors of the
+    // work, whether it opens the review or widens it.
+    const authors = open ? open.authors : authorsOf(task, lastCompleter(task));
+    if (task.review_required) {
       for (const r of reviewers) {
-        if (!task.review.requested_to.includes(r)) task.review.requested_to.push(r);
+        if (authors.includes(r)) {
+          return { error: err(E.NOT_AUTHORISED, `The author of the work under review cannot review it: ${r}`) };
+        }
+        const member = ws.members.get(r);
+        if (member && member.type !== "human") {
+          return { error: err(E.NOT_AUTHORISED, `This task requires a person's review: ${r} is not a human member`) };
+        }
       }
-      if (p.deadline !== undefined) task.review.deadline = p.deadline as string;
+    }
+    if (open) {
+      for (const r of reviewers) {
+        if (!open.requested_to.includes(r)) open.requested_to.push(r);
+      }
+      if (p.deadline !== undefined) open.deadline = p.deadline as string;
       task.updated_at = new Date().toISOString();
       return { result: { state: "review_requested", review_id: task.id, amended: true,
-                         requested_to: [...task.review.requested_to] } };
+                         requested_to: [...open.requested_to] } };
     }
 
     task.state = "review_requested";
@@ -639,6 +693,7 @@ const handlers: Record<string, Handler> = {
       rule,
       deadline:     p.deadline as string,
       decisions:    [],
+      authors,
     };
     task.history.push({ ts: task.updated_at, from: p.from as string, state: "review_requested" });
     // Stash artefact on the task for diff base lookup
@@ -666,7 +721,7 @@ const handlers: Record<string, Handler> = {
     if (task.state !== "review_requested") {
       return { error: err(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
     }
-    const notReviewer = requireReviewer(task, p.from);
+    const notReviewer = requireReviewer(ws, task, p.from);
     if (notReviewer) return { error: notReviewer };
     const digestError = checkArtefactDigest(p, task);
     if (digestError) return { error: digestError };
@@ -734,7 +789,7 @@ const handlers: Record<string, Handler> = {
     if (task.state !== "review_requested") {
       return { error: err(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
     }
-    const notReviewer = requireReviewer(task, p.from);
+    const notReviewer = requireReviewer(ws, task, p.from);
     if (notReviewer) return { error: notReviewer };
 
     const now = new Date().toISOString();
@@ -800,7 +855,7 @@ function decide(p: Params, kind: "approve" | "reject"): { result?: unknown; erro
   if (task.state !== "review_requested") {
     return { error: err(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
   }
-  const notReviewer = requireReviewer(task, p.from);
+  const notReviewer = requireReviewer(ws, task, p.from);
   if (notReviewer) return { error: notReviewer };
   const digestError = checkArtefactDigest(p, task);
   if (digestError) return { error: digestError };

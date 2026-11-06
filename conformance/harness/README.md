@@ -26,6 +26,12 @@ success.
 - `abstain.declare` moves the task to `abstained` with a category.
 - A required review opened by `task.complete` is addressed to humans,
   and another agent in the workspace cannot decide it.
+- The authors of the work, its assignee and its completer, cannot add
+  themselves to a required review or decide any review of it, a broadcast
+  one included, and an agent cannot decide a required review through a
+  broadcast entry.
+- A task that holds a review completes only through a decision:
+  `task.update` cannot complete it, and `task.complete` opens a new round.
 - `decide.reject` with `request_revision: true` returns to
   `in_progress`.
 - A member's refused decision is recorded on the log under `request`,

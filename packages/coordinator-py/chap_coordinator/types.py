@@ -163,6 +163,9 @@ class ReviewState:
     rule: str = "any_one_approves"
     deadline: str | None = None
     decisions: list[dict] = field(default_factory=list)
+    # Who made the work under review: the task's assignee, then the member
+    # that completed it. None of them may decide the review.
+    authors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         out: dict[str, Any] = {
@@ -170,6 +173,7 @@ class ReviewState:
             "requested_to": self.requested_to,
             "rule": self.rule,
             "decisions": self.decisions,
+            "authors": self.authors,
         }
         if self.deadline:
             out["deadline"] = self.deadline

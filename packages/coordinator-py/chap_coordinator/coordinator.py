@@ -306,7 +306,12 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
         v = dict(v)
         v["history"] = [TaskHistoryEntry(**h) for h in v.get("history", [])]
         if isinstance(v.get("review"), dict):
-            v["review"] = ReviewState(**v["review"])
+            review = dict(v["review"])
+            # A review written before authors were recorded takes the
+            # assignee, the one author every review has.
+            if not isinstance(review.get("authors"), list):
+                review["authors"] = [v.get("assignee")]
+            v["review"] = ReviewState(**review)
         tasks[k] = Task(**v)
 
     whispers = {
@@ -358,6 +363,35 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     ws.route_decisions = route_decisions
     ws.audit = audit
     return ws
+
+
+def _review_required(ws: Workspace, task: Task) -> bool:
+    """Whether a task's work must be decided by a person: it carries
+    review_required, or it runs in trial on a workspace advertising
+    modes/1.0."""
+    return task.review_required is True or (task.mode == "trial" and ws.has_profile("modes"))
+
+
+def _raw_member(ws: Workspace, uri: Any) -> Member | None:
+    """A member, read without recording it as changed."""
+    return dict.get(ws.members, uri) if isinstance(uri, str) else None
+
+
+def _authors_of(task: Task, completer: Any) -> list[str]:
+    """Who made the work: the task's assignee, then whoever completed it,
+    once each."""
+    authors = [task.assignee]
+    if isinstance(completer, str) and completer != task.assignee:
+        authors.append(completer)
+    return authors
+
+
+def _last_completer(task: Task) -> str | None:
+    """The sender of the task's latest completion, if it has one."""
+    for entry in reversed(task.history):
+        if entry.state == "completed":
+            return entry.from_
+    return None
 
 
 def _review_rule_supported(rule: str) -> bool:
@@ -505,14 +539,16 @@ class Coordinator:
         return None
 
     @staticmethod
-    def _require_reviewer(task: Task, sender: str | None) -> dict | None:
-        """Assert that ``sender`` was addressed in the task's review.
+    def _require_reviewer(ws: Workspace, task: Task, sender: str | None) -> dict | None:
+        """Assert that ``sender`` may decide the task's open review.
 
         Applied to review-decision methods (decide.* and abstain.declare):
-        to act on a review you must be one of the reviewers it was
-        addressed to (the ``to`` set on review.request). Membership is the
-        floor; this is the eligibility ceiling for decisions. Returns an
-        error envelope fragment if not eligible, else ``None``.
+        to act on a review you must not be an author of the work under
+        review, must be a human member where the task requires review, and
+        must be one of the reviewers it was addressed to (the ``to`` set on
+        review.request). Membership is the floor; this is the eligibility
+        ceiling for decisions. Returns an error envelope fragment if not
+        eligible, else ``None``.
 
         A broadcast-scoped reviewer (a ``workspace:`` or ``group:`` URI in
         the ``to`` set) is satisfied by any workspace member, so in that
@@ -526,7 +562,19 @@ class Coordinator:
         working.
         """
         review = task.review
-        if review is None or not review.requested_to:
+        if review is None:
+            return None
+        # A decision by whoever made the work is not a review of it, whatever
+        # the reviewer set says, broadcast scopes included.
+        if sender in review.authors:
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED, "The author of the work under review cannot decide it")}
+        member = _raw_member(ws, sender)
+        if _review_required(ws, task) and (member is None or member.type != "human"):
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED,
+                f"This task requires a person's review: {sender} is not a human member")}
+        if not review.requested_to:
             # No recorded reviewer set: fall back to the membership floor,
             # which the caller has already enforced.
             return None
@@ -1568,15 +1616,21 @@ class Coordinator:
             return {"error": rpc_error(
                 E.PARAMS, f"Illegal transition {task.state} -> {new_state}"
             )}
-        # task.complete opens a review rather than completing when one is
-        # required. task.update reaches the same state by another route and
-        # carries no output, so completing here would record a finished task
-        # with nothing reviewed and no decision on the chain.
-        if new_state == "completed" and task.review_required:
+        # task.complete opens a review, and does not complete, when one is
+        # required or when the task holds a review already. task.update
+        # reaches the same state by another route and carries no output, so
+        # completing here would record a finished task with nothing reviewed
+        # and no decision on the chain.
+        if new_state == "completed" and _review_required(ws, task):
             return {"error": rpc_error(
                 E.PARAMS,
                 "This task requires review. Submit the output with task.complete, "
                 "which opens the review; a reviewer decision completes it.")}
+        if new_state == "completed" and task.review is not None:
+            return {"error": rpc_error(
+                E.PARAMS,
+                "This task holds a review. Submit the output with task.complete, "
+                "which opens a new round; a reviewer decision completes it.")}
         task.state = new_state
         task.updated_at = self.now_iso()
         task.history.append(TaskHistoryEntry(
@@ -1609,34 +1663,37 @@ class Coordinator:
                                        or not isinstance(confidence, (int, float, str))):
             return {"error": rpc_error(E.PARAMS, "confidence must be a number or a string")}
         # review/1.0 S3.1: task.complete on a task whose review is required
-        # opens a review implicitly rather than completing. The submitted output
-        # becomes the artefact under review; only a reviewer decision (decide.*)
-        # then takes the task to completed. Without this a review_required task
-        # would reach completed with unreviewed output and no decision.
-        if task.review_required:
+        # opens a review implicitly and does not complete, and so does
+        # task.complete on a task that holds a review from an earlier round.
+        # The submitted output becomes the artefact under review; only a
+        # reviewer decision (decide.*) then takes the task to completed.
+        # Without this a review_required task would reach completed with
+        # unreviewed output and no decision, and a task taken back from review
+        # with task.update would complete with none.
+        required = _review_required(ws, task)
+        if required or task.review is not None:
             now = self.now_iso()
+            # The assignee and the completer made this artefact, and neither
+            # may decide it.
+            authors = _authors_of(task, p.get("from"))
+            note = "review required; opened on task.complete"
             if task.review is None:
                 # review_required means a person has to see this. The producer
                 # must not satisfy its own review, and neither must another
                 # agent: an agent approving an agent leaves a decide.approve on
                 # the chain that reads as human oversight and is not. So the
                 # implicit review is addressed to the human members other than
-                # the completer and the assignee, and where there are none the
-                # completion is refused rather than opening a review no person
-                # can decide. An explicit review.request keeps its own `to`, so
-                # a deliberate agent-reviews-agent flow is still available.
-                producer = p.get("from", "")
-                others = [uri for uri in ws.members
-                          if uri != producer and uri != task.assignee]
-                eligible = [uri for uri in others
-                            if dict.__getitem__(ws.members, uri).type == "human"]
+                # the authors, and where there are none the completion is
+                # refused: a review no person can decide would never close.
+                eligible = [uri for uri, member in dict.items(ws.members)
+                            if uri not in authors and member.type == "human"]
                 if not eligible:
                     return {"error": rpc_error(
                         E.NOT_AUTHORISED,
                         "Task requires review but has no eligible human reviewer "
                         "(needs a human member other than its assignee and completer)")}
-                task.review = ReviewState(requested_at=now,
-                                          requested_to=list(eligible))
+                task.review = ReviewState(requested_at=now, requested_to=eligible,
+                                          authors=authors)
             else:
                 # The task held a review already: it went back to in_progress
                 # through task.update or a reject with request_revision, and
@@ -1645,23 +1702,28 @@ class Coordinator:
                 # with no decisions; kept, an approval of the earlier artefact
                 # would count towards the rule on this one. The reviewers and
                 # the rule stay, so a revision cannot weaken the review. The
-                # completer is the new artefact's author, so it is left out of
-                # the reviewers, as it is when the first review opens; where
-                # nobody remains, the completion is refused.
-                author = p.get("from", "")
-                reviewers = [r for r in task.review.requested_to if r != author]
+                # authors of the new artefact are left out of the reviewers,
+                # and so is any member who is not a person where the review is
+                # required; where nobody remains, the completion is refused.
+                def keeps(r: str) -> bool:
+                    member = _raw_member(ws, r)
+                    return r not in authors and not (
+                        required and member is not None and member.type != "human")
+                reviewers = [r for r in task.review.requested_to if keeps(r)]
                 if not reviewers:
                     return {"error": rpc_error(
                         E.NOT_AUTHORISED,
-                        "Task requires review but has no reviewer other than its completer")}
+                        "No reviewer of this task remains once the authors of the work "
+                        "are left out")}
                 task.review = dataclasses.replace(
-                    task.review, requested_at=now, requested_to=reviewers, decisions=[])
+                    task.review, requested_at=now, requested_to=reviewers, decisions=[],
+                    authors=authors)
+                note = "a new round of the review; opened on task.complete"
             task.pending_artefact = p.get("output")
             task.state = "review_requested"
             task.updated_at = now
             task.history.append(TaskHistoryEntry(
-                ts=now, from_=p.get("from", ""), state="review_requested",
-                note="review required; opened on task.complete",
+                ts=now, from_=p.get("from", ""), state="review_requested", note=note,
             ))
             return {"result": {"state": "review_requested",
                                "review_id": task.id}}
@@ -1791,7 +1853,8 @@ class Coordinator:
         # different artefacts. Re-requesting the *same* artefact is a different
         # thing: it widens the reviewer set on an open review, which is
         # legitimate and preserves what has been decided so far.
-        if task.state == "review_requested" and task.review is not None:
+        open_review = task.review if task.state == "review_requested" else None
+        if open_review is not None:
             if content_hash(task.pending_artefact) != content_hash(p["artefact"]):
                 return {"error": rpc_error(
                     E.REVIEW_ALREADY_OPEN,
@@ -1802,23 +1865,46 @@ class Coordinator:
             # Only a rule the caller actually supplied can be a change.
             # Comparing the resolved default instead refused the documented
             # widen-the-reviewer-set request whenever `rule` was omitted.
-            if declared_rule is not None and declared_rule != task.review.rule:
+            if declared_rule is not None and declared_rule != open_review.rule:
                 return {"error": rpc_error(
                     E.REVIEW_ALREADY_OPEN,
                     f"Cannot change the decision rule of an open review "
-                    f"(currently {task.review.rule})",
+                    f"(currently {open_review.rule})",
                 )}
+
+        # Where a person's review is required, the reviewers a request names,
+        # opening the review or widening it, must be people other than the
+        # authors of the work. Without this the agent whose work a required
+        # review holds could add itself to that review and approve its own
+        # work. An explicit review of a task that does not require one keeps
+        # its own `to`, so a deliberate agent-reviews-agent flow is still
+        # available.
+        authors = (open_review.authors if open_review is not None
+                   else _authors_of(task, _last_completer(task)))
+        if _review_required(ws, task):
             for r in reviewers:
-                if r not in task.review.requested_to:
-                    task.review.requested_to.append(r)
+                if r in authors:
+                    return {"error": rpc_error(
+                        E.NOT_AUTHORISED,
+                        f"The author of the work under review cannot review it: {r}")}
+                member = _raw_member(ws, r)
+                if member is not None and member.type != "human":
+                    return {"error": rpc_error(
+                        E.NOT_AUTHORISED,
+                        f"This task requires a person's review: {r} is not a human member")}
+
+        if open_review is not None:
+            for r in reviewers:
+                if r not in open_review.requested_to:
+                    open_review.requested_to.append(r)
             if p.get("deadline") is not None:
-                task.review.deadline = p["deadline"]
+                open_review.deadline = p["deadline"]
             task.updated_at = now
             return {"result": {
                 "state": "review_requested",
                 "review_id": task.id,
                 "amended": True,
-                "requested_to": list(task.review.requested_to),
+                "requested_to": list(open_review.requested_to),
             }}
 
         task.state = "review_requested"
@@ -1828,6 +1914,7 @@ class Coordinator:
             requested_to=list(reviewers),
             rule=rule,
             deadline=p.get("deadline"),
+            authors=authors,
         )
         task.history.append(TaskHistoryEntry(
             ts=now, from_=p["from"], state="review_requested",
@@ -1885,7 +1972,7 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_REVIEWABLE, f"Task not awaiting review: {task.state}"
             )}
-        not_reviewer = self._require_reviewer(task, p.get("from"))
+        not_reviewer = self._require_reviewer(ws, task, p.get("from"))
         if not_reviewer:
             return not_reviewer
         digest_error = self._check_artefact_digest(p, task)
@@ -1935,7 +2022,7 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_REVIEWABLE, f"Task not awaiting review: {task.state}"
             )}
-        not_reviewer = self._require_reviewer(task, p.get("from"))
+        not_reviewer = self._require_reviewer(ws, task, p.get("from"))
         if not_reviewer:
             return not_reviewer
         digest_error = self._check_artefact_digest(p, task)
@@ -2011,7 +2098,7 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_REVIEWABLE, f"Task not awaiting review: {task.state}"
             )}
-        not_reviewer = self._require_reviewer(task, p.get("from"))
+        not_reviewer = self._require_reviewer(ws, task, p.get("from"))
         if not_reviewer:
             return not_reviewer
         now = self.now_iso()

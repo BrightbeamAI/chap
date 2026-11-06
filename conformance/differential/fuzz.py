@@ -362,6 +362,10 @@ class Recorder:
         if a == "decide":
             tid = rnd.choice(self._by_state("review_requested"))
             human = rnd.choice(self._reviewers(tid))
+            if rnd.random() < 0.15:
+                # The author of the work, or another agent: refused where the
+                # review needs a person or the decider made the work.
+                human = rnd.choice([self._assignee(tid), *AGENTS])
             kind = rnd.choice(["decide.approve", "decide.reject",
                                "decide.override", "decide.override",
                                "abstain.declare"])
@@ -471,8 +475,13 @@ class Recorder:
         elif a == "review":
             doc = self._artefact()
             self.artefacts[tid] = doc
+            to = rnd.sample(HUMANS, rnd.randint(1, 2))
+            if rnd.random() < 0.15:
+                # An agent, perhaps the assignee itself: refused where the
+                # task requires a person's review.
+                to.append(rnd.choice(AGENTS))
             r = self._send("review.request", self._assignee(tid), task_id=tid,
-                           artefact=doc, to=rnd.sample(HUMANS, rnd.randint(1, 2)),
+                           artefact=doc, to=to,
                            rule=rnd.choice(["any_one_approves", "all_approve", "quorum:2"]))
             if "error" in r:
                 self.artefacts.pop(tid, None)

@@ -163,14 +163,17 @@ def test_an_explicit_request_can_still_address_an_agent():
     assert r["result"]["state"] == "completed"
 
 
-def test_an_explicit_request_before_completion_is_left_alone():
-    # task.complete only computes a reviewer set when there is no review yet.
+def test_an_explicit_request_on_a_task_that_requires_review_cannot_address_an_agent():
+    # A required review is decided by a person, so a request naming an agent
+    # is refused, and the completion opens the review to the humans.
     c, send = _ws(ONE_HUMAN_TWO_AGENTS)
     tid = send("task.create", kind="k", input={}, assignee="agent:drafter",
                review_required=True)["result"]["task_id"]
-    send("review.request", task_id=tid, artefact=DRAFT, to=["agent:other"])
+    r = send("review.request", task_id=tid, artefact=DRAFT, to=["agent:other"])
+    assert r["error"]["code"] == E.NOT_AUTHORISED
+    assert _task(c, tid).review is None
     send("task.complete", task_id=tid, output=DRAFT)
-    assert _task(c, tid).review.requested_to == ["agent:other"]
+    assert _task(c, tid).review.requested_to == ["human:you"]
 
 
 def test_trial_mode_takes_the_same_path():

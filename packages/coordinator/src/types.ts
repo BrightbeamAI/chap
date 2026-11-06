@@ -307,6 +307,11 @@ export interface Task {
     rule:         string;
     deadline?:    string;
     decisions:    ReviewDecision[];
+    /**
+     * Who made the work under review: the task's assignee, then the member
+     * that completed it. None of them may decide the review.
+     */
+    authors:      ParticipantUri[];
   };
   history:      { ts: string; from: ParticipantUri; state: TaskState; note?: string }[];
   supersedes?:  TaskId;

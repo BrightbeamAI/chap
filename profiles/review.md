@@ -114,9 +114,36 @@ with `-32011` rather than open a review nobody can decide. A task requiring
 review in a workspace with no independent human reviewer is a
 misconfiguration, and the operator needs told.
 
-An explicit `review.request` keeps whatever `to` it was given. Addressing the
-producer, or another agent, is a deliberate choice and this profile does not
-override it; that is the route for an agent-reviews-agent flow.
+#### The authors of the work
+
+An open review records `authors`: the task's assignee, then the member that
+completed the work under review, once each. On the implicit review and on a
+new round (below), the completer is the `from` of the `task.complete` that
+submitted the artefact. On an explicit `review.request`, it is the `from` of
+the task's latest `completed` history entry, where there is one. A review
+recorded before authors were kept is read as having the assignee alone.
+
+A Coordinator MUST refuse with `-32011`, "The author of the work under review
+cannot decide it", a `decide.approve`, `decide.reject`, `decide.override` or
+`abstain.declare` from an author, however the review is addressed, broadcast
+scopes included. A decision by whoever made the work is not a review of it,
+and without this rule an agent could request review of its own output from
+`group:` or `workspace:` and approve it.
+
+Where the task requires review, a person decides it, and a person other than
+the authors is asked:
+
+- A decision from a member whose `type` is not `human` MUST be refused with
+  `-32011`.
+- A `review.request`, opening the review or amending it, whose `to` names an
+  author or a member whose `type` is not `human` MUST be refused with
+  `-32011`. Without this the agent whose work a required review holds could
+  add itself to the review and then approve its own work.
+
+An explicit `review.request` on a task that does not require review keeps
+whatever `to` it was given. Addressing another agent is a deliberate choice
+and this profile does not override it; that is the route for an
+agent-reviews-agent flow. Its authors still cannot decide it.
 
 **Re-request on an open review.** A review already open on the task
 constrains what a second `review.request` may do.
@@ -126,7 +153,8 @@ constrains what a second `review.request` may do.
   are added to the existing set, decisions already cast are preserved,
   and the result carries `"amended": true` with the resulting
   `requested_to`. This is how a reviewer is added to a review in
-  flight.
+  flight. On a task that requires review, an amendment names people
+  other than the review's authors, as an opening request does.
 - If the `artefact` differs, the Coordinator MUST refuse with `-32014`
   and change nothing. Replacing the artefact underneath an open review
   would let a reviewer decide on content they never saw, and would
@@ -146,36 +174,40 @@ constrains what a second `review.request` may do.
   amendment to a review opened under anything but
   `any_one_approves`.
 
-**A revised artefact starts a new round.** A task under review returns to
+**A review once opened is decided.** A task under review returns to
 `in_progress` through `task.update`, or through a `decide.reject` with
-`request_revision`. When `task.complete` then submits a new artefact on a
-task that requires review, the Coordinator opens a new round of the same
-review: the reviewers and the rule stay as they were, and the decisions
+`request_revision`. A task that holds a review completes only through a
+decision, whether or not it requires review: when `task.complete` then
+submits a new artefact, the Coordinator opens a new round of the same
+review. The reviewers and the rule stay as they were, and the decisions
 start empty, so a decision made in an earlier round does not count towards
 the rule on the new artefact. The earlier round's decisions stay on the
-chain. The completer is the new artefact's author and is left out of the
-round's named reviewers; a completion that would leave none is refused with
-`-32011`. The round's `requested_at` is the time of the completion.
+chain. The new artefact's authors are recorded for the round and left out
+of its named reviewers, and so is any member who is not human where the
+task requires review; a completion that would leave no reviewer is refused
+with `-32011`. The round's `requested_at` is the time of the completion.
+Before this, a task that did not require review completed on that
+`task.complete` with no decision at all.
 
-Three things the round leaves as they were. A copy of a decision sent again
+Two things the round leaves as they were. A copy of a decision sent again
 is a new call, evaluated like any other ([SECURITY.md, Envelope id
 replay](../SECURITY.md#envelope-id-replay)), and counts in the round it
 arrives in; a decision that carries `approved_artefact_digest` (§3.2) is
 refused against any artefact other than the one it names, so a client that
-needs its decision tied to one artefact sends the digest. A broadcast entry
-among the reviewers still lets any member decide, the completer included.
-And `review.request` still adds reviewers to an open review, as described
+needs its decision tied to one artefact sends the digest. And
+`review.request` still adds reviewers to an open review, as described
 above, and opens a review with new reviewers and a new rule on a task back
-in progress, so a deployment that must keep a completer from choosing its
-own reviewers withholds `review.request` from it.
+in progress; on a task that requires review either names only people other
+than the authors.
 
 **Completing round the review.** `task.update` reaches `completed` by
-another route and carries no output, so a task requiring review MUST NOT
-be completed through it. The Coordinator refuses with `-32602` and names
-`task.complete` in the message. Without this the review is skipped
-outright: the task finishes with no artefact recorded and no `decide.*`
-on the chain, which is the single failure `review_required` exists to
-prevent. See [SPECIFICATION.md §8.1](../SPECIFICATION.md#81-lifecycle).
+another route and carries no output, so a task requiring review, or one
+that holds a review, MUST NOT be completed through it. The Coordinator
+refuses with `-32602` and names `task.complete` in the message. Without
+this the review is skipped outright: the task finishes with no artefact
+recorded and no `decide.*` on the chain, which is the single failure a
+review exists to prevent. See
+[SPECIFICATION.md §8.1](../SPECIFICATION.md#81-lifecycle).
 
 ### 3.2 `decide.approve` · `decide.reject`
 
@@ -223,22 +255,23 @@ behaviour is exactly as it was: the field is optional and additive.
 ```
 
 **Eligibility.** The actor (`from`) of any review decision MUST be a
-joined workspace member (Core §6.3.1) **and** MUST be one of the
-reviewers the review was addressed to in `review.request`'s `to` set.
-A Coordinator MUST reject a decision from a member who was not an
-addressed reviewer with `-32011` (reviewer not authorised). This holds
-for `decide.approve`, `decide.reject`, `decide.override`, and
-`abstain.declare`. The `rule` field governs *how many* addressed
-reviewers must decide for the review to terminate; the `to` set governs
-*who is eligible* to decide at all.
+joined workspace member (Core §6.3.1), MUST NOT be one of the review's
+authors (§3.1), MUST be a member of `type: "human"` where the task
+requires review, **and** MUST be one of the reviewers the review was
+addressed to in `review.request`'s `to` set. A Coordinator MUST reject a
+decision that fails any of these with `-32011`, checking them in that
+order. This holds for `decide.approve`, `decide.reject`,
+`decide.override`, and `abstain.declare`. The `rule` field governs *how
+many* addressed reviewers must decide for the review to terminate; the
+`to` set governs *who is eligible* to decide at all.
 
-A broadcast-scoped reviewer relaxes the second condition. If the `to`
+A broadcast-scoped reviewer relaxes the last condition. If the `to`
 set contains a `workspace:<id>` or `group:<id>` URI, any workspace
-member is an eligible reviewer and only the membership floor applies.
-The Coordinator does not model group membership; a deployment that
-needs a decision restricted to a named group MUST enforce that outside
-the Coordinator. If a review carries no recorded reviewer set, the
-membership floor alone applies.
+member other than the authors is an eligible reviewer, a person where
+the task requires review. The Coordinator does not model group
+membership; a deployment that needs a decision restricted to a named
+group MUST enforce that outside the Coordinator. If a review carries no
+recorded reviewer set, the other conditions alone apply.
 
 ```json
 {
@@ -450,7 +483,7 @@ piece of the protocol is plumbing.
 | Code      | Meaning                                                |
 |-----------|--------------------------------------------------------|
 | `-32010`  | Task is not in a reviewable state: no open review for a decision, or a `review.request` on a cancelled, superseded or paused task. |
-| `-32011`  | Actor is not authorised: not a workspace member, or a member who was not an addressed reviewer for this task. |
+| `-32011`  | Actor is not authorised: not a workspace member, an author of the work under review, a member who is not human on a task that requires review, or a member who was not an addressed reviewer for this task. Also a `review.request` on a task that requires review whose `to` names an author or a member who is not human, and a completion that would leave a review with no reviewer. |
 | `-32012`  | JSON Patch application failed; the message names the failure and any failing path. |
 | `-32013`  | Reserved for a lapsed review. No Coordinator returns it, and the review `deadline` is not enforced. |
 | `-32014`  | A review is already open on this task with different content, or the request would change the decision rule of an open review. |
