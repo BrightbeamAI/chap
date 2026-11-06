@@ -54,22 +54,29 @@ export async function openDesk(base, { hash = "", path = "", waitMs = 1500, stor
   install("matchMedia", () => ({ matches: false, addEventListener() {} }));
   w.Element.prototype.scrollIntoView = () => {};
   const calls = [];
-  // The browser resolves the desk's paths against the page, and sends the
-  // page's origin with a POST.
-  install("fetch", async (input, init = {}) => {
-    const url = new URL(String(input), w.location.href).href;
-    const headers = { ...(init.headers ?? {}), ...(init.method === "POST" ? { origin: new URL(base).origin } : {}) };
-    const res = await NODE_FETCH(url, { ...init, headers });
-    if (init.method === "POST" && new URL(url).pathname.endsWith("/chap")) {
-      const copy = res.clone();
-      const envelope = JSON.parse(init.body);
-      calls.push({ method: envelope.method, params: envelope.params, envelope, reply: await copy.json() });
-    }
-    return res;
-  });
   // The desk polls for ever; its timers are the harness's to stop.
   const timers = new Set();
   let closed = false;
+  // A closed page gets no answer: a request it makes, or one still on its
+  // way when it closes, never settles, so nothing the desk would do next
+  // runs once its document is gone.
+  const gone = () => new Promise(() => {});
+  // The browser resolves the desk's paths against the page, and sends the
+  // page's origin with a POST. The answer is read in full here, so the desk
+  // reads it from memory.
+  install("fetch", async (input, init = {}) => {
+    if (closed) return gone();
+    const url = new URL(String(input), w.location.href).href;
+    const headers = { ...(init.headers ?? {}), ...(init.method === "POST" ? { origin: new URL(base).origin } : {}) };
+    const res = await NODE_FETCH(url, { ...init, headers });
+    const body = await res.arrayBuffer();
+    if (closed) return gone();
+    if (init.method === "POST" && new URL(url).pathname.endsWith("/chap")) {
+      const envelope = JSON.parse(init.body);
+      calls.push({ method: envelope.method, params: envelope.params, envelope, reply: JSON.parse(new TextDecoder().decode(body)) });
+    }
+    return new Response(res.status === 204 || res.status === 304 ? null : body, { status: res.status, statusText: res.statusText, headers: res.headers });
+  });
   install("setTimeout", (fn, ms, ...rest) => { if (closed) return 0; const t = NODE_SET_TIMEOUT(fn, ms, ...rest); timers.add(t); return t; });
   install("setInterval", (fn, ms, ...rest) => { if (closed) return 0; const t = NODE_SET_INTERVAL(fn, ms, ...rest); timers.add(t); return t; });
   const errors = [];
