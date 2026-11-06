@@ -32,6 +32,9 @@ const state = {
   // Comments on lines, by task, until they go with a decision; the reviews
   // already seen waiting, so a new one is brought forward.
   comments: new Map(), waitingSeen: null,
+  // The review rounds acknowledged from this page, by task and the time the
+  // round opened, and whether the coordinator has review.acknowledge at all.
+  acked: new Set(), ackUnsupported: false,
   // The reviewer's signing key and whether the workspace holds it for them:
   // "unchecked" until the members are read, then "on record", "another key",
   // "no key" or "not joined"; "unsigned" where signatures are off. `refused`
@@ -70,8 +73,8 @@ const selected = () => state.tasks.find((t) => t.task_id === state.selectedId) ?
 /** The whole view of the selected task, once read. */
 const current = () => (state.detail?.id === state.selectedId ? state.detail.view : null);
 
-/** What changes when a task does: its state, its last update, the submission under review. */
-const detailKey = (t) => `${t.state}|${t.updated_at}|${t.submission?.seq ?? ""}|${(t.decision_log ?? []).length}`;
+/** What changes when a task does: its state, its last update, the submission under review, its decisions and acknowledgements. */
+const detailKey = (t) => `${t.state}|${t.updated_at}|${t.submission?.seq ?? ""}|${(t.decision_log ?? []).length}|${(t.review?.acknowledgements ?? []).length}`;
 
 /** Read the selected task whole. Returns the view it replaced, if it was of the same task. */
 async function loadDetail(t) {
@@ -514,7 +517,7 @@ function renderQueue() {
     for (const t of list) {
       const o = outcomeOf(t);
       const approvals = t.state === "review_requested" ? (t.review?.decisions ?? []).filter((d) => d.kind === "approve").length : 0;
-      q.append(el("button", { class: `item${t.task_id === state.selectedId ? " selected" : ""}`, onclick: () => select_(t.task_id), dataset: { id: t.task_id } },
+      q.append(el("button", { class: `item${t.task_id === state.selectedId ? " selected" : ""}`, onclick: () => select_(t.task_id, { byUser: true }), dataset: { id: t.task_id } },
         el("div", { class: "title" }, el("span", { text: titleOf(t) })),
         el("div", { class: "meta" },
           el("span", { text: t.assignee?.replace(/^agent:/, "") ?? "" }),
@@ -529,7 +532,11 @@ function renderQueue() {
   group("Decided", decided, "Nothing has been decided yet.");
 }
 
-function select_(id) {
+/**
+ * Open a task. `byUser` says the reviewer opened it themselves, from the
+ * queue or with j and k; otherwise the desk did, for a review that arrived.
+ */
+function select_(id, { byUser = false } = {}) {
   state.selectedId = id;
   state.editing = null;
   if (state.range.taskId !== id) {
@@ -542,6 +549,31 @@ function select_(id) {
   if (state.view !== "review") showView("review");
   const t = selected();
   if (t && state.detail?.id !== id) loadDetail(t).then(() => { if (state.selectedId === id) renderReview(); }).catch(lost);
+  acknowledge(t, { byUser });
+}
+
+/**
+ * Tell the workspace the reviewer has begun a review (review.acknowledge),
+ * the first time it is opened for them in a round, so the record shows when
+ * they took it up as well as when they decided it. The call is signed like
+ * any the reviewer makes; a passkey asks for each signature, so with one
+ * the desk acknowledges only a review the reviewer opened themselves. An
+ * acknowledgement on record for the reviewer, one already tried from this
+ * page, and a coordinator without the method (-32601) leave it be; so does
+ * any other refusal, which says the review is not theirs to take up.
+ */
+async function acknowledge(t, { byUser = false } = {}) {
+  if (!t || !mine(t) || state.ackUnsupported || !canSign() || document.hidden) return;
+  if (state.key.signer?.scheme === "webauthn" && !byUser) return;
+  const round = `${t.task_id} ${t.review.requested_at}`;
+  if (state.acked.has(round) || (t.review.acknowledgements ?? []).some((a) => a.reviewer === state.client.from)) return;
+  state.acked.add(round);
+  try {
+    await state.client.call("review.acknowledge", { task_id: t.task_id });
+    if (state.selectedId === t.task_id) { await loadDetail(t); renderReview(); }
+  } catch (e) {
+    if (e.code === -32601) state.ackUnsupported = true;
+  }
 }
 
 /** Open another commit of the branch on show. */
@@ -571,7 +603,9 @@ function renderReview() {
   $("r-input-card").hidden = t.kind === "commit_range";
   const approvalsSoFar = t.state === "review_requested" && t.review?.rule && t.review.rule !== "any_one_approves"
     ? `${(t.review.decisions ?? []).filter((d) => d.kind === "approve").length} so far` : null;
-  const facts = [["agent", t.assignee], ["reviewers", t.review?.requested_to?.join(", ")], ["rule", t.review?.rule], ["approvals", approvalsSoFar], ["opened", t.review?.requested_at ? `${ago(t.review.requested_at)} ago` : null], ["mode", t.mode], ["task", t.task_id]];
+  const named = (uri) => state.config?.humans?.find((h) => h.uri === uri)?.display_name ?? uri;
+  const seen = t.state === "review_requested" ? (t.review?.acknowledgements ?? []).map((a) => named(a.reviewer)).join(", ") : "";
+  const facts = [["agent", t.assignee], ["reviewers", t.review?.requested_to?.join(", ")], ["rule", t.review?.rule], ["approvals", approvalsSoFar], ["opened", t.review?.requested_at ? `${ago(t.review.requested_at)} ago` : null], ["acknowledged by", seen || null], ["mode", t.mode], ["task", t.task_id]];
   $("r-facts").replaceChildren(...facts.filter(([, v]) => v).map(([k, v]) => el("span", {}, `${k} `, el("b", { text: v }))));
   const input = t.input ?? {};
   const inputBody = $("r-input");
@@ -615,6 +649,7 @@ function renderReview() {
   const events = [];
   for (const h of t.history ?? []) events.push({ ts: h.ts, who: h.from, what: h.state.replace(/_/g, " "), note: h.note });
   for (const d of decisionsOf(t)) events.push({ ts: d.ts, who: d.reviewer, what: d.kind === "override" ? "approved with an edit" : d.kind === "reject" ? (d.request_revision ? "sent back for a revision" : "rejected") : d.kind === "approve" ? "approved" : d.kind, note: d.rationale ?? d.comment, tags: d.tags });
+  for (const a of t.review?.acknowledgements ?? []) events.push({ ts: a.ts, who: a.reviewer, what: "acknowledged" });
   events.sort((a, b) => a.ts.localeCompare(b.ts));
   history.replaceChildren(...events.map((e) => el("div", { class: "event" }, el("span", { class: "when", title: e.ts, text: `${ago(e.ts)} ago` }), el("span", {}, el("b", { text: e.what }), e.who ? el("span", { class: "muted", text: ` by ${e.who}` }) : null, e.note ? el("div", { class: "note", text: e.note }) : null, e.tags?.length ? el("div", { class: "small muted", text: e.tags.join(", ") }) : null))));
   $("r-history-card").hidden = !events.length;
@@ -954,8 +989,8 @@ function onKey(e) {
   const ordered = [...document.querySelectorAll("#queue .item")].map((b) => b.dataset.id);
   const at = ordered.indexOf(state.selectedId);
   switch (e.key) {
-    case "j": if (ordered.length) select_(ordered[Math.min(ordered.length - 1, at + 1)]); break;
-    case "k": if (ordered.length) select_(ordered[Math.max(0, at - 1)]); break;
+    case "j": if (ordered.length) select_(ordered[Math.min(ordered.length - 1, at + 1)], { byUser: true }); break;
+    case "k": if (ordered.length) select_(ordered[Math.max(0, at - 1)], { byUser: true }); break;
     case "a": approveByKey(); break;
     case "r": if (selected() && mine(selected())) { $("comment").focus(); notice("Write the note, then press Request changes.", ""); } break;
     case "x": decide("reject"); break;

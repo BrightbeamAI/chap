@@ -176,8 +176,10 @@ the file the coordinator writes. The checks:
 
 The desk has three views. Review shows each artefact by its shape, with
 Approve, Request changes, Reject, and Edit, which approves your version and
-records it as an override with your rationale. Activity reads the chain with
-what each call did. Insights counts what you did with the agent's work: how
+records it as an override with your rationale. The first time a review is
+opened for you in a round, the desk records that you have taken it up
+(`review.acknowledge`), and the review shows who has. Activity reads the
+chain with what each call did. Insights counts what you did with the agent's work: how
 often it was accepted as written, edited, sent back and rejected, the time
 to a first decision, and your own notes and rationales, each linked to its
 task. `j` and `k` move through the queue, `a` (once you confirm), `r` and `x` decide, and `?`

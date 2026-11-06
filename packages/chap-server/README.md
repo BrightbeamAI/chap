@@ -167,6 +167,15 @@ passkey asks the reviewer for each signature, which such a program cannot
 give; it can still put a request in front of them, so a passkey prompt the
 reviewer did not expect is one to refuse.
 
+## Taking up a review
+
+The first time a review is opened for the reviewer in a round, the desk
+sends `review.acknowledge`, so the record shows when they took it up as
+well as when they decided it, and the review shows who has. A passkey asks
+for each signature, so with one the desk acknowledges only a review the
+reviewer opens from the queue. A coordinator from before 0.3.5 answers
+`-32601`, and the desk then sends none.
+
 ## What the desk marks
 
 A character a reader cannot see, or one that changes how the text around it
