@@ -45,6 +45,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
+from uuid import uuid4
 
 from chap_coordinator import Coordinator
 
@@ -57,9 +58,13 @@ except PackageNotFoundError:  # running from a source checkout, not installed
 
 
 def _make_envelope(method: str, params: dict) -> dict:
+    """Build a JSON-RPC 2.0 envelope with an id of its own. A client that
+    signs what the bridge sends then signs two identical calls as two
+    requests, and the coordinator, which takes a signed request once,
+    takes each of them."""
     return {
         "jsonrpc": "2.0",
-        "id":      f"chap-pydantic-ai-{method}",
+        "id":      f"chap-pydantic-ai-{method}-{uuid4().hex}",
         "method":  method,
         "params":  params,
     }

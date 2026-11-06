@@ -256,3 +256,23 @@ def test_participant_type_rejects_unknown_scheme() -> None:
     assert _participant_type("agent:bot#v1") == "agent"
     with pytest.raises(ValueError, match="known scheme"):
         _participant_type("alice")
+
+
+def test_every_call_has_an_id_of_its_own(coord):
+    """A client that signs what the bridge sends signed two identical calls
+    alike under one id, and a coordinator takes a signed request once, so
+    the second was refused as a replay. Each call now has an id of its own."""
+    ids = []
+
+    class Recording:
+        workspaces = coord.workspaces
+
+        def dispatch(self, envelope):
+            ids.append(envelope["id"])
+            return coord.dispatch(envelope)
+
+    bridge = ChapHitlBridge(Recording(), workspace="wsp_li_ids", agent="agent:bot#v1",
+                   reviewer="human:alice@example.org")
+    bridge.audit()
+    bridge.audit()
+    assert len(ids) == len(set(ids)) == 4
