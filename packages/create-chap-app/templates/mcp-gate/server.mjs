@@ -6,6 +6,7 @@
 
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { serve } from "@brightbeamai/chap-server";
+import { serve, usage, wantsHelp } from "@brightbeamai/chap-server";
 
-await serve({ dir: dirname(fileURLToPath(import.meta.url)) });
+if (wantsHelp()) console.log(usage(import.meta.url));
+else await serve({ dir: dirname(fileURLToPath(import.meta.url)) });

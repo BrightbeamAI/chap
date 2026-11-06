@@ -1,4 +1,5 @@
-// Propose the working tree's change for review: `node propose.mjs "what it does" [options]`.
+// Propose the working tree's change for review: `chap-code-gate propose "what it does" [options]`,
+// or `node <gate>/propose.mjs "what it does" [options]` from the repository.
 //
 //   --repo <path>   the repository (default: the current directory)
 //   --by <name>     who drafted it, recorded on the artefact (default: working tree)
@@ -51,7 +52,7 @@ export function parseArgs(argv) {
     else if (a === "--context") out.context = argv[++i];
     else if (a === "--timeout") { out.timeout = Number(argv[++i]); if (!(out.timeout > 0)) throw new Error("--timeout takes a number of minutes"); }
     else if (a === "--no-open") out.open = false;
-    else if (a.startsWith("-")) throw new Error(`Unknown option ${a}`);
+    else if (a.startsWith("-")) throw new Error(`Unknown option ${a}. --help lists the options.`);
     else if (out.summary === null) out.summary = a;
     else throw new Error(`Unexpected argument ${a}`);
   }

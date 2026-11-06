@@ -8,4 +8,4 @@ export {
   makeHandler, makeServer, openReviews, openStore, publicConfig, reconcileOidcProfile, reconcileSignedProfile, serve, start, storePath, taskEvidence,
   taskView,
 } from "./lib/server.mjs";
-export { isMain } from "./lib/main.mjs";
+export { isMain, usage, wantsHelp } from "./lib/main.mjs";

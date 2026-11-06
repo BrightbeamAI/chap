@@ -62,7 +62,7 @@ export function parseArgs(argv) {
     else if (a === "--allow-clean-merges") out.allowCleanMerges = true;
     else if (a === "--allow-unsigned") out.allowUnsigned = true;
     else if (a === "--json") out.json = true;
-    else if (a.startsWith("-")) throw new Error(`Unknown option ${a}`);
+    else if (a.startsWith("-")) throw new Error(`Unknown option ${a}. --help lists the options.`);
     else out.range = a;
   }
   return out;

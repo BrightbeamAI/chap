@@ -130,19 +130,33 @@ export function renderTable(setA, setB, rows) {
   return lines.join("\n");
 }
 
+export const USAGE = `Usage: diff-profiles [--profiles a,b] [--against c,d] [--json]
+
+The project's workload under two profile sets, side by side: --profiles
+(the configured set by default) against --against (core/1.0 by default).
+Each row is one CHAP call and what each set did with it; the rows that
+differ are what a profile changes. --json prints the rows as JSON.`;
+
 /** Parse `--profiles a,b --against c,d --json` from argv. */
 export function parseArgs(argv, defaults) {
-  const out = { profiles: defaults, against: ["core/1.0"], json: false };
+  const out = { profiles: defaults, against: ["core/1.0"], json: false, help: false };
+  const list = (i) => {
+    if (argv[i] === undefined || argv[i].startsWith("-")) throw new Error(`${argv[i - 1]} needs a list of profiles`);
+    return argv[i].split(",").map((s) => s.trim()).filter(Boolean);
+  };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === "--profiles") out.profiles = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
-    else if (argv[i] === "--against") out.against = argv[++i].split(",").map((s) => s.trim()).filter(Boolean);
+    if (argv[i] === "--profiles") out.profiles = list(++i);
+    else if (argv[i] === "--against") out.against = list(++i);
     else if (argv[i] === "--json") out.json = true;
+    else if (argv[i] === "--help" || argv[i] === "-h") out.help = true;
+    else throw new Error(`Unknown option ${argv[i]}. --help lists the options.`);
   }
   return out;
 }
 
 export async function main({ template, language = "typescript", defaults, argv = process.argv.slice(2), generateSigner }) {
   const args = parseArgs(argv, defaults);
+  if (args.help) return console.log(USAGE);
   const needSigners = [args.profiles, args.against].some((p) => p.includes("security-signed/1.0"));
   const signers = needSigners && generateSigner ? await makeSigners(generateSigner) : null;
   const a = await runWorkload(args.profiles, { signers });

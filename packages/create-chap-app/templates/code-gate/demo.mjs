@@ -20,7 +20,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { access, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isMain, loadConfig } from "@brightbeamai/chap-server";
+import { isMain, loadConfig, usage, wantsHelp } from "@brightbeamai/chap-server";
 import { generateKeyFile, sshKeyFiles } from "@brightbeamai/chap-server/keys";
 import { createDemoRepo, startGate } from "@brightbeamai/chap-code-gate";
 import { run as runAgent } from "./agent.mjs";
@@ -70,8 +70,12 @@ export async function demo({ fresh = false, once = false, log = console.log } = 
   return outcomes;
 }
 
-if (isMain(import.meta.url)) {
+if (isMain(import.meta.url) && wantsHelp()) {
+  console.log(usage(import.meta.url));
+} else if (isMain(import.meta.url)) {
   const argv = process.argv.slice(2);
+  const unknown = argv.find((a) => !["--fresh", "--once"].includes(a));
+  if (unknown) { console.error(`Unknown option ${unknown}. --help lists the options.`); process.exit(2); }
   demo({ fresh: argv.includes("--fresh"), once: argv.includes("--once") }).catch((e) => {
     console.error(e instanceof Error ? e.message : String(e));
     process.exit(1);

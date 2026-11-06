@@ -370,3 +370,12 @@ test("through a symbolic link to the project, doctor runs its checks and fails w
   await assert.rejects(promisify(execFile)(process.execPath, [join(link, "doctor.mjs")], { env: { ...process.env, CHAP_URL: "http://127.0.0.1:1/chap" } }),
     (e) => e.code === 1 && /FAIL health/.test(e.stdout));
 });
+
+test("server.mjs, agent.mjs, doctor.mjs and diff-profiles.mjs each print their help with --help", async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  for (const [script, pattern] of [["server.mjs", /npm start/], ["agent.mjs", /--once/], ["doctor.mjs", /one line per check/], ["diff-profiles.mjs", /--against c,d/]]) {
+    const { stdout } = await promisify(execFile)(process.execPath, [join(projectDir, script), "--help"], { timeout: 10000 });
+    assert.match(stdout, pattern, script);
+  }
+});

@@ -8,10 +8,12 @@
 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { usage, wantsHelp } from "@brightbeamai/chap-server";
 import { createDemoRepo } from "@brightbeamai/chap-code-gate";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
+if (wantsHelp(argv)) { console.log(usage(import.meta.url)); process.exit(0); }
 const at = argv.indexOf("--dir");
 const dir = at >= 0 ? argv[at + 1] : join(here, "demo-repo");
 try {

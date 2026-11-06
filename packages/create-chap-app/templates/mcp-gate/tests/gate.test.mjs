@@ -124,3 +124,13 @@ test("an MCP client on the 2026-07-28 revision is answered at /mcp, as the agent
   assert.equal(spoofed.result.isError, true);
   assert.match(spoofed.result.content[0].text, /acts as/);
 });
+
+test("server.mjs and diff-profiles.mjs print their help with --help", async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const dir = fileURLToPath(new URL("..", import.meta.url));
+  for (const [script, pattern] of [["server.mjs", /npm start/], ["diff-profiles.mjs", /--against c,d/]]) {
+    const { stdout } = await promisify(execFile)(process.execPath, [`${dir}${script}`, "--help"], { timeout: 10000 });
+    assert.match(stdout, pattern, script);
+  }
+});

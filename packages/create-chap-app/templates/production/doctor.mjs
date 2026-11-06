@@ -25,7 +25,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isMain, storePath as resolveStore } from "@brightbeamai/chap-server";
+import { isMain, storePath as resolveStore, usage, wantsHelp } from "@brightbeamai/chap-server";
 import { makeClient, signerFromJwk } from "@brightbeamai/chap-server/client";
 import { keyPathFor, readKeyFile } from "@brightbeamai/chap-server/keys";
 
@@ -183,7 +183,9 @@ export function render(results) {
   return results.map((r) => `${r.status.padEnd(4)} ${r.name.padEnd(width)}  ${r.detail}`).join("\n");
 }
 
-if (isMain(import.meta.url)) {
+if (isMain(import.meta.url) && wantsHelp()) {
+  console.log(usage(import.meta.url));
+} else if (isMain(import.meta.url)) {
   const results = await runChecks();
   console.log(render(results));
   const failed = results.filter((r) => r.status === "FAIL").length;

@@ -5,6 +5,7 @@
 
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { usage, wantsHelp } from "@brightbeamai/chap-server";
 import { hook } from "./hook.mjs";
 import { main as installHooks } from "./install-hooks.mjs";
 import { main as propose } from "./propose.mjs";
@@ -35,9 +36,16 @@ export function findGateDir(cwd = process.cwd()) {
   }
 }
 
-/** Run the command `name` with its arguments against the gate project at `gateDir`. Returns the exit code. */
+/** The module each command lives in, whose opening comment is its help. */
+const moduleOf = (name) => new URL(`./${name}.mjs`, import.meta.url);
+
+/**
+ * Run the command `name` with its arguments against the gate project at
+ * `gateDir`. Returns the exit code. --help, or -h, prints the command's help.
+ */
 export async function run(name, argv, { gateDir, log = console.log } = {}) {
   const command = COMMANDS[name];
   if (!command) throw new Error(`Unknown command ${name}. Commands: ${Object.keys(COMMANDS).join(", ")}`);
+  if (wantsHelp(argv)) { log(usage(moduleOf(name))); return 0; }
   return command(argv, { gateDir, log });
 }

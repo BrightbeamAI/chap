@@ -31,7 +31,7 @@ export function parseArgs(argv, { gateDir = process.cwd() } = {}) {
     else if (a === "--reviewer") out.reviewers.push(argv[++i]);
     else if (a === "--agent") out.agents.push(argv[++i]);
     else if (a === "--people") out.people = argv[++i];
-    else throw new Error(`Unknown option ${a}`);
+    else throw new Error(`Unknown option ${a}. --help lists the options.`);
   }
   return out;
 }

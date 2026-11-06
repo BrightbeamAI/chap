@@ -1,4 +1,5 @@
-// Review a branch before it is pushed: `node propose-branch.mjs [<base>..]<head> [options]`.
+// Review a branch before it is pushed: `chap-code-gate propose-branch [<base>..]<head> [options]`,
+// or `node <gate>/propose-branch.mjs [<base>..]<head> [options]` from the repository.
 //
 //   <base>..<head>     the commits to review: those on <head> since it left <base>'s
 //                      history (default: the current branch since its upstream)
@@ -83,7 +84,7 @@ export function parseArgs(argv) {
     else if (a === "--push") { out.push = value(); out.wait = true; }
     else if (a === "--to") out.to = value();
     else if (a === "--help" || a === "-h") out.help = true;
-    else if (a.startsWith("-")) throw new Error(`Unknown option ${a}. node propose-branch.mjs --help lists them.`);
+    else if (a.startsWith("-")) throw new Error(`Unknown option ${a}. --help lists the options.`);
     else if (out.range === null) out.range = a;
     else throw new Error(`Unexpected argument ${a}`);
   }
