@@ -1692,7 +1692,7 @@ The five JSON-RPC 2.0 codes carry their standard meanings:
 | -32600 | `invalid_request`  | Not a JSON-RPC 2.0 call with a non-empty string `method`, or nested deeper than 64 levels, or larger than `max_envelope_bytes`. |
 | -32601 | `method_not_found` | Unknown method, or one whose owning profile the workspace does not advertise (§15.4). |
 | -32602 | `invalid_params`   | Params missing or ill-typed, or a call the current state rules out: unknown workspace or task, illegal transition, terminal task, broken chain. Never recorded (§10.1). |
-| -32603 | `internal_error`   | Implementation defect.                      |
+| -32603 | `internal_error`   | Implementation defect. The error carries no text from the fault, which can name a path, a query or another workspace's data; the Coordinator reports the fault to its operator. |
 
 Every other code belongs to the profile that defines it, and **each
 profile's own error table is authoritative**: `profiles/review.md` §5,

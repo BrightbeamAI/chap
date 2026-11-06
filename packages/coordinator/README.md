@@ -123,6 +123,11 @@ const response = coord.dispatch(envelope);
 response. State is held in memory; persist by subscribing with
 `coord.onAudit(listener)`.
 
+A handler that throws is answered with `-32603` and no detail, since an
+exception's text can name a path or another workspace's data. The error
+goes to `onInternalError(err, { method, workspace })`, or to stderr when
+the option is unset.
+
 Reference HTTP bindings:
 - `reference/core/` and `reference/core-plus-review/` (standalone TS
   servers used by the conformance harness and the demo playground)

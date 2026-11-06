@@ -27,6 +27,8 @@ import dataclasses
 import datetime as _dt
 import json
 import logging
+import sys
+import traceback
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -212,6 +214,12 @@ class CoordinatorOptions:
     call that adds to a workspace's log the Coordinator calls `apply` with
     what changed, or `save` with the whole workspace when the store has no
     `apply`."""
+
+    on_internal_error: Callable[[Exception, dict], None] | None = None
+    """Called when a handler raises, with the exception and
+    ``{"method": method, "workspace": workspace}``. The caller is answered
+    with -32603 and no detail. When unset, the traceback is written to
+    stderr."""
 
     on_store_error: Callable[[Exception, dict], None] | None = None
     """Called when a write to the store fails, with the error and
@@ -723,13 +731,12 @@ class Coordinator:
             # where no change is recorded for the store.
             out = handler(copy.deepcopy(params))
         except Exception as exc:
-            # Keep the wire message generic; a handler exception may carry
-            # internal detail that should not be disclosed to callers. The
-            # specifics remain available to operators via the data field.
-            return make_response(
-                env_id,
-                error=rpc_error(E.INTERNAL, "Internal error", data={"detail": str(exc)}),
-            )
+            # The caller learns only that the call failed. An exception's text
+            # can name a path, a query or a value from another workspace, so it
+            # goes to the operator through on_internal_error and never onto
+            # the wire.
+            self._report_internal_error(exc, method, params.get("workspace"))
+            return make_response(env_id, error=rpc_error(E.INTERNAL, "Internal error"))
 
         if "error" in out:
             return make_response(env_id, error=out["error"])
@@ -849,6 +856,19 @@ class Coordinator:
         except Exception as err:
             # Persistence failures must not break dispatch. See above.
             self._report_store_error(err, ws.id, len(ws.audit))
+
+    def _report_internal_error(self, exc: Exception, method: str, ws_id: Any) -> None:
+        call: dict = {"method": method}
+        if ws_id is not None:
+            call["workspace"] = ws_id
+        if self.options.on_internal_error is not None:
+            try:
+                self.options.on_internal_error(exc, call)
+            except Exception:
+                pass
+            return
+        print(f"chap coordinator: {method} failed with an internal error:", file=sys.stderr)
+        traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
 
     def _report_store_error(self, err: Exception, ws_id: str, version: int) -> None:
         if self.options.on_store_error is not None:

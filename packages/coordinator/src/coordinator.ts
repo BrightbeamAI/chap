@@ -150,6 +150,12 @@ export interface CoordinatorOptions {
    * write to the workspace carries what this one did not.
    */
   onStoreError?: (err: unknown, record: { id: string; version: number }) => void;
+  /**
+   * Called when a handler throws, with the error and the call's method and
+   * workspace. The caller is answered with -32603 and no detail. When unset,
+   * the error is written to stderr.
+   */
+  onInternalError?: (err: unknown, call: { method: string; workspace?: string }) => void;
   verifyOidcToken?: TokenVerifier;
   verifyVc?: CredentialVerifier;
   scittSubmitter?: ScittSubmitter;
@@ -587,6 +593,19 @@ export class Coordinator {
     });
   }
 
+  private reportInternalError(err: unknown, method: string, workspace: string | undefined): void {
+    const call = { method, ...(workspace !== undefined ? { workspace } : {}) };
+    if (this.options.onInternalError) {
+      try {
+        this.options.onInternalError(err, call);
+      } catch {
+        void 0;
+      }
+      return;
+    }
+    console.error(`chap coordinator: ${method} failed with an internal error:`, err);
+  }
+
   private reportStoreError(err: unknown, record: { id: string; version: number }): void {
     if (this.options.onStoreError) {
       try {
@@ -1015,11 +1034,11 @@ export class Coordinator {
       // recorded for the store.
       out = handler(ownCopy(params));
     } catch (e) {
-      // Keep the wire message generic; a handler exception may carry internal
-      // detail that should not be disclosed to callers. Specifics stay in the
-      // data field for operators.
-      const msg = e instanceof Error ? e.message : String(e);
-      return reply(envelope, { error: rpcError(E.INTERNAL, "Internal error", { detail: msg }) });
+      // The caller learns only that the call failed. An exception's text can
+      // name a path, a query or a value from another workspace, so it goes
+      // to the operator through onInternalError and never onto the wire.
+      this.reportInternalError(e, method, params.workspace as string | undefined);
+      return reply(envelope, { error: rpcError(E.INTERNAL, "Internal error") });
     }
     if (out.error) return reply(envelope, { error: out.error });
 
