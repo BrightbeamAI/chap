@@ -139,6 +139,12 @@ way.
   created with: the server says which when it starts, and `/api/config`
   gives it as `signature_policy`, `"all"`, `"humans"` or `null`. Signing
   needs the `crypto` extra.
+- `desk_signing` says how the desk signs, where signatures are required:
+  `"browser-key"`, the default, with a key the desk makes and keeps in the
+  browser; `"webauthn"`, with a passkey, which asks the person to verify
+  each signature; `"auto"`, with a passkey where the browser has one that
+  verifies its user, and the browser key otherwise. A passkey needs the
+  desk opened at a name, which on this machine is `localhost`.
 - `chain` links each entry on the log to the one before it by its hash.
 - `notify` tells people that a review or a question waits for them:
   `{"console": true}` prints a line where the server runs, and
@@ -149,8 +155,8 @@ way.
   grant nothing: whoever follows the link decides only as the desk lets
   them. A webhook that fails is logged, and no call waits on it. The
   secret is as private as the file that holds it.
-- PORT, CHAP_HOST, CHAP_DB_PATH, CHAP_REQUIRE_SIGNATURES, CHAP_CHAIN and
-  CHAP_ALLOWED_HOSTS override the file.
+- PORT, CHAP_HOST, CHAP_DB_PATH, CHAP_REQUIRE_SIGNATURES, CHAP_DESK_SIGNING,
+  CHAP_CHAIN and CHAP_ALLOWED_HOSTS override the file.
 
 A notice, as the webhook receives it:
 

@@ -201,6 +201,26 @@ def _signatures(config: dict) -> Union[bool, str]:
     return value
 
 
+#: How the desk signs where signatures are required, as the console says it.
+DESK_SIGNING = {
+    "auto": "the desk signs with a passkey where the browser has one, and otherwise with a key it keeps in the browser",
+    "webauthn": "the desk signs with a passkey",
+    "browser-key": "the desk signs with a key it keeps in the browser",
+}
+
+
+def _desk_signing(value: Any) -> str:
+    """``desk_signing`` from CHAP_DESK_SIGNING or the file, as the Node
+    server reads it: "auto", "webauthn" or "browser-key", the last where
+    none is given."""
+    if value is None or value == "":
+        return "browser-key"
+    if not isinstance(value, str) or value not in DESK_SIGNING:
+        raise ValueError(f"desk_signing in chap.config.json, or CHAP_DESK_SIGNING, is {json.dumps(value)}; "
+                         'it is "auto", "webauthn" or "browser-key"')
+    return value
+
+
 def _notify(value: Any) -> Optional[dict]:
     """``notify`` from chap.config.json, checked: ``console``, true or
     false, and ``webhook``, a URL and the secret its notices are signed
@@ -254,7 +274,11 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
     (a person's calls are signed, and a call from a member that is not a
     person need not be) or ``false``. It comes back as a flag, with
     ``signature_policy`` saying ``"all"``, ``"humans"``, or None where no
-    call is signed.
+    call is signed. ``desk_signing``, or CHAP_DESK_SIGNING, says how the
+    desk signs: ``"auto"``, a passkey where the browser has one that
+    verifies its user and the browser key otherwise; ``"webauthn"``, a
+    passkey; or ``"browser-key"``, a key the desk keeps in the browser, the
+    default.
 
     ``notify`` is ``{"console": true, "webhook": {"url": ..., "secret":
     ...}}``, either part optional, or absent: see :class:`Notifier`.
@@ -283,6 +307,7 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
     signatures = _signatures(config)
     config["require_signatures"] = signatures is not False
     config["signature_policy"] = None if signatures is False else "humans" if signatures == "humans" else "all"
+    config["desk_signing"] = _desk_signing(os.environ.get("CHAP_DESK_SIGNING") or config.get("desk_signing"))
     config["chain"] = (env_flag("CHAP_CHAIN", bool(config.get("chain", False)))
                        or has_profile(config["profiles"], "audit-scitt"))
     config["allowed_hosts"] = [*(config.get("allowed_hosts") or []), *env_list("CHAP_ALLOWED_HOSTS")]
@@ -592,6 +617,7 @@ def public_config(config: dict) -> dict:
         "agent": config.get("agent"),
         "require_signatures": bool(config.get("require_signatures")),
         "signature_policy": config.get("signature_policy"),
+        "desk_signing": config.get("desk_signing") or "browser-key",
         "chain_enabled": bool(config.get("chain")),
         "persistent": config["store"] != ":memory:",
         "oidc": None,
@@ -1164,6 +1190,8 @@ def serve(config: dict) -> int:
     print(f"  profiles {', '.join(config['profiles'])}")
     print(f"  store    {config['store']}{', chain on' if config.get('chain') else ''}")
     print(f"  signing  {POLICY_WORDS[config.get('signature_policy')]}")
+    if config.get("require_signatures"):
+        print(f"           {DESK_SIGNING[config.get('desk_signing') or 'browser-key']}")
     sys.stdout.flush()
     try:
         server.serve_forever()

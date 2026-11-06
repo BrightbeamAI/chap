@@ -45,8 +45,8 @@ def _parser() -> argparse.ArgumentParser:
         "serve", allow_abbrev=False,
         help="the desk server: the review desk, POST /chap and the read API, from one chap.config.json",
         description="Runs the desk server from a chap.config.json, in the one process that owns its store. "
-                    "PORT, CHAP_HOST, CHAP_DB_PATH, CHAP_REQUIRE_SIGNATURES, CHAP_CHAIN and CHAP_ALLOWED_HOSTS "
-                    "override the file; a store path is read against the file's directory.")
+                    "PORT, CHAP_HOST, CHAP_DB_PATH, CHAP_REQUIRE_SIGNATURES, CHAP_DESK_SIGNING, CHAP_CHAIN and "
+                    "CHAP_ALLOWED_HOSTS override the file; a store path is read against the file's directory.")
     serve.add_argument("--config", metavar="PATH",
                        help="the config file (CHAP_CONFIG, default chap.config.json in the current directory)")
     serve.add_argument("--host", metavar="ADDRESS", help="the address to listen on, over the file and CHAP_HOST")

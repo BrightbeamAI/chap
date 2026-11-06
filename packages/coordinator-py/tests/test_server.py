@@ -70,7 +70,8 @@ def write_config(directory: Path, **fields) -> Path:
 def desk_of(tmp_path, monkeypatch):
     """Start the standard library server on a free port, with the store in
     memory and these fields in chap.config.json; returns its port."""
-    for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS"):
+    for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS",
+                 "CHAP_DESK_SIGNING"):
         monkeypatch.delenv(name, raising=False)
     servers = []
 
@@ -201,6 +202,24 @@ def test_require_signatures_is_true_false_or_humans(tmp_path, monkeypatch, in_fi
     path = write_config(tmp_path, require_signatures=in_file, profiles=["core/1.0", *profiles])
     config = load_config(path)
     assert (config["require_signatures"], config["signature_policy"]) == expected
+
+
+def test_desk_signing_says_how_the_desk_signs_as_the_node_server_reads_it(tmp_path, monkeypatch):
+    # The desk reads it from /api/config: a passkey asks the person to
+    # verify each signature, which a program running as them cannot do.
+    monkeypatch.delenv("CHAP_DESK_SIGNING", raising=False)
+    assert public_config(load_config(write_config(tmp_path)))["desk_signing"] == "browser-key"
+    for value in ("auto", "webauthn", "browser-key"):
+        assert public_config(load_config(write_config(tmp_path, desk_signing=value)))["desk_signing"] == value
+    monkeypatch.setenv("CHAP_DESK_SIGNING", "webauthn")
+    assert load_config(write_config(tmp_path, desk_signing="auto"))["desk_signing"] == "webauthn"
+    monkeypatch.setenv("CHAP_DESK_SIGNING", "passkey")
+    with pytest.raises(ValueError, match='desk_signing in chap.config.json, or CHAP_DESK_SIGNING, is "passkey"; '
+                                         'it is "auto", "webauthn" or "browser-key"'):
+        load_config(write_config(tmp_path))
+    monkeypatch.delenv("CHAP_DESK_SIGNING")
+    with pytest.raises(ValueError, match=r'is \["auto"\]; it is'):
+        load_config(write_config(tmp_path, desk_signing=["auto"]))
 
 
 def test_a_signature_setting_that_says_neither_is_refused(tmp_path, monkeypatch):

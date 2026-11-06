@@ -115,18 +115,22 @@ decision with it. The coordinator refuses a call in your name that your key
 did not sign, so another program on this machine cannot decide as you
 through `POST /chap`. The key stays in this browser's storage for the
 desk's address, where a program running under your own account can still
-reach it. The agent and the operator's console are members that are not
-people: `desk.py` joins the agent when it starts, the console joins
-itself, and the coordinator takes their calls unsigned. `true` asks every
-caller to sign, and `agent.py`, `pause.py` and `resume.py` then sign with
-keys they make in `keys/`, which `.gitignore` keeps out of git. `false`
-asks no one, so any program on this machine can then decide in your name;
-`CHAP_REQUIRE_SIGNATURES` (`humans`, `1` or `0`) overrides the file. While
-signatures are required the server adds `security-signed/1.0` to the
-profiles, and says so when it starts. A workspace keeps the signature
-settings it was created with, and the server says so when it starts with
-others asked of it: to change them, start a new store, by moving `data/`
-aside.
+reach it. `"desk_signing": "auto"` in `chap.config.json`, or
+`CHAP_DESK_SIGNING`, has the desk sign with a passkey where the browser has
+one, which asks you to verify each signature, so such a program cannot sign
+for you; `"webauthn"` asks for a passkey always. A passkey needs the desk
+opened at a name, as `desk.py` prints it: `localhost`. The agent and the
+operator's console are members that are not people: `desk.py` joins the
+agent when it starts, the console joins itself, and the coordinator takes
+their calls unsigned. `true` asks every caller to sign, and `agent.py`,
+`pause.py` and `resume.py` then sign with keys they make in `keys/`, which
+`.gitignore` keeps out of git. `false` asks no one, so any program on this
+machine can then decide in your name; `CHAP_REQUIRE_SIGNATURES` (`humans`,
+`1` or `0`) overrides the file. While signatures are required the server
+adds `security-signed/1.0` to the profiles, and says so when it starts. A
+workspace keeps the signature settings it was created with, and the server
+says so when it starts with others asked of it: to change them, start a new
+store, by moving `data/` aside.
 
 `"chain": true` links each entry on the log to the one before it by its
 hash, so an entry changed or taken out afterwards shows when the chain is

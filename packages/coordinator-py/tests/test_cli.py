@@ -93,19 +93,21 @@ def test_serve_runs_the_desk_from_a_config_file_wherever_it_starts(tmp_path):
     assert (project / "data" / "chap.db").exists() and not (elsewhere / "data").exists()
 
 
-def test_serve_says_whose_calls_are_signed(tmp_path):
-    config = write_config(tmp_path, store=":memory:", chain=True, require_signatures="humans")
+def test_serve_says_whose_calls_are_signed_and_how_the_desk_signs(tmp_path):
+    config = write_config(tmp_path, store=":memory:", chain=True, require_signatures="humans", desk_signing="auto")
     process = subprocess.Popen([sys.executable, "-m", "chap_coordinator", "serve", "--config", str(config),
                                 "--port", "0"], env={"PATH": "", "HOME": str(tmp_path)}, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
     try:
-        lines = first_lines(process, 7)
+        lines = first_lines(process, 8)
     finally:
         process.send_signal(signal.SIGINT)
         process.wait(timeout=30)
     assert lines[0].strip() == "security-signed/1.0 added to the profiles: signatures are required."
     assert lines[5].rstrip() == "  store    :memory:, chain on"
     assert lines[6].rstrip() == "  signing  people sign every call; an agent member's calls need no signature"
+    assert lines[7].rstrip() == ("           the desk signs with a passkey where the browser has one, and otherwise "
+                                 "with a key it keeps in the browser")
 
 
 def test_serve_explains_a_config_it_cannot_use(tmp_path, monkeypatch, capsys):
