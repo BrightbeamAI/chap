@@ -1427,7 +1427,7 @@ need completeness and not merely integrity SHOULD anchor externally rather
 than rely on `audit.verify_chain` alone.
 
 The practical way to lose entries is to run more than one Coordinator
-instance against a shared store; see the single-writer requirement in
+instance against a shared store that does not report its version; see
 §10.3.
 
 **Coverage MUST be part of the verdict.** A workspace MAY enable chaining
@@ -1459,21 +1459,37 @@ a modifier on it.
 A workspace that never enabled chaining is a different case and is refused
 outright, because there is no chain to ask about.
 
-### 10.3 Single-writer requirement
+### 10.3 Writers
 
-A Coordinator is a **single-writer** component. Its dispatch is serial, it
-holds workspace state in memory, and it computes each chain link from the
-head it holds. Running two or more Coordinator instances that write one
-workspace is **not supported**.
+A Coordinator handles one call at a time. It holds workspace state in
+memory and computes each chain link from the head it holds, so a call reads
+and writes that state across many steps; the Python Coordinator holds a
+lock for each call.
 
 A write through `Store.apply` carries the new audit entries and names the
 number of entries the Coordinator expects the store to hold for the
 workspace already. The reference stores refuse a write that does not match,
-and write nothing. With such a store a second writer is detected: the stale
-instance's write is refused and reported, the entries the other instance
-wrote are kept, and each later write by the stale instance is refused in
-turn until it is restarted and reloads. The calls it answered in the
-meantime took effect in its memory alone, and are lost when it stops.
+and write nothing.
+
+Where the store also reports how many entries it holds for a workspace
+(`version`) and loads one workspace (`loadOne`, `load_one`), as the
+reference stores do, a Coordinator keeps up with other writers. Before each
+call it compares that number with the entries it last wrote for the call's
+workspace, and reloads the workspace when they differ, so instances that
+share a store take turns. A write that another instance got to first,
+between the check and the write, is refused by the store: the Python
+Coordinator reloads the workspace and runs the call once more, and the
+TypeScript Coordinator answers the call as a failed write and reloads.
+
+A synchronous write that fails MUST NOT be answered as if it took effect.
+The call is answered with `-32603` and `data: {"reason": "store"}`, the
+workspace goes back to what the store holds, and while the store cannot be
+read the calls on that workspace are refused the same way. The audit
+listeners hear of an entry once it is written. The Python Coordinator's
+`store_errors="log"` keeps the behaviour of earlier releases: the failure
+is reported, the call answered as it was, and the next write carries its
+change. An asynchronous write that fails after its call was answered is
+reported, and the next write carries its change.
 
 A store that implements only `Store.save` makes no such check: `save`
 replaces the stored workspace wholesale. With such a store a stale
@@ -1482,12 +1498,10 @@ are lost, the chain is re-linked from the surviving instance's head, and
 `audit.verify_chain` reports `ok` on the result. The loss is silent, and
 CHAP's own verification will not reveal it.
 
-Deployments needing more than one instance MUST serialise writes above the
-Coordinator, by partitioning workspaces across instances so that no
-workspace is ever written by two, or by an external lock. Detecting a second
-writer at the store guards against a misconfiguration; recovering from one,
-by re-running dispatch against reloaded state, is left to a later
-milestone.
+Deployments running more than one instance on a store that does not report
+its `version` MUST serialise writes above the Coordinator, by partitioning
+workspaces across instances so that no workspace is ever written by two, or
+by an external lock.
 
 ### 10.4 Checkpoints
 

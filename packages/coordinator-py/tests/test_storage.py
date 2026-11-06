@@ -153,22 +153,24 @@ def test_coordinator_persists_to_sqlite_store(tmp_path):
 
 
 def test_persistence_failures_do_not_break_dispatch():
-    """A broken store must not bring down the Coordinator."""
+    """A broken store must not bring down the Coordinator. Its call is
+    answered as failed, or, under store_errors="log", as it was."""
     class BrokenStore:
         def load(self):       return []
         def save(self, rec):  raise RuntimeError("nope")
         def delete(self, id): pass
         def close(self):      pass
 
-    coord = Coordinator(CoordinatorOptions(store=BrokenStore()))
-    # Dispatch should succeed even though save() throws every time.
-    r = coord.dispatch({
-        "jsonrpc": "2.0", "id": "1",
-        "method": "workspace.create",
-        "params": {"workspace": "wsp_brk"},
-    })
-    assert "result" in r
-    assert r["result"]["workspace"] == "wsp_brk"
+    create = {"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+              "params": {"workspace": "wsp_brk"}}
+    coord = Coordinator(CoordinatorOptions(store=BrokenStore(), on_store_error=lambda e, r: None))
+    r = coord.dispatch(dict(create))
+    assert r["error"] == {"code": -32603, "message": "Internal error", "data": {"reason": "store"}}
+    # The store holds no such workspace, and neither does the coordinator.
+    assert "wsp_brk" not in coord.workspaces
+    logged = Coordinator(CoordinatorOptions(store=BrokenStore(), store_errors="log",
+                                            on_store_error=lambda e, r: None))
+    assert logged.dispatch(dict(create))["result"]["workspace"] == "wsp_brk"
 
 
 # ---- A second writer (#69) -----------------------------------------
@@ -194,8 +196,7 @@ def _join(c, n, who):
                                   "type": "human", "role": "reviewer"}})
 
 
-def test_a_second_writer_is_refused_and_nothing_stored_is_lost():
-    from chap_coordinator.storage.store import StoreConflictError
+def test_a_coordinator_reloads_what_another_wrote_before_its_next_call():
     store, errors = MemoryStore(), []
     coord = _pair(store, errors)
     a = coord()
@@ -205,41 +206,45 @@ def test_a_second_writer_is_refused_and_nothing_stored_is_lost():
 
     b = coord()   # loads what A wrote
     _join(b, 3, "human:bob")
-    assert errors == []
 
-    # A still holds its older state and writes again: refused, and reported.
+    # A held an older state; it reloads, and writes on top of B's entry.
+    assert "result" in _join(a, 4, "human:carol")
+    assert errors == []
+    assert "human:bob" in a.get_workspace("w").members
+
+    survivor = coord()
+    audit = survivor.get_workspace("w").audit
+    assert any("human:bob" in str(e.envelope) for e in audit)
+    assert any("human:carol" in str(e.envelope) for e in audit)
+    r = survivor.dispatch({"jsonrpc": "2.0", "id": "5", "method": "audit.verify_chain",
+                           "params": {"workspace": "w", "from": "human:alice"}})
+    assert r["result"]["ok"] is True
+
+
+def test_a_write_another_writer_got_to_first_runs_once_more_on_what_the_store_holds():
+    from chap_coordinator.storage.store import StoreConflictError
+    store, errors = MemoryStore(), []
+    coord = _pair(store, errors)
+    a = coord()
+    a.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
+                "params": {"workspace": "w"}})
+    _join(a, 2, "human:alice")
+    b = coord()
+    # B writes between A's check of the store and A's write.
+    version = store.version
+
+    def racing(ws_id):
+        held = version(ws_id)
+        store.version = version
+        _join(b, 3, "human:bob")
+        return held
+    store.version = racing
     assert "result" in _join(a, 4, "human:carol")
     assert len(errors) == 1
     err, rec = errors[0]
     assert isinstance(err, StoreConflictError)
     assert (err.held, err.base) == (3, 2)
     assert rec == {"id": "w", "version": 3}
-
-    survivor = coord()
-    audit = survivor.get_workspace("w").audit
-    assert any("human:bob" in str(e.envelope) for e in audit)
-    assert not any("human:carol" in str(e.envelope) for e in audit)
-    r = survivor.dispatch({"jsonrpc": "2.0", "id": "5", "method": "audit.verify_chain",
-                           "params": {"workspace": "w", "from": "human:alice"}})
-    assert r["result"]["ok"] is True
-
-
-def test_the_refused_writer_stays_refused_until_it_reloads():
-    store, errors = MemoryStore(), []
-    coord = _pair(store, errors)
-    a = coord()
-    a.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
-                "params": {"workspace": "w"}})
-    b = coord()
-    _join(b, 2, "human:bob")
-    _join(a, 3, "human:carol")
-    _join(a, 4, "human:dan")
-    assert len(errors) == 2
-    held = len(coord().get_workspace("w").audit)
-    assert held == 2
-
-    errors.clear()
-    a = coord()   # a restart reloads what the store holds
-    _join(a, 5, "human:carol")
-    assert errors == []
-    assert len(coord().get_workspace("w").audit) == held + 1
+    survivor = coord().get_workspace("w")
+    assert {"human:bob", "human:carol"} <= set(survivor.members)
+    assert len(survivor.audit) == 4

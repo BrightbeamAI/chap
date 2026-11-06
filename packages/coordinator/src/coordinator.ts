@@ -154,13 +154,16 @@ export interface CoordinatorOptions {
   requireReadMembership?: boolean;
   /** Largest envelope accepted (default 1 MiB), published in the descriptor. */
   maxEnvelopeBytes?: number;
+  /** Told of each audit entry once the store has taken it. */
   onAudit?: AuditListener;
   onAutoEscalate?: (task: Task, to: ParticipantUri) => void;
   /**
    * Called when a write to the store fails, with the workspace and the
    * version the write would have reached. When unset, the failure is written
-   * to stderr. The call itself has already succeeded in memory; the next
-   * write to the workspace carries what this one did not.
+   * to stderr. A synchronous write's call is answered with -32603 and
+   * `data: { reason: "store" }`, and the workspace goes back to what the
+   * store holds; an asynchronous write's call was answered already, and the
+   * next write to the workspace carries what this one did not.
    */
   onStoreError?: (err: unknown, record: { id: string; version: number }) => void;
   /**
@@ -259,6 +262,18 @@ function recordedForm(envelope: Envelope): Envelope {
   if (typeof params.oidc_token === "string") params.oidc_token = sha256Hex(params.oidc_token);
   if (isObject(params.vc_presentation)) params.vc_presentation = contentHash(params.vc_presentation);
   return { ...envelope, params };
+}
+
+/** The answer to a call whose workspace the store could not be brought in line with. */
+function storeFailed() {
+  return rpcError(E.INTERNAL, "Internal error", { reason: "store" });
+}
+
+/** The workspace a call names, where it names one. */
+function targetOf(envelope: unknown): WorkspaceId | undefined {
+  const params = isObject(envelope) ? envelope.params : undefined;
+  const id = isObject(params) ? params.workspace : undefined;
+  return typeof id === "string" && id !== "" ? id : undefined;
 }
 
 /** An object with its null fields left out, as this coordinator writes it. */
@@ -429,6 +444,14 @@ export class Coordinator {
   private unflushed = new Set<Workspace>();
   /** Workspaces with a write queued behind an async write in flight. */
   private flushQueued = new Set<Workspace>();
+  /**
+   * Workspaces whose store copy may differ from memory after a synchronous
+   * write failed or conflicted. Each is reloaded from the store before the
+   * next call on it, which is refused while the reload fails.
+   */
+  private held = new Set<WorkspaceId>();
+  /** Entries appended and not yet written, which the audit listeners hear of once they are. */
+  private unannounced = new WeakMap<Workspace, AuditEntry[]>();
   private clockMs?: number;
   private frozenNow?: string;
   private auditListeners: AuditListener[] = [];
@@ -601,6 +624,7 @@ export class Coordinator {
     } catch (err) {
       // What was taken is unknown, so the next write carries the whole workspace.
       p.replace = true;
+      this.held.add(ws.id);
       this.reportStoreError(err, { id: ws.id, version: ws.audit.length });
       return;
     }
@@ -609,6 +633,7 @@ export class Coordinator {
     const done = () => {
       p.seq = taken.version;
       if (taken.replace) p.replace = false;
+      this.announce(ws, taken.version);
     };
     const failed = (err: unknown) => {
       this.giveBack(ws, p, taken);
@@ -618,11 +643,27 @@ export class Coordinator {
     try {
       result = this.store.apply!(taken);
     } catch (err) {
+      // The call that made this change is answered as failed, and the
+      // workspace is reloaded from the store before it is used again.
+      this.held.add(ws.id);
       failed(err);
       return;
     }
     if (isThenable(result)) return Promise.resolve(result).then(done, failed);
     done();
+  }
+
+  /** Tell the audit listeners of the entries now written, up to `upTo`. */
+  private announce(ws: Workspace, upTo: number): void {
+    const queued = this.unannounced.get(ws);
+    if (!queued?.length) return;
+    const now = queued.filter((e) => e.seq < upTo);
+    this.unannounced.set(ws, queued.filter((e) => e.seq >= upTo));
+    for (const entry of now) {
+      for (const l of this.auditListeners) {
+        try { l(ws, entry); } catch { /* listeners never break dispatch */ }
+      }
+    }
   }
 
   /** The change since the last write, taking the recorded keys with it. */
@@ -695,25 +736,29 @@ export class Coordinator {
       return;
     }
 
+    const upTo = ws.audit.length;
     const pending = this.saveChains.get(ws.id);
     if (pending) {
-      this.trackSave(pending.then(() => this.store.save(record)), record);
+      this.trackSave(pending.then(() => this.store.save(record)), record, () => this.announce(ws, upTo));
       return;
     }
     let result: PromiseLike<void> | void;
     try {
       result = this.store.save(record);
     } catch (err) {
+      this.held.add(ws.id);
       this.reportStoreError(err, record);
       return;
     }
     if (isThenable(result)) {
-      this.trackSave(Promise.resolve(result), record);
+      this.trackSave(Promise.resolve(result), record, () => this.announce(ws, upTo));
+      return;
     }
+    this.announce(ws, upTo);
   }
 
-  private trackSave(save: Promise<void>, record: WorkspaceRecord): void {
-    const guarded = save.catch(err => this.reportStoreError(err, record));
+  private trackSave(save: Promise<void>, record: WorkspaceRecord, saved: () => void): void {
+    const guarded = save.then(saved, err => this.reportStoreError(err, record));
     this.saveChains.set(record.id, guarded);
     void guarded.then(() => {
       if (this.saveChains.get(record.id) === guarded) {
@@ -1015,16 +1060,97 @@ export class Coordinator {
   dispatch(envelope: Envelope): Envelope {
     this.frozenNow = this.advanceClock();
     this.tracker.depth++;
+    let response: Envelope;
+    let target: WorkspaceId | undefined;
+    let ran = false;
     try {
-      const response = this._dispatch(envelope);
-      if (response.error) this.recordRefusal(envelope, response.error);
-      return response;
+      target = targetOf(envelope);
+      const refused = target === undefined ? null : this.keepUp(target);
+      if (refused) {
+        response = reply(envelope, { error: refused });
+      } else {
+        ran = true;
+        response = this._dispatch(envelope);
+        if (response.error) this.recordRefusal(envelope, response.error);
+        else if (target === undefined && envelope.method === "workspace.create") {
+          target = (response.result as { workspace?: WorkspaceId } | undefined)?.workspace;
+        }
+      }
     } finally {
       // One write per call, with everything the call changed, made before
       // dispatch returns.
       if (--this.tracker.depth === 0) this.flushUnflushed();
       this.frozenNow = undefined;
     }
+    // The call's write failed, so the store does not hold what it did. It is
+    // answered as failed, and the workspace goes back to what the store holds.
+    if (ran && target !== undefined && this.tracker.depth === 0 && this.held.has(target)) {
+      this.reload(target);
+      return reply(envelope, { error: storeFailed() });
+    }
+    return response;
+  }
+
+  /**
+   * Before a call on a workspace: where the store holds a different number of
+   * audit entries for it than this instance last wrote, another writer has
+   * written it, and it is reloaded. A workspace held after a failed write is
+   * reloaded as well, and the call refused while that fails.
+   */
+  private keepUp(id: WorkspaceId): ReturnType<typeof rpcError> | null {
+    if (this.held.has(id)) return this.reload(id) ? null : storeFailed();
+    if (typeof this.store.version !== "function" || this.saveChains.has(id)) return null;
+    let stored: number | undefined;
+    try {
+      stored = this.store.version(id);
+    } catch {
+      // Unread, the store may still take the call's write; if it does not,
+      // the write fails and is answered as failed.
+      return null;
+    }
+    if (isThenable(stored)) return null;
+    const ws = this.workspaces.get(id);
+    const p = ws ? this.persisted.get(ws) : undefined;
+    // A workspace written whole on its next write replaces the store's copy.
+    if (ws && (!p || p.replace)) return null;
+    if (stored === p?.seq) return null;
+    return this.reload(id) ? null : storeFailed();
+  }
+
+  /** Replace a workspace with what the store holds of it. False when it cannot be read. */
+  private reload(id: WorkspaceId): boolean {
+    let record: WorkspaceRecord | undefined;
+    try {
+      if (typeof this.store.loadOne === "function") {
+        record = this.store.loadOne(id);
+      } else {
+        const all = this.store.load();
+        if (isThenable(all)) return false;
+        record = (all as WorkspaceRecord[]).find((r) => r.id === id);
+      }
+      if (isThenable(record)) return false;
+    } catch (err) {
+      this.reportStoreError(err, { id, version: this.workspaces.get(id)?.audit.length ?? 0 });
+      return false;
+    }
+    const old = this.workspaces.get(id);
+    if (old) this.unflushed.delete(old);
+    if (record) {
+      let ws: Workspace;
+      try {
+        ws = this.rebuild(record.data as Record<string, unknown>);
+      } catch (err) {
+        this.reportStoreError(err, { id, version: record.version });
+        return false;
+      }
+      this.workspaces.set(id, ws);
+      this.markWritten(ws);
+      this.wsVersions.set(id, record.version);
+    } else {
+      this.workspaces.delete(id);
+    }
+    this.held.delete(id);
+    return true;
   }
 
   private _dispatch(envelope: Envelope): Envelope {
@@ -1287,9 +1413,11 @@ export class Coordinator {
     ws.audit.push(entry);
     const index = this.signedIndexes.get(ws);
     if (index) indexSigned(index, entry);
-    for (const l of this.auditListeners) {
-      try { l(ws, entry); } catch { /* listeners never break dispatch */ }
-    }
+    // The listeners hear of the entry once it is written, so they never hear
+    // of one the store did not take.
+    const queued = this.unannounced.get(ws);
+    if (queued) queued.push(entry);
+    else this.unannounced.set(ws, [entry]);
     this.persist(ws);
   }
 

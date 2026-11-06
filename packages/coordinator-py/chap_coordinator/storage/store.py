@@ -23,23 +23,33 @@ SQLite file through the stdlib ``sqlite3`` module. Third-party stores
 Concurrency model
 -----------------
 
-A Coordinator is a **single-writer** component: dispatch is serial, workspace
-state is held in memory, and each chain link is computed from the head the
-instance holds. Run one Coordinator per workspace.
+A Coordinator handles one call at a time: ``dispatch`` holds a lock,
+workspace state is held in memory, and each chain link is computed from the
+head the instance holds.
 
 Every change names the number of audit entries the Coordinator expects the
 store to hold already (``base``). MemoryStore and SqliteStore refuse a change
 whose base differs from what they hold: they raise StoreConflictError and
-write nothing. A second Coordinator writing the same workspace is refused and
-reported, and the entries already stored stay as they are. The refused
-instance's memory no longer matches the store; restart it to reload.
+write nothing, and the entries already stored stay as they are.
+
+A store that also implements ``version`` and ``load_one`` lets a Coordinator
+keep up with another writer: before each call it compares the entries the
+store holds for the call's workspace with the entries it last wrote, and
+reloads the workspace when they differ. A write another writer got to first
+reloads the workspace and runs the call once more. A write that fails, under
+the ``store_errors="raise"`` default, answers its call with -32603 and
+``data: {"reason": "store"}``, and the workspace is reloaded from the store;
+calls on it are refused the same way while that fails. Under ``"log"`` the
+failure is reported, the call answered as it was, and the next write carries
+its change again. The audit listeners hear of an entry once it is written.
 
 ``save`` makes no such check: it replaces what the store holds for the
 workspace. A store that implements only ``save`` therefore still loses
 entries silently when two instances write one workspace.
 
-To run more than one instance, partition workspaces so that no workspace is
-ever written by two, or hold an external lock. See SPECIFICATION.md 10.3.
+To run more than one instance on a store without ``version``, partition
+workspaces so that no workspace is ever written by two, or hold an external
+lock. See SPECIFICATION.md 10.3.
 
 Production deployments that need rich queries over the log can project it
 into their own analytics store with the ``on_audit`` listener.
@@ -147,6 +157,10 @@ class Store(Protocol):
         """Release resources. Idempotent."""
         ...
 
+    # Optional: ``version(id) -> int | None``, the number of audit entries the
+    # store holds for one workspace, or None when it holds none; and
+    # ``load_one(id) -> WorkspaceRecord | None``. See the concurrency model.
+
 
 def object_key(collection: str, item: Any) -> str | None:
     """The key an object is stored under in its collection."""
@@ -224,18 +238,25 @@ class MemoryStore:
         self._held: dict[str, dict] = {}
 
     def load(self) -> list[WorkspaceRecord]:
-        out: list[WorkspaceRecord] = []
-        for id, h in self._held.items():
-            objects = [(collection, key, json.loads(value))
-                       for collection, items in h["objects"].items()
-                       for key, value in items.items()]
-            out.append(WorkspaceRecord(
-                id=id,
-                data=assemble_snapshot(json.loads(h["meta"]),
-                                       [json.loads(e) for e in h["entries"]],
-                                       objects),
-                version=h["version"], updated_at=h["updated_at"]))
-        return out
+        return [r for r in (self.load_one(id) for id in list(self._held)) if r is not None]
+
+    def load_one(self, id: str) -> WorkspaceRecord | None:
+        h = self._held.get(id)
+        if h is None:
+            return None
+        objects = [(collection, key, json.loads(value))
+                   for collection, items in h["objects"].items()
+                   for key, value in items.items()]
+        return WorkspaceRecord(
+            id=id,
+            data=assemble_snapshot(json.loads(h["meta"]),
+                                   [json.loads(e) for e in h["entries"]],
+                                   objects),
+            version=h["version"], updated_at=h["updated_at"])
+
+    def version(self, id: str) -> int | None:
+        h = self._held.get(id)
+        return None if h is None else len(h["entries"])
 
     def save(self, record: WorkspaceRecord) -> None:
         self.apply(change_from_record(record))

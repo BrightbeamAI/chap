@@ -131,6 +131,18 @@ JSON-RPC 2.0 response. Bind whichever HTTP, WebSocket, or in-process
 transport you like. State is held in memory; persist by subscribing
 to the audit listener.
 
+`dispatch` holds a lock, so calls from several threads are handled one at
+a time. With a `store` option (`SqliteStore`, or a store of your own),
+each call's changes are written before `dispatch` returns, and the
+listeners hear of an entry once it is written. A call whose write fails is
+answered with `-32603` and `data: {"reason": "store"}`, and its workspace
+goes back to what the store holds; `store_errors="log"` answers it as it
+was, and the next write carries its change. Before each call on a
+workspace the coordinator asks the store how many entries it holds, and
+reloads a workspace another instance has written; a write another instance
+got to first runs the call once more on what the store holds
+([SPECIFICATION.md §10.3](../../SPECIFICATION.md#103-writers)).
+
 A minimal stdlib HTTP server is at
 [`reference/python/server.py`](https://github.com/BrightbeamAI/chap/tree/main/reference/python) in the parent repo.
 

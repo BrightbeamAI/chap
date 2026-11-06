@@ -14,8 +14,9 @@ npm install @brightbeamai/chap-coordinator
 ```
 
 Node 20+ required. No required runtime dependencies; uses Node's built-in
-`crypto` for Ed25519 and JCS. `better-sqlite3` is an optional dependency,
-needed only for `SqliteStore`.
+`crypto` for Ed25519 and JCS. `SqliteStore` uses `better-sqlite3`, an
+optional dependency, where it is installed, and Node's built-in
+`node:sqlite` (Node 22.5 and later) where it is not.
 
 ## Companion packages
 
@@ -129,6 +130,15 @@ const response = coord.dispatch(envelope);
 `envelope` is a JSON-RPC 2.0 request; `response` is the JSON-RPC 2.0
 response. State is held in memory; persist by subscribing with
 `coord.onAudit(listener)`.
+
+With a `store` option (`SqliteStore`, or a store of your own), each call's
+changes are written before `dispatch` returns, and the listeners hear of an
+entry once it is written. A call whose write fails is answered with
+`-32603` and `data: { reason: "store" }`, and its workspace goes back to
+what the store holds. Before each call on a workspace the coordinator asks
+the store how many entries it holds, and reloads a workspace another
+instance has written, so instances that share a store take turns
+([SPECIFICATION.md §10.3](../../SPECIFICATION.md#103-writers)).
 
 A handler that throws is answered with `-32603` and no detail, since an
 exception's text can name a path or another workspace's data. The error

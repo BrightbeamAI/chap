@@ -1,5 +1,6 @@
 /**
- * SQLite-backed store using better-sqlite3.
+ * SQLite-backed store, through better-sqlite3 where it is installed and
+ * through Node's built-in node:sqlite (Node 22.5 and later) where it is not.
  *
  * Schema, shared with the Python SqliteStore. Both write these tables, and
  * the same audit entries for the same calls. Each writes the objects in its
@@ -55,10 +56,11 @@
  * Pass `":memory:"` for an in-memory SQLite instance (faster than the
  * MemoryStore for tests that need transactional semantics).
  *
- * better-sqlite3 is declared as an optionalDependency. If the binary
- * cannot be built (rare on Linux/macOS, common on locked-down CI), the
- * SqliteStore import will throw with a clear message and applications
- * can fall back to MemoryStore or another implementation.
+ * better-sqlite3 is declared as an optionalDependency. Where its binary
+ * cannot be built (rare on Linux/macOS, common on locked-down CI), the store
+ * opens the file through node:sqlite, which Node 22.5 and later ship; both
+ * write the same file. With neither, constructing a SqliteStore throws with
+ * a clear message, and applications can fall back to MemoryStore.
  */
 
 import { createRequire } from "node:module";
@@ -94,6 +96,86 @@ export interface SqliteStoreOptions {
    * filesystem does not support WAL (some network filesystems).
    */
   wal?: boolean;
+  /**
+   * The SQLite binding: better-sqlite3, Node's node:sqlite, or, by default,
+   * better-sqlite3 where it is installed and node:sqlite where it is not.
+   */
+  driver?: "better-sqlite3" | "node:sqlite";
+}
+
+/** node:sqlite's DatabaseSync, the part of it this store uses. */
+interface NodeSqliteDatabase {
+  exec(sql: string): void;
+  prepare(sql: string): SqliteStatement;
+  close(): void;
+}
+
+/**
+ * A node:sqlite database with the better-sqlite3 calls this store makes:
+ * `pragma` and `transaction` are written over `prepare` and `exec`.
+ */
+function fromNodeSqlite(db: NodeSqliteDatabase): SqliteDatabase {
+  const transaction = <A extends unknown[], R>(fn: (...args: A) => R): SqliteTransaction<A, R> => {
+    const run = (begin: string) => (...args: A): R => {
+      db.exec(begin);
+      try {
+        const result = fn(...args);
+        db.exec("COMMIT");
+        return result;
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+    };
+    return Object.assign(run("BEGIN"), { immediate: run("BEGIN IMMEDIATE") });
+  };
+  return {
+    exec: (sql) => db.exec(sql),
+    prepare: (sql) => db.prepare(sql),
+    pragma: (name, options) => {
+      const row = db.prepare(`PRAGMA ${name}`).get() as Record<string, unknown> | undefined;
+      return options?.simple ? (row ? Object.values(row)[0] : undefined) : row;
+    },
+    transaction,
+    close: () => db.close(),
+  };
+}
+
+/** Open a SQLite file through the binding the options name, or the first installed. */
+function openDatabase(path: string, driver: SqliteStoreOptions["driver"]): SqliteDatabase {
+  // A binding that loads opens the file, and an error opening it is the
+  // file's, reported as it is; only a binding that does not load is passed by.
+  const failures: string[] = [];
+  const load = <T>(name: string): T | undefined => {
+    try {
+      // Resolved at construction so the dependency stays optional: importing
+      // this module costs nothing if you never build a SqliteStore.
+      //
+      // createRequire, since a bare require() is undefined in an ES module:
+      // from source it threw ReferenceError, and the dependency was reported
+      // missing when it was installed. The bundled build masked it by
+      // shimming require, which is why it went unnoticed. The CommonJS build
+      // has no import.meta.url, and resolves from __filename, which an ES
+      // module does not define.
+      return createRequire(typeof __filename === "string" ? __filename : import.meta.url)(name) as T;
+    } catch (err) {
+      failures.push(`${name}: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
+      return undefined;
+    }
+  };
+  if (driver !== "node:sqlite") {
+    const Database = load<new (path: string) => SqliteDatabase>("better-sqlite3");
+    if (Database) return new Database(path);
+  }
+  if (driver !== "better-sqlite3") {
+    const sqlite = load<{ DatabaseSync: new (path: string) => NodeSqliteDatabase }>("node:sqlite");
+    if (sqlite) return fromNodeSqlite(new sqlite.DatabaseSync(path));
+  }
+  throw new Error(
+    "SqliteStore needs the `better-sqlite3` package, or Node 22.5 or later for node:sqlite. " +
+    "Install it with `npm install better-sqlite3` " +
+    `or use MemoryStore for non-persistent workloads (${failures.join("; ")})`,
+  );
 }
 
 const SCHEMA = `
@@ -139,29 +221,7 @@ export class SqliteStore implements Store {
   private readonly txDelete: SqliteTransaction<[string]>;
 
   constructor(path: string, options: SqliteStoreOptions = {}) {
-    let Database: new (path: string) => SqliteDatabase;
-    try {
-      // Resolved at construction so the dependency stays optional: importing
-      // this module costs nothing if you never build a SqliteStore.
-      //
-      // createRequire rather than a bare require(). A bare one is undefined in
-      // an ES module, so from source it threw ReferenceError and this catch
-      // reported the dependency as missing when it was installed. The bundled
-      // build masked it by shimming require, which is why it went unnoticed.
-      // The CommonJS build has no import.meta.url, and resolves from
-      // __filename, which an ES module does not define.
-      const here = typeof __filename === "string" ? __filename : import.meta.url;
-      Database = createRequire(here)("better-sqlite3");
-    } catch (err) {
-      const detail = err instanceof Error ? `: ${err.message.split("\n")[0]}` : "";
-      throw new Error(
-        "SqliteStore requires the `better-sqlite3` package. " +
-        "Install it with `npm install better-sqlite3` " +
-        `or use MemoryStore for non-persistent workloads${detail}`,
-      );
-    }
-
-    this.db = new Database(path);
+    this.db = openDatabase(path, options.driver);
     if (path !== ":memory:" && options.wal !== false) {
       this.db.pragma("journal_mode = WAL");
     }
@@ -188,6 +248,9 @@ export class SqliteStore implements Store {
       metas:   prepare("SELECT workspace, data, version, updated_at FROM chap_meta"),
       entries: prepare("SELECT workspace, seq, data FROM chap_entries ORDER BY workspace, seq"),
       objects: prepare("SELECT workspace, collection, id, data FROM chap_objects ORDER BY rowid"),
+      metaOf:    prepare("SELECT workspace, data, version, updated_at FROM chap_meta WHERE workspace = ?"),
+      entriesOf: prepare("SELECT workspace, seq, data FROM chap_entries WHERE workspace = ? ORDER BY seq"),
+      objectsOf: prepare("SELECT workspace, collection, id, data FROM chap_objects WHERE workspace = ? ORDER BY rowid"),
     };
     this.txWrite = this.db.transaction((change: StoreChange) => this.write(change));
     this.txDelete = this.db.transaction((id: string) => this.drop(id));
@@ -271,16 +334,28 @@ export class SqliteStore implements Store {
   load(): WorkspaceRecord[] {
     // One read transaction, so a write by another process in the middle of
     // the read cannot leave the log and the objects out of step.
-    return this.db.transaction(() => this.readAll())();
+    return this.db.transaction(() => this.read(
+      this.stmt.metas.all(), this.stmt.entries.all(), this.stmt.objects.all()))();
   }
 
-  private readAll(): WorkspaceRecord[] {
+  loadOne(id: string): WorkspaceRecord | undefined {
+    return this.db.transaction(() => this.read(
+      this.stmt.metaOf.all(id), this.stmt.entriesOf.all(id), this.stmt.objectsOf.all(id)))()[0];
+  }
+
+  version(id: string): number | undefined {
+    if (!this.stmt.hasMeta.get(id)) return undefined;
+    const last = (this.stmt.held.get(id) as { last: number | null } | undefined)?.last;
+    return last === null || last === undefined ? 0 : last + 1;
+  }
+
+  private read(metas: unknown[], entryRows: unknown[], objectRows: unknown[]): WorkspaceRecord[] {
     // A workspace with any unreadable row is skipped whole, with a warning,
     // so the others still load: restoring part of a workspace would put a
     // log beside objects it does not explain.
     const broken = new Map<string, string>();
     const entries = new Map<string, unknown[]>();
-    for (const r of this.stmt.entries.all() as Array<{ workspace: string; seq: number; data: string }>) {
+    for (const r of entryRows as Array<{ workspace: string; seq: number; data: string }>) {
       if (broken.has(r.workspace)) continue;
       let list = entries.get(r.workspace);
       if (!list) entries.set(r.workspace, (list = []));
@@ -289,7 +364,7 @@ export class SqliteStore implements Store {
       catch { broken.set(r.workspace, `audit entry ${r.seq} is unreadable`); }
     }
     const objects = new Map<string, Array<[string, string, unknown]>>();
-    for (const r of this.stmt.objects.all() as Array<{ workspace: string; collection: string; id: string; data: string }>) {
+    for (const r of objectRows as Array<{ workspace: string; collection: string; id: string; data: string }>) {
       if (broken.has(r.workspace)) continue;
       let list = objects.get(r.workspace);
       if (!list) objects.set(r.workspace, (list = []));
@@ -297,7 +372,7 @@ export class SqliteStore implements Store {
       catch { broken.set(r.workspace, `${r.collection} ${r.id} is unreadable`); }
     }
     const out: WorkspaceRecord[] = [];
-    for (const r of this.stmt.metas.all() as Array<{ workspace: string; data: string; version: number; updated_at: string }>) {
+    for (const r of metas as Array<{ workspace: string; data: string; version: number; updated_at: string }>) {
       let meta: Record<string, unknown> | undefined;
       if (!broken.has(r.workspace)) {
         try { meta = JSON.parse(r.data) as Record<string, unknown>; }

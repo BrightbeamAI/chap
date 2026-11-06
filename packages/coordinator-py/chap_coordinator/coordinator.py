@@ -28,6 +28,7 @@ import datetime as _dt
 import json
 import logging
 import sys
+import threading
 import traceback
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -236,9 +237,15 @@ class CoordinatorOptions:
     on_store_error: Callable[[Exception, dict], None] | None = None
     """Called when a write to the store fails, with the error and
     ``{"id": workspace, "version": version}``. When unset, the failure is
-    logged as an error on the ``chap_coordinator`` logger. The call itself has
-    already succeeded in memory; the next write to the workspace carries what
-    this one did not."""
+    logged as an error on the ``chap_coordinator`` logger. What happens to
+    the call is ``store_errors``'s to say."""
+
+    store_errors: str = "raise"
+    """What a failed write does to the call that made it. ``"raise"``: the
+    call is answered with -32603 and ``data: {"reason": "store"}``, and the
+    workspace goes back to what the store holds. ``"log"``: the call is
+    answered as it was, and the next write carries its change again. A write
+    another writer got to first runs the call once more under either."""
 
 
 # ============================================================
@@ -280,6 +287,19 @@ def _plain(value: Any) -> Any:
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return dataclasses.asdict(value)
     return copy.deepcopy(value)
+
+
+def _store_failed() -> dict:
+    """The answer to a call whose workspace the store could not be brought in
+    line with."""
+    return rpc_error(E.INTERNAL, "Internal error", data={"reason": "store"})
+
+
+def _target_of(envelope: Any) -> str | None:
+    """The workspace a call names, where it names one."""
+    params = envelope.get("params") if isinstance(envelope, dict) else None
+    ws_id = params.get("workspace") if isinstance(params, dict) else None
+    return ws_id if isinstance(ws_id, str) and ws_id else None
 
 
 def _missing(params: dict, fields: list[str]) -> str | None:
@@ -549,6 +569,14 @@ class Coordinator:
         self._tracking = store is not None and callable(getattr(store, "apply", None))
         self._scope = Scope()
         self._unflushed: dict[int, Workspace] = {}
+        # One call at a time: a call reads and writes state across many steps.
+        self._lock = threading.RLock()
+        # Workspaces whose store copy may differ from memory after a failed
+        # write: each is reloaded before the next call on it, which is
+        # refused while that fails.
+        self._held: set[str] = set()
+        # How the writes of the call being handled failed, by workspace.
+        self._write_failures: dict[str, str] = {}
         self._audit_listeners: list[AuditListener] = []
         if self.options.on_audit:
             self._audit_listeners.append(self.options.on_audit)
@@ -672,14 +700,39 @@ class Coordinator:
 
     def dispatch(self, envelope: dict) -> dict:
         """Process one JSON-RPC envelope; return the response."""
+        with self._lock:
+            response, failure = self._run(envelope)
+            if failure == "conflict":
+                # Another writer wrote the workspace first. The workspace now
+                # holds what the store holds, and the call runs once more on it.
+                response, failure = self._run(envelope)
+            if failure is not None:
+                env_id = envelope.get("id") if isinstance(envelope, dict) else None
+                return make_response(env_id, error=_store_failed())
+            return response
+
+    def _run(self, envelope: Any) -> tuple[dict, str | None]:
+        """One attempt at a call, its write included. The second value is how
+        the call's write failed, "conflict" or "failed", or None."""
         self._frozen_now = self._advance_clock()
         self._scope.depth += 1
+        if self._scope.depth == 1:
+            self._write_failures.clear()
+        target = _target_of(envelope)
+        ran = False
         try:
-            response = self._dispatch(envelope)
-            error = response.get("error")
-            if error:
-                self._record_refusal(envelope, error)
-            return response
+            refused = self._keep_up(target) if target is not None else None
+            if refused is not None:
+                env_id = envelope.get("id") if isinstance(envelope, dict) else None
+                response = make_response(env_id, error=refused)
+            else:
+                ran = True
+                response = self._dispatch(envelope)
+                error = response.get("error")
+                if error:
+                    self._record_refusal(envelope, error)
+                elif target is None and envelope.get("method") == "workspace.create":
+                    target = response["result"]["workspace"]
         finally:
             # One write per call, with everything the call changed, made
             # before dispatch returns.
@@ -687,6 +740,69 @@ class Coordinator:
             if self._scope.depth == 0 and self._unflushed:
                 self._flush_unflushed()
             self._frozen_now = None
+        if not ran or target is None or self._scope.depth != 0:
+            return response, None
+        failure = self._write_failures.pop(target, None)
+        if failure is not None:
+            # The store does not hold what the call did: the workspace goes
+            # back to what it does hold, or stays held while it cannot be read.
+            self._reload(target)
+        return response, failure
+
+    def _keep_up(self, ws_id: str) -> dict | None:
+        """Before a call on a workspace: where the store holds a different
+        number of audit entries for it than this instance last wrote, another
+        writer has written it, and it is reloaded. A workspace held after a
+        failed write is reloaded as well, and the call refused while that
+        fails."""
+        if ws_id in self._held:
+            return None if self._reload(ws_id) else _store_failed()
+        version = getattr(self.options.store, "version", None)
+        if not callable(version):
+            return None
+        try:
+            stored = version(ws_id)
+        except Exception:
+            # Unread, the store may still take the call's write; if it does
+            # not, the write fails and is answered as failed.
+            return None
+        ws = self.workspaces.get(ws_id)
+        p = getattr(ws, "_persisted", None) if ws is not None else None
+        # A workspace written whole on its next write replaces the store's copy.
+        if ws is not None and (p is None or p.replace):
+            return None
+        if stored == (p.seq if p is not None else None):
+            return None
+        return None if self._reload(ws_id) else _store_failed()
+
+    def _reload(self, ws_id: str) -> bool:
+        """Replace a workspace with what the store holds of it. False when it
+        cannot be read."""
+        store = self.options.store
+        if store is None:
+            self._held.discard(ws_id)
+            return True
+        try:
+            load_one = getattr(store, "load_one", None)
+            record = (load_one(ws_id) if callable(load_one)
+                      else next((r for r in store.load() if r.id == ws_id), None))
+            ws = _rehydrate_workspace(record.data) if record is not None else None
+        except Exception as err:
+            current = self.workspaces.get(ws_id)
+            self._report_store_error(err, ws_id, len(current.audit) if current else 0)
+            return False
+        old = self.workspaces.get(ws_id)
+        if old is not None:
+            self._unflushed.pop(id(old), None)
+        if ws is None:
+            self.workspaces.pop(ws_id, None)
+        else:
+            self.workspaces[ws_id] = ws
+            if self._tracking:
+                # What was just loaded is what the store holds.
+                self._track(ws, _Persisted(seq=len(ws.audit)))
+        self._held.discard(ws_id)
+        return True
 
     def _dispatch(self, envelope: dict) -> dict:
         # SPECIFICATION 10.1 fixes the order of the checks below, because
@@ -971,15 +1087,15 @@ class Coordinator:
         index = getattr(ws, "_signed_index", None)
         if index is not None:
             _index_signed(index, entry)
-        for listener in self._audit_listeners:
-            try:
-                listener(ws.id, entry)
-            except Exception:
-                pass
-        # Persist to the configured store, if any. A failed write never
-        # breaks dispatch: the in-memory state is authoritative within the
-        # process. It is reported, and the next write carries it again.
+        # The listeners hear of the entry once it is written, so they never
+        # hear of one the store did not take.
+        queued = getattr(ws, "_unannounced", None)
+        if queued is None:
+            object.__setattr__(ws, "_unannounced", [entry])
+        else:
+            queued.append(entry)
         if self.options.store is None:
+            self._announce(ws, len(ws.audit))
             return
         if not self._tracking:
             self._persist(ws)
@@ -1000,8 +1116,34 @@ class Coordinator:
             record = self._snapshot_workspace(ws)
             self.options.store.save(record)
         except Exception as err:
-            # Persistence failures must not break dispatch. See above.
-            self._report_store_error(err, ws.id, len(ws.audit))
+            self._write_failed(ws, err, len(ws.audit))
+            return
+        self._announce(ws, len(ws.audit))
+
+    def _announce(self, ws: Workspace, up_to: int) -> None:
+        """Tell the audit listeners of the entries now written, up to ``up_to``."""
+        queued = getattr(ws, "_unannounced", None) or []
+        now = [e for e in queued if e.seq < up_to]
+        object.__setattr__(ws, "_unannounced", [e for e in queued if e.seq >= up_to])
+        for entry in now:
+            for listener in self._audit_listeners:
+                try:
+                    listener(ws.id, entry)
+                except Exception:
+                    pass
+
+    def _write_failed(self, ws: Workspace, err: Exception, version: int) -> None:
+        """A write that did not reach the store: reported, and the call that
+        made it answered as ``store_errors`` says."""
+        from .storage.store import StoreConflictError
+        self._report_store_error(err, ws.id, version)
+        if isinstance(err, StoreConflictError):
+            self._write_failures[ws.id] = "conflict"
+        elif self.options.store_errors == "log":
+            return
+        else:
+            self._write_failures[ws.id] = "failed"
+        self._held.add(ws.id)
 
     def _report_internal_error(self, exc: Exception, method: str, ws_id: Any) -> None:
         call: dict = {"method": method}
@@ -1067,7 +1209,7 @@ class Coordinator:
             # What was taken is unknown, so the next write carries the whole
             # workspace.
             p.replace = True
-            self._report_store_error(err, ws.id, len(ws.audit))
+            self._write_failed(ws, err, len(ws.audit))
             return
         if change is None:
             return
@@ -1075,11 +1217,12 @@ class Coordinator:
             self.options.store.apply(change)
         except Exception as err:
             self._give_back(ws, p, change)
-            self._report_store_error(err, change.id, change.version)
+            self._write_failed(ws, err, change.version)
             return
         p.seq = change.version
         if change.replace:
             p.replace = False
+        self._announce(ws, change.version)
 
     def _take_change(self, ws: Workspace, p: _Persisted):
         """The change since the last write, taking the recorded keys with it."""

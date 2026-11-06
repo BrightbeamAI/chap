@@ -547,14 +547,15 @@ flowchart TB
 ```
 
 **1. Coordinator-mediated.** The default. One Coordinator per workspace,
-responsible for checking each call and keeping the log. Simple, easy to
-operate, and a single writer: a standby started from the store can take
-over, but two active instances on one workspace lose entries
-([SPECIFICATION.md §10.3](./SPECIFICATION.md#103-single-writer-requirement)).
+responsible for checking each call and keeping the log. Simple and easy to
+operate: a standby started from the store can take over, and instances on
+the stores the coordinators ship take turns, each reloading a workspace
+another has written before its next call
+([SPECIFICATION.md §10.3](./SPECIFICATION.md#103-writers)).
 
 **2. Peer-to-peer.** Unsupported: no implementation exists, convergence
-is open, and a chain needs one writer
-([SPECIFICATION.md §10.3](./SPECIFICATION.md#103-single-writer-requirement)).
+is open, and a chain is extended by one writer at a time
+([SPECIFICATION.md §10.3](./SPECIFICATION.md#103-writers)).
 
 **3. Federated.** Each organisation runs its own Coordinator; cross-org
 work moves over A2A via a bridge participant. The local chain remains

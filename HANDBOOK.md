@@ -513,7 +513,7 @@ coordinator ships. What the coordinators support today:
 
 | Component                | What it does                                  | Typical implementation       |
 |--------------------------|-----------------------------------------------|------------------------------|
-| Coordinator              | Accepts envelopes, checks them, appends the audit log. | Stateful single writer: one active instance per workspace |
+| Coordinator              | Accepts envelopes, checks them, appends the audit log. | Stateful: instances on the shipped stores take turns, others one per workspace |
 | Audit store              | Durable storage of workspace state and the log. | The SQLite store each package ships, or your own store |
 | Identity provider        | OIDC tokens, key issuance.                    | Okta, Auth0, Keycloak, etc.  |
 | SCITT service (optional) | Transparency log + receipts.                  | A SCITT-compliant service, connected through the submitter option |
@@ -538,13 +538,13 @@ release. Size from measurements of your own workload.
 
 ### 9.4 High availability
 
-The Coordinator is a single writer that holds state in memory; two
-instances writing one workspace lose entries. With the stores the
-coordinators ship, the second writer's writes are refused and reported;
-with a store that implements only `save`, the loss is silent
-([SPECIFICATION.md §10.3](./SPECIFICATION.md#103-single-writer-requirement)).
-Run one active instance per workspace, partition workspaces or lock
-writes externally, and start a standby from the store on failover.
+The Coordinator holds state in memory. With the stores the coordinators
+ship, instances that share a store take turns: before each call an
+instance reloads a workspace another has written. With a store that
+implements only `save`, two instances writing one workspace lose entries
+silently ([SPECIFICATION.md §10.3](./SPECIFICATION.md#103-writers)): run
+one active instance per workspace, partition workspaces or lock writes
+externally. Start a standby from the store on failover.
 Replicate the store, and keep each workspace in one region; federate
 across regions through the bridge pattern.
 

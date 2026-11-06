@@ -282,23 +282,40 @@ class SqliteStore:
     def load(self) -> list[WorkspaceRecord]:
         # One read transaction, so a write by another process in the middle
         # of the read cannot leave the log and the objects out of step.
+        return self._read_in_transaction(None)
+
+    def load_one(self, id: str) -> WorkspaceRecord | None:
+        found = self._read_in_transaction(id)
+        return found[0] if found else None
+
+    def version(self, id: str) -> int | None:
+        if self._conn.execute("SELECT 1 FROM chap_meta WHERE workspace = ?",
+                              (id,)).fetchone() is None:
+            return None
+        last = self._conn.execute("SELECT MAX(seq) AS last FROM chap_entries WHERE workspace = ?",
+                                  (id,)).fetchone()["last"]
+        return 0 if last is None else last + 1
+
+    def _read_in_transaction(self, id: str | None) -> list[WorkspaceRecord]:
         self._conn.execute("BEGIN")
         try:
-            return self._read_all()
+            return self._read_all(id)
         finally:
             # A read changes nothing, so ending it is all that is needed.
             if self._conn.in_transaction:
                 self._conn.execute("ROLLBACK")
 
-    def _read_all(self) -> list[WorkspaceRecord]:
+    def _read_all(self, only: str | None = None) -> list[WorkspaceRecord]:
+        # One workspace, where `only` names it, or every one.
+        where, args = ("WHERE workspace = ? ", (only,)) if only is not None else ("", ())
         # A workspace with any unreadable row is skipped whole, with a
         # warning, so the others still load: restoring part of a workspace
         # would put a log beside objects it does not explain.
         broken: dict[str, str] = {}
         entries: dict[str, list] = {}
         for r in self._conn.execute(
-                "SELECT workspace, seq, data FROM chap_entries "
-                "ORDER BY workspace, seq"):
+                "SELECT workspace, seq, data FROM chap_entries " + where +
+                "ORDER BY workspace, seq", args):
             ws = r["workspace"]
             if ws in broken:
                 continue
@@ -312,8 +329,8 @@ class SqliteStore:
                 broken[ws] = f"audit entry {r['seq']} is unreadable"
         objects: dict[str, list] = {}
         for r in self._conn.execute(
-                "SELECT workspace, collection, id, data FROM chap_objects "
-                "ORDER BY rowid"):
+                "SELECT workspace, collection, id, data FROM chap_objects " + where +
+                "ORDER BY rowid", args):
             ws = r["workspace"]
             if ws in broken:
                 continue
@@ -324,7 +341,7 @@ class SqliteStore:
                 broken[ws] = f"{r['collection']} {r['id']} is unreadable"
         out: list[WorkspaceRecord] = []
         for r in self._conn.execute(
-                "SELECT workspace, data, version, updated_at FROM chap_meta"):
+                "SELECT workspace, data, version, updated_at FROM chap_meta " + where, args):
             ws = r["workspace"]
             meta = None
             if ws not in broken:

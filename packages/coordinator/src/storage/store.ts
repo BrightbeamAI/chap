@@ -30,16 +30,25 @@
  * Every change names the number of audit entries the Coordinator expects the
  * store to hold already (`base`). MemoryStore and SqliteStore refuse a change
  * whose base differs from what they hold: they throw a StoreConflictError and
- * write nothing. A second Coordinator writing the same workspace is refused
- * and reported, and the entries already stored stay as they are. The refused
- * instance's memory no longer matches the store; restart it to reload.
+ * write nothing. A second Coordinator writing the same workspace is refused,
+ * and the entries already stored stay as they are.
+ *
+ * A store that also implements `version` and `loadOne` lets a Coordinator
+ * keep up with another writer: before each call it compares the entries the
+ * store holds for the call's workspace with the entries it last wrote, and
+ * reloads the workspace when they differ. A synchronous write that fails or
+ * conflicts answers its call with -32603 and `data: {reason: "store"}`; the
+ * Coordinator then reloads the workspace, and refuses calls on it the same
+ * way until a reload succeeds. An asynchronous write that fails is reported,
+ * and the next write carries its change again.
  *
  * `save` makes no such check: it replaces what the store holds for the
  * workspace. A store that implements only `save` therefore still loses
  * entries silently when two instances write one workspace.
  *
- * To run more than one instance, partition workspaces so that no workspace is
- * ever written by two, or hold an external lock. See SPECIFICATION.md 10.3.
+ * To run more than one instance on a store without `version`, partition
+ * workspaces so that no workspace is ever written by two, or hold an
+ * external lock. See SPECIFICATION.md 10.3.
  *
  * Production deployments that need rich queries over the log can project it
  * into their own analytics store with the `onAudit` listener.
@@ -156,6 +165,15 @@ export interface Store {
   /** Remove one workspace. */
   delete(id: string): Promise<void> | void;
 
+  /**
+   * The number of audit entries the store holds for one workspace, or
+   * undefined when it holds none. Optional; see the concurrency model above.
+   */
+  version?(id: string): number | undefined;
+
+  /** One workspace's record, or undefined when the store holds none. Optional. */
+  loadOne?(id: string): WorkspaceRecord | undefined;
+
   /** Release resources. Idempotent. */
   close?(): Promise<void> | void;
 }
@@ -251,20 +269,26 @@ export class MemoryStore implements Store {
   private held = new Map<string, Held>();
 
   load(): WorkspaceRecord[] {
-    const out: WorkspaceRecord[] = [];
-    for (const [id, h] of this.held) {
-      const objects: Array<[string, string, unknown]> = [];
-      for (const [collection, items] of h.objects) {
-        for (const [key, value] of items) objects.push([collection, key, JSON.parse(value)]);
-      }
-      out.push({
-        id,
-        data: assembleSnapshot(JSON.parse(h.meta), h.entries.map(e => JSON.parse(e)), objects),
-        version: h.version,
-        updated_at: h.updated_at,
-      });
+    return [...this.held.keys()].map((id) => this.loadOne(id)!);
+  }
+
+  loadOne(id: string): WorkspaceRecord | undefined {
+    const h = this.held.get(id);
+    if (!h) return undefined;
+    const objects: Array<[string, string, unknown]> = [];
+    for (const [collection, items] of h.objects) {
+      for (const [key, value] of items) objects.push([collection, key, JSON.parse(value)]);
     }
-    return out;
+    return {
+      id,
+      data: assembleSnapshot(JSON.parse(h.meta), h.entries.map(e => JSON.parse(e)), objects),
+      version: h.version,
+      updated_at: h.updated_at,
+    };
+  }
+
+  version(id: string): number | undefined {
+    return this.held.get(id)?.entries.length;
   }
 
   save(record: WorkspaceRecord): void {

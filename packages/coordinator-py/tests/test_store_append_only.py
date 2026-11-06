@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
+import time
 from dataclasses import asdict
 
 from chap_coordinator import Coordinator, CoordinatorOptions
@@ -236,9 +238,31 @@ def test_a_collection_an_application_replaced_is_tracked_again():
 # ---- failed writes --------------------------------------------------
 
 
-def test_the_next_write_carries_what_a_failed_one_did_not():
-    store, seen = Flaky(), []
-    c = coordinator(store, on_store_error=lambda err, rec: seen.append(rec))
+FAILED = {"code": -32603, "message": "Internal error", "data": {"reason": "store"}}
+
+
+def test_a_call_whose_write_fails_is_answered_as_failed_and_the_workspace_is_what_the_store_holds():
+    store, seen, heard = Flaky(), [], []
+    c = coordinator(store, on_store_error=lambda err, rec: seen.append(rec),
+                    on_audit=lambda ws_id, entry: heard.append(entry.seq))
+    send = driver(c)
+    ok(send("workspace.create", "human:a"))
+    ok(send("participant.join", "human:a", type="human"))
+    store.failures = 1
+    assert send("participant.join", "agent:b", type="agent")["error"] == FAILED
+    assert len(seen) == 1
+    assert "agent:b" not in c.workspaces["w"].members
+    # The listeners heard of the entries the store took, and of no other.
+    assert heard == [0, 1]
+    ok(send("participant.join", "agent:b", type="agent"))
+    assert heard == [0, 1, 2]
+    assert plain(coordinator(store)) == plain(c)
+
+
+def test_under_log_the_call_stands_and_the_next_write_carries_what_a_failed_one_did_not():
+    store, seen, heard = Flaky(), [], []
+    c = coordinator(store, store_errors="log", on_store_error=lambda err, rec: seen.append(rec),
+                    on_audit=lambda ws_id, entry: heard.append(entry.seq))
     send = driver(c)
     ok(send("workspace.create", "human:a"))
     ok(send("participant.join", "human:a", type="human"))
@@ -246,7 +270,30 @@ def test_the_next_write_carries_what_a_failed_one_did_not():
     ok(send("participant.join", "agent:b", type="agent"))
     ok(send("task.create", "human:a", kind="k", input={}, assignee="agent:b"))
     assert len(seen) == 2
+    assert heard == [0, 1]
     ok(send("participant.join", "human:c", type="human"))
+    assert heard == [0, 1, 2, 3, 4]
+    assert plain(coordinator(store)) == plain(c)
+
+
+def test_a_workspace_whose_store_cannot_be_read_again_is_refused_until_it_can():
+    store = Flaky()
+    c = coordinator(store, on_store_error=lambda err, rec: None)
+    send = driver(c)
+    ok(send("workspace.create", "human:a"))
+    store.failures = 1
+    unreadable = [True]
+    load_one = store.load_one
+
+    def flaky_load_one(ws_id):
+        if unreadable[0]:
+            raise RuntimeError("disk gone")
+        return load_one(ws_id)
+    store.load_one = flaky_load_one
+    assert send("participant.join", "human:a", type="human")["error"] == FAILED
+    assert send("participant.join", "human:a", type="human")["error"] == FAILED
+    unreadable[0] = False
+    ok(send("participant.join", "human:a", type="human"))
     assert plain(coordinator(store)) == plain(c)
 
 
@@ -257,7 +304,7 @@ def test_with_no_on_store_error_a_failed_write_is_logged(caplog):
     ok(send("workspace.create", "human:a"))
     store.failures = 1
     with caplog.at_level(logging.ERROR, logger="chap_coordinator"):
-        ok(send("participant.join", "human:a", type="human"))
+        assert send("participant.join", "human:a", type="human")["error"] == FAILED
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]
     assert len(errors) == 1
     assert "workspace w" in errors[0].getMessage()
@@ -359,8 +406,9 @@ def test_a_failed_commit_leaves_no_transaction_open(tmp_path):
     real = store._conn
     store._conn = FailsOnce(real)
     send = driver(c)
-    ok(send("workspace.create", "human:a"))
+    assert send("workspace.create", "human:a")["error"] == FAILED
     assert len(seen) == 1 and not real.in_transaction
+    ok(send("workspace.create", "human:a"))
     ok(send("participant.join", "human:a", type="human"))
     assert len(seen) == 1
     store._conn = real
@@ -414,7 +462,7 @@ def test_processes_opening_one_new_file_at_once_all_succeed(tmp_path):
         assert outcomes == ["ok"] * 4, outcomes
 
 
-def test_two_coordinators_on_one_file_the_second_writer_is_refused(tmp_path):
+def test_two_coordinators_on_one_file_take_turns(tmp_path):
     path = str(tmp_path / "two.db")
     errors = []
 
@@ -425,7 +473,41 @@ def test_two_coordinators_on_one_file_the_second_writer_is_refused(tmp_path):
     b = make()
     ok(driver(b)("participant.join", "human:bob", type="human"))
     ok(driver(a)("participant.join", "human:carol", type="human"))
-    assert len(errors) == 1 and isinstance(errors[0], StoreConflictError)
+    ok(driver(b)("participant.join", "human:dave", type="human"))
+    assert errors == []
     survivor = make().workspaces["w"]
-    assert "human:bob" in survivor.members
-    assert "human:carol" not in survivor.members
+    assert sorted(survivor.members) == ["human:bob", "human:carol", "human:dave"]
+    assert len(survivor.audit) == 4
+
+
+def test_calls_from_two_threads_are_handled_one_at_a_time():
+    # A write that yields the interpreter halfway, as a database write does,
+    # let a call from another thread run inside it: both read the same clock
+    # and the same pending writes.
+    class Slow(MemoryStore):
+        def apply(self, change):
+            time.sleep(0.001)
+            super().apply(change)
+
+    store = Slow()
+    c = coordinator(store)
+    ok(driver(c)("workspace.create", "human:a"))
+    ok(driver(c)("participant.join", "human:a", type="human"))
+
+    def work(n):
+        send = driver(c)
+        for i in range(25):
+            ok(send("task.create", "human:a", kind=f"k{n}-{i}", input={}, assignee="human:a"))
+
+    threads = [threading.Thread(target=work, args=(n,)) for n in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    ws = c.workspaces["w"]
+    assert len(ws.tasks) == 100
+    assert [e.seq for e in ws.audit] == list(range(102))
+    r = c.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
+                    "params": {"workspace": "w"}})
+    assert r["result"]["status"] == "verified"
+    assert plain(coordinator(store)) == plain(c)

@@ -168,6 +168,12 @@ def register_whisper(coord: "Coordinator") -> None:
         return the list of notifications emitted. Called by deployments
         on a timer; called by the test suite directly to advance state.
         """
+        # A timer's check and a call can arrive together; the coordinator
+        # handles one at a time.
+        with coord._lock:
+            return _check_lapses(workspace_id, now)
+
+    def _check_lapses(workspace_id: str, now: str | None) -> list[dict]:
         ws = coord.workspaces.get(workspace_id)
         if not ws:
             return []

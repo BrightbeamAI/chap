@@ -212,18 +212,44 @@ describe("objects the caller holds", () => {
 });
 
 describe("failed writes", () => {
-  test("the next write carries what a failed one did not", () => {
+  test("a call whose write fails is answered as failed, and the workspace is what the store holds", () => {
     const store = new Flaky();
     const seen: Array<{ id: string; version: number }> = [];
-    const c = new Coordinator({ ...OPTIONS, store, onStoreError: (_e, r) => { seen.push(r); } });
+    const heard: number[] = [];
+    const c = new Coordinator({ ...OPTIONS, store, onStoreError: (_e, r) => { seen.push(r); },
+                                onAudit: (_ws, entry) => { heard.push(entry.seq); } });
     const send = driver(c);
     ok(send("workspace.create", "human:a"));
     ok(send("participant.join", "human:a", { type: "human" }));
-    store.failures = 2;
+    store.failures = 1;
+    assert.deepEqual(send("participant.join", "agent:b", { type: "agent" }).error,
+      { code: -32603, message: "Internal error", data: { reason: "store" } });
+    assert.equal(seen.length, 1);
+    assert.equal(c.workspaces.get("w")!.members.has("agent:b"), false);
+    // The listeners heard of the entries the store took, and of no other.
+    assert.deepEqual(heard, [0, 1]);
     ok(send("participant.join", "agent:b", { type: "agent" }));
-    ok(send("task.create", "human:a", { kind: "k", input: {}, assignee: "agent:b" }));
-    assert.equal(seen.length, 2);
-    ok(send("participant.join", "human:c", { type: "human" }));
+    assert.deepEqual(heard, [0, 1, 2]);
+    assert.deepEqual(plain(new Coordinator({ ...OPTIONS, store })), plain(c));
+  });
+
+  test("a workspace whose store cannot be read again is refused until it can", () => {
+    const store = new Flaky();
+    const c = new Coordinator({ ...OPTIONS, store, onStoreError: () => {} });
+    const send = driver(c);
+    ok(send("workspace.create", "human:a"));
+    store.failures = 1;
+    let unreadable = true;
+    const loadOne = store.loadOne.bind(store);
+    store.loadOne = (id: string) => {
+      if (unreadable) throw new Error("disk gone");
+      return loadOne(id);
+    };
+    const failed = { code: -32603, message: "Internal error", data: { reason: "store" } };
+    assert.deepEqual(send("participant.join", "human:a", { type: "human" }).error, failed);
+    assert.deepEqual(send("participant.join", "human:a", { type: "human" }).error, failed);
+    unreadable = false;
+    ok(send("participant.join", "human:a", { type: "human" }));
     assert.deepEqual(plain(new Coordinator({ ...OPTIONS, store })), plain(c));
   });
 
@@ -237,7 +263,7 @@ describe("failed writes", () => {
     console.error = (...args: unknown[]) => { lines.push(args.join(" ")); };
     try {
       store.failures = 1;
-      ok(send("participant.join", "human:a", { type: "human" }));
+      assert.equal(send("participant.join", "human:a", { type: "human" }).error?.data?.reason, "store");
     } finally {
       console.error = original;
     }
@@ -269,7 +295,25 @@ describe("failed writes", () => {
 });
 
 describe("a second writer", () => {
-  test("is refused and reported, and nothing stored is lost", () => {
+  test("a coordinator reloads what another wrote before its next call", () => {
+    const store = new MemoryStore();
+    const errors: unknown[] = [];
+    const make = () => new Coordinator({ ...OPTIONS, store, onStoreError: (e) => { errors.push(e); } });
+    const a = make();
+    ok(driver(a)("workspace.create", "human:alice"));
+    ok(driver(a)("participant.join", "human:alice", { type: "human" }));
+    const b = make();
+    ok(driver(b)("participant.join", "human:bob", { type: "human" }));
+    // A held an older state; it reloads, and writes on top of B's entry.
+    ok(driver(a)("participant.join", "human:carol", { type: "human" }));
+    assert.equal(errors.length, 0);
+    assert.ok(a.workspaces.get("w")!.members.has("human:bob"));
+    const survivor = make().workspaces.get("w")!;
+    assert.ok(survivor.members.has("human:bob") && survivor.members.has("human:carol"));
+    assert.equal(survivor.audit.length, 4);
+  });
+
+  test("a write another writer got to first is refused and reported, and nothing stored is lost", () => {
     const store = new MemoryStore();
     const errors: Array<[unknown, { id: string; version: number }]> = [];
     const make = () => new Coordinator({ ...OPTIONS, store, onStoreError: (e, r) => { errors.push([e, r]); } });
@@ -277,10 +321,16 @@ describe("a second writer", () => {
     ok(driver(a)("workspace.create", "human:alice"));
     ok(driver(a)("participant.join", "human:alice", { type: "human" }));
     const b = make();
-    ok(driver(b)("participant.join", "human:bob", { type: "human" }));
-    assert.equal(errors.length, 0);
-    // A still holds its older state and writes again.
-    ok(driver(a)("participant.join", "human:carol", { type: "human" }));
+    // B writes between A's check of the store and A's write.
+    const version = store.version.bind(store);
+    store.version = (id: string) => {
+      const held = version(id);
+      store.version = version;
+      ok(driver(b)("participant.join", "human:bob", { type: "human" }));
+      return held;
+    };
+    assert.deepEqual(driver(a)("participant.join", "human:carol", { type: "human" }).error,
+      { code: -32603, message: "Internal error", data: { reason: "store" } });
     assert.equal(errors.length, 1);
     const [err, record] = errors[0];
     assert.ok(err instanceof StoreConflictError);
@@ -289,6 +339,9 @@ describe("a second writer", () => {
     const survivor = make().workspaces.get("w")!;
     assert.ok(survivor.members.has("human:bob"));
     assert.ok(!survivor.members.has("human:carol"));
+    // A reloaded what the store holds, and carries on from it.
+    ok(driver(a)("participant.join", "human:carol", { type: "human" }));
+    assert.ok(make().workspaces.get("w")!.members.has("human:carol"));
   });
 });
 
@@ -412,7 +465,7 @@ describe("SqliteStore", { skip: !sqliteAvailable }, () => {
     store.close();
   });
 
-  test("two coordinators on one file: the second writer is refused", async () => {
+  test("two coordinators on one file take turns", async () => {
     const { SqliteStore } = await import("../src/storage/sqlite.ts");
     const path = join(tmp, "two.db");
     const errors: unknown[] = [];
@@ -422,11 +475,11 @@ describe("SqliteStore", { skip: !sqliteAvailable }, () => {
     const b = make();
     ok(driver(b)("participant.join", "human:bob", { type: "human" }));
     ok(driver(a)("participant.join", "human:carol", { type: "human" }));
-    assert.equal(errors.length, 1);
-    assert.ok(errors[0] instanceof StoreConflictError);
+    ok(driver(b)("participant.join", "human:dave", { type: "human" }));
+    assert.equal(errors.length, 0);
     const survivor = make().workspaces.get("w")!;
-    assert.ok(survivor.members.has("human:bob"));
-    assert.ok(!survivor.members.has("human:carol"));
+    assert.deepEqual([...survivor.members.keys()].sort(), ["human:bob", "human:carol", "human:dave"]);
+    assert.equal(survivor.audit.length, 4);
   });
 
   test("cleanup", () => {
