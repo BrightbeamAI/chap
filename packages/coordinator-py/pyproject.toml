@@ -54,7 +54,9 @@ Paper = "https://arxiv.org/abs/2606.09751"
 include = ["chap_coordinator*"]
 
 [tool.setuptools.package-data]
-"chap_coordinator" = ["py.typed"]
+# The review desk, served by chap_coordinator.server. scripts/sync-desk-assets.mjs
+# writes these files from the desk's one copy; edit them there.
+"chap_coordinator" = ["py.typed", "desk/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
