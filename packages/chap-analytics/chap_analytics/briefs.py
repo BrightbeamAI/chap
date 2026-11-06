@@ -165,7 +165,9 @@ def calibration(f: Frames) -> Brief:
 # ============================================================================
 
 def latency(f: Frames) -> Brief:
-    """How long reviews wait for a first decision, and how many are still waiting."""
+    """How long reviews wait for a first decision, and how many are still
+    waiting. Where reviewers acknowledge opening a review, the wait splits
+    into the time before a reviewer opened it and the time they took then."""
     lt = _stats.latency(f)
     q = _stats.open_queue(f)
     by = _stats.latency_by(f, by="reviewer")
@@ -178,8 +180,19 @@ def latency(f: Frames) -> Brief:
     head = (f"Half of the reviews were decided within {_hours(med)}, nine in ten within {_hours(p90)}; "
             f"{len(q)} still waiting.")
     parts = [f"{len(decided)} review passes reached a decision."]
+    seen = decided.dropna(subset=["time_to_open_s"])
+    med_open = seen["time_to_open_s"].median() if not seen.empty else float("nan")
+    med_decide = seen["time_to_decide_s"].median() if not seen.empty else float("nan")
+    if not seen.empty:
+        parts.append(f"In the {len(seen)} a reviewer acknowledged opening, half were opened within "
+                     f"{_hours(med_open)} of the request, and half decided within {_hours(med_decide)} "
+                     f"of being opened.")
     if not q.empty:
         parts.append(f"The oldest open review has waited {_hours(q.iloc[0]['age_s'])}.")
+        if (f.events["method"] == "review.acknowledge").any():
+            unopened = int(q["acknowledged_at"].isna().sum())
+            parts.append(f"Of the {len(q)} still waiting, {unopened} "
+                         f"{'has' if unopened == 1 else 'have'} not been opened.")
     named = by.dropna(subset=["reviewer"]).sort_values("median_s", ascending=False)
     if len(named) >= 2:
         slow, fast = named.iloc[0], named.iloc[-1]
@@ -187,13 +200,18 @@ def latency(f: Frames) -> Brief:
                      f"{fast['reviewer']} is quickest at {_hours(fast['median_s'])}.")
     if not q.empty and len(q) > max(3, 0.1 * len(lt)):
         decision = "More than a tenth of reviews are waiting: add a reviewer to that kind of work or reroute it."
+    elif len(seen) >= 5 and med_open > 4 * med_decide:
+        decision = ("Most of the wait comes before a reviewer opens the work: tell reviewers when a "
+                    "review arrives.")
     elif pd.notna(p90) and pd.notna(med) and p90 > 4 * med:
         decision = "The long tail is a few stuck items rather than general load: chase the oldest open reviews."
     else:
         decision = "Decisions are keeping up with the work."
     return Brief("latency", "How long decisions take", head, " ".join(parts), decision,
                  len(decided) >= 10, by, {"median_s": float(med) if pd.notna(med) else None,
-                                          "p90_s": float(p90) if pd.notna(p90) else None, "open": len(q)})
+                                          "p90_s": float(p90) if pd.notna(p90) else None, "open": len(q),
+                                          "median_open_s": float(med_open) if pd.notna(med_open) else None,
+                                          "median_decide_s": float(med_decide) if pd.notna(med_decide) else None})
 
 
 # ============================================================================

@@ -256,6 +256,9 @@ class _Review:
     artefact: Any = None
     decisions: list[dict] = field(default_factory=list)
     settled_at: pd.Timestamp | None = None
+    #: When each reviewer opened the review in front of them, from their first
+    #: review.acknowledge in this pass.
+    acknowledged: dict[str, pd.Timestamp] = field(default_factory=dict)
 
 
 #: What a task is given when it is made, rather than what happens to it
@@ -687,6 +690,14 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
                 r = t.open_review(ts, addressed, p.get("rule") or "any_one_approves",
                                   p.get("artefact"))
             t.state, t.settled_at = "review_requested", None
+
+        elif method == "review.acknowledge" and tid:
+            # review/1.0: a reviewer has opened the review in front of them.
+            # A coordinator takes one per reviewer per pass; the first is kept
+            # wherever a log holds more.
+            r = task(tid).review
+            if r is not None and isinstance(actor, str) and ts is not None:
+                r.acknowledged.setdefault(actor, ts)
 
         elif method in ("decide.approve", "decide.reject", "decide.override",
                         "abstain.declare") and tid:
@@ -1592,10 +1603,18 @@ def frames(chain: Chain) -> Frames:
                 lat = None
                 if d["ts"] is not None and r.requested_at is not None:
                     lat = (d["ts"] - r.requested_at).total_seconds()
+                seen = r.acknowledged.get(d["reviewer"])
+                to_open = to_decide = None
+                if seen is not None and r.requested_at is not None:
+                    to_open = (seen - r.requested_at).total_seconds()
+                if seen is not None and d["ts"] is not None:
+                    to_decide = (d["ts"] - seen).total_seconds()
                 decision_rows.append({
                     "task_id": tid, "workspace": ws, "seq": d["seq"],
                     "reviewer": d["reviewer"], "kind": d["kind"], "ts": d["ts"],
                     "requested_at": r.requested_at, "latency_s": lat,
+                    "acknowledged_at": seen, "time_to_open_s": to_open,
+                    "time_to_decide_s": to_decide,
                     "rule": r.rule, "review_index": pass_no,
                     "decision_index": i, "is_final": d["is_final"],
                     "comment": d["comment"], "tags": d["tags"], "n_tags": len(d["tags"]),

@@ -442,26 +442,63 @@ def _chain_end(f: Frames) -> pd.Timestamp | None:
     return ts.max() if not ts.empty else None
 
 
+def _acknowledgements(f: Frames) -> dict[str, list[pd.Timestamp]]:
+    """The times of every review.acknowledge on the chain, by task."""
+    ev = f.events
+    out: dict[str, list[pd.Timestamp]] = {}
+    for r in ev[ev["method"] == "review.acknowledge"][["task_id", "ts"]].itertuples(index=False):
+        if isinstance(r.task_id, str) and pd.notna(r.ts):
+            out.setdefault(r.task_id, []).append(r.ts)
+    return out
+
+
+def _first_acknowledgement(acks: dict[str, list[pd.Timestamp]], task_id: str,
+                           start: Any, stop: Any) -> Any:
+    """The first acknowledgement of the pass requested at ``start``: the
+    earliest at or after it, and no later than ``stop`` where the pass was
+    decided."""
+    if start is None or pd.isna(start):
+        return pd.NaT
+    times = [t for t in acks.get(task_id, ())
+             if t >= start and (stop is None or pd.isna(stop) or t <= stop)]
+    return min(times) if times else pd.NaT
+
+
+def _seconds(later: Any, earlier: Any) -> float:
+    if later is None or earlier is None or pd.isna(later) or pd.isna(earlier):
+        return float("nan")
+    return (later - earlier).total_seconds()
+
+
 def latency(f: Frames) -> pd.DataFrame:
     """
     One row per review pass: when it opened, how long until its first
     decision, and whether it is still open (``event`` False, ``duration_s``
     measured to the end of the chain).
 
+    Where the chain records ``review.acknowledge``, ``acknowledged_at`` is
+    when a reviewer first opened the pass, and the wait splits in two:
+    ``time_to_open_s``, from the request to that opening, and
+    ``time_to_decide_s``, from the opening to the first decision.
+
     Open passes are found from the last ``review.request`` or ``task.complete``
     envelope on a task that is still awaiting a decision.
     """
     d = f.decisions
     end = _chain_end(f)
+    acks = _acknowledgements(f)
     rows: list[dict] = []
     if not d.empty:
         first = (d.sort_values("ts").groupby(["task_id", "review_index"], as_index=False)
                  .first()[["task_id", "review_index", "requested_at", "ts", "latency_s", "reviewer", "task_kind", "assignee"]])
         for r in first.itertuples(index=False):
+            seen = _first_acknowledgement(acks, r.task_id, r.requested_at, r.ts)
             rows.append({"task_id": r.task_id, "review_index": r.review_index,
                          "requested_at": r.requested_at, "decided_at": r.ts,
                          "duration_s": r.latency_s, "event": True,
-                         "reviewer": r.reviewer, "task_kind": r.task_kind, "assignee": r.assignee})
+                         "reviewer": r.reviewer, "task_kind": r.task_kind, "assignee": r.assignee,
+                         "acknowledged_at": seen, "time_to_open_s": _seconds(seen, r.requested_at),
+                         "time_to_decide_s": _seconds(r.ts, seen)})
     open_tasks = f.tasks[(f.tasks["outcome"] == "open") & f.tasks["was_reviewed"].fillna(False)]
     if not open_tasks.empty and end is not None:
         ev = f.events[f.events["method"].isin(("review.request", "task.complete"))]
@@ -475,12 +512,15 @@ def latency(f: Frames) -> pd.DataFrame:
             req = last_req.get(t.task_id)
             if req is None or pd.isna(req):
                 continue
+            seen = _first_acknowledgement(acks, t.task_id, req, None)
             rows.append({"task_id": t.task_id, "review_index": idx, "requested_at": req,
                          "decided_at": pd.NaT, "duration_s": (end - req).total_seconds(),
                          "event": False, "reviewer": None, "task_kind": t.kind,
-                         "assignee": t.assignee})
+                         "assignee": t.assignee, "acknowledged_at": seen,
+                         "time_to_open_s": _seconds(seen, req), "time_to_decide_s": float("nan")})
     cols = ["task_id", "review_index", "requested_at", "decided_at", "duration_s", "event",
-            "reviewer", "task_kind", "assignee"]
+            "reviewer", "task_kind", "assignee", "acknowledged_at", "time_to_open_s",
+            "time_to_decide_s"]
     out = pd.DataFrame(rows, columns=cols)
     return out.sort_values(["requested_at", "task_id"]).reset_index(drop=True)
 
@@ -550,9 +590,10 @@ def latency_by(f: Frames, by: str = "reviewer", *, minimum: int = 5) -> pd.DataF
 
 
 def open_queue(f: Frames) -> pd.DataFrame:
-    """Reviews still waiting, oldest first, with their age at the end of the chain."""
+    """Reviews still waiting, oldest first, with their age at the end of the
+    chain and, where the chain records it, when a reviewer opened them."""
     lt = latency(f)
-    cols = ["task_id", "task_kind", "assignee", "requested_at", "age_s"]
+    cols = ["task_id", "task_kind", "assignee", "requested_at", "age_s", "acknowledged_at"]
     if lt.empty:
         return pd.DataFrame(columns=cols)
     q = lt[~lt["event"].astype(bool)].rename(columns={"duration_s": "age_s"})

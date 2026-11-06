@@ -89,6 +89,15 @@ chain and marked `event=False`, so it can be censored rather than dropped.
 Passes on tasks that were escalated, cancelled or superseded before a
 decision are outside this table.
 
+Where the log records `review.acknowledge`, sent as a reviewer opens a
+review, `acknowledged_at` is the first such call in the pass, and the wait
+splits in two: `time_to_open_s`, from the request to that opening, and
+`time_to_decide_s`, from the opening to the first decision. The two tell a
+review that sat unseen from one a reviewer took a long time over. The
+decisions table carries the same split for each decision's own reviewer.
+Coordinators before 0.3.5 record no acknowledgements, and these columns
+are null on their logs.
+
 **`survival(f, by=None)`.** The Kaplan-Meier estimate of the share of
 reviews still waiting after each duration, with open reviews censored.
 Dropping the open reviews flatters every latency figure, because the
