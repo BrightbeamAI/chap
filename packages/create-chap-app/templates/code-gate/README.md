@@ -136,13 +136,20 @@ is one the desk reads as the change git makes: write it with `git diff
 does.
 
 **The environment.** The hooks and the commands read `chap.config.json`
-beside them, or the file `CHAP_CONFIG` names. `CHAP_URL` is the gate's
-`POST /chap` address (by default `http://127.0.0.1:8791/chap`, from
-`CHAP_HOST` and `PORT`); `CHAP_AGENT_URI` replaces the agent's URI from the
-configuration, and `CHAP_AGENT_KEY` the path of its key (by default under
-`keys/`). `CHAP_MODEL` names the model of the session the commands run in.
-A commit made by `propose.mjs` or the built-in agent passes `CHAP_URL` and
-`CHAP_CONFIG` to its hooks, so they ask the gate the command asked.
+beside them, or the file `CHAP_CONFIG` names, and take the gate's address
+from it: `url` for a gate elsewhere, or else `http://127.0.0.1:8791/chap`
+from `host` and `port`, which `CHAP_HOST` and `PORT` replace as they do for
+the server. `CHAP_URL` counts only where it names that same gate on this
+machine, under `localhost` say; any other address is
+set aside, with a line that says so, so a hook cannot be sent to a server
+that approves whatever it is asked. Whether signatures are required comes
+from the configuration too (`require_signatures`, or `security-signed/1.0`
+among the profiles), never from what a running gate reports.
+`CHAP_AGENT_URI` replaces the agent's URI from the configuration, and
+`CHAP_AGENT_KEY` the path of its key (by default under `keys/`).
+`CHAP_MODEL` names the model of the session the commands run in. A commit
+made by `propose.mjs` or the built-in agent passes `CHAP_CONFIG` to its
+hooks, so they ask the gate the command asked.
 
 ## The review loop
 
@@ -342,8 +349,9 @@ leave it off.
    with `npm ci --ignore-scripts`, so it runs the version the base branch
    pins and no package's install script; beyond that it uses git, OpenSSH
    and Node.
-3. **One agent identity per developer.** Each developer sets `CHAP_URL` to the
-   team's gate and `CHAP_AGENT_URI` to their agent's own URI, say
+3. **One agent identity per developer.** The gate project's
+   `chap.config.json` names the team's gate as `url`, its `POST /chap`
+   address. Each developer sets `CHAP_AGENT_URI` to their agent's own URI, say
    `agent:claude-code@alice`, runs `npm run keys` once to make that agent's
    key, joins it by proposing once, and runs `install-hooks.mjs` in their
    clone. Governed commits are signed as each developer signs their own;

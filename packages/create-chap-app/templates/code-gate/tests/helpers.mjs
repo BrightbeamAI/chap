@@ -56,9 +56,9 @@ export async function startGate({ suffix = "", humans = null, review = null, ext
   };
   const close = () => new Promise((r) => server.close(r));
   // The hooks run in their own process and read the configuration from
-  // CHAP_CONFIG, so each gate here writes its own.
+  // CHAP_CONFIG, so each gate here writes its own, with the port it took.
   const configPath = join(keyDir, "chap.config.json");
-  await writeFile(configPath, JSON.stringify(config, null, 2));
+  await writeFile(configPath, JSON.stringify({ ...config, port: server.address().port }, null, 2));
   gate.configPath = configPath;
   return { config, coord, server, base, gate, keyPath, configPath, agent, reviewer, close };
 }

@@ -19,6 +19,12 @@ The commands run against a gate project: the directory that holds its
 `chap.config.json`, its `keys/` and its `data/`. The server is
 `@brightbeamai/chap-server`, run from the project with `npm start`.
 
+The gate's address comes from the configuration: `url` for a gate
+elsewhere, or `host` and `port` (which `CHAP_HOST` and `PORT` replace).
+`CHAP_URL` counts only where it names that same gate on this machine. The
+hooks take whether signatures are required from the configuration too, and
+never from what a running gate reports.
+
 ## The commands
 
 ```

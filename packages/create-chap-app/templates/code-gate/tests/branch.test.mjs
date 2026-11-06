@@ -355,7 +355,10 @@ test("the command carries on: a revision sent to the same review, an approval se
 test("under review_at push a commit is made with the gate down, and a detached head names where to push before anything is proposed", async () => {
   await git(repo, ["checkout", "-q", "-b", "agent/offline", base]);
   await appendTo(repo, "README.md", "\nWritten with the gate down.\n");
-  const { stderr } = await sh("git", ["commit", "-q", "-am", "Offline"], { CHAP_URL: "http://127.0.0.1:9/chap" });
+  // The gate is down: the configuration names a port nothing answers on.
+  const down = join(await mkdtemp(join(tmpdir(), "chap-down-")), "chap.config.json");
+  await writeFile(down, JSON.stringify({ ...g.config, port: 9 }));
+  const { stderr } = await sh("git", ["commit", "-q", "-am", "Offline"], { CHAP_CONFIG: down, CHAP_URL: "http://127.0.0.1:9/chap" });
   assert.match(stderr, /the gate is not answering, so nothing is checked now/);
   await git(repo, ["checkout", "-q", "--detach", "HEAD"]);
   await assert.rejects(sh(process.execPath, [join(projectDir, "propose-branch.mjs"), "origin/main..HEAD", "--push", "origin"]), (e) => /is not a local branch, so name where to push: --push origin --to <branch>/.test(e.stderr));

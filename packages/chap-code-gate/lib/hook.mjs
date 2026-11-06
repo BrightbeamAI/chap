@@ -27,11 +27,14 @@
 //
 // CHAP_GATE=off lets a commit through with no approval and no trailers; a
 // verifier fails such a commit, so the bypass is visible where it matters.
-// CHAP_URL names the gate when it is not at the address in chap.config.json.
+// The hooks take the gate's address and whether signatures are required
+// from chap.config.json alone (see loadGate): a running gate's /api/config
+// decides nothing, and CHAP_URL counts only where it names the configured
+// gate on this machine.
 
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { approvedChanges, buildNote, checkApproval, checkChange, evidence, loadGate, onlinePolicy, reviewRule, served, strictestRule, trailersFor, trustAtRef } from "./gate.mjs";
+import { approvedChanges, buildNote, checkApproval, checkChange, evidence, loadGate, onlinePolicy, reviewRule, served, signaturesRequired, strictestRule, trailersFor, trustAtRef } from "./gate.mjs";
 import { commitInfo, commitsWithApproval, committerIdent, emptyTree, git, head, mergeInProgress, objectExists, setTrailers, stagedTree, treeOf, writeNote } from "./git.mjs";
 
 const say = (line) => process.stderr.write(`chap: ${line}\n`);
@@ -95,7 +98,7 @@ async function preCommitChecked(repo, gate, atPush, letThrough) {
     say("rebase the branch onto its target, or commit with CHAP_GATE=off and let the verifier report it.");
     return 1;
   }
-  const cfg = await served(gate);
+  await served(gate);
   const parent = await head(repo);
   const parentTree = parent ? await treeOf(repo, parent) : await emptyTree(repo);
   const tree = await stagedTree(repo);
@@ -126,7 +129,7 @@ async function preCommitChecked(repo, gate, atPush, letThrough) {
     const note = buildNote(ev, gate.url);
     const policy = pinned ? { ...pinned } : onlinePolicy(gate, ev);
     policy.rule = strictestRule([policy.rule, reviewRule(gate).rule], Object.keys(policy.reviewers));
-    const problems = await checkApproval(note, policy, { allowUnsigned: !cfg.require_signatures });
+    const problems = await checkApproval(note, policy, { allowUnsigned: !signaturesRequired(gate.config) });
     if (problems.length) { reasons.push([match.task_id, problems, policy.source]); continue; }
     chosen = { note, policy };
     break;
@@ -227,7 +230,7 @@ async function prePush(repo, gate, [remote = "origin", url], input) {
     const policyAt = known ? remoteSha : (has?.get("HEAD") ?? has?.get("refs/heads/main") ?? has?.get("refs/heads/master") ?? null);
     const pinned = policyAt ? await trustAtRef(repo, policyAt) : null;
     for (const sha of shas) {
-      const r = await verifyCommit(repo, sha, { policy: pinned, gate: pinned ? null : gate, seen, allowPeople: !!gate.config.allow_people, allowCleanMerges: true, allowUnsigned: !gate.config.require_signatures });
+      const r = await verifyCommit(repo, sha, { policy: pinned, gate: pinned ? null : gate, seen, allowPeople: !!gate.config.allow_people, allowCleanMerges: true, allowUnsigned: !signaturesRequired(gate.config) });
       checked++;
       if (r.status !== "ok") failed.push(r);
     }

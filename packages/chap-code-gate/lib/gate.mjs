@@ -26,18 +26,49 @@ export const TRUST_FILE = "chap-trust.json";
 /**
  * The gate directory, its configuration, and where the coordinator answers.
  * The gate directory is the project that holds chap.config.json, its keys/
- * and its data/. CHAP_URL names a gate elsewhere, CHAP_AGENT_URI the agent
- * this developer's proposals come from, when a team shares one gate, and
- * CHAP_CONFIG a configuration file other than chap.config.json in `dir`.
+ * and its data/. CHAP_CONFIG names a configuration file other than
+ * chap.config.json in `dir`, and CHAP_AGENT_URI the agent this developer's
+ * proposals come from, when a team shares one gate.
+ *
+ * The gate's address is the configuration's: `url` for a gate elsewhere, a
+ * team's say, or else `host` and `port`, which CHAP_HOST and PORT replace
+ * as they do for the server. CHAP_URL is followed only where it names that
+ * same gate on this machine, another name for the loopback address say; any
+ * other value is set aside, and `say` is told, so a hook cannot be sent to
+ * a server that approves whatever it is asked.
  */
-export async function loadGate(dir = process.cwd()) {
+export async function loadGate(dir = process.cwd(), { say = (line) => process.stderr.write(`chap: ${line}\n`) } = {}) {
   const configPath = process.env.CHAP_CONFIG ?? join(dir, "chap.config.json");
   const config = JSON.parse(await readFile(configPath, "utf8"));
   if (process.env.CHAP_AGENT_URI) config.agent = { ...(config.agent ?? {}), uri: process.env.CHAP_AGENT_URI };
-  const host = process.env.CHAP_HOST ?? config.host ?? "127.0.0.1";
-  const port = process.env.PORT ?? config.port ?? 8791;
-  const url = process.env.CHAP_URL ?? `http://${host}:${port}/chap`;
+  const configured = config.url ?? `http://${process.env.CHAP_HOST ?? config.host ?? "127.0.0.1"}:${process.env.PORT ?? config.port ?? 8791}/chap`;
+  let url = configured;
+  const asked = process.env.CHAP_URL;
+  if (asked && asked !== configured) {
+    if (sameLocalGate(asked, configured)) url = asked;
+    else say(`CHAP_URL names ${asked}, which is not the gate chap.config.json configures; asking ${configured}`);
+  }
   return { dir, config, configPath, url, base: url.replace(/\/chap\/?$/, "") };
+}
+
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/** Whether two addresses name one gate on this machine: loopback names, the same port and the same path. */
+function sameLocalGate(a, b) {
+  try {
+    const [x, y] = [new URL(a), new URL(b)];
+    return LOOPBACK.has(x.hostname) && LOOPBACK.has(y.hostname) && x.protocol === y.protocol && x.port === y.port && x.pathname === y.pathname;
+  } catch { return false; }
+}
+
+/**
+ * Whether the gate project requires signatures, from its own configuration:
+ * require_signatures true or "humans", or security-signed/1.0 among its
+ * profiles. A running gate's /api/config does not decide it.
+ */
+export function signaturesRequired(config) {
+  return config.require_signatures === true || config.require_signatures === "humans"
+    || (config.profiles ?? []).some((p) => p === "security-signed" || p.startsWith("security-signed/"));
 }
 
 /** The environment a commit made for this gate passes to its hooks, so they ask the same gate. */
