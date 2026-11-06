@@ -1024,8 +1024,12 @@ export class Coordinator {
     if (out.error) return reply(envelope, { error: out.error });
 
     // Record audit on success. A refusal is weighed in dispatch(), once this
-    // returns, against the rule in SPECIFICATION 10.1.
-    const wsId = params.workspace as string | undefined;
+    // returns, against the rule in SPECIFICATION 10.1. A workspace.create
+    // that names no workspace is recorded in the one it made, which was
+    // otherwise left with no entry and never written to the store.
+    const wsId = method === "workspace.create"
+      ? (out.result as { workspace: string }).workspace
+      : params.workspace as string | undefined;
     if (typeof wsId === "string" && !READ_ONLY_METHODS.has(method)) {
       const ws = this.workspaces.get(wsId);
       if (ws) this.recordAudit(ws, envelope);

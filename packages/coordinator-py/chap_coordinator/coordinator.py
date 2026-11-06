@@ -736,8 +736,11 @@ class Coordinator:
 
         # Record audit on successful operations that name a workspace. A
         # refusal is weighed in dispatch(), once this returns, against the
-        # rule in SPECIFICATION 10.1.
-        ws_id = params.get("workspace")
+        # rule in SPECIFICATION 10.1. A workspace.create that names no
+        # workspace is recorded in the one it made, which was otherwise left
+        # with no entry and never written to the store.
+        ws_id = (out["result"]["workspace"] if method == "workspace.create"
+                 else params.get("workspace"))
         if isinstance(ws_id, str) and method not in _READ_ONLY_METHODS:
             ws = self.workspaces.get(ws_id)
             if ws is not None:
