@@ -153,6 +153,19 @@ def test_work_that_shipped_after_a_rejection_is_not_reported_as_approved():
     ok("decide.reject", {"task_id": t, "request_revision": True}, "human:ana")
     ok("task.complete", {"task_id": t, "output": {"v": 2}}, "agent:drafter")
 
+    if c.get_workspace("w").tasks[t].state == "review_requested":
+        # From chap-coordinator 0.3.5 the completion opens a new pass, and only
+        # a decision ships the work: the chain then holds a rejection of the
+        # first draft and an approval of the second, each in its own pass.
+        ok("decide.approve", {"task_id": t}, "human:ana")
+        for label, f in zip(("envelopes", "state"), both(c)):
+            row = f.tasks.set_index("task_id").loc[t]
+            assert (row["outcome"], int(row["n_reviews"])) == ("approved", 2), f"{label} read"
+            d = f.decisions[f.decisions["task_id"] == t].sort_values("seq")
+            assert list(zip(d["review_index"], d["kind"])) == [(0, "reject"), (1, "approve")]
+            assert d.iloc[1]["artefact"] == {"v": 2}
+        return
+
     decisions = c.get_workspace("w").tasks[t].review.decisions
     assert [d["kind"] for d in decisions] == ["reject"], "no approval exists in this chain"
     for label, f in zip(("envelopes", "state"), both(c)):
@@ -286,6 +299,19 @@ def test_work_that_shipped_while_its_review_was_still_open_is_named_as_such():
     ok("task.update", {"task_id": t, "state": "in_progress"}, "agent:drafter")
     ok("task.complete", {"task_id": t, "output": {"v": 2}}, "agent:drafter")
 
+    if c.get_workspace("w").tasks[t].state == "review_requested":
+        # From chap-coordinator 0.3.5 the completion opens a new pass under
+        # the same rule, and Ana's approval of the first artefact does not
+        # count towards it: both approve the second before it ships.
+        ok("decide.approve", {"task_id": t}, "human:ana")
+        ok("decide.approve", {"task_id": t}, "human:bo")
+        for label, f in zip(("envelopes", "state"), both(c)):
+            row = f.tasks.set_index("task_id").loc[t]
+            assert (row["outcome"], int(row["n_reviews"])) == ("approved", 2), f"{label} read"
+            final = f.decisions[f.decisions["is_final"].fillna(False)]
+            assert list(zip(final["review_index"], final["reviewer"])) == [(1, "human:bo")]
+        return
+
     assert c.get_workspace("w").tasks[t].state == "completed"
     for label, f in zip(("envelopes", "state"), both(c)):
         row = f.tasks.set_index("task_id").loc[t]
@@ -330,3 +356,46 @@ def test_is_final_agrees_with_the_coordinator_for_every_rule(rule, reviewers, ap
         finals = f.decisions.sort_values("seq")["is_final"].tolist()
         assert finals == [False] * (approvers - 1) + [settled], (
             f"{label} read, {rule} with {approvers} of {reviewers}: {finals}")
+
+
+# ------------------------------- a completion after a review, in either log
+
+def _log(*calls):
+    """A log written out by hand, envelopes only, one minute apart."""
+    events = []
+    for i, (method, actor, params) in enumerate(calls):
+        ts = f"2026-11-02T09:{i:02d}:00Z"
+        events.append({"seq": i, "arrived": ts, "envelope": {
+            "jsonrpc": "2.0", "id": str(i), "method": method,
+            "params": {"workspace": "w", "from": actor, "ts": ts, **params}}})
+    return frames(Chain(workspace="w", events=events, state=None, source="test"))
+
+
+_SENT_BACK = (
+    ("workspace.create", "human:ana", {}),
+    ("participant.join", "human:ana", {"type": "human"}),
+    ("participant.join", "agent:drafter", {"type": "agent"}),
+    ("task.create", "agent:drafter", {"kind": "k", "input": {}, "assignee": "agent:drafter"}),
+    ("review.request", "agent:drafter", {"task_id": "tsk_1", "artefact": {"v": 1}, "to": ["human:ana"]}),
+    ("decide.reject", "human:ana", {"task_id": "tsk_1", "request_revision": True}),
+    ("task.complete", "agent:drafter", {"task_id": "tsk_1", "output": {"v": 2}}),
+)
+
+
+def test_a_decision_after_the_completion_lands_in_a_new_pass():
+    """From chap-coordinator 0.3.5 the completion of a task that has held a
+    review opens a new pass. The decision that follows belongs to it, and is
+    timed from the completion."""
+    f = _log(*_SENT_BACK, ("decide.approve", "human:ana", {"task_id": "tsk_1"}))
+    row = f.tasks.set_index("task_id").loc["tsk_1"]
+    assert (row["outcome"], int(row["n_reviews"])) == ("approved", 2)
+    d = f.decisions.sort_values("seq")
+    assert list(zip(d["review_index"], d["kind"])) == [(0, "reject"), (1, "approve")]
+    assert d.iloc[1]["artefact"] == {"v": 2} and d.iloc[1]["latency_s"] == 60
+
+
+def test_a_completion_with_nothing_after_it_ends_the_task():
+    """Before 0.3.5 the same completion finished the task, and a log with no
+    decision after it reads that way."""
+    row = _log(*_SENT_BACK).tasks.set_index("task_id").loc["tsk_1"]
+    assert (row["outcome"], int(row["n_reviews"])) == ("completed_after_rejection", 1)

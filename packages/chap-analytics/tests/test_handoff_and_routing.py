@@ -265,7 +265,10 @@ def test_a_whisper_answered_in_time_did_not_lapse():
 
 def test_two_overrides_on_one_task_keep_their_own_artefacts():
     # Matching stored artefacts on (task, reviewer) attached the first one to
-    # both, so the second override reported the wrong "before".
+    # both, so the second override reported the wrong "before". Ana corrects
+    # the task twice. Bo corrects it in between, since from chap-coordinator
+    # 0.3.5 the reviewer whose override produced an artefact is its author
+    # and cannot decide on it.
     c, ok = build()
     t = ok("task.create", {"kind": "k", "input": {}, "assignee": "agent:x"})["task_id"]
     v1 = {"body": "one"}
@@ -274,16 +277,18 @@ def test_two_overrides_on_one_task_keep_their_own_artefacts():
     ok("decide.override", {"task_id": t, "diff": [{"op": "replace", "path": "/body", "value": "two"}],
                            "rationale": "first correction"}, "human:ana")
     v2 = {"body": "two"}
-    ok("review.request", {"task_id": t, "artefact": v2, "to": ["human:ana"]}, "agent:x")
+    ok("review.request", {"task_id": t, "artefact": v2, "to": ["human:bo"]}, "agent:x")
     ok("decide.override", {"task_id": t, "diff": [{"op": "replace", "path": "/body", "value": "three"}],
-                           "rationale": "second correction"}, "human:ana")
+                           "rationale": "second correction"}, "human:bo")
+    v3 = {"body": "three"}
+    ok("review.request", {"task_id": t, "artefact": v3, "to": ["human:ana"]}, "agent:x")
+    ok("decide.override", {"task_id": t, "diff": [{"op": "replace", "path": "/body", "value": "four"}],
+                           "rationale": "third correction"}, "human:ana")
 
     _, state = both(c)
     ovs = state.overrides.sort_values("seq")
-    assert len(ovs) == 2
-    assert ovs.iloc[0]["based_on"] == v1
-    assert ovs.iloc[1]["based_on"] == v2, (
-        "the second correction started from the corrected artefact rather than the first draft")
+    assert list(ovs["based_on"]) == [v1, v2, v3], (
+        "a later correction started from an earlier artefact")
 
 
 # ------------------------------------------------------------- degenerate input

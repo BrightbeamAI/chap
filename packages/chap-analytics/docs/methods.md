@@ -20,6 +20,14 @@ denominator is visible. A task sent back for revision and reviewed again is
 one task with two review passes, and its outcome reads from the decision
 that settled the last pass.
 
+From chap-coordinator 0.3.5, a task that has held a review completes only
+through a decision: completing it again opens a new pass, as it does on a
+task that requires review. Before 0.3.5 the same completion finished the
+task, and the log reads the same either way. The projection opens the new
+pass when a decision on it follows, or when the state read with the log
+shows the task under review; otherwise it reads the completion as the end
+of the task, as a log from before 0.3.5 means it.
+
 ## Rates
 
 **`rates(f, by=None, *, minimum=10)`.** Approval, override, rejection and

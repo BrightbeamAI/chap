@@ -322,6 +322,10 @@ class _Task:
     assignee_moved: bool = False
     confidence_reported: bool = False
     reviews: list[_Review] = field(default_factory=list)
+    #: A completion on a task that has held a review, before any decision or
+    #: request after it: (when, reviewers, rule, artefact) of the pass it
+    #: opened, if a coordinator from 0.3.5 wrote the log.
+    held_round: tuple | None = None
 
     def attribute(self, made: _Creation | None) -> None:
         """Take this creation's attributes as this task's own."""
@@ -666,12 +670,23 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
                     r = t.open_review(ts, [x for x in r.requested_to if x != actor], r.rule, None)
                 r.artefact = p.get("output")
                 t.state, t.settled_at = "review_requested", None
+                t.held_round = None
             else:
                 t.state = "completed"
                 t.settled_at = ts
+                # From chap-coordinator 0.3.5 a task that has held a review
+                # completes only through a decision: this completion opened a
+                # new pass of that review, as on a task that requires review.
+                # Before 0.3.5 it completed the task. The log reads the same
+                # either way, so the pass is held here and opened when a
+                # decision on it shows that a coordinator from 0.3.5 wrote it.
+                r = t.review
+                t.held_round = None if r is None else (
+                    ts, [x for x in r.requested_to if x != actor], r.rule, p.get("output"))
 
         elif method == "review.request" and tid:
             t = task(tid)
+            t.held_round = None
             addressed = _as_list(p.get("to"))
             r = t.review
             if t.state == "review_requested" and r is not None:
@@ -702,6 +717,12 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
         elif method in ("decide.approve", "decide.reject", "decide.override",
                         "abstain.declare") and tid:
             t = task(tid)
+            if t.held_round is not None:
+                # A decision after a completion that would have completed the
+                # task before 0.3.5: the completion opened a new pass.
+                opened, to, rule, artefact = t.held_round
+                t.open_review(opened, to, rule, artefact)
+                t.held_round = None
             r = t.review
             if r is None:
                 # The coordinator accepts a decision on a task under review, so
@@ -1310,6 +1331,12 @@ def _merge_state(ix: _Index, chain: Chain) -> None:  # noqa: C901 - one block pe
         # behind. The column is defined as null while open.
         if t.state not in _SETTLED:
             t.settled_at = None
+        if t.held_round is not None and t.state == "review_requested":
+            # State shows the completion opened a new pass: a coordinator from
+            # 0.3.5 wrote the log, and the pass is still waiting.
+            opened, to, rule, artefact = t.held_round
+            t.open_review(opened, to, rule, artefact)
+        t.held_round = None
         review = stored.get("review") or {}
         if review:
             # State carries the current pass only, which is the last one here.
