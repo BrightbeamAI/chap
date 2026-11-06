@@ -4,15 +4,17 @@
 // decide.approve, decide.reject or decide.override as CHAP calls to
 // POST /chap, each carrying the digest of the artefact shown, so a decision
 // on a draft that changed under the reviewer is refused. Under
-// security-signed/1.0 it signs in the browser with a key it generates and
-// keeps in the browser's storage. Activity reads the chain; Insights counts
-// what happened.
+// security-signed/1.0 it signs in the browser with a key it generates there
+// and keeps where no script can read it out (keystore.js), and signs only
+// once the workspace holds that key for the reviewer. Activity reads the
+// chain; Insights counts what happened.
 
-import { contentHash, deepEqual, generateSigner, jsonPatch, makeClient, signerFromJwk } from "./chap-client.mjs";
+import { contentHash, deepEqual, fingerprint, jsonPatch, makeClient } from "./chap-client.mjs";
+import { signerFor as heldSigner } from "./keystore.js";
 import { ago, artefactAnomalies, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
 import { parsePatch } from "./diff.js";
 import { decisionsOf, outcomeOf, renderInsights, renderMarkdown } from "./insights.js";
-import { followUpPrompt } from "./followup.js";
+import { followUpPrompt, proposeAgainCommand } from "./followup.js";
 
 const $ = (id) => document.getElementById(id);
 const POLL_MS = 4000;
@@ -28,6 +30,9 @@ const state = {
   // Comments on lines, by task, until they go with a decision; the reviews
   // already seen waiting, so a new one is brought forward.
   comments: new Map(), waitingSeen: null,
+  // The reviewer's signing key and whether the workspace holds it for them:
+  // "unchecked" until a signed read says, then "on record" or "another key".
+  key: { signer: null, fingerprint: null, status: "unchecked" },
 };
 
 // -- helpers --------------------------------------------------------------------
@@ -66,7 +71,7 @@ const detailKey = (t) => `${t.state}|${t.updated_at}|${t.submission?.seq ?? ""}|
 /** Read the selected task whole. Returns the view it replaced, if it was of the same task. */
 async function loadDetail(t) {
   const prior = state.detail?.id === t.task_id ? state.detail.view : null;
-  const view = await getJson(`/api/tasks/${encodeURIComponent(t.task_id)}`);
+  const view = await getJson(`api/tasks/${encodeURIComponent(t.task_id)}`);
   if (state.selectedId !== t.task_id) return prior;
   state.detail = { id: t.task_id, key: detailKey(t), view };
   return prior;
@@ -128,7 +133,7 @@ async function boot() {
   $("r-prompt-copy").onclick = () => copyText($("r-prompt").textContent);
   document.addEventListener("keydown", onKey);
 
-  state.config = await getJson("/api/config");
+  state.config = await getJson("api/config");
   $("workspace").textContent = state.config.workspace;
   const short = state.config.profiles.map((p) => p.replace(/\/1\.0$/, "").replace("security-signed", "signed").replace("audit-scitt", "scitt"));
   $("profiles").replaceChildren(el("span", { class: "chip profiles", title: state.config.profiles.join(", "), text: short.join(" · ") }));
@@ -148,45 +153,88 @@ async function boot() {
   const task = hashParams().get("task");
   if (task) select_(task);
   showView(hashParams().get("view") || "review");
+  $("signing").onclick = () => { $("key").hidden = false; };
+  $("key-close").onclick = () => { $("key").hidden = true; };
   setInterval(() => { if (!document.hidden && !state.busy) refresh().catch(lost); }, POLL_MS);
   probeAnalytics();
   setInterval(() => { if (!document.hidden) probeAnalytics(); }, 30_000);
 }
 
 // Under security-signed/1.0 the desk signs in the browser. The key is
-// generated here, kept in localStorage, and registered at participant.join,
-// which the coordinator accepts unsigned. A re-join cannot add a key, so a
-// cleared browser storage means a new participant URI.
-async function signerFor(uri) {
-  if (!state.config.require_signatures) return null;
-  const key = `chap-desk-key:${state.config.workspace}:${uri}`;
-  const saved = localStorage.getItem(key);
-  if (saved) return signerFromJwk(uri, JSON.parse(saved));
-  const signer = await generateSigner(uri);
-  localStorage.setItem(key, JSON.stringify(signer.privateJwk));
-  return signer;
-}
-
+// generated here, kept where no script can read it out, and registered at
+// participant.join, which the coordinator accepts unsigned. Whoever joins
+// first under a URI holds it, and a join with another key is not a way in,
+// so after joining the desk asks the workspace, with a signed read, whether
+// it holds this key for the reviewer, and signs nothing until it does.
 async function setReviewer(uri) {
   setHash({ reviewer: uri });
-  const signer = await signerFor(uri);
-  state.client = makeClient({ workspace: state.config.workspace, from: uri, signer });
-  chip("signing", signer ? `signed · ${signer.kid.slice(0, 8)}` : "unsigned", signer ? "good" : "");
-  $("signing").title = signer ? `Decisions are signed in this browser as ${uri} with the Ed25519 key ${signer.kid}, fingerprint ${await fingerprint(signer.publicJwk)}. Give the fingerprint to whoever keeps the trust policy, so your approvals count.` : "This workspace does not require signatures";
+  let signer = null;
+  if (state.config.require_signatures) {
+    const held = await heldSigner(state.config.workspace, uri);
+    signer = held.signer;
+    if (held.moved) toast("Your signing key was in this browser's local storage, where any page on this address could read it. It is now kept where no page can read it out.", "ok");
+  }
+  state.client = makeClient({ url: "chap", workspace: state.config.workspace, from: uri, signer });
+  state.key = { signer, fingerprint: signer ? await fingerprint(signer.publicJwk) : null, status: signer ? "unchecked" : "unsigned" };
   if (signer) {
     const me = state.config.humans.find((h) => h.uri === uri);
     try { await state.client.call("participant.join", { type: "human", role: me?.role ?? "reviewer", display_name: me?.display_name, jwks: { keys: [signer.publicJwk] } }); }
     catch (e) { toast(`Could not join as ${uri}: ${e.message}`, "bad"); }
+    await checkKey();
   }
+  showKey();
   state.chainShown = -1;
   await refresh().catch(lost);
 }
 
-/** A key's fingerprint as ssh-keygen and trust.mjs print it: SHA256 of the raw public key, base64. */
-async function fingerprint(jwk) {
-  const raw = Uint8Array.from(atob(jwk.x.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", raw));
-  return "SHA256:" + btoa(String.fromCharCode(...digest)).replace(/=+$/, "");
+/** The codes a signature the workspace cannot verify is refused with: the key is not the one on record for the sender. */
+const KEY_REFUSALS = new Set([-32070, -32071, -32072]);
+
+/**
+ * Whether the workspace holds this browser's key for the reviewer, from a
+ * signed workspace.describe: it verifies only under a key on record, and the
+ * member's keys must include this one. A read that fails for another reason
+ * leaves the question open, and the next poll asks again.
+ */
+async function checkKey() {
+  const { signer } = state.key;
+  if (!signer) return;
+  try {
+    const ws = await state.client.call("workspace.describe", {});
+    const me = (ws.members ?? []).find((m) => m.uri === state.client.from);
+    state.key.status = me && (me.jwks?.keys ?? []).some((k) => k.x === signer.publicJwk.x) ? "on record" : "another key";
+  } catch (e) {
+    if (KEY_REFUSALS.has(e.code)) state.key.status = "another key";
+  }
+}
+
+/** Whether decisions from this browser would count: signatures are off, or the workspace holds this key. */
+const canSign = () => state.key.status === "unsigned" || state.key.status === "on record";
+
+/** The signing chip, the key dialog and, when another key holds the reviewer's name, the banner that says so. */
+function showKey() {
+  const { signer, fingerprint: print, status } = state.key;
+  const uri = state.client.from;
+  if (!signer) {
+    chip("signing", "unsigned", "");
+    $("signing").title = "This workspace does not require signatures";
+  } else if (status === "another key") {
+    chip("signing", "not signing", "bad");
+    $("signing").title = `Another key holds ${uri} in this workspace, so this browser signs nothing`;
+  } else {
+    chip("signing", `signed · ${print.slice(7, 15)}`, status === "on record" ? "good" : "");
+    $("signing").title = `Decisions are signed in this browser as ${uri}, with the key whose fingerprint is ${print}`;
+  }
+  $("key-uri").textContent = uri;
+  $("key-fingerprint").textContent = print ?? "none: this workspace does not require signatures";
+  $("key-id").textContent = signer?.kid ?? "none";
+  $("key-status").textContent = !signer ? "Decisions from this browser are not signed." : status === "on record"
+    ? `The workspace holds this key for ${uri}, so decisions signed here count.`
+    : status === "another key" ? `The workspace holds another key for ${uri}, so decisions signed here would not count.`
+      : "Not checked with the workspace yet.";
+  $("key-alert").hidden = status !== "another key";
+  setDecisionButtons();
+  if (status === "another key") $("key-alert-text").textContent = `Another key holds ${uri} in ${state.config.workspace}. Decisions signed in this browser would not count, so the desk sends none. If that key is yours, in another browser or a profile since cleared, decide there. If it is not, someone joined under your name first: whoever runs the workspace must find out who, and a trust policy that pins your key keeps them out.`;
 }
 
 function lost(e) {
@@ -198,8 +246,9 @@ function lost(e) {
 // -- data -----------------------------------------------------------------------
 
 async function refresh() {
+  if (state.key.status === "unchecked") { await checkKey(); showKey(); }
   // Every open task, and the most recent ones for the decided list.
-  const [health, open, recent] = await Promise.all([getJson("/api/health?desk=1"), getJson("/api/tasks?state=created,in_progress,review_requested&brief=1"), getJson("/api/tasks?limit=200&brief=1")]);
+  const [health, open, recent] = await Promise.all([getJson("api/health?desk=1"), getJson("api/tasks?state=created,in_progress,review_requested&brief=1"), getJson("api/tasks?limit=200&brief=1")]);
   if (state.lost) { state.lost = false; toast("Connected again", "ok"); }
   chip("connection", "live", "good");
   $("connection").title = `${health.members} members, ${health.tasks} tasks, ${health.audit} chain entries`;
@@ -286,8 +335,8 @@ async function verifyChain() {
 // summary.json says when and from how much, and the rest are linked.
 async function probeAnalytics() {
   let summary = null, refine = null;
-  try { const r = await fetch("/analytics/summary.json"); summary = r.ok ? await r.json() : null; } catch { /* none */ }
-  if (summary) { try { const r = await fetch("/analytics/refine.md"); refine = r.ok ? await r.text() : null; } catch { /* none */ } }
+  try { const r = await fetch("analytics/summary.json"); summary = r.ok ? await r.json() : null; } catch { /* none */ }
+  if (summary) { try { const r = await fetch("analytics/refine.md"); refine = r.ok ? await r.text() : null; } catch { /* none */ } }
   const changed = summary?.written !== state.analytics.summary?.written;
   state.analytics = { report: !!summary, cases: !!summary, summary, refine };
   if (changed && state.view === "insights") renderInsightsView();
@@ -390,7 +439,7 @@ function renderReview() {
   $("r-edit-hint").textContent = blocked ? (branch ? "A commit of this branch cannot be shown faithfully, so the branch cannot be approved here." : "This patch cannot be shown faithfully, so it cannot be approved or edited here.")
     : branch ? "A branch is approved as its commits stand. Request changes, and the agent amends them."
     : multi ? `Under ${t.review.rule} an edit would settle the review alone. Request changes, and the agent revises.` : "";
-  $("approve").disabled = blocked || loading;
+  setDecisionButtons();
   $("r-edit").textContent = state.editing ? "Editing" : "Edit";
   $("override").hidden = !state.editing;
   $("cancel-edit").hidden = !state.editing;
@@ -437,25 +486,12 @@ function countComments() {
   $("comment-count").textContent = n ? `${n} comment${n === 1 ? "" : "s"} on lines go with your decision` : "";
 }
 
-/** The command that proposes a task's work again, as the agent would run it. */
-function commandFor(t) {
-  const a = t.output ?? t.artefact ?? {};
-  const dir = state.config?.gate_dir;
-  if (!dir) return null;
-  const q = (s) => (/^[A-Za-z0-9_./:=@%+,-]+$/.test(s) ? s : `"${String(s).replace(/(["\\$`])/g, "\\$1")}"`);
-  // --model only where the agent's word named the model: the commits or the session name it otherwise.
-  const said = a.model && (a.model_source === "agent" || !a.model_source);
-  const flags = [a.drafted_by ? `--by ${q(a.drafted_by)}` : null, said ? `--model ${q(a.model)}` : null].filter(Boolean).join(" ");
-  if (Array.isArray(a.commits)) return `node ${q(`${dir}/propose-branch.mjs`)} ${String(a.base ?? "").slice(0, 12)}..${a.branch ?? "HEAD"} ${flags} --wait`;
-  return `node ${q(`${dir}/propose.mjs`)} ${q(a.summary ?? "what the change does")} ${flags} --wait --commit`;
-}
-
 /** The prompt the last decision on a task makes for the agent, or null. */
 function promptFor(t) {
   const decision = (t.decision_log ?? []).at(-1);
   if (!decision) return null;
   const name = state.config?.humans?.find((h) => h.uri === decision.reviewer)?.display_name ?? decision.reviewer;
-  return followUpPrompt({ task: t, decision, reviewer: name, command: commandFor(t) });
+  return followUpPrompt({ task: t, decision, reviewer: name, command: proposeAgainCommand(t, state.config?.gate_dir) });
 }
 
 /** The agent's own note, what changed since the last look, and the decision as a prompt. */
@@ -469,7 +505,7 @@ function renderContext(t, artefact, loading) {
   }
   const since = !loading && typeof artefact?.since?.patch === "string" && artefact.since.patch.trim() ? artefact.since : null;
   $("r-since-card").hidden = !since;
-  if (since) $("r-since").replaceChildren(el("div", { class: "small muted", style: "margin-bottom:10px", text: `What changed since the version you reviewed${since.head ? ` (up to ${String(since.head).slice(0, 7)})` : ""}.` }), renderDiff(since.patch, {}));
+  if (since) $("r-since").replaceChildren(el("div", { class: "small muted since-note", text: `What changed since the version you reviewed${since.head ? ` (up to ${String(since.head).slice(0, 7)})` : ""}.` }), renderDiff(since.patch, {}));
   // The prompt of a decision that closed the round; a new round waiting has none yet.
   const prompt = !loading && t.state !== "review_requested" ? promptFor(t) : null;
   $("r-prompt-card").hidden = !prompt;
@@ -491,6 +527,18 @@ async function copyText(text) {
     const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
     toast("Selected the prompt: copy it with the keyboard");
   }
+}
+
+/**
+ * The decision buttons, enabled where a decision can be sent: the
+ * workspace holds this browser's key, or signatures are off, and for an
+ * approval the task on show is read whole and the desk can show its patch
+ * faithfully.
+ */
+function setDecisionButtons() {
+  const t = current();
+  $("approve").disabled = !canSign() || !t || anomaliesOf(t).length > 0;
+  for (const id of ["changes", "reject", "override"]) $(id).disabled = !canSign();
 }
 
 /** Whether a task's review needs more than one approval, so an edit would settle it alone. */
@@ -516,6 +564,7 @@ const tags = () => $("tags").value.split(",").map((s) => s.trim()).filter(Boolea
 async function decide(kind) {
   const t = current();
   if (!t || !mine(t) || state.busy) return;
+  if (!canSign()) { notice(state.key.status === "another key" ? `Another key holds ${state.client.from} in this workspace; the desk sends no decision signed here.` : "The desk has not yet confirmed with the workspace that it holds this browser's key.", "bad"); return; }
   const comment = $("comment").value.trim();
   const artefact = t.artefact;
   // Every decision names the artefact it was made on and the submission that
@@ -559,7 +608,7 @@ async function decide(kind) {
     state.editing = null;
     // The decision as a prompt for the agent, when it asks something of it.
     try {
-      const decided = await getJson(`/api/tasks/${encodeURIComponent(t.task_id)}`);
+      const decided = await getJson(`api/tasks/${encodeURIComponent(t.task_id)}`);
       const prompt = promptFor(decided);
       if (prompt) showPrompt(prompt);
     } catch { /* the review shows it once it is read again */ }
@@ -571,8 +620,35 @@ async function decide(kind) {
     notice(e.message, "bad");
   } finally {
     state.busy = false;
-    for (const id of ["approve", "changes", "reject", "override"]) $(id).disabled = false;
+    setDecisionButtons();
   }
+}
+
+/**
+ * Ask before an approval made with the a key, so a single key press, made
+ * by mistake or taken by a page the desk sits under, never decides. Resolve
+ * true to approve.
+ */
+function confirmKeyApproval(t) {
+  return new Promise((resolve) => {
+    const done = (ok) => { $("confirm").hidden = true; $("confirm-send").onclick = null; $("confirm-cancel").onclick = null; resolve(ok); };
+    $("confirm-title").textContent = "Approve as written?";
+    $("confirm-cancel").textContent = "Back";
+    $("confirm-send").textContent = "Approve";
+    $("confirm-send").disabled = false;
+    $("confirm-body").replaceChildren(el("p", { text: `${titleOf(t)}: your approval is signed and sent for the artefact as it stands.` }));
+    $("confirm").hidden = false;
+    $("confirm-send").onclick = () => done(true);
+    $("confirm-cancel").onclick = () => done(false);
+    $("confirm-send").focus();
+  });
+}
+
+/** The a key: approve the task on show once the reviewer confirms. */
+async function approveByKey() {
+  const t = current();
+  if (!t || !mine(t) || state.busy || $("approve").disabled) return;
+  if (await confirmKeyApproval(t)) await decide("approve");
 }
 
 /** Ask before approving a branch whose commits were not all opened; resolve true to approve. */
@@ -657,7 +733,7 @@ function renderActivity() {
     const d = el("details", { class: "entry" },
       el("summary", {},
         el("span", { class: "seq", text: `#${e.seq}` }),
-        el("span", { class: `method m-${String(call.method ?? "").split(".")[0]} m-${String(call.method ?? "").replace(".", "-")}` }, call.method ?? "?", e.outcome ? el("span", { class: "badge bad", style: "margin-left:6px", text: `refused ${e.outcome.code}` }) : null),
+        el("span", { class: `method m-${String(call.method ?? "").split(".")[0]} m-${String(call.method ?? "").replace(".", "-")}` }, call.method ?? "?", e.outcome ? el("span", { class: "badge bad refusal", text: `refused ${e.outcome.code}` }) : null),
         el("span", { class: "who", title: call.params?.task_id ?? "", text: call.params?.from ?? "" }),
         el("span", { class: "gist", title: gist(call), text: gist(call) }),
         el("span", { class: "when", title: e.arrived, text: e.arrived ? `${ago(e.arrived)} ago` : "" })));
@@ -675,7 +751,7 @@ async function loadAllTasks() {
   // Every task, for counting. The queue holds the open ones and the most
   // recent; Insights counts the whole workspace, read when it is shown.
   if (state.allTasksAt && Date.now() - state.allTasksAt < 30_000 && state.allTasksAudit === state.health?.audit) return;
-  state.allTasks = (await getJson("/api/tasks?brief=1")).tasks;
+  state.allTasks = (await getJson("api/tasks?brief=1")).tasks;
   state.allTasksAt = Date.now();
   state.allTasksAudit = state.health?.audit;
 }
@@ -707,16 +783,16 @@ function showView(name) {
 function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName);
-  if (e.key === "Escape") { if (!$("help").hidden) $("help").hidden = true; else if (!$("confirm").hidden) $("confirm-cancel").click(); else if (!$("prompt").hidden) $("prompt").hidden = true; else if (typing) e.target.blur(); return; }
+  if (e.key === "Escape") { if (!$("help").hidden) $("help").hidden = true; else if (!$("key").hidden) $("key").hidden = true; else if (!$("confirm").hidden) $("confirm-cancel").click(); else if (!$("prompt").hidden) $("prompt").hidden = true; else if (typing) e.target.blur(); return; }
   // While a dialog is open, the page under it does not move.
-  if (!$("confirm").hidden || !$("prompt").hidden || (!$("help").hidden && e.key !== "?")) return;
+  if (!$("confirm").hidden || !$("prompt").hidden || !$("key").hidden || (!$("help").hidden && e.key !== "?")) return;
   if (typing) return;
   const ordered = [...document.querySelectorAll("#queue .item")].map((b) => b.dataset.id);
   const at = ordered.indexOf(state.selectedId);
   switch (e.key) {
     case "j": if (ordered.length) select_(ordered[Math.min(ordered.length - 1, at + 1)]); break;
     case "k": if (ordered.length) select_(ordered[Math.max(0, at - 1)]); break;
-    case "a": decide("approve"); break;
+    case "a": approveByKey(); break;
     case "r": if (selected() && mine(selected())) { $("comment").focus(); notice("Write the note, then press Request changes.", ""); } break;
     case "x": decide("reject"); break;
     case "e": toggleEdit(); break;

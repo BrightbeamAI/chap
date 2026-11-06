@@ -10,6 +10,34 @@ import { unifiedDiff } from "./diff.js";
 
 const quote = (text) => String(text ?? "").split("\n").map((line) => `> ${line}`).join("\n");
 
+/**
+ * A word as a POSIX shell reads it back unchanged: as it is when it holds
+ * nothing a shell treats specially, double-quoted otherwise, with the
+ * characters double quotes leave live escaped. Every value an agent supplied
+ * goes through this before it is put in a command.
+ */
+export function shellWord(value) {
+  const s = String(value);
+  return /^[A-Za-z0-9_./:=@%+,-]+$/.test(s) ? s : `"${s.replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+/**
+ * The command that proposes a task's work again, as the agent would run it,
+ * from the gate project at `gateDir`: propose-branch.mjs for a branch,
+ * propose.mjs for a change. Null without a gate project.
+ */
+export function proposeAgainCommand(task, gateDir) {
+  if (!gateDir) return null;
+  const a = task.output ?? task.artefact ?? {};
+  // --model only where the agent's word named the model: the commits or the session name it otherwise.
+  const said = a.model && (a.model_source === "agent" || !a.model_source);
+  const flags = [...(a.drafted_by ? ["--by", a.drafted_by] : []), ...(said ? ["--model", a.model] : [])];
+  const words = Array.isArray(a.commits)
+    ? ["node", `${gateDir}/propose-branch.mjs`, `${String(a.base ?? "").slice(0, 12)}..${a.branch ?? "HEAD"}`, ...flags, "--wait"]
+    : ["node", `${gateDir}/propose.mjs`, a.summary ?? "what the change does", ...flags, "--wait", "--commit"];
+  return words.map(shellWord).join(" ");
+}
+
 /** Text in a code fence long enough for the text's own backticks. */
 export function fence(text, lang = "") {
   const body = String(text).replace(/\n$/, "");
@@ -97,7 +125,7 @@ export function followUpPrompt({ task, decision, reviewer = null, command = null
     );
   } else if (kind === "changes") {
     out.push(isBranch
-      ? `1. Change the commits on ${a.branch ?? "the branch"} as the review asks, and nothing it does not ask for. Amend the commit each comment is about (git rebase -i ${String(a.base ?? "<base>").slice(0, 12)}, then edit or fixup), and keep each commit one step with a message that says what it does.`
+      ? `1. Change the commits on ${a.branch ?? "the branch"} as the review asks, and nothing it does not ask for. Amend the commit each comment is about (git rebase -i ${a.base ? shellWord(String(a.base).slice(0, 12)) : "<base>"}, then edit or fixup), and keep each commit one step with a message that says what it does.`
       : "1. Change the working tree as the review asks, and nothing it does not ask for.");
     out.push("2. Run the tests, and say in your context note what you ran and what it showed.");
     out.push(`3. Propose it again; the same review carries on${command ? ":" : "."}`);

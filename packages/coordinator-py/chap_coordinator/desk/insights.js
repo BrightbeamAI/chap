@@ -6,7 +6,7 @@
 // chap-analytics, when its pages are present, is linked for the full
 // report. The same summary runs under Node for report.mjs.
 
-import { el } from "./render.js";
+import { el, markedHtml } from "./render.js";
 import { parsePatch } from "./diff.js";
 
 const median = (xs) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -111,10 +111,12 @@ export function summarise(tasks) {
 
 function bars(pairs, { max = null } = {}) {
   const top = max ?? Math.max(1, ...pairs.map(([, n]) => n));
-  return el("div", { class: "bars" }, pairs.slice(0, 8).map(([name, n]) => el("div", { class: "bar" },
-    el("span", { class: "name", title: name, text: name }),
-    el("div", { class: "track" }, el("div", { class: "fill", style: `width:${Math.round((100 * n) / top)}%` })),
-    el("span", { class: "n", text: String(n) }))));
+  return el("div", { class: "bars" }, pairs.slice(0, 8).map(([name, n]) => {
+    // Set through the style object, which the page's policy allows; a style attribute it refuses.
+    const fill = el("div", { class: "fill" });
+    fill.style.width = `${Math.round((100 * n) / top)}%`;
+    return el("div", { class: "bar" }, el("span", { class: "name", title: name, text: name }), el("div", { class: "track" }, fill), el("span", { class: "n", text: String(n) }));
+  }));
 }
 
 /**
@@ -184,7 +186,7 @@ export function renderInsights(tasks, { chain = null, analytics = null, onOpenTa
     stat("Time to decision", minutes(s.median_time_ms), "median, first decision"),
     stat("Chain", chain ? String(chain.entries) : "off", chain ? (chain.verified === true ? "entries, verified" : chain.verified === false ? "entries, verification failed" : "entries") : "the chain is off"),
   ));
-  const legend = el("div", { class: "legend" }, el("span", {}, el("i", { style: "background:var(--ok)" }), "approve"), el("span", {}, el("i", { style: "background:var(--warn)" }), "approve with an edit"), el("span", {}, el("i", { style: "background:var(--bad)" }), "reject or send back"));
+  const legend = el("div", { class: "legend" }, el("span", {}, el("i", { class: "ok" }), "approve"), el("span", {}, el("i", { class: "warn" }), "approve with an edit"), el("span", {}, el("i", { class: "bad" }), "reject or send back"));
   const modelTable = s.models.length ? el("table", { class: "table" },
     el("thead", {}, el("tr", {}, ["Model", "Changes", "As written", "Edited", "Sent back", "Rejected"].map((h) => el("th", { text: h })))),
     el("tbody", {}, s.models.map((m) => el("tr", {},
@@ -220,8 +222,8 @@ export function renderInsights(tasks, { chain = null, analytics = null, onOpenTa
     section("What reviewers sent back", words(s.rejection_notes, "No rejection yet.")),
   ));
   const links = el("div", { class: "row" });
-  if (analytics?.report) links.append(el("a", { class: "btn", href: "/analytics/report.html", target: "_blank", rel: "noopener", text: "Open the interactive report" }));
-  if (analytics?.cases) links.append(el("a", { class: "btn", href: "/analytics/cases.jsonl", target: "_blank", rel: "noopener", text: "Evaluation cases (JSONL)" }));
+  if (analytics?.report) links.append(el("a", { class: "btn", href: "analytics/report.html", target: "_blank", rel: "noopener", text: "Open the interactive report" }));
+  if (analytics?.cases) links.append(el("a", { class: "btn", href: "analytics/cases.jsonl", target: "_blank", rel: "noopener", text: "Evaluation cases (JSONL)" }));
   const sum = analytics?.summary;
   root.append(section("chap-analytics", el("div", { class: "stack" },
     el("div", { class: "small muted", text: sum
@@ -233,15 +235,19 @@ export function renderInsights(tasks, { chain = null, analytics = null, onOpenTa
   return root;
 }
 
-/** A small Markdown rendering: headings, paragraphs, lists, tables, code spans and blocks, bold. */
+/**
+ * A small Markdown rendering: headings, paragraphs, lists, tables, code
+ * spans and blocks, bold. Text is escaped, and each character a reader
+ * cannot see is shown as a marker.
+ */
 export function renderMarkdown(text) {
-  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const esc = markedHtml;
   // A link is kept only for an http(s) address or a path on this server;
   // anything else, a javascript: URL included, stays as its text.
   const safeUrl = (u) => /^(https?:\/\/|\/(?!\/)|\.\/|#)/i.test(u) && !/["'<>\s]/.test(u);
   const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, text, url) => (safeUrl(url) ? `<a href="${url}" target="_blank" rel="noopener">${text}</a>` : `${text} (${url})`));
   const out = [];
-  const lines = text.split("\n");
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];

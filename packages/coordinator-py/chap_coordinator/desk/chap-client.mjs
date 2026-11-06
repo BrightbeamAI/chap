@@ -63,32 +63,64 @@ export async function contentHash(value) {
 // -- base64 -----------------------------------------------------------------
 
 const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+const b64url = (bytes) => b64(bytes).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const fromB64url = (s) => fromB64(s.replace(/-/g, "+").replace(/_/g, "/"));
 const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+const sha256 = (bytes) => crypto.subtle.digest("SHA-256", bytes);
 
 // -- keys -------------------------------------------------------------------
 //
-// A signer holds one Ed25519 key for one participant. `kid` follows the
-// coordinators' demo helper, the first sixteen hex characters of the SHA-256
-// of the URI, so a key is recognisable in the member's key list. Any kid
-// works; the coordinator looks the key up by the kid the signature names.
+// A signer holds one Ed25519 key for one participant. A new key's `kid` is
+// its RFC 7638 thumbprint, so two keys never share one and a key names
+// itself in the member's key list. A key made before keeps the kid it was
+// registered under; the coordinator looks a key up by the kid the signature
+// names. The private key is a WebCrypto key that cannot be exported: a
+// script that gets hold of it can sign with it in this page, and cannot copy
+// it out.
 
-export async function generateSigner(uri) {
-  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
-  const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
-  return signerFromJwk(uri, privateJwk);
+/** The RFC 7638 thumbprint of a public JWK, base64url without padding: the SHA-256 of its required members, in order. */
+export async function thumbprint(jwk) {
+  const members = jwk.kty === "EC" ? { crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y } : { crv: jwk.crv, kty: jwk.kty, x: jwk.x };
+  return b64url(await sha256(new TextEncoder().encode(JSON.stringify(members))));
 }
 
+/** A key's fingerprint as ssh-keygen and the code gate's trust command print it: SHA256 of the raw public key, base64. */
+export async function fingerprint(jwk) {
+  return "SHA256:" + b64(await sha256(fromB64url(jwk.x))).replace(/=+$/, "");
+}
+
+/** The kid the desk gave a key before 0.3.5: the first sixteen hex characters of the SHA-256 of the URI. */
+export async function legacyKid(uri) {
+  return hex(await sha256(new TextEncoder().encode(uri))).slice(0, 16);
+}
+
+/** The public JWK the coordinator registers, with the fields it reads. */
+const publicJwkFor = (x, kid) => ({ kty: "OKP", crv: "Ed25519", kid, use: "sig", alg: "EdDSA", x });
+
+/** A new key for `uri`, which cannot be exported, named by its thumbprint. */
+export async function generateSigner(uri) {
+  const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"]);
+  const { x } = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const publicJwk = publicJwkFor(x, await thumbprint({ kty: "OKP", crv: "Ed25519", x }));
+  return signerFromKey({ uri, privateKey: pair.privateKey, publicJwk });
+}
+
+/** A signer for a private JWK, such as an agent's key file. Its kid is the one the file gives, else the key's thumbprint. */
 export async function signerFromJwk(uri, privateJwk) {
-  const privateKey = await crypto.subtle.importKey("jwk", privateJwk, { name: "Ed25519" }, true, ["sign"]);
-  const kidBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(uri));
-  const kid = hex(kidBytes).slice(0, 16);
-  const publicJwk = { kty: "OKP", crv: "Ed25519", kid, use: "sig", alg: "EdDSA", x: privateJwk.x };
+  const privateKey = await crypto.subtle.importKey("jwk", privateJwk, { name: "Ed25519" }, false, ["sign"]);
+  const kid = typeof privateJwk.kid === "string" ? privateJwk.kid : await thumbprint(privateJwk);
+  return signerFromKey({ uri, privateKey, publicJwk: publicJwkFor(privateJwk.x, kid) });
+}
+
+/** A signer for a WebCrypto private key and its public JWK, which carries the kid. */
+export function signerFromKey({ uri, privateKey, publicJwk }) {
+  const kid = publicJwk.kid;
   return {
     uri,
     kid,
     publicJwk,
-    privateJwk,
+    privateKey,
     /** Returns the envelope with its `sig` set. The input is not changed. */
     async sign(envelope) {
       const unsigned = { ...envelope };

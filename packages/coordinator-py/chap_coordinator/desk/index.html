@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CHAP review desk</title>
-<link rel="stylesheet" href="/desk.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232456d6'/%3E%3Ctext x='16' y='21' font-size='14' font-family='sans-serif' font-weight='700' fill='white' text-anchor='middle'%3EC%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="desk.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 </head>
 <body>
 <div class="app">
@@ -14,7 +14,7 @@
     <div class="chips" id="profiles"></div>
     <div class="spacer"></div>
     <span class="chip" id="connection"><span class="dot"></span><span>connecting</span></span>
-    <span class="chip" id="signing"><span class="dot"></span><span>signing off</span></span>
+    <button class="chip" id="signing" aria-haspopup="dialog"><span class="dot"></span><span>signing off</span></button>
     <span class="chip" id="chain"><span class="dot"></span><span>chain off</span></span>
     <label><span class="label-text">Deciding as</span> <select id="reviewer" aria-label="Deciding as"></select></label>
     <div class="text-size" role="group" aria-label="Text size"><button class="icon-btn" id="text-smaller" title="Smaller text" aria-label="Smaller text"><span class="a-small">A</span></button><button class="icon-btn" id="text-larger" title="Larger text" aria-label="Larger text"><span class="a-large">A</span></button></div>
@@ -32,6 +32,7 @@
         <button class="tab" role="tab" data-view="activity" aria-selected="false">Activity <span class="badge" id="activity-count">0</span></button>
         <button class="tab" role="tab" data-view="insights" aria-selected="false">Insights</button>
       </div>
+      <div class="alert key-alert" id="key-alert" role="alert" hidden><b>This browser's key is not the reviewer's.</b> <span id="key-alert-text"></span></div>
       <section class="view" id="view-review" role="tabpanel">
         <div id="review-empty" class="empty">Pick a task on the left. The ones waiting for your decision are at the top.</div>
         <div id="review" hidden>
@@ -87,7 +88,7 @@
     <div class="card-head"><h3>Keyboard</h3><span class="spacer"></span><button class="btn small" id="help-close">Close</button></div>
     <div class="card-body"><dl class="kv">
       <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>next and previous task in the queue</dd>
-      <dt><kbd>a</kbd></dt><dd>approve as written</dd>
+      <dt><kbd>a</kbd></dt><dd>approve as written, once you confirm</dd>
       <dt><kbd>r</kbd></dt><dd>request changes (puts the cursor in the note)</dd>
       <dt><kbd>x</kbd></dt><dd>reject</dd>
       <dt><kbd>e</kbd></dt><dd>edit the artefact</dd>
@@ -98,6 +99,18 @@
       <dt><kbd>?</kbd></dt><dd>this list</dd>
       <dt>A A</dt><dd>smaller and larger text, at the top right; the desk keeps the size for next time</dd>
     </dl></div>
+  </div>
+</div>
+<div class="help" id="key" role="dialog" aria-labelledby="key-title" hidden>
+  <div class="card">
+    <div class="card-head"><h3 id="key-title">Your signing key</h3><span class="spacer"></span><button class="btn small" id="key-close">Close</button></div>
+    <div class="card-body"><dl class="kv">
+      <dt>Deciding as</dt><dd id="key-uri"></dd>
+      <dt>Fingerprint</dt><dd class="mono" id="key-fingerprint"></dd>
+      <dt>Key id</dt><dd class="mono" id="key-id"></dd>
+      <dt>On record</dt><dd id="key-status"></dd>
+    </dl>
+    <p class="small muted">The key was made in this browser and is kept where no page can read it out. Give the fingerprint to whoever keeps the trust policy, and check it against theirs in full: approvals count only under the key they pin.</p></div>
   </div>
 </div>
 <div class="help" id="confirm" hidden>
@@ -112,6 +125,6 @@
     <div class="card-body"><p class="small muted">An agent waiting on the review receives this by itself. For any other, copy it into its session.</p><pre class="prompt-text" id="prompt-text"></pre></div>
   </div>
 </div>
-<script type="module" src="/desk.js"></script>
+<script type="module" src="desk.js"></script>
 </body>
 </html>

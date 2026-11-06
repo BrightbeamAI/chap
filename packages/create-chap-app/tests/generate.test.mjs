@@ -26,13 +26,16 @@ test("every template generates with its placeholders filled", async () => {
     const { written, fill } = await generate({ name: `my-${t.name}`, template: t.name, profiles: t.default_profiles }, { targetDir: dir });
     assert.ok(written.includes("README.md"), `${t.name} has a README`);
     assert.ok(written.includes("chap.config.json"), `${t.name} has chap.config.json`);
+    // The desk and the server come from a package, @brightbeamai/chap-server
+    // or chap-coordinator, so a fix to them reaches the project through npm
+    // or pip.
+    assert.ok(!written.some((w) => w.startsWith("desk/")), `${t.name} copies no desk`);
     if (t.language === "typescript") {
-      // The desk and the server come from @brightbeamai/chap-server, so a fix to them reaches the project through npm.
-      assert.ok(!written.some((w) => w.startsWith("desk/") || w.startsWith("lib/")), `${t.name} copies no desk and no library`);
+      assert.ok(!written.some((w) => w.startsWith("lib/")), `${t.name} copies no library`);
       const pkg = JSON.parse(await readFile(join(dir, "package.json"), "utf8"));
       assert.ok(pkg.dependencies["@brightbeamai/chap-server"], `${t.name} depends on @brightbeamai/chap-server`);
     } else {
-      assert.ok(written.includes("desk/index.html") && written.includes("desk/chap-client.mjs"), `${t.name} has the desk`);
+      assert.match(await readFile(join(dir, "requirements.txt"), "utf8"), /^chap-coordinator/m, `${t.name} installs chap-coordinator`);
     }
     assert.ok(written.includes(".gitignore"), `${t.name} has a .gitignore, renamed from the shipped gitignore`);
     assert.ok(!written.some((w) => /(^|\/)(gitignore|dockerignore)$/.test(w)), `${t.name} leaves no plain ignore file`);
@@ -91,16 +94,6 @@ test("the flags are parsed", () => {
   assert.ok(me.name === null || typeof me.name === "string");
 });
 
-test("the desk the Python templates copy is the one @brightbeamai/chap-server serves", async () => {
-  // Until the Python templates serve the desk from the chap-coordinator
-  // wheel, they copy templates/_shared/desk, which must not drift from the
-  // package's copy.
-  const shared = new URL("../templates/_shared/desk/", import.meta.url);
-  const served = new URL("../../chap-server/desk/", import.meta.url);
-  const names = (await readdir(served)).sort();
-  assert.deepEqual((await readdir(shared)).sort(), names);
-  for (const name of names) assert.equal(await readFile(new URL(name, shared), "utf8"), await readFile(new URL(name, served), "utf8"), name);
-});
 
 test("the code gate's hooks stay executable and its workflow lands under .github", async () => {
   const { stat } = await import("node:fs/promises");

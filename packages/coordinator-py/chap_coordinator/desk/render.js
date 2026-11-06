@@ -41,34 +41,95 @@ export function titleOf(task) {
 }
 
 export function renderJson(value) {
-  return el("pre", { class: "json", text: JSON.stringify(value, null, 2) });
+  return el("pre", { class: "json" }, marked(JSON.stringify(value, null, 2)));
+}
+
+// -- characters a reader may not see as they are ---------------------------------
+
+// Characters a reader cannot see, or that change how the text around them
+// reads: every default-ignorable code point (zero-width characters, the
+// bidirectional controls, the soft hyphen, the Hangul fillers, variation
+// selectors, tag characters, the combining grapheme joiner), every format
+// character, line and paragraph separators, control characters other than a
+// tab, spaces other than the ASCII space, and U+2800, the blank braille
+// pattern. Each is shown as a marker naming its code point.
+const INVISIBLE = /^(?:[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Zl}\p{Zp}\u2800\0-\x08\x0B-\x1F\x7F-\x9F]|(?! )\p{Zs})$/u;
+
+// Characters outside ASCII that a reader takes as they look: the Latin-1
+// letters and common typographic punctuation. Any other character outside
+// ASCII in a path, a branch name or a changed line is outlined, since it can
+// pass for another one, a Cyrillic а for a Latin a.
+const ALLOWED = /^[\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF\u00A3\u00A7\u00A9\u00AE\u00B0\u00B1\u00B7\u2013\u2014\u2018\u2019\u201C\u201D\u2022\u2026\u20AC]$/u;
+
+const codePoint = (ch) => `U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
+const isInvisible = (ch) => INVISIBLE.test(ch);
+const isOutside = (ch) => ch.codePointAt(0) > 0x7e && !isInvisible(ch) && !ALLOWED.test(ch);
+
+/** Whether text holds an invisible character other than a carriage return that ends it. */
+export const hasInvisible = (text) => [...String(text)].some((ch, i, all) => isInvisible(ch) && !(ch === "\r" && i === all.length - 1));
+
+/** Whether text holds a character outside ASCII that is not on the allow-list. */
+export const hasOutside = (text) => [...String(text)].some(isOutside);
+
+/**
+ * Text as the desk shows it: each invisible character replaced by a marker
+ * naming its code point (a carriage return that ends a line as ↵), and, with
+ * `outline`, each other character outside ASCII and the allow-list outlined.
+ */
+export function marked(text, { outline = false } = {}) {
+  const chars = [...String(text)];
+  const parts = [];
+  let plain = "";
+  const flush = () => { if (plain) parts.push(plain); plain = ""; };
+  chars.forEach((ch, i) => {
+    if (isInvisible(ch)) {
+      flush();
+      const eol = ch === "\r" && i === chars.length - 1;
+      const label = ch === "\r" ? "CR" : codePoint(ch);
+      parts.push(el("span", { class: eol ? "invisible eol" : "invisible", title: eol ? "a carriage return ending the line" : `an invisible character, ${label}`, text: eol ? "\u21b5" : `\u27e8${label}\u27e9` }));
+    } else if (outline && isOutside(ch)) {
+      flush();
+      parts.push(el("span", { class: "outside", title: `${codePoint(ch)}, a character outside ASCII: check it is the one it looks like`, text: ch }));
+    } else {
+      plain += ch;
+    }
+  });
+  flush();
+  return parts;
+}
+
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+
+/** Text as escaped HTML with each invisible character replaced by its marker, for the Markdown the desk renders. */
+export function markedHtml(text) {
+  return [...String(text)].map((ch) => (isInvisible(ch)
+    ? `<span class="invisible" title="an invisible character, ${codePoint(ch)}">\u27e8${codePoint(ch)}\u27e9</span>`
+    : HTML_ESCAPES[ch] ?? ch)).join("");
+}
+
+/**
+ * The warnings for a patch's files: one for invisible characters, one for
+ * characters outside ASCII, each naming the files whose path or changed
+ * lines hold them. Null where there is nothing to say.
+ */
+function characterBanners(patch) {
+  const files = parsePatch(patch);
+  const changed = (f) => f.hunks.flatMap((h) => h.lines.filter((l) => l.type !== " ").map((l) => l.text));
+  const hidden = files.filter((f) => hasInvisible(f.path) || changed(f).some(hasInvisible)).map((f) => f.path);
+  const outside = files.filter((f) => hasOutside(f.path) || changed(f).some(hasOutside)).map((f) => f.path);
+  return [
+    hidden.length ? el("div", { class: "alert warn" }, el("b", { text: "Invisible characters. " }), "The names or changed lines of ", marked(hidden.join(", ")), " hold characters a reader cannot see, shown as markers. Read those lines as the code will.") : null,
+    outside.length ? el("div", { class: "alert warn" }, el("b", { text: "Characters outside ASCII. " }), "The names or changed lines of ", marked(outside.join(", ")), " hold characters outside ASCII, outlined. Check each is the character it looks like.") : null,
+  ].filter(Boolean);
+}
+
+/** A warning for prose the agent wrote that holds invisible characters, or null. */
+function proseBanner(texts) {
+  if (!texts.some(hasInvisible)) return null;
+  return el("div", { class: "alert warn" }, el("b", { text: "Invisible characters. " }), "This artefact holds characters a reader cannot see, shown as markers. Read it as the recipient will.");
 }
 
 // -- the diff -----------------------------------------------------------------
-
-// Characters a reader cannot see, or that change how the line around them
-// reads: carriage returns, line and paragraph separators, zero-width
-// characters and bidirectional controls. Each is shown as a marker.
-const INVISIBLE = /[\r\u2028\u2029\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF\u061C]/g;
-
-/** Whether a line holds an invisible character other than a carriage return that ends it. */
-export const hasInvisible = (text) => [...text.matchAll(INVISIBLE)].some((m) => !(m[0] === "\r" && m.index === text.length - 1));
-
-/** A line's text with each invisible character shown as a marker. */
-function showText(text) {
-  const parts = [];
-  let last = 0;
-  for (const m of text.matchAll(INVISIBLE)) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
-    const ch = m[0];
-    const eol = ch === "\r" && m.index === text.length - 1;
-    const label = ch === "\r" ? "CR" : `U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}`;
-    parts.push(el("span", { class: eol ? "invisible eol" : "invisible", title: eol ? "a carriage return ending the line" : `an invisible character, ${label}`, text: eol ? "\u21b5" : `\u27e8${label}\u27e9` }));
-    last = m.index + 1;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts;
-}
 
 /** One row of the diff: the two line numbers, the sign and the text. */
 function lineRow(cls, oldNo, newNo, sign, text, noNewline = false) {
@@ -76,7 +137,7 @@ function lineRow(cls, oldNo, newNo, sign, text, noNewline = false) {
     el("td", { class: "ln", text: oldNo === null ? "" : String(oldNo) }),
     el("td", { class: "ln", text: newNo === null ? "" : String(newNo) }),
     el("td", { class: "sign", text: sign }),
-    el("td", {}, showText(text), noNewline ? el("span", { class: "nonl", text: "  (no newline at end of file)" }) : null));
+    el("td", {}, marked(text, { outline: cls === "add" || cls === "del" }), noNewline ? el("span", { class: "nonl", text: "  (no newline at end of file)" }) : null));
 }
 
 /** A saved comment, as a row under the line it is about. */
@@ -188,7 +249,7 @@ export function renderDiff(patch, { files = [], editable = false, onEdit = null,
     const lines = file.hunks.reduce((n, h) => n + h.lines.length, 0);
     const big = !file.binary && !editingThis && lines > BIG_FILE_LINES;
     const summary = el("summary", {},
-      el("span", { class: "path", text: file.path }),
+      el("span", { class: "path" }, marked(file.path, { outline: true })),
       big ? el("span", { class: "badge", title: "Open it to read it", text: `${lines} lines` }) : null,
       file.status !== "modified" ? el("span", { class: `badge ${file.status === "added" ? "ok" : file.status === "deleted" ? "bad" : ""}`, text: file.status }) : null,
       modeBadge(file),
@@ -252,11 +313,14 @@ export function anomalyBanner(artefact) {
   return el("div", { class: "alert" }, el("b", { text: "Do not approve this patch. " }), "The desk cannot show it as git would apply it: ", anomalies.join("; "), ".");
 }
 
-/** A warning for a patch with invisible characters in its changed lines, or null. */
-function invisibleBanner(patch) {
-  const files = parsePatch(patch).filter((f) => f.hunks.some((h) => h.lines.some((l) => l.type !== " " && hasInvisible(l.text))));
-  if (!files.length) return null;
-  return el("div", { class: "alert warn" }, el("b", { text: "Invisible characters. " }), `The changed lines of ${files.map((f) => f.path).join(", ")} hold characters a reader cannot see, shown as markers. Read those lines as the code will.`);
+/** The chips that list a patch's files, each of which scrolls to its file. */
+function fileChips(patch) {
+  const chips = el("div", { class: "files" });
+  for (const f of parsePatch(patch)) {
+    const st = fileStats(f);
+    chips.append(el("span", { class: "file-chip", onclick: () => document.getElementById(`file-${f.path}`)?.scrollIntoView({ block: "start", behavior: "smooth" }) }, marked(f.path, { outline: true }), el("span", { class: "add", text: f.binary ? "bin" : `+${st.added}` }), el("span", { class: "del", text: f.binary ? "" : `-${st.removed}` })));
+  }
+  return chips;
 }
 
 // -- shapes -------------------------------------------------------------------
@@ -289,15 +353,15 @@ export function gitDate(raw) {
 function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null, commenting = null } = {}) {
   const commits = artefact.commits;
   const at = Math.min(Math.max(0, index), commits.length - 1);
-  const head = el("div", { class: "stack", style: "margin-bottom:12px" });
+  const head = el("div", { class: "stack artefact-head" });
   const anomalies = rangeAnomalies(artefact);
   if (anomalies.length) head.append(el("div", { class: "alert" }, el("b", { text: "Do not approve this branch. " }), "The desk cannot show every commit as git would apply it: ", anomalies.join("; "), "."));
-  if (artefact.summary) head.append(el("div", {}, el("b", { text: artefact.summary })));
+  if (artefact.summary) head.append(el("div", {}, el("b", {}, marked(artefact.summary))));
   const added = commits.reduce((n, c) => n + sumOf(c.files, "added"), 0);
   const removed = commits.reduce((n, c) => n + sumOf(c.files, "removed"), 0);
   const facts = [["branch", artefact.branch], ["onto", artefact.base ? String(artefact.base).slice(0, 12) : "an empty repository"], ["commits", String(commits.length)], ["written by", modelWithSource(artefact)], ["drafted by", artefact.drafted_by], ["repository", artefact.repo]];
   head.append(el("div", { class: "row small muted" },
-    facts.filter(([, v]) => v).map(([k, v]) => el("span", {}, `${k} `, el("b", { class: k === "onto" ? "mono" : "", text: v }))),
+    facts.filter(([, v]) => v).map(([k, v]) => el("span", {}, `${k} `, el("b", { class: k === "onto" ? "mono" : "" }, marked(v, { outline: k === "branch" })))),
     el("span", { class: "stats mono" }, el("span", { class: "add", text: `+${added}` }), " ", el("span", { class: "del", text: `-${removed}` }))));
 
   const list = el("ol", { class: "commits", "aria-label": "Commits, oldest first" });
@@ -308,7 +372,7 @@ function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null,
     },
     el("span", { class: "n", text: String(i + 1) }),
     el("span", { class: "sha mono", text: String(c.sha).slice(0, 7) }),
-    el("span", { class: "subject", text: c.message.split("\n")[0] || "(no message)" }),
+    el("span", { class: "subject" }, marked(c.message.split("\n")[0] || "(no message)")),
     el("span", { class: "stats mono" }, el("span", { class: "add", text: `+${sumOf(c.files, "added")}` }), el("span", { class: "del", text: `-${sumOf(c.files, "removed")}` })),
     el("span", { class: "mark", "aria-label": isRead ? "read" : "not read yet", text: isRead ? "✓" : "" }))));
   });
@@ -327,15 +391,10 @@ function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null,
       el("span", { class: "mono small", title: c.sha, text: String(c.sha).slice(0, 12) }),
       el("span", { class: "small muted" }, "by ", el("b", { text: author }), c.author?.date ? `, ${gitDate(c.author.date)}` : ""),
       c.model && c.model !== artefact.model ? el("span", { class: "small muted" }, "written by ", el("b", { text: c.model })) : null),
-    el("pre", { class: "commit-message", text: c.message || "(no message)" }));
+    el("pre", { class: "commit-message" }, marked(c.message || "(no message)")));
   if (typeof c.patch === "string") {
-    const banner = invisibleBanner(c.patch);
-    if (banner) detail.append(banner);
-    const chips = el("div", { class: "files" });
-    for (const f of parsePatch(c.patch)) {
-      const st = fileStats(f);
-      chips.append(el("span", { class: "file-chip", onclick: () => document.getElementById(`file-${f.path}`)?.scrollIntoView({ block: "start", behavior: "smooth" }) }, f.path, el("span", { class: "add", text: f.binary ? "bin" : `+${st.added}` }), el("span", { class: "del", text: f.binary ? "" : `-${st.removed}` })));
-    }
+    detail.append(...characterBanners(c.patch));
+    const chips = fileChips(c.patch);
     // Comments on this commit's lines carry the commit, so the prompt can say which one.
     const onThis = commenting ? {
       comments: (commenting.comments ?? []).filter((x) => x.commit === c.sha),
@@ -351,13 +410,15 @@ function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null,
 
 function renderMessage(a) {
   const dl = el("dl", { class: "letter" });
+  const texts = [];
   for (const key of Object.keys(a)) {
     if (key === "body") continue;
-    const v = a[key];
-    dl.append(el("div", { class: "field" }, el("dt", { text: key }), el("dd", { text: typeof v === "string" ? v : JSON.stringify(v) })));
+    const v = typeof a[key] === "string" ? a[key] : JSON.stringify(a[key]);
+    texts.push(v);
+    dl.append(el("div", { class: "field" }, el("dt", {}, marked(key)), el("dd", {}, marked(v))));
   }
-  dl.append(el("div", { class: "body", text: a.body }));
-  return dl;
+  dl.append(el("div", { class: "body" }, marked(a.body)));
+  return el("div", { class: "stack" }, proseBanner([...texts, a.body, ...Object.keys(a)]), dl);
 }
 
 /**
@@ -369,25 +430,19 @@ export function renderArtefact(artefact, { editing = null, range = null, comment
   const shape = shapeOf(artefact);
   if (shape === "commits") return renderCommits(artefact, { ...(range ?? {}), commenting });
   if (shape === "code") {
-    const head = el("div", { class: "stack", style: "margin-bottom:12px" });
+    const head = el("div", { class: "stack artefact-head" });
     const banner = anomalyBanner(artefact);
     if (banner) head.append(banner);
-    const hidden = invisibleBanner(artefact.patch);
-    if (hidden) head.append(hidden);
-    if (artefact.summary) head.append(el("div", {}, el("b", { text: artefact.summary })));
+    head.append(...characterBanners(artefact.patch));
+    if (artefact.summary) head.append(el("div", {}, el("b", {}, marked(artefact.summary))));
     const facts = [];
     if (artefact.branch) facts.push(["branch", artefact.branch]);
     if (artefact.base) facts.push(["base", String(artefact.base).slice(0, 12)]);
     if (artefact.model) facts.push(["written by", modelWithSource(artefact)]);
     if (artefact.drafted_by) facts.push(["drafted by", artefact.drafted_by]);
     if (artefact.repo) facts.push(["repository", artefact.repo]);
-    if (facts.length) head.append(el("div", { class: "row small muted" }, facts.map(([k, v]) => el("span", {}, `${k} `, el("b", { class: k === "branch" || k === "base" ? "mono" : "", text: v })))));
-    const chips = el("div", { class: "files" });
-    for (const f of parsePatch(artefact.patch)) {
-      const st = fileStats(f);
-      chips.append(el("span", { class: "file-chip", onclick: () => document.getElementById(`file-${f.path}`)?.scrollIntoView({ block: "start", behavior: "smooth" }) }, f.path, el("span", { class: "add", text: f.binary ? "bin" : `+${st.added}` }), el("span", { class: "del", text: f.binary ? "" : `-${st.removed}` })));
-    }
-    head.append(chips);
+    if (facts.length) head.append(el("div", { class: "row small muted" }, facts.map(([k, v]) => el("span", {}, `${k} `, el("b", { class: k === "branch" || k === "base" ? "mono" : "" }, marked(v, { outline: k === "branch" || k === "base" }))))));
+    head.append(fileChips(artefact.patch));
     if (editing) {
       const state = editing.state;
       state.files ??= Object.create(null);
@@ -411,7 +466,7 @@ export function renderArtefact(artefact, { editing = null, range = null, comment
         const changed = files.map((f) => (Object.prototype.hasOwnProperty.call(edits, f.path) ? { ...f, after: edits[f.path], added: stats.get(f.path)?.added ?? f.added, removed: stats.get(f.path)?.removed ?? f.removed } : f));
         return { ...artefact, patch, files: changed };
       };
-      return el("div", {}, head, el("div", { class: "small muted", style: "margin-bottom:8px", text: "Press Edit on a file to change it whole; the patch is written again from your version, and you see the result before it is sent." }), box);
+      return el("div", {}, head, el("div", { class: "small muted edit-hint", text: "Press Edit on a file to change it whole; the patch is written again from your version, and you see the result before it is sent." }), box);
     }
     return el("div", {}, head, renderDiff(artefact.patch, { files: artefact.files ?? [], commenting }));
   }
@@ -428,7 +483,7 @@ export function renderArtefact(artefact, { editing = null, range = null, comment
         input.addEventListener("input", () => { state.fields[key] = input.value; });
         field.append(input);
       } else {
-        const area = el("textarea", { class: "code", "aria-label": key, style: "min-height:80px" });
+        const area = el("textarea", { class: "code field", "aria-label": key });
         area.value = JSON.stringify(state.fields[key], null, 2);
         area.addEventListener("input", () => { try { state.fields[key] = JSON.parse(area.value); area.setCustomValidity(""); } catch { area.setCustomValidity("not JSON"); } });
         field.append(area);
@@ -439,14 +494,14 @@ export function renderArtefact(artefact, { editing = null, range = null, comment
     return form;
   }
   if (shape === "text") {
-    if (!editing) return el("div", { class: "letter" }, el("div", { class: "body", text: artefact }));
+    if (!editing) return el("div", { class: "stack" }, proseBanner([artefact]), el("div", { class: "letter" }, el("div", { class: "body" }, marked(artefact))));
     const area = el("textarea", { "aria-label": "The text" });
     area.value = editing.state.text ?? artefact;
     area.addEventListener("input", () => { editing.state.text = area.value; });
     editing.value = () => editing.state.text ?? artefact;
     return area;
   }
-  if (!editing) return renderJson(artefact);
+  if (!editing) return el("div", { class: "stack" }, proseBanner([JSON.stringify(artefact)]), renderJson(artefact));
   const area = el("textarea", { class: "code", "aria-label": "The artefact as JSON" });
   area.value = editing.state.json ?? JSON.stringify(artefact, null, 2);
   area.addEventListener("input", () => { editing.state.json = area.value; });

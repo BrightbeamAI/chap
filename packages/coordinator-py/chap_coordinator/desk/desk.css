@@ -173,6 +173,14 @@ select, input[type="text"], input:not([type]) { padding: .4rem .6rem; border: 1p
 .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); }
 textarea { width: 100%; min-height: 7.5rem; padding: .6rem .75rem; border: 1px solid var(--line-strong); border-radius: var(--radius-s); background: var(--panel); resize: vertical; line-height: 1.5; }
 textarea.code { font-family: var(--mono); font-size: var(--code); white-space: pre; min-height: 15rem; tab-size: 2; }
+textarea.code.field { min-height: 80px; }
+.artefact-head { margin-bottom: 12px; }
+.since-note { margin-bottom: 10px; }
+.edit-hint { margin-bottom: 8px; }
+.badge.refusal { margin-left: 6px; }
+button.chip { cursor: pointer; font-family: inherit; }
+.key-alert { margin: 1rem 1.125rem 0; }
+#key-fingerprint, #key-id { word-break: break-all; }
 pre.json { margin: 0; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-s); overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .notice { min-height: 1.2em; font-size: var(--text-s); }
 .notice.bad { color: var(--bad); }
@@ -269,6 +277,9 @@ svg.chart { width: 100%; height: 10rem; display: block; }
 @media (max-width: 600px) { .chart-days span.minor { visibility: hidden; } }
 .legend { display: flex; gap: .75rem; flex-wrap: wrap; font-size: var(--text-xs); color: var(--muted); margin-top: 6px; }
 .legend i { display: inline-block; width: .65rem; height: .65rem; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.legend i.ok { background: var(--ok); }
+.legend i.warn { background: var(--warn); }
+.legend i.bad { background: var(--bad); }
 .words li { margin-bottom: 6px; }
 .md h1, .md h2, .md h3 { margin: 14px 0 6px; text-transform: none; letter-spacing: 0; color: var(--ink); }
 .md h1 { font-size: 1.25rem; } .md h2 { font-size: 1.0625rem; } .md h3 { font-size: 1rem; }
@@ -312,6 +323,7 @@ svg.chart { width: 100%; height: 10rem; display: block; }
 .alert.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); background: var(--warn-soft); color: var(--warn); }
 .invisible { display: inline-block; padding: 0 3px; margin: 0 1px; border-radius: 3px; background: var(--bad-soft); color: var(--bad); font-weight: 700; font-size: .75rem; }
 .invisible.eol { background: none; color: var(--muted); font-weight: 400; }
+.outside { outline: 1px dashed var(--warn); outline-offset: 1px; border-radius: 2px; background: var(--warn-soft); }
 
 /* A branch: its commits in order, and the one on show. */
 .branch .stats .add, .commits .stats .add { color: var(--ok); }

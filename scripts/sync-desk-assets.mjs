@@ -6,8 +6,6 @@
  * packages/chap-server/desk. An installed Python package cannot reach that
  * directory, so chap-coordinator ships a copy as package data, in
  * packages/coordinator-py/chap_coordinator/desk, and this script writes it.
- * Until packages/chap-server exists, the files are read from
- * packages/create-chap-app/templates/_shared/desk.
  *
  *   node scripts/sync-desk-assets.mjs           make the copy match
  *   node scripts/sync-desk-assets.mjs --check   fail if it does not
@@ -21,16 +19,12 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, relative, resolve } from "node:path";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCES = [
-  resolve(ROOT, "packages/chap-server/desk"),
-  resolve(ROOT, "packages/create-chap-app/templates/_shared/desk"),
-];
-const SOURCE = SOURCES.find((dir) => existsSync(dir));
+const SOURCE = resolve(ROOT, "packages/chap-server/desk");
 const COPY = resolve(ROOT, "packages/coordinator-py/chap_coordinator/desk");
 const CHECK = process.argv.includes("--check");
 
-if (!SOURCE) {
-  console.error(`No desk to copy: neither ${SOURCES.map((dir) => relative(ROOT, dir)).join(" nor ")} exists.`);
+if (!existsSync(SOURCE)) {
+  console.error(`No desk to copy: ${relative(ROOT, SOURCE)} does not exist.`);
   process.exit(2);
 }
 
