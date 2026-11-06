@@ -273,8 +273,9 @@ def test_a_store_keeps_the_signature_settings_its_workspace_was_made_with(tmp_pa
         coord.options.store.close()
         assert (config["require_signatures"], config["signature_policy"]) == (True, "humans")
         assert public_config(config)["signature_policy"] == "humans"
-        assert ("wsp_test was created under other settings, and runs with signatures required from people. "
-                "require_signatures in chap.config.json applies to a new store.") in capsys.readouterr().out
+        assert ("wsp_test was created under other settings, and runs with people sign every call; an agent "
+                "member's calls need no signature. require_signatures in chap.config.json applies to a new "
+                "store.") in capsys.readouterr().out
     # As asked, nothing more is said.
     make_coordinator(load_config(write_config(tmp_path, require_signatures="humans",
                                               store="./data/chap.db"))).options.store.close()

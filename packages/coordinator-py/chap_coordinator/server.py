@@ -327,9 +327,10 @@ def make_coordinator(config: dict) -> Coordinator:
     return coord
 
 
-#: What each signature policy asks, as the console says it.
-POLICY_WORDS = {"all": "signatures required from every caller", "humans": "signatures required from people",
-                None: "no signatures required"}
+#: What each signature policy asks, as the console says it, in the Node server's words.
+POLICY_WORDS = {"all": "every call after the join is signed",
+                "humans": "people sign every call; an agent member's calls need no signature",
+                None: "off: whoever reaches this server can decide as a person"}
 
 
 def bootstrap(coord: Coordinator, config: dict) -> None:
@@ -1097,13 +1098,12 @@ def serve(config: dict) -> int:
               "program. Stop that one, or set PORT to a free port.", file=sys.stderr)
         return 1
     base = server.desk_url.rstrip("/")
-    flags = ((", chain on" if config.get("chain") else "")
-             + (f", {POLICY_WORDS[config['signature_policy']]}" if config.get("require_signatures") else ""))
     print(f"CHAP {config['workspace']} on {base}")
     print(f"  desk     {base}/")
     print(f"  calls    POST {base}/chap")
     print(f"  profiles {', '.join(config['profiles'])}")
-    print(f"  store    {config['store']}{flags}")
+    print(f"  store    {config['store']}{', chain on' if config.get('chain') else ''}")
+    print(f"  signing  {POLICY_WORDS[config.get('signature_policy')]}")
     sys.stdout.flush()
     try:
         server.serve_forever()

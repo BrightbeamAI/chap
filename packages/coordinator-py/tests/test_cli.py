@@ -14,6 +14,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from importlib.metadata import entry_points
@@ -32,6 +33,24 @@ def write_config(directory: Path, **fields) -> Path:
                                 "humans": [{"uri": "human:you@local", "role": "reviewer"}],
                                 "agent": {"uri": "agent:drafter"}, **fields}), encoding="utf-8")
     return path
+
+
+def first_lines(process: subprocess.Popen, count: int, timeout: float = 20.0) -> list[str]:
+    """The first ``count`` lines the process prints, or those it printed by
+    ``timeout``, so a banner shorter than expected fails a test and hangs
+    none."""
+    lines: list[str] = []
+
+    def read() -> None:
+        for line in process.stdout:
+            lines.append(line)
+            if len(lines) == count:
+                return
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    reader.join(timeout)
+    return list(lines)
 
 
 def test_the_package_installs_the_command():
@@ -58,12 +77,13 @@ def test_serve_runs_the_desk_from_a_config_file_wherever_it_starts(tmp_path):
                                 "--port", "0"], cwd=elsewhere, env=env, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
     try:
-        banner = [process.stdout.readline() for _ in range(5)]
+        banner = first_lines(process, 6)
         # The desk is opened at localhost, a name WebAuthn takes, which
         # reaches the server on either loopback address.
         base = re.search(r"on (http://localhost:\d+)$", banner[0].rstrip()).group(1)
         assert banner[1].rstrip() == f"  desk     {base}/"
         assert banner[4].strip() == f"store    {project / 'data' / 'chap.db'}"
+        assert banner[5].strip() == "signing  off: whoever reaches this server can decide as a person"
         with urllib.request.urlopen(base + "/api/health", timeout=5) as response:
             assert json.loads(response.read())["workspace"] == "wsp_cli"
     finally:
@@ -79,12 +99,13 @@ def test_serve_says_whose_calls_are_signed(tmp_path):
                                 "--port", "0"], env={"PATH": "", "HOME": str(tmp_path)}, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE, text=True)
     try:
-        lines = [process.stdout.readline() for _ in range(6)]
+        lines = first_lines(process, 7)
     finally:
         process.send_signal(signal.SIGINT)
         process.wait(timeout=30)
     assert lines[0].strip() == "security-signed/1.0 added to the profiles: signatures are required."
-    assert lines[5].rstrip() == "  store    :memory:, chain on, signatures required from people"
+    assert lines[5].rstrip() == "  store    :memory:, chain on"
+    assert lines[6].rstrip() == "  signing  people sign every call; an agent member's calls need no signature"
 
 
 def test_serve_explains_a_config_it_cannot_use(tmp_path, monkeypatch, capsys):
