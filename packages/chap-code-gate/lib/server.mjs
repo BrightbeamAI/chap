@@ -5,6 +5,7 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createChapServer, loadConfig } from "@brightbeamai/chap-server";
+import { generateKeyFile } from "@brightbeamai/chap-server/keys";
 import { policyFromTrust, TRUST_FILE } from "./gate.mjs";
 
 /**
@@ -32,8 +33,19 @@ export async function trustedMembers(config) {
   };
 }
 
-/** Start the gate for a configuration loadConfig returned. Returns { coord, server, base }. */
+/**
+ * Start the gate for a configuration loadConfig returned. Returns { coord, server, base }.
+ *
+ * The gate's agent signs its proposals with the key in keys/, and /mcp acts
+ * as the same agent, joining it with that key the first time it is used.
+ * A member who joined without a key cannot take one later, so the key is
+ * made here when there is none, before anything can join as the agent.
+ */
 export async function startGate(config, { log = console.log } = {}) {
+  if (config.agent?.uri && !process.env.CHAP_AGENT_KEY) {
+    const made = await generateKeyFile(config.agent.uri, join(config.dir, "keys"));
+    if (made.created) log(`Made the agent's key, ${made.path}; npm run keys prints it, with the files for signing commits.`);
+  }
   const trust = await trustedMembers(config);
   const chap = await createChapServer({ config, enrol: trust.members, log });
   const { base } = await chap.listen({ log });

@@ -133,9 +133,11 @@ claude mcp add --transport http chap http://127.0.0.1:8791/mcp
 `/mcp` acts as the agent `chap.config.json` names, with the tools the
 agent's own work needs. Under `"require_signatures": "humans"`, as here,
 the agent's calls need no signature and a person's do, so these reads work
-over `/mcp`; under `true` every call must be signed, and `/mcp`, whose calls
-are unsigned, is refused. A change goes through `propose.mjs` either way:
-its proposal is signed, and the hooks refuse an unsigned one.
+over `/mcp`, from the first one: the gate makes the agent's key at start
+where `npm run keys` has not, and joins the agent with it the first time
+`/mcp` is used. Under `true` every call must be signed, and `/mcp`, whose
+calls are unsigned, is refused. A change goes through `propose.mjs` either
+way: its proposal is signed, and the hooks refuse an unsigned one.
 
 **Cursor and other assistants.** The same file goes into the project rules.
 An assistant that cannot run a command leaves `propose.mjs` to you: edit with

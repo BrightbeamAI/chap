@@ -30,6 +30,7 @@ import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Coordinator, MemoryStore } from "@brightbeamai/chap-coordinator";
 import { AGENT_MCP_TOOLS, chapMcpHttpHandler } from "@brightbeamai/chap-coordinator-mcp";
+import { keyPathFor, publicJwkOf } from "./keys.mjs";
 
 /** The desk's files, served by every project from this package. */
 export const DESK_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "desk");
@@ -93,6 +94,13 @@ function signatureSetting(value) {
   if (v === "0" || v === "false") return null;
   throw new Error(`require_signatures in chap.config.json, or CHAP_REQUIRE_SIGNATURES, is ${JSON.stringify(value)}; it is true, false or "humans"`);
 }
+
+/** What each signature policy asks, as the console says it. */
+const SIGNING = {
+  all: "every call after the join is signed",
+  humans: "people sign every call; an agent member's calls need no signature",
+  null: "off: whoever reaches this server can decide as a person",
+};
 
 /** Whether a profile list names `name` at any version. */
 export function hasProfile(profiles, name) {
@@ -211,7 +219,8 @@ export async function makeCoordinator(config, { enrol = [], log = console.log, .
  *
  * With signatures required, nobody else is joined here: each participant
  * joins itself with its own key, since a re-join cannot add a key for
- * someone. The desk does this for a human; the agent does it for itself.
+ * someone. The desk does this for a human; the agent does it for itself,
+ * or, under the humans policy, /mcp does it for the agent it acts as.
  */
 export async function bootstrap(coord, config, { enrol = [], log = console.log } = {}) {
   const send = (method, params) => coord.dispatch({ jsonrpc: "2.0", id: `boot-${method}`, method, params: { workspace: config.workspace, ...params } });
@@ -219,6 +228,7 @@ export async function bootstrap(coord, config, { enrol = [], log = console.log }
     const r = send("workspace.create", { profiles: config.profiles, ...(config.mode ? { mode: config.mode } : {}), ...(config.mode_ceiling ? { mode_ceiling: config.mode_ceiling } : {}) });
     if (r.error) throw new Error(`workspace.create: ${r.error.message}`);
   }
+  settleSignatures(coord.getWorkspace(config.workspace), config, log);
   for (const m of enrol) {
     const held = coord.getWorkspace(config.workspace).members.get(m.uri);
     if (held) {
@@ -237,6 +247,56 @@ export async function bootstrap(coord, config, { enrol = [], log = console.log }
     const r = send("participant.join", { from: m.uri, type: m.type, role: m.role ?? (m.type === "human" ? "reviewer" : "drafter"), display_name: m.display_name });
     if (r.error) throw new Error(`participant.join ${m.uri}: ${r.error.message}`);
   }
+}
+
+/**
+ * A workspace keeps the signature policy it was created with, and one that
+ * advertises security-signed/1.0 requires signatures whatever the option
+ * says. Where the store holds a workspace made under other settings, the
+ * configuration is made to say what the workspace does, so the console and
+ * /api/config tell the desk and the agent how to call, and the console says
+ * what changed.
+ */
+function settleSignatures(ws, config, log) {
+  const required = !!config.require_signatures || hasProfile(ws.profiles, "security-signed");
+  const policy = required ? (ws.signature_policy === "humans" ? "humans" : "all") : null;
+  if (required === !!config.require_signatures && policy === config.signature_policy) return;
+  log(`${ws.id} was created under other settings, and runs with ${SIGNING[policy]}. require_signatures in chap.config.json applies to a new store.`);
+  config.require_signatures = required;
+  config.signature_policy = policy;
+}
+
+/**
+ * The public key of the agent's key file, the one CHAP_AGENT_KEY names or
+ * keys/<agent>.jwk.json in the project, or null where there is none.
+ */
+async function agentPublicKey(config) {
+  const path = process.env.CHAP_AGENT_KEY ?? keyPathFor(config.agent.uri, join(config.dir, "keys"));
+  let text;
+  try { text = await readFile(path, "utf8"); } catch (e) {
+    if (e.code === "ENOENT") return null;
+    throw e;
+  }
+  try { return publicJwkOf(JSON.parse(text)); } catch { throw new Error(`The agent's key file ${path} does not read as a JWK`); }
+}
+
+/**
+ * Join the agent /mcp acts as, where the workspace does not hold it. Under
+ * the humans policy the coordinator takes an unsigned call only from a
+ * member that is not a person, and /mcp's calls are unsigned, so the agent
+ * must be a member before its first one. It joins with the public key of
+ * its key file when the project has one, so an agent that also signs, as the
+ * code gate's does, keeps the key it signs with, and with none otherwise.
+ */
+async function joinMcpAgent(coord, config) {
+  const ws = coord.getWorkspace(config.workspace);
+  if (!ws || config.signature_policy !== "humans" || ws.members.has(config.agent.uri)) return;
+  const key = await agentPublicKey(config);
+  const { uri, role, display_name } = config.agent;
+  coord.dispatch({ jsonrpc: "2.0", id: "mcp-join", method: "participant.join", params: {
+    workspace: config.workspace, from: uri, type: "agent", role: role ?? "drafter",
+    ...(display_name ? { display_name } : {}), ...(key ? { jwks: { keys: [key] } } : {}),
+  } });
 }
 
 /** The open reviews a reviewer can act on, read from the owning process. */
@@ -649,6 +709,7 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
       }
       if (path === "/mcp" && mcp) {
         for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
+        await joinMcpAgent(coord, config);
         let body;
         if (req.method === "POST") {
           try { body = JSON.parse(await readBody(req, bodyLimit(config))); } catch (e) {
@@ -703,9 +764,13 @@ export async function createChapServer(options = {}) {
       log(`CHAP ${config.workspace} on ${base}`);
       log(`  desk     ${base}/`);
       log(`  calls    POST ${base}/chap`);
-      if (config.mcp) log(`  mcp      ${base}/mcp`);
+      if (config.mcp) {
+        log(`  mcp      ${base}/mcp, as ${config.agent.uri}`);
+        if (config.signature_policy === "all") log(`           every call is signed here and /mcp's are not, so they are refused; "require_signatures": "humans" takes them`);
+      }
       log(`  profiles ${config.profiles.join(", ")}`);
-      log(`  store    ${config.store}${config.chain ? ", chain on" : ""}${config.require_signatures ? ", signatures required" : ""}${config.oidc ? `, oidc ${config.oidc.issuer}` : ""}`);
+      log(`  store    ${config.store}${config.chain ? ", chain on" : ""}${config.oidc ? `, oidc ${config.oidc.issuer}` : ""}`);
+      log(`  signing  ${SIGNING[config.signature_policy]}`);
       return { base };
     },
     close: () => new Promise((resolve) => server.close(resolve)),

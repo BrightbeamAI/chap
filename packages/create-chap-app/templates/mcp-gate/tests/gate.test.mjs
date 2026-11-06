@@ -1,14 +1,15 @@
 // The gate, end to end: an MCP client is the agent, the desk client is the
-// human, and the coordinator refuses the agent's own approval.
+// human, signing as the desk does, and the coordinator refuses the agent's
+// own approval and any decision in the human's name without the desk's key.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { fileURLToPath } from "node:url";
 import { loadConfig, makeCoordinator, makeServer, AGENT_MCP_TOOLS } from "@brightbeamai/chap-server";
-import { makeClient } from "@brightbeamai/chap-server/client";
+import { generateSigner, makeClient } from "@brightbeamai/chap-server/client";
 
-let config, coord, server, base, mcp;
+let config, coord, server, base, mcp, desk;
 
 before(async () => {
   config = await loadConfig(fileURLToPath(new URL("../chap.config.json", import.meta.url)));
@@ -20,6 +21,9 @@ before(async () => {
   base = `http://127.0.0.1:${server.address().port}`;
   mcp = new Client({ name: "gate-test", version: "0" });
   await mcp.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)));
+  // The human joins as the desk does, with a key made for them.
+  desk = makeClient({ url: `${base}/chap`, workspace: config.workspace, from: config.humans[0].uri, signer: await generateSigner(config.humans[0].uri) });
+  await desk.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [desk.signer.publicJwk] } });
 });
 
 after(async () => {
@@ -85,7 +89,6 @@ test("a task the assistant completes waits for the human, and the assistant cann
   assert.equal(own.isError, true);
   assert.match(JSON.stringify(own.body), /-32011|reviewer/);
 
-  const desk = makeClient({ url: `${base}/chap`, workspace: config.workspace, from: human() });
   const decided = await desk.call("decide.approve", { task_id: taskId, comment: "fine" });
   assert.equal(decided.state, "completed");
 
@@ -97,6 +100,18 @@ test("a task the assistant completes waits for the human, and the assistant cann
   const { entries } = await desk.call("audit.read", { filter: { task_id: taskId } });
   assert.ok(entries.some((e) => e.outcome?.status === "refused" && e.request.method === "decide.approve"));
   assert.ok(entries.some((e) => e.envelope?.method === "decide.approve"));
+});
+
+test("a decision in the human's name counts only with the desk's signature, and the assistant's own calls need none", async () => {
+  assert.equal(config.signature_policy, "humans");
+  // Any local process can send this; the assistant's shell, say.
+  const assistant = makeClient({ url: `${base}/chap`, workspace: config.workspace, from: agent() });
+  const { task_id } = await assistant.call("task.create", { kind: "draft_reply", assignee: agent(), input: { ticket: "T-3" }, review_required: true });
+  assert.equal((await assistant.call("task.complete", { task_id, output: { body: "Refund it" } })).state, "review_requested");
+  const forged = makeClient({ url: `${base}/chap`, workspace: config.workspace, from: human() });
+  await assert.rejects(forged.call("decide.approve", { task_id }), (e) => e.code === -32070, "an unsigned approval as the human is refused");
+  assert.equal((await (await fetch(`${base}/api/tasks/${task_id}`)).json()).state, "review_requested");
+  assert.equal((await desk.call("decide.approve", { task_id })).state, "completed", "the desk's signed approval counts");
 });
 
 test("the desk is served with its client module", async () => {

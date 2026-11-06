@@ -49,7 +49,13 @@ to the desk, which uses it in the commands it writes for an agent.
   `/mcp`, which acts as the agent, needs no key; `true` has every call after
   `participant.join` signed (`security-signed/1.0`); `false` none. The
   coordinator option `signaturePolicy` carries "humans"; a coordinator from
-  before 0.3.5 has no such policy and treats it as `true`.
+  before 0.3.5 has no such policy and treats it as `true`. An unsigned call
+  is taken only from a member, so under `"humans"` the server joins the
+  agent the first time `/mcp` is used, with the public key of its key file
+  in `keys/` (or the file `CHAP_AGENT_KEY` names) where there is one, so an
+  agent that also signs keeps its key. A workspace keeps the policy it was
+  made with: the console says so at start where the store holds one made
+  under other settings, and `/api/config` gives the policy it runs.
 - `chain`: the hash chain over the log; `audit-scitt/1.0` turns it on too.
 - `mcp`: serve `/mcp`, which acts as `agent.uri` with the tools the agent's
   own work needs, `AGENT_MCP_TOOLS`.

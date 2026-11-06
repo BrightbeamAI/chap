@@ -6,8 +6,9 @@ and every call the assistant makes that changes state is recorded on the chain. 
 assistant completes with `review_required` opens a review that waits for you
 in the desk. The assistant's MCP connection acts only as the assistant, and
 offers no tool that would let it decide its own work, so it cannot approve
-its own work through MCP. No API key is needed: the assistant you already use
-is the agent.
+its own work through MCP, and a decision in your name counts only with the
+signature the desk makes in your browser. No API key is needed: the
+assistant you already use is the agent.
 
 ## Run it
 
@@ -135,20 +136,36 @@ script the template ships is replaced only where it is still as a release
 wrote it. Every file kept because it differs is named, `--diff` shows how,
 and `--dry-run` changes nothing.
 
+A project made before 0.3.5 keeps `"require_signatures": false` in
+`chap.config.json`, and with it any process that reaches the server can
+decide as you. Set it to `"humans"` and start on a new store, with
+`data/chap.db` moved aside: a workspace keeps the signature policy it was
+made with, and one made unsigned runs with every call signed once
+signatures are on, which refuses the calls `/mcp` makes. The server says so
+at start.
+
 ## What the deployment supplies
 
 This project does not notify anyone: the desk lists the open reviews
 addressed to the reviewer it is asked about, and delivering a review to the
 people named on it is the deployment's job (SPECIFICATION 15.1). The MCP
 endpoint, the desk, `POST /chap` and the read API under `/api/` have no
-login, and a `human:` URI in the desk is a label that says who is deciding;
-it does not authenticate them. `POST /chap` accepts a call in any member's
-name, so an assistant that can send HTTP requests itself, such as Claude
-Code with a shell, can still reach it and decide as you. Requiring a
-signature on every call (`require_signatures`) closes that route, and `/mcp`
-with it, because the MCP server's calls are unsigned: the assistant then
-needs a client that signs its calls, as the production template's agent
-does. The server listens on the loopback address,
+login, and a `human:` URI in the desk names who is deciding; the key behind
+it is what makes a decision theirs. Under `"require_signatures": "humans"`,
+the setting here, the desk makes a key in your browser, joins you with it
+and signs each decision, and a call in your name without that signature is
+refused (`-32070`). So an assistant that can send HTTP requests itself, such
+as Claude Code with a shell, cannot decide as you through `POST /chap`. The
+assistant's own calls need no signature, so `/mcp` works as it is: the
+server joins the assistant the first time `/mcp` is used. Whoever joins
+first under your URI holds it, and the desk says so when another key holds
+your name and then signs nothing. The key is one no script can read out of
+the browser; a program running as you on this machine can still have the
+browser sign with it, so run an assistant with a shell as another user, in
+a container or in a sandbox, where that matters. `true` has every call
+signed, `/mcp`'s too, which refuses them, since the MCP server's calls are
+unsigned; `false` signs nothing, and then any process that reaches the
+server can decide as you. The server listens on the loopback address,
 refuses a request from another origin or under a host name it was not
 given, and takes JSON only on `POST /chap`, so a page open elsewhere cannot
 call it as the reviewer. Its pages say no other page may frame them, so a
