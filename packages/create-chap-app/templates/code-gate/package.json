@@ -10,24 +10,23 @@
   "scripts": {
     "demo": "node demo.mjs",
     "start": "node server.mjs",
-    "stop": "node stop.mjs",
-    "keys": "node keys.mjs",
+    "stop": "chap-code-gate stop",
+    "keys": "chap-server keys",
     "demo-repo": "node demo-repo.mjs",
     "agent": "node agent.mjs",
     "propose": "node propose.mjs",
     "propose-branch": "node propose-branch.mjs",
     "install-hooks": "node install-hooks.mjs",
     "verify": "node verify.mjs",
-    "report": "node report.mjs",
+    "report": "chap-code-gate report",
     "analytics": "python3 analytics.py",
     "test": "node --test tests/*.test.mjs",
     "diff-profiles": "node diff-profiles.mjs",
-    "trust": "node trust.mjs",
+    "trust": "chap-code-gate trust",
     "push-notes": "node push-notes.mjs"
   },
   "dependencies": {
-    "@brightbeamai/chap-coordinator": "^0.3.4",
-    "@brightbeamai/chap-coordinator-mcp": "^0.3.4",
-    "@modelcontextprotocol/sdk": "^1.30.0"
+    "@brightbeamai/chap-code-gate": "^0.3.4",
+    "@brightbeamai/chap-server": "^0.3.4"
   }
 }

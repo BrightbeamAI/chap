@@ -16,9 +16,7 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=install /app/node_modules ./node_modules
-COPY package.json chap.config.json server.mjs agent.mjs keys.mjs doctor.mjs messages.csv ./
-COPY desk ./desk
-COPY lib/oidc.mjs lib/profiles-diff.mjs lib/providers.mjs ./lib/
+COPY package.json chap.config.json server.mjs agent.mjs doctor.mjs messages.csv ./
 RUN mkdir -p /app/data /app/keys /app/outbox /app/analytics && chown -R node:node /app
 USER node
 EXPOSE 8790

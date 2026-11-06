@@ -121,17 +121,19 @@ claude mcp add --transport http chap http://127.0.0.1:8791/mcp
 An assistant that cannot run a command leaves `propose.mjs` to you: edit with
 the assistant, then propose and commit yourself.
 
-**Your own agent.** `propose.mjs` is a thin command over `lib/gate.mjs`:
-`describeChange` takes the patch of the working tree, `propose` opens the task
-and submits it, `waitForDecision` polls the read API. An agent in another
+**Your own agent.** `propose.mjs` runs `chap-code-gate propose`, a thin
+command over `@brightbeamai/chap-code-gate/gate`: `describeChange` takes the
+patch of the working tree, `propose` opens the task and submits it,
+`waitForDecision` polls the read API. An agent in another
 language sends the same calls to `POST /chap`: `task.create` with
 `kind: "code_change"` and `review_required: true`, then `task.complete` with
 the artefact, `{ summary, repo, branch, base, files, patch, drafted_by }`, and
 reads `GET /api/tasks/<id>` until the state is no longer `review_requested`.
 Under `security-signed/1.0` each call is signed with the agent's key;
-`desk/chap-client.mjs` shows the signing. A patch the hooks accept is one the
-desk reads as the change git makes: write it with `git diff --binary
---full-index --no-renames`, as `lib/git.mjs` does.
+`@brightbeamai/chap-server/client` shows the signing. A patch the hooks accept
+is one the desk reads as the change git makes: write it with `git diff
+--binary --full-index --no-renames`, as `@brightbeamai/chap-code-gate/git`
+does.
 
 **The environment.** The hooks and the commands read `chap.config.json`
 beside them, or the file `CHAP_CONFIG` names. `CHAP_URL` is the gate's
@@ -316,12 +318,15 @@ leave it off.
    or `CHAP_ALLOWED_HOSTS`, and set `OIDC_ISSUER` to tie each reviewer's
    browser key to a person, as the production template describes.
 2. **The gate project in the repository.** Commit this project as
-   `tools/chap-gate` in the governed repository. Its `.gitignore` keeps
-   `keys/`, `data/` and `node_modules/` out. The verifier needs nothing
-   installed: it uses git, OpenSSH and Node only.
+   `tools/chap-gate` in the governed repository, with its
+   `package-lock.json`. Its `.gitignore` keeps `keys/`, `data/` and
+   `node_modules/` out. The check installs the verifier from that lock file
+   with `npm ci --ignore-scripts`, so it runs the version the base branch
+   pins and no package's install script; beyond that it uses git, OpenSSH
+   and Node.
 3. **One agent identity per developer.** Each developer sets `CHAP_URL` to the
    team's gate and `CHAP_AGENT_URI` to their agent's own URI, say
-   `agent:claude-code@alice`, runs `node keys.mjs` once to make that agent's
+   `agent:claude-code@alice`, runs `npm run keys` once to make that agent's
    key, joins it by proposing once, and runs `install-hooks.mjs` in their
    clone. Governed commits are signed as each developer signs their own;
    with SSH signing set up for git and the key added to GitHub as a signing
@@ -448,7 +453,7 @@ keys the workspace records.
 
 `--allow-people` lets a commit with no approval through when it is signed
 by a person's SSH key that the policy lists under `people` (an
-`allowed_signers` file given to `trust.mjs --people`); the agent's key never
+`allowed_signers` file given to `npm run trust -- --people`); the agent's key never
 passes that way. A merge commit fails unless `--allow-clean-merges` is
 given, which passes a merge whose tree is the clean merge of its parents
 (git 2.38 or later): the merge commits the host writes on the base branch,

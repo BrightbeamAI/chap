@@ -8,6 +8,8 @@
     "packages/coordinator",
     "packages/coordinator-mcp",
     "packages/coordinator-a2a",
+    "packages/chap-server",
+    "packages/chap-code-gate",
     "packages/create-chap-app",
     "reference/core",
     "reference/core-plus-review",

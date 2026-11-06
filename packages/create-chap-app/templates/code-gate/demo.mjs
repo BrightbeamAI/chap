@@ -20,9 +20,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { access, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, start } from "./server.mjs";
-import { generateKeyFile, sshKeyFiles } from "./keys.mjs";
-import { createDemoRepo } from "./demo-repo.mjs";
+import { loadConfig, start } from "@brightbeamai/chap-server";
+import { generateKeyFile, sshKeyFiles } from "@brightbeamai/chap-server/keys";
+import { createDemoRepo } from "@brightbeamai/chap-code-gate";
 import { run as runAgent } from "./agent.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -33,14 +33,14 @@ export async function demo({ fresh = false, once = false, log = console.log } = 
     for (const d of ["data", "demo-repo", "analytics"]) await rm(join(here, d), { recursive: true, force: true });
     log("Removed data/, demo-repo/ and analytics/.");
   }
-  const config = await loadConfig();
+  const config = await loadConfig(process.env.CHAP_CONFIG ?? join(here, "chap.config.json"));
   const { path: keyPath, created } = await generateKeyFile(config.agent.uri, join(here, "keys"));
   await sshKeyFiles(config.agent.uri, keyPath);
   if (created) log(`The agent's key is new: ${keyPath}`);
 
   const { server, base } = await start(config);
   const repo = join(here, "demo-repo");
-  if (!(await exists(repo))) await createDemoRepo(repo, { log: (l) => log(`  ${l}`) });
+  if (!(await exists(repo))) await createDemoRepo(repo, { log: (l) => log(`  ${l}`), gateDir: here });
 
   let analytics = null;
   const python = process.env.PYTHON ?? "python3";

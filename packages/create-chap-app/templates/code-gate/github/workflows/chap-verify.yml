@@ -19,7 +19,8 @@
 # writes new commits that carry none of them.
 #
 # Copy this file into the governed repository's .github/workflows/, commit
-# the gate project at CHAP_GATE_DIR and chap-trust.json at the root, and
+# the gate project at CHAP_GATE_DIR with its package-lock.json and
+# chap-trust.json at the root, and
 # make the job a required status check in the branch protection. Push the
 # evidence notes with the commits (node <gate>/push-notes.mjs); the job
 # fetches them from this repository.
@@ -67,6 +68,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The verifier is @brightbeamai/chap-code-gate at the version the base
+      # branch's lock file pins. No package's install script runs.
+      - name: The verifier, as the base branch pins it
+        working-directory: base/${{ env.CHAP_GATE_DIR }}
+        run: npm ci --ignore-scripts --omit=dev --no-audit --no-fund
       # Add --allow-people to accept commits that people signed with their own
       # SSH keys, when chap-trust.json lists those keys under "people". Add
       # --require-signed-commit when every governed commit is signed with a

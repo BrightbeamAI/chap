@@ -9,11 +9,11 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
-import { followUpPrompt } from "../desk/followup.js";
-import { deskIsOpen, ensureGate, loadGate, showReview } from "../lib/gate.mjs";
-import { git } from "../lib/git.mjs";
-import { commandAgain, withNote } from "../lib/loop.mjs";
-import { describeRange } from "../lib/range.mjs";
+import { followUpPrompt } from "@brightbeamai/chap-server/desk/followup.js";
+import { deskIsOpen, ensureGate, loadGate, showReview } from "@brightbeamai/chap-code-gate/gate";
+import { git } from "@brightbeamai/chap-code-gate/git";
+import { commandAgain, withNote } from "@brightbeamai/chap-code-gate/loop";
+import { describeRange } from "@brightbeamai/chap-code-gate/range";
 import { appendTo, decide, demoRepo, hookEnv, projectDir, reviewsFor, run, startGate } from "./helpers.mjs";
 
 let g, you, repo, base;
@@ -131,7 +131,7 @@ test("a command finds no gate running on this machine, starts it in the backgrou
     assert.match(lines.join("\n"), /Started the gate at http:\/\/127\.0\.0\.1:\d+ in the background/);
     const pid = Number((await readFile(join(projectDir, "data", "gate.pid"), "utf8")).trim());
     assert.ok(pid > 0);
-    const { stdout } = await run(process.execPath, [join(projectDir, "stop.mjs")]);
+    const { stdout } = await run("npm", ["run", "--silent", "stop"], { cwd: projectDir });
     assert.match(stdout, new RegExp(`Stopped the gate \\(process ${pid}\\)`));
   } finally {
     for (const [k, v] of Object.entries(env)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }

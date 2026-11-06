@@ -7,9 +7,9 @@
 // of these says. Each is a record of what the harness or the agent said:
 // the agent writes its commit messages and runs its own commands.
 
+import { modelName } from "@brightbeamai/chap-server/providers";
 import { modelLabel } from "./gate.mjs";
 import { AGENT_ATTRIBUTION } from "./git.mjs";
-import { modelName } from "./providers.mjs";
 
 export { AGENT_ATTRIBUTION };
 

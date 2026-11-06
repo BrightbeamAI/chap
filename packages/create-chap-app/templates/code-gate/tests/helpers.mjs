@@ -8,11 +8,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { loadConfig, makeCoordinator, makeServer } from "../server.mjs";
-import { generateSigner } from "../desk/chap-client.mjs";
-import { generateKeyFile } from "../keys.mjs";
-import { createDemoRepo } from "../demo-repo.mjs";
-import { agentClient, contentHash, reviewerClient } from "../lib/gate.mjs";
+import { loadConfig, makeCoordinator, makeServer } from "@brightbeamai/chap-server";
+import { generateSigner } from "@brightbeamai/chap-server/client";
+import { generateKeyFile } from "@brightbeamai/chap-server/keys";
+import { createDemoRepo } from "@brightbeamai/chap-code-gate/demo-repo";
+import { agentClient, contentHash, reviewerClient } from "@brightbeamai/chap-code-gate/gate";
 
 export const run = promisify(execFile);
 export const projectDir = fileURLToPath(new URL("..", import.meta.url));
@@ -35,7 +35,7 @@ export async function until(read, timeoutMs = 10000) {
  * to make a signing reviewer who has joined.
  */
 export async function startGate({ suffix = "", humans = null, review = null, extra = {} } = {}) {
-  const config = await loadConfig();
+  const config = await loadConfig(join(projectDir, "chap.config.json"));
   config.store = ":memory:";
   if (suffix) config.workspace = `${config.workspace}_${suffix}`;
   if (humans) config.humans = humans.map((uri) => ({ uri, display_name: uri, role: "reviewer" }));
@@ -69,7 +69,7 @@ export function hookEnv(g) {
 }
 
 export async function demoRepo({ hooks = true } = {}) {
-  return createDemoRepo(await mkdtemp(join(tmpdir(), "chap-repo-")), { log: () => {}, hooks });
+  return createDemoRepo(await mkdtemp(join(tmpdir(), "chap-repo-")), { log: () => {}, hooks, gateDir: projectDir });
 }
 
 export async function appendTo(repo, path, text) {

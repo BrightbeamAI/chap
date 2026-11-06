@@ -4,13 +4,14 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { loadConfig, makeCoordinator, makeServer, AGENT_MCP_TOOLS } from "../server.mjs";
-import { makeClient } from "../desk/chap-client.mjs";
+import { fileURLToPath } from "node:url";
+import { loadConfig, makeCoordinator, makeServer, AGENT_MCP_TOOLS } from "@brightbeamai/chap-server";
+import { makeClient } from "@brightbeamai/chap-server/client";
 
 let config, coord, server, base, mcp;
 
 before(async () => {
-  config = await loadConfig();
+  config = await loadConfig(fileURLToPath(new URL("../chap.config.json", import.meta.url)));
   config.store = ":memory:";
   config.mcp = true;
   coord = await makeCoordinator(config);

@@ -4,10 +4,10 @@
 // carries one Reviewed-by trailer per approving reviewer.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { jsonPatch } from "../desk/chap-client.mjs";
-import { buildNote, checkApproval, contentHash, describeChange, onlinePolicy, propose, reviewersReady, reviewRule } from "../lib/gate.mjs";
-import { commitInfo, head, parseTrailers } from "../lib/git.mjs";
-import { verifyRange } from "../verify.mjs";
+import { jsonPatch } from "@brightbeamai/chap-server/client";
+import { buildNote, checkApproval, contentHash, describeChange, onlinePolicy, propose, reviewersReady, reviewRule } from "@brightbeamai/chap-code-gate/gate";
+import { commitInfo, head, parseTrailers } from "@brightbeamai/chap-code-gate/git";
+import { verifyRange } from "@brightbeamai/chap-code-gate/verify";
 import { appendTo, commit, decide, demoRepo, reviewsFor, startGate } from "./helpers.mjs";
 
 let g, alice, bob;

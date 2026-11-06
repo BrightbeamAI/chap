@@ -8,12 +8,13 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { exportLine, main as sessionHook } from "../claude-session.mjs";
-import { CLAUDE_SESSION_HOOK, installClaudeHook } from "../install-hooks.mjs";
-import { git, setTrailers } from "../lib/git.mjs";
-import { branchModel, commitModel, sessionModel, withoutAttribution } from "../lib/model.mjs";
-import { describeRange } from "../lib/range.mjs";
-import { modelName } from "../lib/providers.mjs";
+import { exportLine, main as sessionHook } from "@brightbeamai/chap-code-gate/claude-session";
+import { claudeSessionHook, installClaudeHook } from "@brightbeamai/chap-code-gate/install-hooks";
+import { git, setTrailers } from "@brightbeamai/chap-code-gate/git";
+import { branchModel, commitModel, sessionModel, withoutAttribution } from "@brightbeamai/chap-code-gate/model";
+import { describeRange } from "@brightbeamai/chap-code-gate/range";
+import { modelName } from "@brightbeamai/chap-server/providers";
+import { projectDir } from "./helpers.mjs";
 
 test("a commit's own Co-Authored-By line names its model and leaves the message; a person's line stays", () => {
   const message = "Fix the parser\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>";
@@ -102,12 +103,12 @@ test("install-hooks --claude registers the hook once, keeps the other settings, 
   await git(repo, ["init", "-q"]);
   await mkdir(join(repo, ".claude"));
   await writeFile(join(repo, ".claude", "settings.local.json"), JSON.stringify({ permissions: { allow: ["Bash(npm test)"] } }));
-  const quiet = { log: () => {} };
+  const quiet = { log: () => {}, gateDir: projectDir };
   assert.equal((await installClaudeHook(repo, quiet)).added, true);
   assert.equal((await installClaudeHook(repo, quiet)).added, false, "a second run changes nothing");
   const settings = JSON.parse(await readFile(join(repo, ".claude", "settings.local.json"), "utf8"));
   assert.deepEqual(settings.permissions, { allow: ["Bash(npm test)"] });
-  assert.deepEqual(settings.hooks.SessionStart, [{ hooks: [{ type: "command", command: CLAUDE_SESSION_HOOK }] }]);
+  assert.deepEqual(settings.hooks.SessionStart, [{ hooks: [{ type: "command", command: claudeSessionHook(projectDir) }] }]);
   assert.match(await readFile(join(repo, ".git", "info", "exclude"), "utf8"), /^\/\.claude\/settings\.local\.json$/m);
   assert.equal((await git(repo, ["status", "--porcelain"])).trim(), "", "git does not see the file");
   await writeFile(join(repo, ".claude", "settings.local.json"), "{ not json");

@@ -7,11 +7,11 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { generateSigner } from "../desk/chap-client.mjs";
-import { hasInvisible } from "../desk/render.js";
-import { buildNote, checkApproval, checkChange, describeChange, onlinePolicy, policyFromTrust, propose } from "../lib/gate.mjs";
-import { commitInfo, faithfulCheck, git, head, readNote, treeOf, writeNote } from "../lib/git.mjs";
-import { verifyRange } from "../verify.mjs";
+import { generateSigner } from "@brightbeamai/chap-server/client";
+import { hasInvisible } from "@brightbeamai/chap-server/desk/render.js";
+import { buildNote, checkApproval, checkChange, describeChange, onlinePolicy, policyFromTrust, propose } from "@brightbeamai/chap-code-gate/gate";
+import { commitInfo, faithfulCheck, git, head, readNote, treeOf, writeNote } from "@brightbeamai/chap-code-gate/git";
+import { verifyRange } from "@brightbeamai/chap-code-gate/verify";
 import { applyAnswer, safePath } from "../agent.mjs";
 import { appendTo, commit, decide, demoRepo, hookEnv, projectDir, reviewsFor, run, startGate } from "./helpers.mjs";
 

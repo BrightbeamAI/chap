@@ -25,8 +25,8 @@
 import { readFile, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { makeClient, signerFromJwk } from "./desk/chap-client.mjs";
-import { keyPathFor, readKeyFile } from "./keys.mjs";
+import { makeClient, signerFromJwk } from "@brightbeamai/chap-server/client";
+import { keyPathFor, readKeyFile } from "@brightbeamai/chap-server/keys";
 
 const here = dirname(fileURLToPath(import.meta.url));
 

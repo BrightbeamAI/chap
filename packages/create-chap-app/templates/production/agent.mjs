@@ -9,7 +9,7 @@
 //
 //   CHAP_URL             where the coordinator answers, default http://127.0.0.1:8790/chap
 //   CHAP_AGENT_KEY       the key file, default keys/<agent-uri-slug>.jwk.json
-//   CHAP_MODEL_PROVIDER  anthropic, openai, ollama or scripted (lib/providers.mjs)
+//   CHAP_MODEL_PROVIDER  anthropic, openai, ollama or scripted (@brightbeamai/chap-server/providers)
 //   --once               handle the rows in messages.csv, wait for their decisions, exit
 //
 // Without --once the agent keeps running and reads messages.csv again on
@@ -25,9 +25,9 @@ import { createHash } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { makeClient, signerFromJwk } from "./desk/chap-client.mjs";
-import { makeProvider } from "./lib/providers.mjs";
-import { keyPathFor, readKeyFile } from "./keys.mjs";
+import { makeClient, signerFromJwk } from "@brightbeamai/chap-server/client";
+import { makeProvider } from "@brightbeamai/chap-server/providers";
+import { keyPathFor, readKeyFile } from "@brightbeamai/chap-server/keys";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const POLL_MS = 2000;

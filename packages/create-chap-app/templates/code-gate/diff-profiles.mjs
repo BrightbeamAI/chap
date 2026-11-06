@@ -7,8 +7,8 @@
 // person is at the desk. In the project itself the decision is made in
 // the desk.
 import { readFile } from "node:fs/promises";
-import { generateSigner } from "./desk/chap-client.mjs";
-import { main } from "./lib/profiles-diff.mjs";
+import { generateSigner } from "@brightbeamai/chap-server/client";
+import { main } from "@brightbeamai/chap-server/profiles-diff";
 
 const config = JSON.parse(await readFile(new URL("./chap.config.json", import.meta.url), "utf8"));
 // The comparison workload presents no OIDC token, and a workspace cannot

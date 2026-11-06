@@ -9,8 +9,8 @@
 import { basename } from "node:path";
 import { api, approvalOf, contentHash, lastDecision, modelLabel, noteArtefacts, RANGE_KIND, sha256, submitForReview, trailersFor } from "./gate.mjs";
 import { blobAt, committerIdent, commitTree, emptyTree, faithfulCheck, git, GATE_TRAILER, numstat, parseTrailers, rawCommit, treeDiff, treeOf, writeNote } from "./git.mjs";
+import { modelName } from "@brightbeamai/chap-server/providers";
 import { branchModel, commitModel, withoutAttribution } from "./model.mjs";
-import { modelName } from "./providers.mjs";
 
 /** The most commits one branch review takes. */
 export const MAX_RANGE_COMMITS = 100;

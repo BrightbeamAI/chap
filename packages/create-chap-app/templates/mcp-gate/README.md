@@ -49,18 +49,18 @@ and records the attempt.
 
 The MCP connection makes every call as `__AGENT_URI__`: a call that names
 another `from` is refused. It offers the tools the assistant's own work
-needs, listed in `AGENT_MCP_TOOLS` in `server.mjs`, and leaves out the ones
+needs, `AGENT_MCP_TOOLS` in `@brightbeamai/chap-server`, and leaves out the ones
 that would let it decide its own work, such as `chap.review.request`, which
 can name its own author as reviewer.
 
 ## Attach your own agent and data
 
 Any MCP client works, and so does anything that can POST JSON: send
-JSON-RPC envelopes to `POST /chap`. `desk/chap-client.mjs` is the client the
-desk uses and runs under Node too:
+JSON-RPC envelopes to `POST /chap`. `@brightbeamai/chap-server/client` is
+the client the desk uses and runs under Node too:
 
 ```js
-import { makeClient } from "./desk/chap-client.mjs";
+import { makeClient } from "@brightbeamai/chap-server/client";
 const agent = makeClient({ url: "http://127.0.0.1:8787/chap", workspace: "__WORKSPACE__", from: "__AGENT_URI__" });
 const { task_id } = await agent.call("task.create", { kind: "draft", assignee: "__AGENT_URI__", input: { ticket: "T-1" }, review_required: true });
 await agent.call("task.complete", { task_id, output: { body: "..." } });

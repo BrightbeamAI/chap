@@ -227,7 +227,7 @@ export async function rawDiff(repo, fromTree, toTree) {
  * a submodule) fails. Returns { ok, tree, reason }.
  */
 export async function faithfulCheck(repo, baseTree, patch) {
-  const { parsePatch, applyFile } = await import("../desk/diff.js");
+  const { parsePatch, applyFile } = await import("@brightbeamai/chap-server/desk/diff.js");
   let tree;
   try { tree = await treeAfterPatch(repo, baseTree, patch); } catch (e) {
     return { ok: false, tree: null, reason: `the patch does not apply: ${String(e.stderr ?? e.message).split("\n")[0]}` };

@@ -4,9 +4,6 @@
   "language": "typescript",
   "description": "Claude Desktop, Cursor or Claude Code connects to an MCP server over HTTP; every call that changes state is recorded and work that requires review waits for you in the desk.",
   "shared": {
-    "desk": "desk",
-    "node/server.mjs": "server.mjs",
-    "node/profiles-diff.mjs": "lib/profiles-diff.mjs",
     "python/analytics.py": "analytics.py"
   },
   "default_profiles": [

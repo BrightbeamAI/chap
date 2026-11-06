@@ -32,6 +32,7 @@ a restarted agent finds the tasks it opened before and opens no duplicates.
 With Docker Compose:
 
 ```
+npm install
 npm run keys
 mkdir -p data outbox analytics
 docker compose up --build
@@ -91,7 +92,7 @@ OIDC_AUDIENCE=chap-coordinator-prod             # the token's aud; unchecked whe
 Providers differ here, so take the value from `jwks_uri` in the provider's
 discovery document.
 
-The verifier in `lib/oidc.mjs` has no dependencies. It fetches the JWKS at
+The verifier, `@brightbeamai/chap-server/oidc`, has no dependencies. It fetches the JWKS at
 start, accepts RS256, ES256 and EdDSA, checks `iss`, `aud`, `exp` and `nbf`,
 and fetches the JWKS again when a token names a key it does not hold, so a
 key rotation at the issuer costs one refused join. A token that fails any
@@ -110,9 +111,10 @@ The coordinator verifies a token when a join presents one. The desk in this
 project has no login and presents none. A deployment's login authenticates
 the person, sends the browser key to the provider as `cnf.jwk`, and presents
 the token at `participant.join`, as section 1 of the guide above shows.
-`lib/dev-issuer.mjs` is a development issuer for the tests and for local
-runs only. It signs any claims it is asked to and authenticates nobody.
-`node lib/dev-issuer.mjs` starts it and prints the `OIDC_*` lines to export;
+`@brightbeamai/chap-server/dev-issuer` is a development issuer for the tests
+and for local runs only. It signs any claims it is asked to and
+authenticates nobody. `npx chap-server dev-issuer` starts it and prints the
+`OIDC_*` lines to export;
 `tests/production.test.mjs` shows the whole path from a minted token to a
 signed decision.
 

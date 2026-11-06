@@ -8,7 +8,7 @@ import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { parsePatch, diffLines, unifiedDiff, applyFile, rewritePatch, fileStats, splitLines } from "../desk/diff.js";
+import { parsePatch, diffLines, unifiedDiff, applyFile, rewritePatch, fileStats, splitLines } from "@brightbeamai/chap-server/desk/diff.js";
 const run = promisify(execFile);
 const git = (cwd, args, input) => { const p = run("git", args, { cwd }); if (input !== undefined) p.child.stdin.end(input); return p.then((r) => r.stdout); };
 

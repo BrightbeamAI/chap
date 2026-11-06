@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { main } from "./lib/profiles-diff.mjs";
-import { generateSigner } from "./desk/chap-client.mjs";
+import { main } from "@brightbeamai/chap-server/profiles-diff";
+import { generateSigner } from "@brightbeamai/chap-server/client";
 const config = JSON.parse(await readFile(new URL("./chap.config.json", import.meta.url), "utf8"));
 // The comparison workload presents no OIDC token, and a workspace cannot
 // advertise identity-oidc/1.0 without a verifier, so that profile is left

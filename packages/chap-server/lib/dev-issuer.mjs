@@ -10,12 +10,11 @@
 // deployment obtains its tokens from its own identity provider through its
 // own login, with the participant's public key carried in cnf.jwk.
 //
-// As a script: `node lib/dev-issuer.mjs [port]` starts the issuer and prints
-// the environment the coordinator reads.
+// `chap-server dev-issuer [port]` starts the issuer and prints the
+// environment the coordinator reads.
 
 import { createServer } from "node:http";
 import { generateKeyPairSync, randomBytes, sign as cryptoSign } from "node:crypto";
-import { fileURLToPath } from "node:url";
 
 export const DEV_AUDIENCE = "chap-dev";
 
@@ -94,13 +93,4 @@ export async function startDevIssuer(port = 0, { host = "127.0.0.1", audience = 
     mintToken,
     close: () => new Promise((resolve) => server.close(resolve)),
   };
-}
-
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const port = Number(process.argv[2] ?? 8791);
-  const dev = await startDevIssuer(port);
-  console.log("Development OIDC issuer. Tests and local runs only: it signs any claims it is asked to.");
-  console.log(`OIDC_ISSUER=${dev.issuer}`);
-  console.log(`OIDC_JWKS_URL=${dev.jwks_url}`);
-  console.log(`OIDC_AUDIENCE=${dev.audience}`);
 }

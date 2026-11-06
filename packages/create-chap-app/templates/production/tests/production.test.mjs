@@ -9,15 +9,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateKeyPairSync } from "node:crypto";
-import { loadConfig, makeCoordinator, makeServer } from "../server.mjs";
-import { makeClient, generateSigner, signerFromJwk } from "../desk/chap-client.mjs";
-import { generateKeyFile, readKeyFile, kidFor } from "../keys.mjs";
-import { startDevIssuer, signJwt } from "../lib/dev-issuer.mjs";
-import { makeOidcVerifier } from "../lib/oidc.mjs";
+import { loadConfig as loadConfigFrom, makeCoordinator, makeServer } from "@brightbeamai/chap-server";
+import { makeClient, generateSigner, signerFromJwk } from "@brightbeamai/chap-server/client";
+import { generateKeyFile, readKeyFile, kidFor } from "@brightbeamai/chap-server/keys";
+import { startDevIssuer, signJwt } from "@brightbeamai/chap-server/dev-issuer";
+import { makeOidcVerifier } from "@brightbeamai/chap-server/oidc";
 import { runChecks } from "../doctor.mjs";
 import { parseCsv, rowKey, scriptedDraft, buildPrompt, run as runAgent } from "../agent.mjs";
 
 const projectDir = fileURLToPath(new URL("..", import.meta.url));
+const loadConfig = () => loadConfigFrom(join(projectDir, "chap.config.json"));
 
 async function startServer(config) {
   const coord = await makeCoordinator(config);

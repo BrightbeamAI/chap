@@ -7,11 +7,11 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildNote, checkApproval, describeChange, evidence, fingerprint, onlinePolicy, propose } from "../lib/gate.mjs";
-import { commitInfo, git, parseTrailers, rawCommit, readNote, writeNote } from "../lib/git.mjs";
-import { describeRange, proposeRange, sealRange, sealedMessage } from "../lib/range.mjs";
-import { buildTrust } from "../trust.mjs";
-import { verifyRange } from "../verify.mjs";
+import { buildNote, checkApproval, describeChange, evidence, fingerprint, onlinePolicy, propose } from "@brightbeamai/chap-code-gate/gate";
+import { commitInfo, git, parseTrailers, rawCommit, readNote, writeNote } from "@brightbeamai/chap-code-gate/git";
+import { describeRange, proposeRange, sealRange, sealedMessage } from "@brightbeamai/chap-code-gate/range";
+import { buildTrust } from "@brightbeamai/chap-code-gate/trust";
+import { verifyRange } from "@brightbeamai/chap-code-gate/verify";
 import { appendTo, commit, decide, demoRepo, git_, hookEnv, projectDir, reviewsFor, run, startGate } from "./helpers.mjs";
 
 let g, you, repo, remote, base;
@@ -185,7 +185,7 @@ test("changes requested on a branch: the agent amends it, and the same review ca
   // An edit does not apply to a branch: the gate refuses one, whatever the coordinator accepted.
   const edited = structuredClone(r2.artefact);
   edited.summary = "edited by the reviewer";
-  const { jsonPatch } = await import("../desk/chap-client.mjs");
+  const { jsonPatch } = await import("@brightbeamai/chap-server/client");
   await decide(you, "decide.override", r2, { diff: jsonPatch(r2.artefact, edited), rationale: "an edit", intent_preserved: true });
   const ev = await evidence(g.gate, p1.task_id);
   const problems = await checkApproval(buildNote(ev, g.gate.url), onlinePolicy(g.gate, ev));
@@ -229,8 +229,8 @@ test("a change proposed with its model, approved and committed under review_at p
 });
 
 test("a trust policy names each reviewer, a name that cannot sit in a trailer is refused, and a model id reads as its name", async () => {
-  const { policyFromTrust, reviewedByLine } = await import("../lib/gate.mjs");
-  const { modelName } = await import("../lib/providers.mjs");
+  const { policyFromTrust, reviewedByLine } = await import("@brightbeamai/chap-code-gate/gate");
+  const { modelName } = await import("@brightbeamai/chap-server/providers");
   const key = you.signer.publicJwk;
   const policy = policyFromTrust({ chap_trust: 1, rule: "any_one_approves", reviewers: { "human:ada@example.org": { name: "Ada Lovelace", email: "ada@example.org", keys: [key] }, "human:bob@example.org": [key] }, agents: {} }, "t");
   assert.equal(reviewedByLine("human:ada@example.org", policy.identities), "Ada Lovelace <ada@example.org>");
@@ -363,8 +363,8 @@ test("under review_at push a commit is made with the gate down, and a detached h
 });
 
 test("by default a sealed commit is signed as the committer signs their own, and a commit in the earlier long form still verifies", async () => {
-  const { legacyTrailersFor, noteArtefacts } = await import("../lib/gate.mjs");
-  const { sealedMessage } = await import("../lib/range.mjs");
+  const { legacyTrailersFor, noteArtefacts } = await import("@brightbeamai/chap-code-gate/gate");
+  const { sealedMessage } = await import("@brightbeamai/chap-code-gate/range");
   await agentCommits("agent/own");
   const artefact = await describeRange(repo, { base: "origin/main", head: "agent/own", model: MODEL, branch: "agent/own" });
   const { task_id } = await proposeRange(g.agent, artefact, { gate: g.gate });

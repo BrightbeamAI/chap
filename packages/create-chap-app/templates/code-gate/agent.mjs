@@ -25,10 +25,10 @@
 import { lstat, readFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { makeProvider, modelName } from "./lib/providers.mjs";
-import { agentClient, commitSigning, api, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "./lib/gate.mjs";
-import { applyToWorkingTree, commitAll, commitsWithApproval, currentBranch, git, head, patchApplies, repoRoot, workingTreePatch } from "./lib/git.mjs";
-import { syncOverride } from "./propose.mjs";
+import { makeProvider, modelName } from "@brightbeamai/chap-server/providers";
+import { agentClient, commitSigning, api, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "@brightbeamai/chap-code-gate/gate";
+import { applyToWorkingTree, commitAll, commitsWithApproval, currentBranch, git, head, patchApplies, repoRoot, workingTreePatch } from "@brightbeamai/chap-code-gate/git";
+import { syncOverride } from "@brightbeamai/chap-code-gate/propose";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MAX_CONTEXT_BYTES = 60_000;

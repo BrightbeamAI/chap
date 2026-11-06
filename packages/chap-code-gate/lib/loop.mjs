@@ -4,7 +4,7 @@
 // decision turned into a prompt the agent acts on.
 
 import { readFile } from "node:fs/promises";
-import { followUpPrompt } from "../desk/followup.js";
+import { followUpPrompt } from "@brightbeamai/chap-server/desk/followup.js";
 import { api, showReview, waitForDecision } from "./gate.mjs";
 
 /** The most text an agent's context note may be. */

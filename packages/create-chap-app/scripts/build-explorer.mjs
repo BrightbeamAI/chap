@@ -56,6 +56,8 @@ async function prepare(template, dir, install) {
       await mkdir(join(dir, "node_modules", "@modelcontextprotocol"), { recursive: true });
       await symlink(join(repo, "packages", "coordinator"), join(dir, "node_modules", "@brightbeamai", "chap-coordinator"));
       await symlink(join(repo, "packages", "coordinator-mcp"), join(dir, "node_modules", "@brightbeamai", "chap-coordinator-mcp"));
+      await symlink(join(repo, "packages", "chap-server"), join(dir, "node_modules", "@brightbeamai", "chap-server"));
+      await symlink(join(repo, "packages", "chap-code-gate"), join(dir, "node_modules", "@brightbeamai", "chap-code-gate"));
       await symlink(join(repo, "node_modules", "@modelcontextprotocol", "sdk"), join(dir, "node_modules", "@modelcontextprotocol", "sdk"));
     }
   }

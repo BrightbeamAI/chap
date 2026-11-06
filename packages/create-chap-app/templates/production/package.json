@@ -10,13 +10,13 @@
   "scripts": {
     "start": "node server.mjs",
     "agent": "node agent.mjs",
-    "keys": "node keys.mjs",
+    "keys": "chap-server keys",
     "doctor": "node doctor.mjs",
     "test": "node --test",
     "diff-profiles": "node diff-profiles.mjs",
     "analytics": "python3 analytics.py"
   },
   "dependencies": {
-    "@brightbeamai/chap-coordinator": "^0.3.4"
+    "@brightbeamai/chap-server": "^0.3.4"
   }
 }

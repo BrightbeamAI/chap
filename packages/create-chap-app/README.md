@@ -17,8 +17,12 @@ npx create-chap-app my-desk --template support-desk --profiles core/1.0,review/1
 ```
 
 The generator copies the template, fills in the names, and prints how to run
-the project. It installs nothing. Each project pins the published
-`chap-coordinator` packages and says in its README what to install.
+the project. It installs nothing. A TypeScript project depends on
+`@brightbeamai/chap-server`, which holds the server and the desk, and the
+code gate on `@brightbeamai/chap-code-gate` too, so `npm update` brings a
+fix to them; the project keeps its configuration, its sample data, its
+agent and the small entry points that start them. A Python project pins
+`chap-coordinator`. Each says in its README what to install.
 
 The reviewer is named by `--human` (a participant URI, `human:you@local` by
 default), `--human-name` and `--human-email`, which default to `git config

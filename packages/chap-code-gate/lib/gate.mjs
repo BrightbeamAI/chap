@@ -6,12 +6,11 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { access, mkdir, open, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { canonicalize, contentHash, deepEqual, makeClient, signerFromJwk } from "../desk/chap-client.mjs";
-import { keyPathFor, readKeyFile, sshKeyFiles } from "../keys.mjs";
+import { basename, join } from "node:path";
+import { canonicalize, contentHash, deepEqual, makeClient, signerFromJwk } from "@brightbeamai/chap-server/client";
+import { keyPathFor, readKeyFile, sshKeyFiles } from "@brightbeamai/chap-server/keys";
+import { modelName } from "@brightbeamai/chap-server/providers";
 import { blobAt, currentBranch, faithfulCheck, git, head, numstat, signsOwnCommits, treeDiff, treeOf, workingTreeChange } from "./git.mjs";
-import { modelName } from "./providers.mjs";
 
 /** The most text a change carries as file contents beside its patch, so the desk can edit files whole. */
 export const MAX_CONTENT_BYTES = 200_000;
@@ -21,17 +20,17 @@ export const TASK_KIND = "code_change";
 export const RANGE_KIND = "commit_range";
 export const NOTE_VERSION = 1;
 export const TRUST_FILE = "chap-trust.json";
-const here = dirname(fileURLToPath(import.meta.url));
 
 // -- the gate --------------------------------------------------------------------
 
 /**
  * The gate directory, its configuration, and where the coordinator answers.
- * CHAP_URL names a gate elsewhere, CHAP_AGENT_URI the agent this
- * developer's proposals come from, when a team shares one gate, and
- * CHAP_CONFIG a configuration file other than chap.config.json here.
+ * The gate directory is the project that holds chap.config.json, its keys/
+ * and its data/. CHAP_URL names a gate elsewhere, CHAP_AGENT_URI the agent
+ * this developer's proposals come from, when a team shares one gate, and
+ * CHAP_CONFIG a configuration file other than chap.config.json in `dir`.
  */
-export async function loadGate(dir = dirname(here)) {
+export async function loadGate(dir = process.cwd()) {
   const configPath = process.env.CHAP_CONFIG ?? join(dir, "chap.config.json");
   const config = JSON.parse(await readFile(configPath, "utf8"));
   if (process.env.CHAP_AGENT_URI) config.agent = { ...(config.agent ?? {}), uri: process.env.CHAP_AGENT_URI };

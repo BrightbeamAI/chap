@@ -26,7 +26,16 @@ the command line answer them without a prompt. The generator copies the
 template, fills in the name, the workspace id, the participant URIs and the
 profile list, and prints how to run the project. It has no dependencies, and
 it never installs anything itself: the project's README says what to
-install, and the project pins the published `chap-coordinator` packages.
+install.
+
+What a project shares with every other project lives in packages, so a fix
+reaches a project through `npm update`: `@brightbeamai/chap-server` holds
+the server, the desk, the keys, the model providers and the profile
+comparison, and `@brightbeamai/chap-code-gate` holds the code gate's
+library, hooks and commands. A TypeScript template keeps only what is its
+own: `chap.config.json`, the sample data, the agent, the small entry points
+that start the server and the commands, the README and the tests. The
+Python templates pin `chap-coordinator`.
 
 ## The template contract
 
@@ -55,7 +64,7 @@ those run.
 
 One page, the same in every template, served by the process that owns the
 store, with no build step and no dependency: `desk/index.html`, a stylesheet
-and its modules. It has three views.
+and its modules, in `@brightbeamai/chap-server`. It has three views.
 
 - **Review.** The queue lists what waits for the reviewer, what is in
   progress and what was decided. The artefact is shown by its shape: a code

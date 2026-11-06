@@ -1,6 +1,6 @@
-// Write the trust policy a repository verifies against: `node trust.mjs [options]`.
+// Write the trust policy a repository verifies against: `chap-code-gate trust [options]`.
 //
-//   --out <file>          where to write it (default: chap-trust.json here)
+//   --out <file>          where to write it (default: chap-trust.json in the gate project)
 //   --reviewer <uri>      a reviewer whose approvals count (repeat); default: the humans in chap.config.json
 //   --agent <uri>         an agent that may commit (repeat); default: every agent member with a key
 //   --people <file>       an allowed_signers file of people whose own signed commits pass with --allow-people
@@ -18,15 +18,13 @@
 // deployment ties joins to a login.
 
 import { readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { agentClient, fingerprint, identityOf, loadGate, reviewRule, TRUST_FILE } from "./lib/gate.mjs";
+import { join } from "node:path";
+import { agentClient, fingerprint, identityOf, loadGate, reviewRule, TRUST_FILE } from "./gate.mjs";
 
-const here = dirname(fileURLToPath(import.meta.url));
 export { fingerprint };
 
-export function parseArgs(argv) {
-  const out = { out: join(here, TRUST_FILE), reviewers: [], agents: [], people: null };
+export function parseArgs(argv, { gateDir = process.cwd() } = {}) {
+  const out = { out: join(gateDir, TRUST_FILE), reviewers: [], agents: [], people: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--out") out.out = argv[++i];
@@ -63,24 +61,23 @@ export async function buildTrust(gate, { reviewers = [], agents = [], people = [
   return { trust: out, missing };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  (async () => {
-    const args = parseArgs(process.argv.slice(2));
-    const gate = await loadGate(here);
-    const people = args.people ? (await readFile(args.people, "utf8")).split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#")) : [];
-    const { trust, missing } = await buildTrust(gate, { reviewers: args.reviewers, agents: args.agents, people });
-    await writeFile(args.out, JSON.stringify(trust, null, 2) + "\n");
-    console.log(`Wrote ${args.out}: rule ${trust.rule}.`);
-    for (const [kind, set] of [["reviewer", trust.reviewers], ["agent", trust.agents]]) {
-      for (const [uri, entry] of Object.entries(set)) {
-        const keys = Array.isArray(entry) ? entry : entry.keys;
-        const who = !Array.isArray(entry) && entry.name ? `  ${entry.name}${entry.email ? ` <${entry.email}>` : ""}` : "";
-        for (const k of keys) console.log(`  ${kind.padEnd(8)} ${uri}${who}  ${k.kid ?? "(no kid)"}  ${fingerprint(k)}`);
-        if (kind === "reviewer" && !Array.isArray(entry) && !entry.email) console.log(`  ${uri} has no email in chap.config.json, so a commit it reviews names it without one`);
-      }
+export async function main(argv, { gateDir, log = console.log } = {}) {
+  const args = parseArgs(argv, { gateDir });
+  const gate = await loadGate(gateDir);
+  const people = args.people ? (await readFile(args.people, "utf8")).split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#")) : [];
+  const { trust, missing } = await buildTrust(gate, { reviewers: args.reviewers, agents: args.agents, people });
+  await writeFile(args.out, JSON.stringify(trust, null, 2) + "\n");
+  log(`Wrote ${args.out}: rule ${trust.rule}.`);
+  for (const [kind, set] of [["reviewer", trust.reviewers], ["agent", trust.agents]]) {
+    for (const [uri, entry] of Object.entries(set)) {
+      const keys = Array.isArray(entry) ? entry : entry.keys;
+      const who = !Array.isArray(entry) && entry.name ? `  ${entry.name}${entry.email ? ` <${entry.email}>` : ""}` : "";
+      for (const k of keys) log(`  ${kind.padEnd(8)} ${uri}${who}  ${k.kid ?? "(no kid)"}  ${fingerprint(k)}`);
+      if (kind === "reviewer" && !Array.isArray(entry) && !entry.email) log(`  ${uri} has no email in chap.config.json, so a commit it reviews names it without one`);
     }
-    if (trust.people.length) console.log(`  ${trust.people.length} people from ${args.people}`);
-    for (const uri of missing) console.log(`  not included: ${uri} has not joined the workspace with a key`);
-    console.log("Confirm each fingerprint with its holder, then commit the file at the root of the repository as chap-trust.json.");
-  })().catch((e) => { console.error(e instanceof Error ? e.message : String(e)); process.exit(1); });
+  }
+  if (trust.people.length) log(`  ${trust.people.length} people from ${args.people}`);
+  for (const uri of missing) log(`  not included: ${uri} has not joined the workspace with a key`);
+  log("Confirm each fingerprint with its holder, then commit the file at the root of the repository as chap-trust.json.");
+  return 0;
 }

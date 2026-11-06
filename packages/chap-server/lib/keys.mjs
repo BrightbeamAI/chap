@@ -9,7 +9,8 @@
 //
 // The kid is the first sixteen hex characters of the SHA-256 of the URI,
 // the same rule the desk's client uses, so a key is recognisable in the
-// member's key list. Run it with `npm run keys`, or `node keys.mjs --uri <uri>`.
+// member's key list. `chap-server keys` writes the key for the agent the
+// project's chap.config.json names, or for `--uri <uri>`.
 //
 // The same key, written in OpenSSH's format beside the JWK, signs git
 // commits (git's SSH signing, gpg.format=ssh): `sshKeyFiles` writes
@@ -20,10 +21,7 @@
 
 import { generateKeyPairSync, createHash, randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const here = dirname(fileURLToPath(import.meta.url));
+import { dirname, join, resolve } from "node:path";
 
 export function kidFor(uri) {
   return createHash("sha256").update(uri).digest("hex").slice(0, 16);
@@ -33,7 +31,7 @@ export function slug(uri) {
   return uri.replace(/[^A-Za-z0-9._-]+/g, "_");
 }
 
-export function keyPathFor(uri, dir = join(here, "keys")) {
+export function keyPathFor(uri, dir = resolve("keys")) {
   return join(dir, `${slug(uri)}.jwk.json`);
 }
 
@@ -47,7 +45,7 @@ export function publicJwkOf(privateJwk) {
  * Generate the key for `uri` into `dir`. Returns { path, publicJwk, created }.
  * With a file already there, nothing is written and created is false.
  */
-export async function generateKeyFile(uri, dir = join(here, "keys")) {
+export async function generateKeyFile(uri, dir = resolve("keys")) {
   const path = keyPathFor(uri, dir);
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const { privateKey } = generateKeyPairSync("ed25519");
@@ -127,25 +125,4 @@ export async function readKeyFile(uri, path = process.env.CHAP_AGENT_KEY ?? keyP
     if (err && err.code === "ENOENT") throw new Error(`No key for ${uri} at ${path}. Run: npm run keys`);
     throw err;
   }
-}
-
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const argv = process.argv.slice(2);
-  const flag = argv.indexOf("--uri");
-  let uri = flag >= 0 ? argv[flag + 1] : process.env.CHAP_AGENT_URI;
-  if (!uri) {
-    const config = JSON.parse(await readFile(join(here, "chap.config.json"), "utf8"));
-    uri = config.agent?.uri;
-  }
-  if (!uri) {
-    console.error("No agent URI: set agent.uri in chap.config.json or pass --uri");
-    process.exit(2);
-  }
-  const { path, publicJwk, created } = await generateKeyFile(uri);
-  console.log(created ? `Key for ${uri} written to ${path} (mode 0600)` : `Key for ${uri} already at ${path}; left as it is`);
-  console.log(`Public JWK, registered at participant.join:`);
-  console.log(JSON.stringify(publicJwk, null, 2));
-  const ssh = await sshKeyFiles(uri, path);
-  console.log(`The same key for signing git commits: ${ssh.privatePath} and ${ssh.publicPath}; ${ssh.allowedSigners} names it.`);
-  console.log(ssh.publicLine);
 }

@@ -1,4 +1,4 @@
-// What the gate recorded, as a page to read: `node report.mjs [--json] [--since <ISO date>]`.
+// What the gate recorded, as a page to read: `chap-code-gate report [--json] [--since <ISO date>]`.
 //
 // Reads every code change from the gate's read API and prints, in
 // Markdown: how many were approved as written, approved with an edit,
@@ -10,12 +10,8 @@
 // view shows, from the same code. `npm run analytics` goes further with
 // chap-analytics; this needs nothing beyond the running gate.
 
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { api, loadGate, RANGE_KIND, TASK_KIND } from "./lib/gate.mjs";
-import { minutes, pct, summarise } from "./desk/insights.js";
-
-const here = dirname(fileURLToPath(import.meta.url));
+import { minutes, pct, summarise } from "@brightbeamai/chap-server/desk/insights.js";
+import { api, loadGate, RANGE_KIND, TASK_KIND } from "./gate.mjs";
 
 export { summarise };
 
@@ -56,16 +52,14 @@ function plain(s) {
   return out;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  (async () => {
-    const argv = process.argv.slice(2);
-    const at = argv.indexOf("--since");
-    const since = at >= 0 ? argv[at + 1] : null;
-    const gate = await loadGate(here);
-    // Single changes and branches alike, as Insights counts them.
-    const r = { tasks: [...((await api(gate, `/api/tasks?kind=${TASK_KIND}&brief=1`))?.tasks ?? []), ...((await api(gate, `/api/tasks?kind=${RANGE_KIND}&brief=1`))?.tasks ?? [])] };
-    const tasks = (r?.tasks ?? []).filter((t) => !since || (t.created_at ?? "") >= since);
-    const s = summarise(tasks);
-    console.log(argv.includes("--json") ? JSON.stringify(plain(s), null, 2) : render(s, gate.config.workspace));
-  })().catch((e) => { console.error(e instanceof Error ? e.message : String(e)); process.exit(1); });
+export async function main(argv, { gateDir, log = console.log } = {}) {
+  const at = argv.indexOf("--since");
+  const since = at >= 0 ? argv[at + 1] : null;
+  const gate = await loadGate(gateDir);
+  // Single changes and branches alike, as Insights counts them.
+  const r = { tasks: [...((await api(gate, `/api/tasks?kind=${TASK_KIND}&brief=1`))?.tasks ?? []), ...((await api(gate, `/api/tasks?kind=${RANGE_KIND}&brief=1`))?.tasks ?? [])] };
+  const tasks = (r?.tasks ?? []).filter((t) => !since || (t.created_at ?? "") >= since);
+  const s = summarise(tasks);
+  log(argv.includes("--json") ? JSON.stringify(plain(s), null, 2) : render(s, gate.config.workspace));
+  return 0;
 }

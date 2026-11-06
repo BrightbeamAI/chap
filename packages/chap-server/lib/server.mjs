@@ -2,14 +2,15 @@
 //
 // It runs the CHAP coordinator on SQLite and serves five things:
 //
-//   GET  /              the review desk, with the files beside it in desk/
+//   GET  /              the review desk, from this package's desk/
 //   POST /chap          CHAP calls as JSON-RPC, for any agent or client
 //   GET  /api/...       what the desk needs that the protocol does not carry
 //   GET  /analytics/    the pages chap-analytics wrote, when analytics/ exists
 //   POST /mcp           an MCP server over streamable HTTP, when enabled
 //
-// Everything comes from chap.config.json next to this file, with a few
-// environment overrides noted in loadConfig. Run it with `node server.mjs`.
+// Everything comes from a project's chap.config.json, with a few
+// environment overrides noted in loadConfig. The project is the directory
+// that holds the file: its analytics/ is served, and the desk names it.
 //
 // The server answers under its own host names only (421 otherwise), refuses
 // a browser request from another origin (403), takes JSON only on POST /chap
@@ -18,22 +19,27 @@
 
 import { createServer } from "node:http";
 import { readFile, readdir, mkdir, stat } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Coordinator, MemoryStore } from "@brightbeamai/chap-coordinator";
 
-const here = dirname(fileURLToPath(import.meta.url));
+/** The desk's files, served by every project from this package. */
+export const DESK_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "desk");
 
 /**
- * chap.config.json, or the file CHAP_CONFIG names, with the environment
- * applied: PORT, CHAP_HOST and
+ * The project's configuration: the file `path` names, by default the one
+ * CHAP_CONFIG names or else chap.config.json in the working directory, with
+ * the environment applied: PORT, CHAP_HOST and
  * CHAP_DB_PATH replace the port, host and store; CHAP_REQUIRE_SIGNATURES,
  * CHAP_CHAIN and CHAP_MCP (1 or true) replace the flags; CHAP_ALLOWED_HOSTS
  * adds host names, comma separated; OIDC_ISSUER, OIDC_JWKS_URL and
- * OIDC_AUDIENCE set the token verifier.
+ * OIDC_AUDIENCE set the token verifier. `dir` is the directory that holds
+ * the file: the project.
  */
-export async function loadConfig(path = process.env.CHAP_CONFIG ?? join(here, "chap.config.json")) {
-  const config = JSON.parse(await readFile(path, "utf8"));
+export async function loadConfig(path = process.env.CHAP_CONFIG ?? "chap.config.json") {
+  const file = resolve(path);
+  const config = JSON.parse(await readFile(file, "utf8"));
+  config.dir = dirname(file);
   config.port = Number(process.env.PORT ?? config.port ?? 8787);
   config.host = process.env.CHAP_HOST ?? config.host ?? "127.0.0.1";
   config.store = process.env.CHAP_DB_PATH ?? config.store ?? "./data/chap.db";
@@ -139,7 +145,7 @@ export async function makeCoordinator(config, extra = {}) {
     ...extra,
   };
   if (config.oidc && !options.verifyOidcToken) {
-    const { makeOidcVerifier } = await import("./lib/oidc.mjs");
+    const { makeOidcVerifier } = await import("./oidc.mjs");
     options.verifyOidcToken = await makeOidcVerifier(config.oidc);
   }
   const coord = new Coordinator(options);
@@ -351,7 +357,7 @@ export function publicConfig(config) {
     chain_enabled: !!config.chain,
     persistent: config.store !== ":memory:",
     // Where this project lives, so a prompt the desk writes can name its commands.
-    gate_dir: here,
+    gate_dir: config.dir,
     oidc: config.oidc ? { issuer: config.oidc.issuer } : null,
     mcp: !!config.mcp,
   };
@@ -454,15 +460,21 @@ export const AGENT_MCP_TOOLS = new Set([
   "chap.workspace.describe", "chap.audit.read", "chap.audit.verify_chain",
 ]);
 
-export async function makeServer(config, coord) {
+/**
+ * The request handler for one project: the desk, POST /chap, the read API,
+ * the analytics pages and /mcp, behind the host, origin, type and size
+ * checks. `next`, when given, is called for a path the handler does not
+ * serve, as Express passes it; without it such a path is answered 404.
+ */
+export async function makeHandler(config, coord) {
   // When a desk last asked for the health of the gate: a command that opens
   // a review leaves an open desk to show it, and opens one otherwise.
   let deskSeenAt = 0;
-  const desk = await readDirectory(join(here, "desk"));
-  if (!desk.has("index.html")) throw new Error(`The desk is missing: ${join(here, "desk", "index.html")}`);
+  const desk = await readDirectory(DESK_DIR);
+  if (!desk.has("index.html")) throw new Error(`The desk is missing: ${join(DESK_DIR, "index.html")}`);
   // The pages chap-analytics writes are read on each request, so a report
   // regenerated while the server runs is served as it is now.
-  const analyticsDir = join(here, "analytics");
+  const analyticsDir = join(config.dir, "analytics");
   let mcp = null;
   if (config.mcp && !config.agent?.uri) {
     throw new Error("chap.config.json turns on mcp, and /mcp acts as the agent: set agent.uri");
@@ -482,7 +494,7 @@ export async function makeServer(config, coord) {
     };
   }
 
-  const server = createServer(async (req, res) => {
+  return async (req, res, next) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
       if (foreignHost(req, config)) return reply(res, 421, { error: "unknown host; set allowed_hosts in chap.config.json, or CHAP_ALLOWED_HOSTS, to serve under another name" });
@@ -552,30 +564,77 @@ export async function makeServer(config, coord) {
         }
         return await mcp(req, res, body);
       }
+      if (next) return next();
       reply(res, 404, { error: "not found" });
     } catch (e) {
       if (res.headersSent) return;
       if (e instanceof BodyTooLarge) return reply(res, 413, { error: e.message });
       reply(res, 500, { error: e instanceof Error ? e.message : String(e) });
     }
-  });
-  return server;
+  };
 }
 
+/** A Node HTTP server for one project's handler. */
+export async function makeServer(config, coord) {
+  return createServer(await makeHandler(config, coord));
+}
+
+/** The config, the coordinator and the handler, from what createChapServer and chapHandler take. */
+async function prepare({ config, configPath, coordinator } = {}) {
+  config ??= await loadConfig(configPath);
+  const coord = coordinator ?? await makeCoordinator(config);
+  return { config, coord, handler: await makeHandler(config, coord) };
+}
+
+/**
+ * The project's server, ready to listen: the coordinator on the configured
+ * store with the workspace created, its handler, and a Node HTTP server.
+ * `config` is what loadConfig returns; `configPath` reads one instead;
+ * `coordinator` serves one the caller made. `listen()` takes the configured
+ * port and host and prints where it answers; `close()` stops it.
+ */
+export async function createChapServer(options = {}) {
+  const { config, coord, handler } = await prepare(options);
+  const server = createServer(handler);
+  return {
+    config, coord, handler, server,
+    async listen({ port = config.port, host = config.host, log = console.log } = {}) {
+      await new Promise((resolve) => server.listen(port, host, resolve));
+      const base = `http://${host}:${server.address().port}`;
+      log(`CHAP ${config.workspace} on ${base}`);
+      log(`  desk     ${base}/`);
+      log(`  calls    POST ${base}/chap`);
+      if (config.mcp) log(`  mcp      ${base}/mcp`);
+      log(`  profiles ${config.profiles.join(", ")}`);
+      log(`  store    ${config.store}${config.chain ? ", chain on" : ""}${config.require_signatures ? ", signatures required" : ""}${config.oidc ? `, oidc ${config.oidc.issuer}` : ""}`);
+      return { base };
+    },
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+/**
+ * A handler to mount in a server of the application's own: Node's http,
+ * Express, or Fastify through its raw request and response. It takes what
+ * createChapServer takes and builds the coordinator the same way;
+ * createChapServer(...).handler is the same handler with the coordinator
+ * beside it.
+ */
+export async function chapHandler(options = {}) {
+  return (await prepare(options)).handler;
+}
+
+/**
+ * Serve a project: its configuration from `configPath`, or from CHAP_CONFIG,
+ * or from chap.config.json in `dir`. Returns { coord, server, base }.
+ */
+export async function serve({ dir = process.cwd(), configPath } = {}) {
+  return start(await loadConfig(configPath ?? process.env.CHAP_CONFIG ?? join(dir, "chap.config.json")));
+}
+
+/** Start the server for a config: the coordinator, the handler, and the port. Returns { coord, server, base }. */
 export async function start(config) {
-  const coord = await makeCoordinator(config);
-  const server = await makeServer(config, coord);
-  await new Promise((resolve) => server.listen(config.port, config.host, resolve));
-  const base = `http://${config.host}:${config.port}`;
-  console.log(`CHAP ${config.workspace} on ${base}`);
-  console.log(`  desk     ${base}/`);
-  console.log(`  calls    POST ${base}/chap`);
-  if (config.mcp) console.log(`  mcp      ${base}/mcp`);
-  console.log(`  profiles ${config.profiles.join(", ")}`);
-  console.log(`  store    ${config.store}${config.chain ? ", chain on" : ""}${config.require_signatures ? ", signatures required" : ""}${config.oidc ? `, oidc ${config.oidc.issuer}` : ""}`);
-  return { coord, server, base };
-}
-
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  start(await loadConfig()).catch((e) => { console.error(e); process.exit(1); });
+  const chap = await createChapServer({ config });
+  const { base } = await chap.listen();
+  return { coord: chap.coord, server: chap.server, base };
 }

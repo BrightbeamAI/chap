@@ -10,12 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { loadConfig, makeCoordinator, makeServer } from "../server.mjs";
-import { generateSigner, jsonPatch } from "../desk/chap-client.mjs";
-import { generateKeyFile } from "../keys.mjs";
-import { createDemoRepo } from "../demo-repo.mjs";
-import { agentClient, contentHash, describeChange, propose, reviewerClient } from "../lib/gate.mjs";
-import { git } from "../lib/git.mjs";
+import { loadConfig, makeCoordinator, makeServer } from "@brightbeamai/chap-server";
+import { generateSigner, jsonPatch } from "@brightbeamai/chap-server/client";
+import { generateKeyFile } from "@brightbeamai/chap-server/keys";
+import { createDemoRepo } from "@brightbeamai/chap-code-gate/demo-repo";
+import { agentClient, contentHash, describeChange, propose, reviewerClient } from "@brightbeamai/chap-code-gate/gate";
+import { git } from "@brightbeamai/chap-code-gate/git";
 
 const run = promisify(execFile);
 const projectDir = fileURLToPath(new URL("..", import.meta.url));
@@ -25,7 +25,7 @@ const ready = spawnSync(python, ["-c", "import chap_analytics"], { stdio: "ignor
 test("analytics.py reads the gate's store and writes the report, the cases and the refinement page", { skip: ready ? false : `${python} has no chap-analytics` }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "chap-analytics-"));
   const store = join(dir, "chap.db");
-  const config = await loadConfig();
+  const config = await loadConfig(join(projectDir, "chap.config.json"));
   config.store = store;
   config.workspace = `${config.workspace}_analytics`;
   const coord = await makeCoordinator(config);

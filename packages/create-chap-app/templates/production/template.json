@@ -4,13 +4,6 @@
   "language": "typescript",
   "description": "The Handbook's production set: signed calls, a token presented at join verified against its issuer, the chain on, SQLite on a volume. One coordinator service, one agent service with its own key, and the desk signing in the browser.",
   "shared": {
-    "desk": "desk",
-    "node/server.mjs": "server.mjs",
-    "node/profiles-diff.mjs": "lib/profiles-diff.mjs",
-    "node/oidc.mjs": "lib/oidc.mjs",
-    "node/dev-issuer.mjs": "lib/dev-issuer.mjs",
-    "node/keys.mjs": "keys.mjs",
-    "node/providers.mjs": "lib/providers.mjs",
     "python/analytics.py": "analytics.py"
   },
   "default_profiles": [
@@ -40,6 +33,7 @@
     "agent_uri": "agent:drafter"
   },
   "run": [
+    "npm install",
     "npm run keys",
     "mkdir -p data outbox analytics",
     "docker compose up --build",
