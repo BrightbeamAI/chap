@@ -10,6 +10,9 @@ on it, and serves
     GET  /api/...       what the desk needs that the protocol does not carry
     GET  /analytics/    the pages chap-analytics wrote, when they exist
 
+and, with ``notify`` set, tells people that a review or a question waits
+for them, on the console and to a webhook (:class:`Notifier`).
+
 Two servers run the same routes. :func:`serve` runs them on the standard
 library's HTTP server, as ``chap-coordinator serve`` does, and
 :class:`ChapDesk` is the routes as an ASGI app, to mount in FastAPI or
@@ -60,9 +63,13 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import hashlib
+import hmac
+import http.client
 import json
 import logging
 import os
+import queue
 import re
 import socket
 import sqlite3
@@ -72,8 +79,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Awaitable, Callable, MutableMapping, NamedTuple, Optional, Union
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
+from . import __version__
 from .coordinator import Coordinator, CoordinatorOptions
 from .storage.sqlite import SqliteStore
 from .storage.store import MemoryStore
@@ -83,6 +91,7 @@ __all__ = [
     "ChapDesk",
     "ChapServer",
     "MAX_BODY_BYTES",
+    "Notifier",
     "SECURITY_HEADERS",
     "bootstrap",
     "desk_url",
@@ -190,6 +199,30 @@ def _signatures(config: dict) -> Union[bool, str]:
     return value
 
 
+def _notify(value: Any) -> Optional[dict]:
+    """``notify`` from chap.config.json, checked: ``console``, true or
+    false, and ``webhook``, a URL and the secret its notices are signed
+    with; None where neither is on. A setting that says something else is
+    refused, so a typing slip does not leave people untold."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) - {"console", "webhook"}:
+        raise ValueError('notify in chap.config.json takes {"console": true, "webhook": {"url": ..., "secret": ...}}')
+    console, webhook = value.get("console", False), value.get("webhook")
+    if not isinstance(console, bool):
+        raise ValueError("notify.console in chap.config.json is true or false")
+    if webhook is not None:
+        if not isinstance(webhook, dict) or set(webhook) != {"url", "secret"}:
+            raise ValueError('notify.webhook in chap.config.json takes {"url": ..., "secret": ...}')
+        url, secret = webhook["url"], webhook["secret"]
+        if not isinstance(url, str) or urlsplit(url).scheme not in ("http", "https") or not urlsplit(url).hostname:
+            raise ValueError(f"notify.webhook.url in chap.config.json is {json.dumps(url)}; it is an http or https URL")
+        if not isinstance(secret, str) or not secret:
+            raise ValueError("notify.webhook.secret in chap.config.json is the secret each notice is signed with: "
+                             "a string of one character or more")
+    return {"console": console, "webhook": webhook} if console or webhook else None
+
+
 def _project_path(value: str, base: Path) -> str:
     """A path from the configuration, against the config file's directory;
     a leading ~ is the home directory, and ":memory:" stays as it is."""
@@ -221,6 +254,9 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
     ``signature_policy`` saying ``"all"``, ``"humans"``, or None where no
     call is signed.
 
+    ``notify`` is ``{"console": true, "webhook": {"url": ..., "secret":
+    ...}}``, either part optional, or absent: see :class:`Notifier`.
+
     A profile in the list is enforced: security-signed/1.0 requires
     signatures, and the coordinator turns the chain on for a workspace that
     advertises audit-scitt/1.0 whatever the flag says, so each setting
@@ -248,6 +284,7 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
     config["chain"] = (env_flag("CHAP_CHAIN", bool(config.get("chain", False)))
                        or has_profile(config["profiles"], "audit-scitt"))
     config["allowed_hosts"] = [*(config.get("allowed_hosts") or []), *env_list("CHAP_ALLOWED_HOSTS")]
+    config["notify"] = _notify(config.get("notify"))
     config.setdefault("humans", [])
     config.setdefault("agent", None)
     return config
@@ -545,6 +582,107 @@ def public_config(config: dict) -> dict:
     }
 
 
+# -- notifications --------------------------------------------------------------
+
+class Notifier:
+    """Tells people that a review or a question waits for them.
+
+    It listens to the coordinator's log, which tells it of an entry once the
+    entry is written, and notices two things in the desk's workspace: a
+    review opened or reopened, by an accepted task.complete or
+    review.request that leaves its task under review, and a question asked
+    by an accepted whisper.ask. Each notice is a summary and a link to the
+    task in the desk, which grant nothing: whoever follows the link decides
+    only as the desk lets them. The notifier holds no key and makes no CHAP
+    call.
+
+    ``settings`` is ``notify`` from :func:`load_config`. With ``console``
+    each notice is a line on standard output. With ``webhook`` it is
+    POSTed to ``url`` as JSON, with ``X-Chap-Signature: sha256=<hex>``, the
+    HMAC-SHA256 of the body under ``secret``, so the receiver can tell it
+    came from here. Notices go out in order on a thread of their own, so
+    no call waits on them; one the webhook does not take is logged and
+    dropped.
+    """
+
+    def __init__(self, settings: dict, coord: Coordinator, workspace: str, desk: str) -> None:
+        self.console = bool(settings.get("console"))
+        self.webhook = settings.get("webhook")
+        self.coord = coord
+        self.workspace = workspace
+        #: The desk's address, which each link names.
+        self.desk = desk
+        self._queue: queue.Queue = queue.Queue()
+        threading.Thread(target=self._deliver, name="chap-notify", daemon=True).start()
+
+    def __call__(self, workspace: str, entry: Any) -> None:
+        """The audit listener: queue the notice an entry calls for, if any."""
+        notice = self.notice(workspace, entry)
+        if notice is not None:
+            self._queue.put(notice)
+
+    def notice(self, workspace: str, entry: Any) -> Optional[dict]:
+        """The notice for a written entry, or None. Read under the
+        coordinator's lock, as the call that wrote the entry ends."""
+        call = getattr(entry, "envelope", None)
+        ws = self.coord.get_workspace(workspace) if workspace == self.workspace else None
+        if ws is None or not isinstance(call, dict) or not isinstance(call.get("params"), dict):
+            return None
+        params, method = call["params"], call.get("method")
+        task = ws.tasks.get(params.get("task_id")) if isinstance(params.get("task_id"), str) else None
+        if task is None:
+            return None
+        asker = params.get("from")
+        extra: dict[str, Any] = {}
+        if method in ("task.complete", "review.request"):
+            if task.state != "review_requested" or task.review is None:
+                return None
+            event, to = "review.requested", list(task.review.requested_to)
+            summary = f"{asker} asks {', '.join(to)} to review {task.kind} {task.id}"
+        elif method == "whisper.ask":
+            asked = [w for w in ws.whispers.values() if w.task_id == task.id and w.asker == asker]
+            if not asked:
+                return None
+            event, to = "whisper.asked", list(asked[-1].askee)
+            extra["whisper_id"] = asked[-1].id
+            summary = f"{asker} asks {', '.join(to)} a question on {task.kind} {task.id}"
+        else:
+            return None
+        return {"event": event, "workspace": workspace, "task_id": task.id, "kind": task.kind, "from": asker,
+                "to": to, **extra, "summary": summary, "link": f"{self.desk}#task={quote(task.id, safe='')}",
+                "seq": entry.seq, "at": entry.arrived}
+
+    def _deliver(self) -> None:
+        while True:
+            notice = self._queue.get()
+            if self.console:
+                print(f"{notice['summary']}: {notice['link']}", flush=True)
+            if self.webhook:
+                self._post(notice)
+
+    def _post(self, notice: dict) -> None:
+        """POST one notice to the webhook; a failure is logged, and the notice dropped."""
+        url = urlsplit(self.webhook["url"])
+        body = json.dumps(notice, ensure_ascii=False).encode("utf-8")
+        signature = hmac.new(self.webhook["secret"].encode("utf-8"), body, hashlib.sha256).hexdigest()
+        connection = (http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection)(
+            url.hostname, url.port, timeout=10)
+        try:
+            connection.request("POST", (url.path or "/") + (f"?{url.query}" if url.query else ""), body, {
+                "Content-Type": "application/json", "X-Chap-Signature": f"sha256={signature}",
+                "User-Agent": f"chap-coordinator/{__version__}"})
+            response = connection.getresponse()
+            response.read()
+            if not 200 <= response.status < 300:
+                logger.warning("The webhook at %s answered HTTP %s to the notice of %s on %s; it is not sent again.",
+                               self.webhook["url"], response.status, notice["event"], notice["task_id"])
+        except (OSError, http.client.HTTPException) as err:
+            logger.warning("The webhook at %s could not be reached (%s); the notice of %s on %s is not sent again.",
+                           self.webhook["url"], err, notice["event"], notice["task_id"])
+        finally:
+            connection.close()
+
+
 # -- the routes ---------------------------------------------------------------
 
 class _Reply(NamedTuple):
@@ -603,6 +741,12 @@ class ChapDesk:
         self.coord = coord
         self.lock = threading.Lock()
         self.desk = read_desk()
+        #: Tells people of what waits for them, where ``notify`` is set.
+        self.notifier: Optional[Notifier] = None
+        if config.get("notify"):
+            self.notifier = Notifier(config["notify"], coord, config["workspace"],
+                                     desk_url(config["host"], int(config["port"])))
+            coord.add_audit_listener(self.notifier)
 
     def allowed_hosts(self, port: Optional[int]) -> set[str]:
         """The host names this server answers to: its loopback names on its
@@ -823,6 +967,9 @@ class ChapServer(_Listener):
         self.other: Optional[_Listener] = None
         self._other_serving: Optional[threading.Thread] = None
         super().__init__(address, desk)
+        if desk.notifier is not None:
+            # Port 0 is a port picked now: the links name it.
+            desk.notifier.desk = self.desk_url
         if address[0] in _OTHER_LOOPBACK:
             other = _OTHER_LOOPBACK[address[0]]
             try:

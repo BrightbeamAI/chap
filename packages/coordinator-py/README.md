@@ -140,8 +140,37 @@ way.
   gives it as `signature_policy`, `"all"`, `"humans"` or `null`. Signing
   needs the `crypto` extra.
 - `chain` links each entry on the log to the one before it by its hash.
+- `notify` tells people that a review or a question waits for them:
+  `{"console": true}` prints a line where the server runs, and
+  `{"webhook": {"url": "https://...", "secret": "..."}}` POSTs a JSON
+  notice to the URL, with `X-Chap-Signature: sha256=<hex>`, the
+  HMAC-SHA256 of the body under the secret, for the receiver to check.
+  Each notice is a summary and a link to the task in the desk, which
+  grant nothing: whoever follows the link decides only as the desk lets
+  them. A webhook that fails is logged, and no call waits on it. The
+  secret is as private as the file that holds it.
 - PORT, CHAP_HOST, CHAP_DB_PATH, CHAP_REQUIRE_SIGNATURES, CHAP_CHAIN and
   CHAP_ALLOWED_HOSTS override the file.
+
+A notice, as the webhook receives it:
+
+```json
+{
+  "event": "review.requested",
+  "workspace": "wsp_support",
+  "task_id": "tsk_01M6S3RGTEHGM0RX307P50NXT6",
+  "kind": "draft_reply",
+  "from": "agent:drafter",
+  "to": ["human:ana@example.org"],
+  "summary": "agent:drafter asks human:ana@example.org to review draft_reply tsk_01M6S3RGTEHGM0RX307P50NXT6",
+  "link": "http://localhost:8787/#task=tsk_01M6S3RGTEHGM0RX307P50NXT6",
+  "seq": 7,
+  "at": "2026-11-06T19:00:56.270Z"
+}
+```
+
+A question is `"event": "whisper.asked"`, with its `whisper_id`. `seq` is
+the entry's place on the log.
 
 The server answers only under its own host names, and a proxy's name goes
 in `allowed_hosts`. It refuses a browser request from another origin,

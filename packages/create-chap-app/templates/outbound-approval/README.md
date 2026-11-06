@@ -181,12 +181,20 @@ the rows as a document for `docs/profile-explorer.md`.
 
 ## What the deployment supplies
 
-This project does not notify anyone: the desk lists the open reviews
-addressed to the approver it is asked about, and delivering a review to the
-people named on it is the deployment's job (SPECIFICATION 15.1). It runs one
-coordinator process over one SQLite file; a second process over the same
-file is not supported, and more than one coordinator means partitioning
-workspaces between them. The chain head stays in that file, where the
+The desk lists the open reviews addressed to the approver it is asked
+about. To be told when one waits, set `notify` in `chap.config.json`:
+`{"console": true}` prints a line in the terminal where `desk.py` runs,
+and `{"webhook": {"url": "https://...", "secret": "..."}}` POSTs a JSON
+notice to the URL, signed with the secret in `X-Chap-Signature:
+sha256=<hex>`, the HMAC-SHA256 of the body. Each notice is a summary and a
+link to the task in the desk, and grants nothing; a webhook that fails is
+logged, and no call waits on it. The secret is as private as
+`chap.config.json`. Delivering a review further, by mail or chat, is the
+deployment's job (SPECIFICATION 15.1), from the webhook.
+
+The project runs one coordinator process over one SQLite file; a second
+process over the same file is not supported, and more than one coordinator
+means partitioning workspaces between them. The chain head stays in that file, where the
 operator of this process can rewrite it; a receipt from a transparency
 service, or a head published somewhere the operator cannot change, is what
 shows an entry existed independently of the coordinator (SECURITY.md).

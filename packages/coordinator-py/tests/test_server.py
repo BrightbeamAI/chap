@@ -16,6 +16,8 @@ library's HTTP server, and as an ASGI app under Starlette and FastAPI.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import http.client
 import json
 import logging
@@ -24,8 +26,10 @@ import re
 import socket
 import sys
 import threading
+import time
 import urllib.request
 from html.parser import HTMLParser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -623,3 +627,127 @@ def test_mounted_below_a_prefix_the_desk_works_there(asgi):
     headers = {name.decode(): value.decode() for name, value in start["headers"]}
     assert (start["status"], headers["location"]) == (308, "/review/?task=t1")
     assert_secured(headers)
+
+
+# -- notifications ------------------------------------------------------------------
+
+class _Webhook(BaseHTTPRequestHandler):
+    """A webhook that keeps what it is sent, and answers ``status`` after ``delay`` seconds."""
+
+    received: list
+    status = 204
+    delay = 0.0
+
+    def log_message(self, *_args) -> None:
+        pass
+
+    def do_POST(self) -> None:
+        body = self.rfile.read(int(self.headers["content-length"]))
+        time.sleep(self.delay)
+        self.received.append({"path": self.path, "headers": list(self.headers.items()), "body": body})
+        self.send_response(self.status)
+        self.send_header("content-length", "0")
+        self.end_headers()
+
+
+@pytest.fixture
+def webhook():
+    """Start a webhook answering ``status`` after ``delay``; returns its URL and what it receives."""
+    servers = []
+
+    def start(status: int = 204, delay: float = 0.0):
+        received: list = []
+        handler = type("Handler", (_Webhook,), {"received": received, "status": status, "delay": delay})
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        servers.append(server)
+        return f"http://127.0.0.1:{server.server_address[1]}", received
+
+    try:
+        yield start
+    finally:
+        for server in servers:
+            server.shutdown()
+            server.server_close()
+
+
+def until(predicate, timeout: float = 5.0):
+    deadline = time.monotonic() + timeout
+    while not predicate():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.02)
+
+
+def test_a_review_and_a_question_are_told_on_the_console_and_to_the_webhook(desk_of, webhook, capsys):
+    url, received = webhook()
+    port = desk_of(profiles=["core/1.0", "review/1.0", "whisper/1.0"], notify={
+        "console": True, "webhook": {"url": f"{url}/hooks/chap?team=a", "secret": "s3cret"}})
+    task = call(port, "task.create", **{"from": AGENT}, kind="draft", assignee=AGENT, input={},
+                review_required=True)["result"]["task_id"]
+    call(port, "task.complete", **{"from": AGENT}, task_id=task, output={"body": "hello"})
+    asked = call(port, "whisper.ask", **{"from": AGENT}, to=HUMAN, task_id=task, question="Which tone?",
+                 deadline_ms=60_000, default_if_lapsed="formal")["result"]
+    call(port, "decide.approve", **{"from": HUMAN}, task_id=task)
+    plain = call(port, "task.create", **{"from": AGENT}, kind="note", assignee=AGENT, input={})["result"]["task_id"]
+    assert call(port, "task.complete", **{"from": AGENT}, task_id=plain, output={})["result"]["state"] == "completed"
+    asked_for = call(port, "task.create", **{"from": AGENT}, kind="letter", assignee=AGENT, input={})["result"]
+    call(port, "review.request", **{"from": AGENT}, task_id=asked_for["task_id"], artefact={"body": "Dear"}, to=[HUMAN])
+    until(lambda: len(received) >= 3)
+    time.sleep(0.3)
+    # The opened reviews and the question, and nothing for a decision or a
+    # task completed with no review.
+    assert len(received) == 3
+    assert json.loads(received[2]["body"])["summary"] == f"{AGENT} asks {HUMAN} to review letter {asked_for['task_id']}"
+    link = f"http://localhost:{port}/#task={task}"
+    notices = [json.loads(r["body"]) for r in received]
+    assert notices[0] == {
+        "event": "review.requested", "workspace": "wsp_test", "task_id": task, "kind": "draft", "from": AGENT,
+        "to": [HUMAN], "summary": f"{AGENT} asks {HUMAN} to review draft {task}", "link": link,
+        "seq": notices[0]["seq"], "at": notices[0]["at"]}
+    assert notices[1]["event"] == "whisper.asked" and notices[1]["whisper_id"] == asked["whisper_id"]
+    assert notices[1]["summary"] == f"{AGENT} asks {HUMAN} a question on draft {task}" and notices[1]["link"] == link
+    # Each is signed with the secret, under the header the Node server uses.
+    for r in received:
+        assert r["path"] == "/hooks/chap?team=a"
+        headers = dict(r["headers"])
+        assert headers["Content-Type"] == "application/json"
+        assert headers["X-Chap-Signature"] == "sha256=" + hmac.new(b"s3cret", r["body"], hashlib.sha256).hexdigest()
+    out = capsys.readouterr().out
+    assert f"{AGENT} asks {HUMAN} to review draft {task}: {link}" in out
+    assert f"{AGENT} asks {HUMAN} a question on draft {task}: {link}" in out
+
+
+def test_a_webhook_that_fails_is_logged_and_no_call_waits_on_it(desk_of, webhook, caplog):
+    slow, slow_received = webhook(delay=2.0)
+    refusing, _ = webhook(status=500)
+    with socket.socket() as closed:
+        closed.bind(("127.0.0.1", 0))
+        gone = f"http://127.0.0.1:{closed.getsockname()[1]}"
+    with caplog.at_level(logging.WARNING, logger="chap_coordinator.server"):
+        for url in (slow, refusing, gone):
+            port = desk_of(notify={"webhook": {"url": url, "secret": "s"}})
+            task = call(port, "task.create", **{"from": AGENT}, kind="draft", assignee=AGENT, input={},
+                        review_required=True)["result"]["task_id"]
+            started = time.monotonic()
+            assert call(port, "task.complete", **{"from": AGENT}, task_id=task,
+                        output={})["result"]["state"] == "review_requested"
+            assert time.monotonic() - started < 1.0, url
+        until(lambda: "could not be reached" in caplog.text and "answered HTTP 500" in caplog.text)
+    assert f"The webhook at {refusing} answered HTTP 500 to the notice of review.requested on " in caplog.text
+    assert f"The webhook at {gone} could not be reached" in caplog.text
+    until(lambda: len(slow_received) == 1)
+
+
+@pytest.mark.parametrize("notify, said", [
+    ("yes", "notify in chap.config.json takes"),
+    ({"console": True, "email": "me@example.org"}, "notify in chap.config.json takes"),
+    ({"console": "yes"}, "notify.console in chap.config.json is true or false"),
+    ({"webhook": {"url": "https://hooks.example.org/chap"}}, 'notify.webhook in chap.config.json takes'),
+    ({"webhook": {"url": "file:///etc/passwd", "secret": "s"}}, 'notify.webhook.url in chap.config.json is "file'),
+    ({"webhook": {"url": "https://hooks.example.org/chap", "secret": ""}}, "a string of one character or more"),
+])
+def test_a_notify_setting_that_says_something_else_is_refused(tmp_path, notify, said):
+    with pytest.raises(ValueError, match=re.escape(said)):
+        load_config(write_config(tmp_path, notify=notify))
+    assert load_config(write_config(tmp_path))["notify"] is None
+    assert load_config(write_config(tmp_path, notify={"console": False}))["notify"] is None
