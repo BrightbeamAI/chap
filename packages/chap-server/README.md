@@ -112,21 +112,50 @@ puts a warning above the artefact.
 
 ## In a server of your own
 
+`chapHandler(options)` builds the coordinator from the configuration and
+gives back a handler `(req, res, next)` for Node's `http` request and
+response. `basePath` serves the desk, `/chap`, `/api/...`, `/analytics/...`
+and `/mcp` under a prefix, so the application keeps the rest of its paths;
+the desk's own paths are relative, so it works under any prefix. A path the
+handler does not serve goes to `next`, and the host and origin checks apply
+to the handler's own paths only.
+
+Node's `http`:
+
 ```js
 import { createServer } from "node:http";
 import { chapHandler } from "@brightbeamai/chap-server";
 
-const chap = await chapHandler({ configPath: "chap.config.json" });
+const chap = await chapHandler({ configPath: "chap.config.json", basePath: "/review" });
 createServer((req, res) => chap(req, res, () => myApp(req, res))).listen(3000);
 ```
 
-`chapHandler(options)` builds the coordinator from the configuration and
-gives back a handler `(req, res, next)`. A path it does not serve goes to
-`next` when one is given, and is answered 404 otherwise.
+Express, which takes the prefix off the path itself:
+
+```js
+app.use("/review", await chapHandler({ configPath: "chap.config.json" }));
+```
+
+Fastify, with the raw request and response; the handler reads the body
+itself, so the routes take no body parser:
+
+```js
+const chap = await chapHandler({ configPath: "chap.config.json", basePath: "/review" });
+app.register(async (scope) => {
+  scope.removeAllContentTypeParsers();
+  scope.addContentTypeParser("*", (req, payload, done) => done(null));
+  const desk = (req, reply) => { reply.hijack(); return chap(req.raw, reply.raw); };
+  scope.all("/review", desk);
+  scope.all("/review/*", desk);
+});
+```
+
 `createChapServer(options)` gives back `{ config, coord, handler, server,
 listen(), close() }`, for a process that wants the coordinator beside the
-handler. Both take `config` (what `loadConfig` returns) or `configPath`, and
-`coordinator` to serve a coordinator the caller made.
+handler. Both take `config` (what `loadConfig` returns) or `configPath`,
+`coordinator` to serve a coordinator the caller made, and `basePath`. The
+desk's page sits at the prefix with a slash, `/review/`; the prefix alone is
+sent there.
 
 ## The bin
 

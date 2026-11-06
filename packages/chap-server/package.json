@@ -56,7 +56,9 @@
     "@brightbeamai/chap-coordinator-mcp": "^0.3.4"
   },
   "devDependencies": {
+    "express": "^5.2.1",
     "fake-indexeddb": "^6.2.7",
+    "fastify": "^5.6.0",
     "jsdom": "^29.0.0"
   },
   "publishConfig": {

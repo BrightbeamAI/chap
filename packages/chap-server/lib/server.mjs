@@ -478,13 +478,27 @@ async function readDirectory(dir) {
 // in another member's name.
 export { AGENT_MCP_TOOLS };
 
+/** The paths under /api/ the desk reads. */
+const API_PATHS = new Set(["/api/config", "/api/reviews", "/api/tasks", "/api/health"]);
+
+/** A redirect, with the headers every answer carries. */
+function redirect(res, location) {
+  res.writeHead(308, { ...SECURITY_HEADERS, location });
+  res.end();
+}
+
 /**
  * The request handler for one project: the desk, POST /chap, the read API,
  * the analytics pages and /mcp, behind the host, origin, type and size
  * checks. `next`, when given, is called for a path the handler does not
- * serve, as Express passes it; without it such a path is answered 404.
+ * serve, as Express passes it, and the checks apply to the handler's own
+ * paths only; without it such a path is answered 404. `basePath` serves
+ * everything under a prefix, "/review" say, for a server whose own routes
+ * hold the rest; the desk's paths are relative, so it works under any.
  */
-export async function makeHandler(config, coord) {
+export async function makeHandler(config, coord, { basePath = "" } = {}) {
+  const prefix = basePath.replace(/\/+$/, "");
+  if (prefix && !/^\/[^?#]*$/.test(prefix)) throw new Error(`basePath is a path that starts with /: ${basePath}`);
   // When a desk last asked for the health of the gate: a command that opens
   // a review leaves an open desk to show it, and opens one otherwise.
   let deskSeenAt = 0;
@@ -504,22 +518,38 @@ export async function makeHandler(config, coord) {
       participant: config.agent.uri, toolFilter: (name) => AGENT_MCP_TOOLS.has(name), maxBodyBytes: bodyLimit(config) });
   }
 
+  /** Whether a path, below any prefix, is one of the handler's own. */
+  const ours = (path) => path === "/" || path === "/desk" || path === "/index.html" || desk.has(path.slice(1))
+    || path.startsWith("/analytics/") || path === "/chap" || API_PATHS.has(path) || path.startsWith("/api/tasks/") || (path === "/mcp" && !!mcp);
+
   return async (req, res, next) => {
     const url = new URL(req.url ?? "/", "http://localhost");
+    let path = url.pathname;
+    if (prefix) {
+      if (path === prefix) return redirect(res, `${prefix}/${url.search}`);
+      if (!path.startsWith(`${prefix}/`)) return next ? next() : reply(res, 404, { error: "not found" });
+      path = path.slice(prefix.length);
+    } else if (path === "/" && req.baseUrl && !String(req.originalUrl ?? "").split("?")[0].endsWith("/")) {
+      // Express mounted the handler at req.baseUrl and took it off the
+      // path; the desk's paths are relative, so its page is at the mount
+      // point with a slash.
+      return redirect(res, `${req.baseUrl}/${url.search}`);
+    }
+    if (next && !ours(path)) return next();
     try {
       if (foreignHost(req, config)) return reply(res, 421, { error: "unknown host; set allowed_hosts in chap.config.json, or CHAP_ALLOWED_HOSTS, to serve under another name" });
       if (foreignOrigin(req, config)) return reply(res, 403, { error: "cross-origin requests are refused" });
-      if (url.pathname === "/" || url.pathname === "/desk" || url.pathname === "/index.html") {
+      if (path === "/" || path === "/desk" || path === "/index.html") {
         const page = desk.get("index.html");
         return reply(res, 200, page.body, page.type);
       }
-      if (req.method === "GET" && desk.has(url.pathname.slice(1))) {
-        const file = desk.get(url.pathname.slice(1));
+      if (req.method === "GET" && desk.has(path.slice(1))) {
+        const file = desk.get(path.slice(1));
         return reply(res, 200, file.body, file.type);
       }
-      if (req.method === "GET" && url.pathname.startsWith("/analytics/")) {
+      if (req.method === "GET" && path.startsWith("/analytics/")) {
         let name;
-        try { name = decodeURIComponent(url.pathname.slice("/analytics/".length)) || "index.html"; } catch { return reply(res, 400, { error: "a malformed escape in the path" }); }
+        try { name = decodeURIComponent(path.slice("/analytics/".length)) || "index.html"; } catch { return reply(res, 400, { error: "a malformed escape in the path" }); }
         if (name.includes("\0")) return reply(res, 404, { error: "not found" });
         const type = TYPES[extname(name)];
         if (!type || name.includes("/") || name.includes("\\") || name.startsWith(".")) return reply(res, 404, { error: "not found" });
@@ -529,7 +559,7 @@ export async function makeHandler(config, coord) {
           return reply(res, 404, { error: "no analytics page by that name; run the analytics script to write them" });
         }
       }
-      if (url.pathname === "/chap" && req.method === "POST") {
+      if (path === "/chap" && req.method === "POST") {
         if (!(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return reply(res, 415, { error: "POST /chap takes application/json" });
         let envelope;
         try { envelope = JSON.parse(await readBody(req, bodyLimit(config))); } catch (e) {
@@ -538,18 +568,18 @@ export async function makeHandler(config, coord) {
         }
         return reply(res, 200, coord.dispatch(envelope));
       }
-      if (url.pathname === "/api/config") return reply(res, 200, publicConfig(config));
-      if (url.pathname === "/api/reviews") return reply(res, 200, { reviews: openReviews(coord, config.workspace, url.searchParams.get("reviewer") || undefined) });
-      if (url.pathname === "/api/tasks") {
+      if (path === "/api/config") return reply(res, 200, publicConfig(config));
+      if (path === "/api/reviews") return reply(res, 200, { reviews: openReviews(coord, config.workspace, url.searchParams.get("reviewer") || undefined) });
+      if (path === "/api/tasks") {
         const rawLimit = url.searchParams.get("limit");
         if (rawLimit !== null && !/^\d+$/.test(rawLimit)) return reply(res, 400, { error: "limit is a whole number" });
         const limit = Number(rawLimit ?? 0) || undefined;
         const brief = url.searchParams.get("brief") === "1";
         return reply(res, 200, { tasks: listTasks(coord, config.workspace, { kind: url.searchParams.get("kind") || undefined, state: url.searchParams.get("state") || undefined, limit, brief }) });
       }
-      if (url.pathname.startsWith("/api/tasks/")) {
+      if (path.startsWith("/api/tasks/")) {
         let parts;
-        try { parts = url.pathname.slice("/api/tasks/".length).split("/").map(decodeURIComponent); } catch { return reply(res, 400, { error: "a malformed escape in the path" }); }
+        try { parts = path.slice("/api/tasks/".length).split("/").map(decodeURIComponent); } catch { return reply(res, 400, { error: "a malformed escape in the path" }); }
         const [id, ...rest] = parts;
         if (rest.length === 1 && rest[0] === "evidence") {
           const evidence = taskEvidence(coord, config.workspace, id);
@@ -559,12 +589,12 @@ export async function makeHandler(config, coord) {
         const view = taskView(coord, config.workspace, id);
         return view ? reply(res, 200, view) : reply(res, 404, { error: "unknown task" });
       }
-      if (url.pathname === "/api/health") {
+      if (path === "/api/health") {
         const ws = coord.getWorkspace(config.workspace);
         if (url.searchParams.get("desk") === "1") deskSeenAt = Date.now();
         return reply(res, 200, { ok: true, workspace: config.workspace, members: ws?.members.size ?? 0, tasks: ws?.tasks.size ?? 0, audit: ws?.audit.length ?? 0, desk_seen_ms: deskSeenAt ? Date.now() - deskSeenAt : null });
       }
-      if (url.pathname === "/mcp" && mcp) {
+      if (path === "/mcp" && mcp) {
         for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
         let body;
         if (req.method === "POST") {
@@ -591,18 +621,19 @@ export async function makeServer(config, coord) {
 }
 
 /** The config, the coordinator and the handler, from what createChapServer and chapHandler take. */
-async function prepare({ config, configPath, coordinator } = {}) {
+async function prepare({ config, configPath, coordinator, basePath } = {}) {
   config ??= await loadConfig(configPath);
   const coord = coordinator ?? await makeCoordinator(config);
-  return { config, coord, handler: await makeHandler(config, coord) };
+  return { config, coord, handler: await makeHandler(config, coord, { basePath }) };
 }
 
 /**
  * The project's server, ready to listen: the coordinator on the configured
  * store with the workspace created, its handler, and a Node HTTP server.
  * `config` is what loadConfig returns; `configPath` reads one instead;
- * `coordinator` serves one the caller made. `listen()` takes the configured
- * port and host and prints where it answers; `close()` stops it.
+ * `coordinator` serves one the caller made; `basePath` serves everything
+ * under a prefix. `listen()` takes the configured port and host and prints
+ * where it answers; `close()` stops it.
  */
 export async function createChapServer(options = {}) {
   const { config, coord, handler } = await prepare(options);

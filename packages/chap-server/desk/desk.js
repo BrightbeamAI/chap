@@ -71,7 +71,7 @@ const detailKey = (t) => `${t.state}|${t.updated_at}|${t.submission?.seq ?? ""}|
 /** Read the selected task whole. Returns the view it replaced, if it was of the same task. */
 async function loadDetail(t) {
   const prior = state.detail?.id === t.task_id ? state.detail.view : null;
-  const view = await getJson(`/api/tasks/${encodeURIComponent(t.task_id)}`);
+  const view = await getJson(`api/tasks/${encodeURIComponent(t.task_id)}`);
   if (state.selectedId !== t.task_id) return prior;
   state.detail = { id: t.task_id, key: detailKey(t), view };
   return prior;
@@ -133,7 +133,7 @@ async function boot() {
   $("r-prompt-copy").onclick = () => copyText($("r-prompt").textContent);
   document.addEventListener("keydown", onKey);
 
-  state.config = await getJson("/api/config");
+  state.config = await getJson("api/config");
   $("workspace").textContent = state.config.workspace;
   const short = state.config.profiles.map((p) => p.replace(/\/1\.0$/, "").replace("security-signed", "signed").replace("audit-scitt", "scitt"));
   $("profiles").replaceChildren(el("span", { class: "chip profiles", title: state.config.profiles.join(", "), text: short.join(" · ") }));
@@ -174,7 +174,7 @@ async function setReviewer(uri) {
     signer = held.signer;
     if (held.moved) toast("Your signing key was in this browser's local storage, where any page on this address could read it. It is now kept where no page can read it out.", "ok");
   }
-  state.client = makeClient({ workspace: state.config.workspace, from: uri, signer });
+  state.client = makeClient({ url: "chap", workspace: state.config.workspace, from: uri, signer });
   state.key = { signer, fingerprint: signer ? await fingerprint(signer.publicJwk) : null, status: signer ? "unchecked" : "unsigned" };
   if (signer) {
     const me = state.config.humans.find((h) => h.uri === uri);
@@ -248,7 +248,7 @@ function lost(e) {
 async function refresh() {
   if (state.key.status === "unchecked") { await checkKey(); showKey(); }
   // Every open task, and the most recent ones for the decided list.
-  const [health, open, recent] = await Promise.all([getJson("/api/health?desk=1"), getJson("/api/tasks?state=created,in_progress,review_requested&brief=1"), getJson("/api/tasks?limit=200&brief=1")]);
+  const [health, open, recent] = await Promise.all([getJson("api/health?desk=1"), getJson("api/tasks?state=created,in_progress,review_requested&brief=1"), getJson("api/tasks?limit=200&brief=1")]);
   if (state.lost) { state.lost = false; toast("Connected again", "ok"); }
   chip("connection", "live", "good");
   $("connection").title = `${health.members} members, ${health.tasks} tasks, ${health.audit} chain entries`;
@@ -335,8 +335,8 @@ async function verifyChain() {
 // summary.json says when and from how much, and the rest are linked.
 async function probeAnalytics() {
   let summary = null, refine = null;
-  try { const r = await fetch("/analytics/summary.json"); summary = r.ok ? await r.json() : null; } catch { /* none */ }
-  if (summary) { try { const r = await fetch("/analytics/refine.md"); refine = r.ok ? await r.text() : null; } catch { /* none */ } }
+  try { const r = await fetch("analytics/summary.json"); summary = r.ok ? await r.json() : null; } catch { /* none */ }
+  if (summary) { try { const r = await fetch("analytics/refine.md"); refine = r.ok ? await r.text() : null; } catch { /* none */ } }
   const changed = summary?.written !== state.analytics.summary?.written;
   state.analytics = { report: !!summary, cases: !!summary, summary, refine };
   if (changed && state.view === "insights") renderInsightsView();
@@ -608,7 +608,7 @@ async function decide(kind) {
     state.editing = null;
     // The decision as a prompt for the agent, when it asks something of it.
     try {
-      const decided = await getJson(`/api/tasks/${encodeURIComponent(t.task_id)}`);
+      const decided = await getJson(`api/tasks/${encodeURIComponent(t.task_id)}`);
       const prompt = promptFor(decided);
       if (prompt) showPrompt(prompt);
     } catch { /* the review shows it once it is read again */ }
@@ -751,7 +751,7 @@ async function loadAllTasks() {
   // Every task, for counting. The queue holds the open ones and the most
   // recent; Insights counts the whole workspace, read when it is shown.
   if (state.allTasksAt && Date.now() - state.allTasksAt < 30_000 && state.allTasksAudit === state.health?.audit) return;
-  state.allTasks = (await getJson("/api/tasks?brief=1")).tasks;
+  state.allTasks = (await getJson("api/tasks?brief=1")).tasks;
   state.allTasksAt = Date.now();
   state.allTasksAudit = state.health?.audit;
 }

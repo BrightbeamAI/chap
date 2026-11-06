@@ -222,8 +222,8 @@ export function renderInsights(tasks, { chain = null, analytics = null, onOpenTa
     section("What reviewers sent back", words(s.rejection_notes, "No rejection yet.")),
   ));
   const links = el("div", { class: "row" });
-  if (analytics?.report) links.append(el("a", { class: "btn", href: "/analytics/report.html", target: "_blank", rel: "noopener", text: "Open the interactive report" }));
-  if (analytics?.cases) links.append(el("a", { class: "btn", href: "/analytics/cases.jsonl", target: "_blank", rel: "noopener", text: "Evaluation cases (JSONL)" }));
+  if (analytics?.report) links.append(el("a", { class: "btn", href: "analytics/report.html", target: "_blank", rel: "noopener", text: "Open the interactive report" }));
+  if (analytics?.cases) links.append(el("a", { class: "btn", href: "analytics/cases.jsonl", target: "_blank", rel: "noopener", text: "Evaluation cases (JSONL)" }));
   const sum = analytics?.summary;
   root.append(section("chap-analytics", el("div", { class: "stack" },
     el("div", { class: "small muted", text: sum
