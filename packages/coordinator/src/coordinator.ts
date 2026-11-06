@@ -213,7 +213,11 @@ function reviewSatisfied(review: { requested_to: string[]; rule: string; decisio
 }
 
 function reply(env: Envelope, body: { result?: unknown; error?: { code: number; message: string; data?: unknown } }): Envelope {
-  const out: Envelope = { jsonrpc: "2.0", id: env.id };
+  // JSON-RPC answers with a null id where the request carries none, or is
+  // not an object at all, as the Python reference does. Reading `id` from
+  // null threw, so dispatch(null) never answered.
+  const sent = env !== null && typeof env === "object" && !Array.isArray(env) ? env.id : undefined;
+  const out = { jsonrpc: "2.0", id: sent ?? null } as Envelope;
   if (body.error !== undefined) out.error = body.error;
   else out.result = body.result;
   return out;
