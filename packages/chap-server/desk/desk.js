@@ -469,7 +469,7 @@ function renderContext(t, artefact, loading) {
   }
   const since = !loading && typeof artefact?.since?.patch === "string" && artefact.since.patch.trim() ? artefact.since : null;
   $("r-since-card").hidden = !since;
-  if (since) $("r-since").replaceChildren(el("div", { class: "small muted", style: "margin-bottom:10px", text: `What changed since the version you reviewed${since.head ? ` (up to ${String(since.head).slice(0, 7)})` : ""}.` }), renderDiff(since.patch, {}));
+  if (since) $("r-since").replaceChildren(el("div", { class: "small muted since-note", text: `What changed since the version you reviewed${since.head ? ` (up to ${String(since.head).slice(0, 7)})` : ""}.` }), renderDiff(since.patch, {}));
   // The prompt of a decision that closed the round; a new round waiting has none yet.
   const prompt = !loading && t.state !== "review_requested" ? promptFor(t) : null;
   $("r-prompt-card").hidden = !prompt;
@@ -657,7 +657,7 @@ function renderActivity() {
     const d = el("details", { class: "entry" },
       el("summary", {},
         el("span", { class: "seq", text: `#${e.seq}` }),
-        el("span", { class: `method m-${String(call.method ?? "").split(".")[0]} m-${String(call.method ?? "").replace(".", "-")}` }, call.method ?? "?", e.outcome ? el("span", { class: "badge bad", style: "margin-left:6px", text: `refused ${e.outcome.code}` }) : null),
+        el("span", { class: `method m-${String(call.method ?? "").split(".")[0]} m-${String(call.method ?? "").replace(".", "-")}` }, call.method ?? "?", e.outcome ? el("span", { class: "badge bad refusal", text: `refused ${e.outcome.code}` }) : null),
         el("span", { class: "who", title: call.params?.task_id ?? "", text: call.params?.from ?? "" }),
         el("span", { class: "gist", title: gist(call), text: gist(call) }),
         el("span", { class: "when", title: e.arrived, text: e.arrived ? `${ago(e.arrived)} ago` : "" })));

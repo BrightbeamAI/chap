@@ -55,6 +55,10 @@
     "@brightbeamai/chap-coordinator": "^0.3.4",
     "@brightbeamai/chap-coordinator-mcp": "^0.3.4"
   },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.7",
+    "jsdom": "^29.0.0"
+  },
   "publishConfig": {
     "access": "public"
   }

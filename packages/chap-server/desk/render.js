@@ -289,7 +289,7 @@ export function gitDate(raw) {
 function renderCommits(artefact, { index = 0, read = new Set(), onSelect = null, commenting = null } = {}) {
   const commits = artefact.commits;
   const at = Math.min(Math.max(0, index), commits.length - 1);
-  const head = el("div", { class: "stack", style: "margin-bottom:12px" });
+  const head = el("div", { class: "stack artefact-head" });
   const anomalies = rangeAnomalies(artefact);
   if (anomalies.length) head.append(el("div", { class: "alert" }, el("b", { text: "Do not approve this branch. " }), "The desk cannot show every commit as git would apply it: ", anomalies.join("; "), "."));
   if (artefact.summary) head.append(el("div", {}, el("b", { text: artefact.summary })));
@@ -369,7 +369,7 @@ export function renderArtefact(artefact, { editing = null, range = null, comment
   const shape = shapeOf(artefact);
   if (shape === "commits") return renderCommits(artefact, { ...(range ?? {}), commenting });
   if (shape === "code") {
-    const head = el("div", { class: "stack", style: "margin-bottom:12px" });
+    const head = el("div", { class: "stack artefact-head" });
     const banner = anomalyBanner(artefact);
     if (banner) head.append(banner);
     const hidden = invisibleBanner(artefact.patch);
@@ -411,7 +411,7 @@ export function renderArtefact(artefact, { editing = null, range = null, comment
         const changed = files.map((f) => (Object.prototype.hasOwnProperty.call(edits, f.path) ? { ...f, after: edits[f.path], added: stats.get(f.path)?.added ?? f.added, removed: stats.get(f.path)?.removed ?? f.removed } : f));
         return { ...artefact, patch, files: changed };
       };
-      return el("div", {}, head, el("div", { class: "small muted", style: "margin-bottom:8px", text: "Press Edit on a file to change it whole; the patch is written again from your version, and you see the result before it is sent." }), box);
+      return el("div", {}, head, el("div", { class: "small muted edit-hint", text: "Press Edit on a file to change it whole; the patch is written again from your version, and you see the result before it is sent." }), box);
     }
     return el("div", {}, head, renderDiff(artefact.patch, { files: artefact.files ?? [], commenting }));
   }
@@ -428,7 +428,7 @@ export function renderArtefact(artefact, { editing = null, range = null, comment
         input.addEventListener("input", () => { state.fields[key] = input.value; });
         field.append(input);
       } else {
-        const area = el("textarea", { class: "code", "aria-label": key, style: "min-height:80px" });
+        const area = el("textarea", { class: "code field", "aria-label": key });
         area.value = JSON.stringify(state.fields[key], null, 2);
         area.addEventListener("input", () => { try { state.fields[key] = JSON.parse(area.value); area.setCustomValidity(""); } catch { area.setCustomValidity("not JSON"); } });
         field.append(area);

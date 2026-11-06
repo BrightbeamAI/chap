@@ -15,7 +15,12 @@
 // The server answers under its own host names only (421 otherwise), refuses
 // a browser request from another origin (403), takes JSON only on POST /chap
 // (415) and reads no body over the envelope limit, max_envelope_bytes in
-// chap.config.json (1 MiB when unset), with a little room (413).
+// chap.config.json (1 MiB when unset), with a little room (413). Every
+// answer carries the headers in SECURITY_HEADERS: the desk runs only its own
+// scripts and styles, and no page can frame it. The analytics pages are
+// written by another program, so they run in a sandbox: their scripts get
+// an origin of their own, and cannot read the desk's storage or call the
+// server as the desk.
 
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
@@ -370,8 +375,24 @@ export function publicConfig(config) {
 
 // -- HTTP ---------------------------------------------------------------------
 
-function reply(res, status, body, type = "application/json") {
-  res.writeHead(status, { "content-type": type });
+/**
+ * The headers on every answer. The policy lets the desk load its own
+ * scripts, styles and images and call its own server, and nothing else: no
+ * inline script or style, no plugin, no form posted anywhere, no frame
+ * around it.
+ */
+export const SECURITY_HEADERS = {
+  "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  "x-frame-options": "DENY",
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+};
+
+/** The policy for the analytics pages: their scripts run, in an origin of their own. */
+export const ANALYTICS_POLICY = "sandbox allow-scripts; frame-ancestors 'none'";
+
+function reply(res, status, body, type = "application/json", policy = SECURITY_HEADERS["content-security-policy"]) {
+  res.writeHead(status, { ...SECURITY_HEADERS, "content-security-policy": policy, "content-type": type });
   res.end(type === "application/json" && !Buffer.isBuffer(body) ? JSON.stringify(body) : body);
 }
 
@@ -503,7 +524,7 @@ export async function makeHandler(config, coord) {
         const type = TYPES[extname(name)];
         if (!type || name.includes("/") || name.includes("\\") || name.startsWith(".")) return reply(res, 404, { error: "not found" });
         try {
-          return reply(res, 200, await readFile(join(analyticsDir, name)), type);
+          return reply(res, 200, await readFile(join(analyticsDir, name)), type, ANALYTICS_POLICY);
         } catch {
           return reply(res, 404, { error: "no analytics page by that name; run the analytics script to write them" });
         }
@@ -544,6 +565,7 @@ export async function makeHandler(config, coord) {
         return reply(res, 200, { ok: true, workspace: config.workspace, members: ws?.members.size ?? 0, tasks: ws?.tasks.size ?? 0, audit: ws?.audit.length ?? 0, desk_seen_ms: deskSeenAt ? Date.now() - deskSeenAt : null });
       }
       if (url.pathname === "/mcp" && mcp) {
+        for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
         let body;
         if (req.method === "POST") {
           try { body = JSON.parse(await readBody(req, bodyLimit(config))); } catch (e) {

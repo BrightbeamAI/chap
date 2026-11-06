@@ -111,7 +111,15 @@ the deployment puts its login in front, and under `security-signed/1.0`
 the signing key is what ties a decision to its holder. The process answers
 under its own host names only, refuses a browser request from another
 origin, takes JSON only on `POST /chap` and caps the request body, so a
-page open elsewhere cannot decide as the reviewer.
+page open elsewhere cannot call it as the reviewer. Every answer carries a
+Content-Security-Policy that lets the desk run its own scripts and styles
+and nothing else, with `frame-ancestors 'none'` and `X-Frame-Options: DENY`
+so no page can frame the desk and take a click on it, `nosniff` and
+`Referrer-Policy: no-referrer`. The desk has no inline script or style.
+The analytics pages, which another program writes, are served with
+`Content-Security-Policy: sandbox allow-scripts`: their scripts run in an
+origin of their own, with no reach into the desk's storage, and a call
+they make to the server carries a foreign origin and is refused.
 
 ## The agents
 

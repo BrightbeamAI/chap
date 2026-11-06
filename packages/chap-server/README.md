@@ -65,6 +65,23 @@ that rebinds its own name to this address gets nothing. It refuses a browser
 request from another origin (403), takes JSON only on `POST /chap` (415),
 and reads no body over the envelope limit (413).
 
+Every answer carries these headers (`SECURITY_HEADERS`):
+
+```
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+```
+
+The desk runs its own scripts and styles and nothing else, and no page can
+frame it to take a click or a key press on it. The pages under
+`/analytics/` are written by another program, so they are served with
+`Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'none'`:
+their scripts run in an origin of their own, cannot read what the desk
+keeps in the browser, and a call they make to the server carries a foreign
+origin and is refused.
+
 ## In a server of your own
 
 ```js

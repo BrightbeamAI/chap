@@ -139,7 +139,11 @@ needs a client that signs its calls, as the production template's agent
 does. The server listens on the loopback address,
 refuses a request from another origin or under a host name it was not
 given, and takes JSON only on `POST /chap`, so a page open elsewhere cannot
-decide as the reviewer; a deployment puts TLS and its own login in front,
+call it as the reviewer. Its pages say no other page may frame them, so a
+page elsewhere cannot lay the desk under a decoy and take your click, and
+the desk runs only its own scripts. The analytics pages run in a sandbox
+with an origin of their own, so a page dropped in `analytics/` cannot reach
+the desk. A deployment puts TLS and its own login in front,
 and names the host the proxy passes in `allowed_hosts` in `chap.config.json`
 or in `CHAP_ALLOWED_HOSTS`. It runs one coordinator process over one SQLite
 file. The chain head stays in that file,

@@ -111,10 +111,12 @@ export function summarise(tasks) {
 
 function bars(pairs, { max = null } = {}) {
   const top = max ?? Math.max(1, ...pairs.map(([, n]) => n));
-  return el("div", { class: "bars" }, pairs.slice(0, 8).map(([name, n]) => el("div", { class: "bar" },
-    el("span", { class: "name", title: name, text: name }),
-    el("div", { class: "track" }, el("div", { class: "fill", style: `width:${Math.round((100 * n) / top)}%` })),
-    el("span", { class: "n", text: String(n) }))));
+  return el("div", { class: "bars" }, pairs.slice(0, 8).map(([name, n]) => {
+    // Set through the style object, which the page's policy allows; a style attribute it refuses.
+    const fill = el("div", { class: "fill" });
+    fill.style.width = `${Math.round((100 * n) / top)}%`;
+    return el("div", { class: "bar" }, el("span", { class: "name", title: name, text: name }), el("div", { class: "track" }, fill), el("span", { class: "n", text: String(n) }));
+  }));
 }
 
 /**
@@ -184,7 +186,7 @@ export function renderInsights(tasks, { chain = null, analytics = null, onOpenTa
     stat("Time to decision", minutes(s.median_time_ms), "median, first decision"),
     stat("Chain", chain ? String(chain.entries) : "off", chain ? (chain.verified === true ? "entries, verified" : chain.verified === false ? "entries, verification failed" : "entries") : "the chain is off"),
   ));
-  const legend = el("div", { class: "legend" }, el("span", {}, el("i", { style: "background:var(--ok)" }), "approve"), el("span", {}, el("i", { style: "background:var(--warn)" }), "approve with an edit"), el("span", {}, el("i", { style: "background:var(--bad)" }), "reject or send back"));
+  const legend = el("div", { class: "legend" }, el("span", {}, el("i", { class: "ok" }), "approve"), el("span", {}, el("i", { class: "warn" }), "approve with an edit"), el("span", {}, el("i", { class: "bad" }), "reject or send back"));
   const modelTable = s.models.length ? el("table", { class: "table" },
     el("thead", {}, el("tr", {}, ["Model", "Changes", "As written", "Edited", "Sent back", "Rejected"].map((h) => el("th", { text: h })))),
     el("tbody", {}, s.models.map((m) => el("tr", {},
