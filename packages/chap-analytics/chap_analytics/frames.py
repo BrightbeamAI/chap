@@ -1602,6 +1602,7 @@ def frames(chain: Chain) -> Frames:
                     "request_revision": d["request_revision"],
                     "abstain_category": d["abstain_category"],
                     "digest_bound": d["digest_bound"],
+                    "artefact": r.artefact,
                     "task_kind": t.kind, "assignee": t.assignee,
                 })
 

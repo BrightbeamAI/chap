@@ -85,6 +85,21 @@ def test_evaluation_cases_carry_before_after_and_why(tmp_path):
     assert len(with_approved) == len(cases) + int((f.tasks["outcome"] == "approved").sum())
 
 
+def test_approved_cases_carry_the_artefact_that_was_approved():
+    """An approved case's outputs were empty, so a harness could not score
+    acceptance with them. Each now holds the artefact the reviewer approved,
+    as the agent's output and as the corrected output."""
+    f = frames(support_desk())
+    approved = export.evaluation_cases(f, include_approved=True)
+    approved = approved[approved["outcome"] == "approved"]
+    assert len(approved) > 0
+    for row in approved.itertuples(index=False):
+        assert row.agent_output is not None
+        assert row.corrected_output == row.agent_output
+        settled = f.decisions[(f.decisions["task_id"] == row.task_id) & f.decisions["is_final"]]
+        assert settled.iloc[-1]["artefact"] == row.agent_output
+
+
 def test_evaluation_cases_from_envelopes_alone_leave_input_null():
     f = frames(support_desk(envelopes_only=True))
     cases = export.evaluation_cases(f)

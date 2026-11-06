@@ -159,6 +159,7 @@ DECISIONS = Table(
         _c("request_revision", "boolean", "envelopes", "On a rejection, whether the task was sent back rather than declined."),
         _c("abstain_category", "string", "envelopes", "On an abstention, the stated category."),
         _c("digest_bound", "boolean", "derived", "Whether the decision carried an artefact digest, binding it to exact content."),
+        _c("artefact", "object", "replay", "The artefact the decision was made on: the one under review in its pass, as the agent submitted it."),
         _c("task_kind", "string", "derived", "Denormalised from tasks, so a reviewer analysis reads it here directly."),
         _c("assignee", "string", "derived", "Denormalised: who produced the work being judged."),
     ),

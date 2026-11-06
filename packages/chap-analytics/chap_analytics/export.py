@@ -45,9 +45,10 @@ def evaluation_cases(f: Frames, *, include_approved: bool = False) -> pd.DataFra
     One row per corrected task: ``input`` (where the chain carries state),
     ``agent_output`` (the artefact under review), ``corrected_output`` (the
     patch applied), ``rationale``, ``tags``, ``intent_preserved``, and who
-    decided. With ``include_approved`` the approved tasks are added with the
-    corrected output equal to the agent's, so a harness can score acceptance
-    as well as correction.
+    decided. With ``include_approved`` the approved tasks are added, each
+    with the artefact the reviewer approved as both the agent's output and
+    the corrected output, so a harness can score acceptance as well as
+    correction.
     """
     inputs = _inputs(f)
     o = f.overrides
@@ -64,13 +65,15 @@ def evaluation_cases(f: Frames, *, include_approved: bool = False) -> pd.DataFra
     if include_approved and not f.decisions.empty:
         approved = f.tasks[f.tasks["outcome"] == "approved"]
         settle = _stats._settling_decisions(f).set_index("task_id")
-        # An approval carries no artefact of its own: the agent's output was
-        # accepted as drafted, so both output columns stay empty on these rows.
+        # The agent's output was accepted as drafted, so the artefact the
+        # approval was made on is both the output and the corrected output.
         for t in approved.itertuples(index=False):
-            reviewer = settle["reviewer"].get(t.task_id) if t.task_id in settle.index else None
+            decided = t.task_id in settle.index
+            reviewer = settle["reviewer"].get(t.task_id) if decided else None
+            artefact = settle["artefact"].get(t.task_id) if decided else None
             rows.append({"task_id": t.task_id, "kind": t.kind, "assignee": t.assignee, "reviewer": reviewer,
-                         "ts": t.settled_at, "input": inputs.get(t.task_id), "agent_output": None,
-                         "corrected_output": None, "rationale": None, "tags": [], "policy_refs": [],
+                         "ts": t.settled_at, "input": inputs.get(t.task_id), "agent_output": artefact,
+                         "corrected_output": artefact, "rationale": None, "tags": [], "policy_refs": [],
                          "intent_preserved": None, "outcome": "approved"})
     out = pd.DataFrame(rows, columns=cols)
     return out.sort_values("ts").reset_index(drop=True) if not out.empty else out
