@@ -1,4 +1,5 @@
 {
+  "template": { "name": "support-desk", "version": "0.3.4" },
   "workspace": "__WORKSPACE__",
   "profiles": __PROFILES_JSON__,
   "store": "./data/chap.db",
@@ -7,6 +8,6 @@
     { "uri": "__HUMAN_URI__", "display_name": "__HUMAN_NAME__", "role": "reviewer" }
   ],
   "agent": { "uri": "__AGENT_URI__", "display_name": "The drafter" },
-  "require_signatures": false,
-  "chain": false
+  "require_signatures": "humans",
+  "chain": true
 }

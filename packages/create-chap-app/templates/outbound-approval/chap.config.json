@@ -1,4 +1,5 @@
 {
+  "template": { "name": "outbound-approval", "version": "0.3.4" },
   "workspace": "__WORKSPACE__",
   "profiles": __PROFILES_JSON__,
   "mode": "trial",
@@ -9,6 +10,6 @@
     { "uri": "__HUMAN_URI__", "display_name": "__HUMAN_NAME__", "role": "approver" }
   ],
   "agent": { "uri": "__AGENT_URI__", "display_name": "The drafter" },
-  "require_signatures": false,
-  "chain": false
+  "require_signatures": "humans",
+  "chain": true
 }

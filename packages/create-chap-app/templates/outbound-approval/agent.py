@@ -20,7 +20,7 @@ the agent checks on workspace.describe, a read, that an approver has joined:
 a completion with nobody to address the review to is refused and the refusal
 recorded, so the agent waits instead and says so once.
 
-Under control/1.0 the approver can pause the agent with pause.py. While it
+Under control/1.0 pause.py pauses the agent from the command line. While it
 is paused, task.create is refused with -32063; the agent says so and waits
 until resume.py runs.
 
@@ -49,6 +49,9 @@ except ModuleNotFoundError as exc:  # no chap-coordinator, or one from before th
 from providers import Provider, make_provider
 
 HERE = Path(__file__).resolve().parent
+#: Where a participant's private key is kept when signatures are required;
+#: .gitignore keeps it out of git.
+KEYS = HERE / "keys"
 TASK_KIND = "outbound_message"
 COLUMNS = ("to", "subject", "brief")
 REVISION_LINE = "The approver asked for a revision"
@@ -273,8 +276,10 @@ def run(agent: Participant, provider: Provider, source: str | os.PathLike, outbo
         time.sleep(poll_seconds)
 
 
-def connect(config: dict, url: str) -> Participant:
-    """The agent's participant, joined with its own key when signatures are required."""
+def connect(config: dict, url: str, keys: Path | None = None) -> Participant:
+    """The agent's participant, joined with its own key when signatures are
+    required. The key is in ``keys``, by default keys/ beside this file,
+    wherever the agent is started from."""
     client = HttpCoordinator(url)
     try:
         client.get("/api/health")
@@ -286,16 +291,31 @@ def connect(config: dict, url: str) -> Participant:
     # agent's tasks in a workspace the desk never shows.
     if public.get("workspace") != config["workspace"]:
         raise SystemExit(f"{url} serves {public.get('workspace')}, and chap.config.json here names {config['workspace']}")
-    signer = Signer.load_or_create(config["agent"]["uri"]) if public.get("require_signatures") else None
+    signer = Signer.load_or_create(config["agent"]["uri"], keys or KEYS) if public.get("require_signatures") else None
     agent = Participant(client, config["workspace"], config["agent"]["uri"], signer=signer)
     if signer:
         agent.join("agent", "drafter", config["agent"].get("display_name"))
     return agent
 
 
-def approver(config: dict, url: str | None = None) -> Participant:
-    """The first configured human, for pause.py and resume.py."""
-    return Participant(HttpCoordinator(url or desk_url(config)), config["workspace"], config["humans"][0]["uri"])
+#: Who pause.py and resume.py act as: the operator's console, a member of its own.
+OPERATOR = "service:operator@local"
+
+
+def operator(config: dict, url: str | None = None, keys: Path | None = None) -> Participant:
+    """The operator's console, for pause.py and resume.py, joined to the workspace.
+
+    A person's key is in the desk's browser, so a call from the command
+    line cannot carry the approver's signature, and the log names who made
+    it. When signatures are required the console signs with a key of its
+    own, in ``keys`` beside the agent's.
+    """
+    client = HttpCoordinator(url or desk_url(config))
+    public = client.get("/api/config") or {}
+    signer = Signer.load_or_create(OPERATOR, keys or KEYS) if public.get("require_signatures") else None
+    console = Participant(client, config["workspace"], OPERATOR, signer=signer)
+    console.join("service", "operator", "The operator's console")
+    return console
 
 
 def main(argv: list[str] | None = None) -> None:

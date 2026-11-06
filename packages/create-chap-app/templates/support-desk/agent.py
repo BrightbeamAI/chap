@@ -42,6 +42,9 @@ except ModuleNotFoundError as exc:  # no chap-coordinator, or one from before th
 from providers import Provider, make_provider
 
 HERE = Path(__file__).resolve().parent
+#: Where a participant's private key is kept when signatures are required;
+#: .gitignore keeps it out of git.
+KEYS = HERE / "keys"
 TASK_KIND = "draft_reply"
 COLUMNS = ("id", "customer", "subject", "body")
 REVISION_LINE = "The reviewer asked for a revision"
@@ -248,8 +251,10 @@ def run(agent: Participant, provider: Provider, source: str | os.PathLike, repli
         time.sleep(poll_seconds)
 
 
-def connect(config: dict, url: str) -> Participant:
-    """The agent's participant, joined with its own key when signatures are required."""
+def connect(config: dict, url: str, keys: Path | None = None) -> Participant:
+    """The agent's participant, joined with its own key when signatures are
+    required. The key is in ``keys``, by default keys/ beside this file,
+    wherever the agent is started from."""
     client = HttpCoordinator(url)
     try:
         client.get("/api/health")
@@ -261,7 +266,7 @@ def connect(config: dict, url: str) -> Participant:
     # agent's tasks in a workspace the desk never shows.
     if public.get("workspace") != config["workspace"]:
         raise SystemExit(f"{url} serves {public.get('workspace')}, and chap.config.json here names {config['workspace']}")
-    signer = Signer.load_or_create(config["agent"]["uri"]) if public.get("require_signatures") else None
+    signer = Signer.load_or_create(config["agent"]["uri"], keys or KEYS) if public.get("require_signatures") else None
     agent = Participant(client, config["workspace"], config["agent"]["uri"], signer=signer)
     if signer:
         agent.join("agent", "drafter", config["agent"].get("display_name"))

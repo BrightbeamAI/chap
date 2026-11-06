@@ -13,8 +13,11 @@ python agent.py tickets.csv     # in a second terminal: drafts, then waits for y
 open http://127.0.0.1:8788/     # decide in the desk
 ```
 
-`desk.py` creates the workspace, joins the participants named in
-`chap.config.json` and keeps the SQLite store under `data/`. `agent.py`
+`desk.py` creates the workspace and keeps the SQLite store under `data/`
+beside `chap.config.json`, wherever you start it from. Opening the desk
+joins you to the workspace with a key it makes in your browser, and
+`agent.py` joins the agent with a key of its own (see [Signatures and the
+chain](#signatures-and-the-chain)). `agent.py`
 opens a task for each of the three sample tickets, drafts a reply, submits
 it and waits for your decision; with `--once` it exits once every ticket in
 the file is decided, and without it, it keeps watching the file for new
@@ -48,26 +51,55 @@ replace `draft` in `agent.py`: it returns the JSON object the reviewer sees.
 
 **Your agent.** Anything that can POST JSON can take the agent's place: send
 JSON-RPC envelopes to `http://127.0.0.1:8788/chap` with `task.create`, then
-`task.complete`, and poll `GET /api/tasks/<id>` until the state changes.
-`chap_coordinator.client` wraps that for Python, and a framework bridge
-written against an in-process coordinator runs unchanged over HTTP, because
-`HttpCoordinator` answers `dispatch(envelope)` the way a `Coordinator` does:
+`task.complete`, and poll `GET /api/tasks/<id>` until the state changes. It
+joins once with `participant.join`, registering a key of its own, and signs
+each call as `security-signed/1.0` describes. `chap_coordinator.client`
+does both for Python, as `connect` in `agent.py` shows. The agent's
+`Participant` answers `dispatch(envelope)` the way a `Coordinator` does,
+signing what the agent sends, so a framework bridge written against an
+in-process coordinator runs over HTTP unchanged:
 
 ```python
-import json
-from chap_coordinator.client import HttpCoordinator
+from agent import connect, desk_url, load_config
 from chap_langgraph import ChapBridge, hil_review
 
-config = json.load(open("chap.config.json"))
-coord = HttpCoordinator("http://127.0.0.1:8788/chap")
-bridge = ChapBridge(coord, workspace=config["workspace"], agent=config["agent"]["uri"], reviewer=config["humans"][0]["uri"])
+config = load_config()
+agent = connect(config, desk_url(config))
+bridge = ChapBridge(agent, workspace=config["workspace"], agent=config["agent"]["uri"], reviewer=config["humans"][0]["uri"])
 chap_state = hil_review(bridge, draft, kind="draft_reply")
 ```
 
+Open the desk before the bridge starts: a bridge joins the reviewer it
+names, and a reviewer joined without a key cannot add one by joining again.
 The review opens in the desk like any other; your graph reads the decided
 output from `GET /api/tasks/<id>` when the state is no longer
 `review_requested`. The other bridges (`chap-pydantic-ai`, `chap-llama-index`,
-`chap-ag2`, `chap-google-adk`) take the same object in place of a coordinator.
+`chap-ag2`, `chap-google-adk`) take the same object as their coordinator.
+Each one's README says whether it opens a review and waits for the desk, or
+records a decision made elsewhere, which this project refuses while people
+sign: the decision would carry no signature of theirs.
+
+## Signatures and the chain
+
+`"require_signatures": "humans"` in `chap.config.json` means a person's
+calls are signed. The first time you open the desk it makes a key in your
+browser, registers it as it joins you to the workspace, and signs each
+decision with it. The coordinator refuses a call in your name that your key
+did not sign, so another program on this machine cannot decide as you
+through `POST /chap`. The key stays in this browser's storage for the
+desk's address, where a program running under your own account can still
+reach it. `agent.py` signs as well, with a key it makes in `keys/`, which
+`.gitignore` keeps out of git. `true` asks every caller to sign, and
+`false` asks no one, so any program on this machine can then decide in
+your name; `CHAP_REQUIRE_SIGNATURES` (`humans`, `1` or `0`) overrides the
+file. While signatures are required the server adds `security-signed/1.0`
+to the profiles, and says so when it starts. A participant joined without a
+key cannot add one by joining again, so to turn signatures on for a store
+written without them, start a new store: move `data/` aside.
+
+`"chain": true` links each entry on the log to the one before it by its
+hash, so an entry changed or taken out afterwards shows when the chain is
+verified, as the desk does and as `audit.verify_chain` does for any member.
 
 ## The desk, insights and analytics
 
@@ -105,7 +137,8 @@ A method a profile owns is refused with `-32601` when the profile is absent.
 Adding a profile is one edit to `chap.config.json`. With `modes/1.0` a
 trial-mode task requires review whatever the agent passes; with
 `control/1.0` a paused agent is assigned nothing (`-32063`); with
-`audit-scitt/1.0` the chain is on and the desk shows it verified.
+`audit-scitt/1.0` the chain stays on whatever `"chain"` says, and the
+workspace can hand its entries to a transparency service.
 
 ## diff-profiles
 
@@ -136,14 +169,14 @@ service, or a head published somewhere the operator cannot change, is what
 shows an entry existed independently of the coordinator (SECURITY.md).
 
 The desk, `POST /chap` and the read API under `/api/` have no login. A
-`human:` URI in the desk is a label that says who is deciding; it does not
-authenticate them. The server listens on the loopback address, refuses a
-request from another origin or under a host name it was not given, and
-takes JSON only on `POST /chap`, so a page open elsewhere cannot decide as
-the reviewer; the deployment puts TLS and its own login in front, names the
-host the proxy passes in `allowed_hosts` in `chap.config.json` or in
-`CHAP_ALLOWED_HOSTS`, and `security-signed/1.0` with a key per person is
-what ties a decision to its holder.
+`human:` URI in the desk is a label that says who is deciding; the key the
+desk signs with is what ties a decision to its holder. The server listens on
+the loopback address, refuses a request from another origin or under a host
+name it was not given, takes JSON only on `POST /chap`, and tells the
+browser that no other page may frame the desk, so a page open elsewhere
+cannot decide as the reviewer. The deployment puts TLS and its own login in
+front, and names the host the proxy passes in `allowed_hosts` in
+`chap.config.json` or in `CHAP_ALLOWED_HOSTS`.
 
 `tests/` and `diff-profiles.py` script the decisions, because nobody is at
 the desk when they run; the project itself never does.

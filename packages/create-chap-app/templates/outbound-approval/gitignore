@@ -1,4 +1,5 @@
 data/
+keys/
 outbox/
 __pycache__/
 analytics/

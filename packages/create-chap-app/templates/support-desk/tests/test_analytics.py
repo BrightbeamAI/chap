@@ -30,7 +30,9 @@ def call(coord, workspace, method, **params):
 
 def test_the_pages_come_from_the_store(tmp_path):
     config = load_config(ROOT / "chap.config.json")
-    config["store"] = str(tmp_path / "chap.db")
+    # The script reads whatever the store holds, signed or not, so these
+    # calls are made unsigned.
+    config.update(store=str(tmp_path / "chap.db"), require_signatures=False)
     coord = make_coordinator(config)
     ws, agent, human = config["workspace"], config["agent"]["uri"], config["humans"][0]["uri"]
     tasks = []
