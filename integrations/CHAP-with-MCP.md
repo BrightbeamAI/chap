@@ -164,75 +164,71 @@ Pattern:
    determination is made by the agent or by an MCP-server-side
    policy; CHAP does not prescribe.)
 2. The agent emits `review.request` with the proposed MCP call (tool
-   name, arguments, expected outcome summary) as a `draft` artefact.
-3. The reviewer issues `decide.approve` or `decide.reject`.
-4. On approval, the agent makes the MCP call. The agent's
-   `task.complete` artefact cites both the *approved draft* (as an
-   internal CHAP artefact reference) and the *resulting MCP call*
-   (as an MCP citation).
+   name, arguments, expected outcome summary) as the artefact under
+   review.
+3. The reviewer issues `decide.approve`, `decide.override` with the call
+   corrected, or `decide.reject`. An approval or an override completes the
+   task, and its output is the call as decided.
+4. The agent makes the MCP call as decided, and records it in a task of
+   its own: the result, an MCP citation of the call, and `fulfils` naming
+   the task whose decision it carries out.
 5. On rejection, the agent does not make the call.
 
 This is mechanism; the policy of "which tools need approval" lives in
 your application or workspace policy, not in the protocol.
 
-Worked example (skeleton):
+Worked example. The agent has a task, `tsk_…`, and proposes the call for
+review:
 
 ```json
 {
+  "jsonrpc": "2.0", "id": "7",
   "method": "review.request",
   "params": {
+    "workspace": "wsp_support_eu",
+    "from": "agent:drafter",
     "task_id": "tsk_…",
-    "artefact_id": "art_PROPOSED_TOOL_CALL",
+    "to": ["human:approver@example.org"],
     "rule": "any_one_approves",
-    "reviewers": ["human:approver@example.org"],
-    "summary": "Proposing to issue customer credit £75 via customer-credits/issue."
-  }
-}
-```
-
-```json
-{
-  "id": "art_PROPOSED_TOOL_CALL",
-  "kind": "draft",
-  "content": {
-    "intended_mcp_call": {
-      "server": "mcp+https://tools.example.org/customer-credits",
-      "tool":   "issue",
-      "arguments": { "customer_id": "CUST-7K2M9", "amount_gbp": 75.0, "reason": "goodwill" }
-    }
-  }
-}
-```
-
-After approval, the agent calls the tool and emits:
-
-```json
-{
-  "method": "task.complete",
-  "params": {
-    "task_id": "tsk_…",
     "artefact": {
-      "kind": "decision",
-      "based_on": "art_PROPOSED_TOOL_CALL",
-      "content": { "credit_id": "CR-5582", "amount_gbp": 75.0 },
-      "citations": [
-        {
-          "kind": "mcp_tool_invocation",
-          "server": "mcp+https://tools.example.org/customer-credits",
-          "tool": "issue",
-          "call_id": "call_01HZ…",
-          "input_hash":  "sha256:…",
-          "output_hash": "sha256:…"
-        }
-      ]
+      "summary": "Proposing to issue customer credit £75 via customer-credits/issue.",
+      "intended_mcp_call": {
+        "server": "mcp+https://tools.example.org/customer-credits",
+        "tool": "issue",
+        "arguments": { "customer_id": "CUST-7K2M9", "amount_gbp": "75.00", "reason": "goodwill" }
+      }
     }
   }
 }
+```
+
+`to` names the reviewers, and `artefact` is the proposal itself, so the
+decision is made on the exact call. The amount is a decimal string: a CHAP
+envelope carries no fractional numbers (SPECIFICATION §7). The task moves to
+`review_requested`. The approver's `decide.approve` completes it, and the
+proposal becomes its output; a `decide.override` patches the proposal, and
+the patched call is the output the agent carries out.
+
+After the decision, the agent makes the call and records it. The wrap
+helper (§10) writes that task in one call, with the arguments and result
+hashed in a citation and `fulfils` naming the decided task:
+
+```python
+wrap_mcp_tool_call(
+    coord, "wsp_support_eu",
+    caller="agent:drafter",
+    server="mcp+https://tools.example.org/customer-credits",
+    tool="issue",
+    args={"customer_id": "CUST-7K2M9", "amount_gbp": "75.00", "reason": "goodwill"},
+    result={"credit_id": "CR-5582", "amount_gbp": "75.00"},
+    fulfils="tsk_…",
+)
 ```
 
 Anyone replaying the chain sees: proposed call → human approval →
-executed call, all linked. The MCP server, asked separately, can
-confirm the call happened with the recorded hashes.
+executed call, all linked. `fulfils` is the agent's own claim, which the
+coordinator does not check (SPECIFICATION §9.4); the MCP server, asked
+separately, can confirm the call happened with the recorded hashes.
 
 ---
 
@@ -330,14 +326,58 @@ CHAP workspace from natural language.
 
 - `packages/coordinator-mcp/`. TypeScript adapter. Wrap a `Coordinator`
   with `makeChapMcpServer(coord, options)` and pass the result to any
-  MCP transport.
+  MCP transport, or serve it on an HTTP endpoint with
+  `chapMcpHttpHandler(coord, options)`, which answers MCP 2026-07-28 and
+  the handshake-era revisions alike. Its command, `chap-mcp-server`, runs
+  the server on stdio.
 - `chap_coordinator.transports.mcp_server`. Python adapter (installable
   via `pip install chap-coordinator[mcp]`). Same shape:
-  `make_chap_mcp_server(coord, name=..., version=...)`.
+  `make_chap_mcp_server(coord, name=..., version=..., participant=...,
+  tool_filter=...)`. Its command is
+  `python -m chap_coordinator.transports.mcp_cli`, with the same options
+  as `chap-mcp-server`.
 - `reference/mcp-server-ts/` and `reference/mcp-server-py/`. Runnable
-  stdio servers you can point an MCP client at directly.
+  stdio servers, each an example of embedding the adapter.
 
 Spec target: MCP **2026-07-28**, serving MCP **2025-11-25** clients as well.
+
+### Who the server acts as
+
+An MCP call carries no signature, so a server that lets each call name its
+own `from` lets one client act as anyone: join as a person, approve in
+their name, and leave a log that credits the person. A server that is one
+participant's connection is pinned to that participant:
+
+- `participant` (`participant=` in Python) fills in `from` on every call
+  and refuses a call that names anyone else. The tools then list `from` as
+  optional, with the participant's URI in its description.
+- `AGENT_MCP_TOOLS` is the tool set an agent's connection offers: task
+  create, update and complete, `whisper.ask`, the three decisions,
+  `workspace.describe`, `audit.read` and `audit.verify_chain`. It leaves
+  out the tools that choose who reviews the agent's work or pass its review
+  on, such as `review.request`, whose `to` could name the agent itself.
+  `task.update` stays: it can take a task under review back to
+  `in_progress`, which withdraws the draft. The next completion opens a
+  new review where the task has `review_required`, and completes the task
+  where it does not, so set `review_required` on any task the agent must
+  not finish alone. Pass the set as `toolFilter` (`tool_filter=`); a tool
+  the filter excludes is refused when called by name.
+
+The commands are pinned by default: they act as `agent:assistant@local`
+(`--as` or `CHAP_PARTICIPANT` names another), offer the agent's tools
+(`--tools all` offers every method, still as the one participant), and
+refuse a `human:` participant at start. A person decides in a desk. With
+`--url`, the command forwards every call to a running CHAP server's
+JSON-RPC endpoint, such as the desk server a `create-chap-app` mcp-gate
+project runs, so the assistant on stdio works in a workspace whose person
+decides there.
+
+The pin covers the connection only. It records that a call came through
+this server, and does not show who sent it; any process that can start the
+command, or reach an MCP endpoint, acts as its participant. A person's
+decisions hold where the server requires the desk's signature on them. The
+[package README](../packages/coordinator-mcp/README.md) says what an
+unsigned local server trusts.
 
 ### What gets exposed
 
@@ -418,6 +458,11 @@ into the workspace's audit log, with the result artefact carrying a
 hashes of the canonicalised inputs and outputs. The helper returns the
 new task id and both hashes so downstream callers can cite the
 wrapped event directly.
+
+Python's helper takes `review_required=True`: the task is created
+requiring review, so the call's result waits as the artefact under review
+for a person in the workspace to decide, and the helper raises where no one
+could. The TypeScript helper completes the task at once.
 
 Pass `fulfils` (TypeScript) / `fulfils=` (Python) with the id of the
 decision the call carries out, and the helper records it as a `fulfils`

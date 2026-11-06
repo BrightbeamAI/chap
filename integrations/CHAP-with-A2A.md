@@ -306,34 +306,31 @@ discover its skills, and delegate work to it.
 
 ### What ships
 
-- `packages/coordinator-a2a/`. TypeScript adapter (`@brightbeamai/chap-coordinator-a2a`).
-  Built on the official `@a2a-js/sdk` (A2A spec **0.3.0**).
+- `packages/coordinator-a2a/`. TypeScript adapter (`@brightbeamai/chap-coordinator-a2a`),
+  on the official `@a2a-js/sdk` 1.x (A2A spec **1.0**), and `chapA2aGuard`,
+  the checks a server on the user's machine makes before its routes.
 - `chap_coordinator.transports.a2a_server`. Python adapter, installable
-  via `pip install chap-coordinator[a2a]`. Built on the official
-  `a2a-sdk` (A2A spec **1.0**).
+  via `pip install chap-coordinator[a2a]`, on the official `a2a-sdk` 1.x
+  (A2A spec **1.0**). `chap_coordinator.transports.a2a_app` builds the
+  server as an ASGI app behind the same checks, and
+  `python -m chap_coordinator.transports.a2a_cli` serves it.
 - `reference/a2a-server-ts/` and `reference/a2a-server-py/`. Runnable
   HTTP servers using each language's idiomatic web framework
-  (Express, FastAPI).
+  (Express, Starlette).
 - Inward wrap helpers in both languages (`wrap_a2a_message_exchange`,
   `wrapA2aMessageExchange`) implement the bridge-participant pattern
   in §3 as a library utility.
 
-### Spec version asymmetry
+### A2A 1.0, and 0.3 clients
 
-The two SDKs are at different points of the A2A spec evolution:
-
-- Python `a2a-sdk` 1.x implements **A2A 1.0** with PascalCase JSON-RPC
-  method names (`SendMessage`, `GetTask`). The reference Python
-  server enables `enable_v0_3_compat=True` so it accepts the older
-  `message/send` slash form as well.
-- TypeScript `@a2a-js/sdk` 0.3.x implements **A2A 0.3.0** with the
-  slash form (`message/send`). Spec v1.0 support is on the SDK
-  roadmap.
-
-The CHAP adapter layer is identical across both; the asymmetry is a
-property of the SDK ecosystem we depend on. The Agent Cards
-advertise the protocol version each adapter targets, so client
-discovery works correctly in both cases.
+Both adapters implement **A2A 1.0**: JSON-RPC methods in PascalCase
+(`SendMessage`, `GetTask`), parts as `{data, mediaType}`, and task states
+named `TASK_STATE_*`. Both cards list the JSON-RPC endpoint twice, at
+protocol version 1.0 and at 0.3, and both servers turn on their SDK's v0.3
+compatibility (`legacyCompat` in TypeScript, `enable_v0_3_compat` in
+Python), so a client still on A2A 0.3 reads the card in its 0.3 shape and
+calls `message/send` at the same URL. Every input and output mode is
+`application/json`.
 
 ### What gets exposed
 
@@ -351,29 +348,69 @@ chap.task.create             chap.decide.override
 
 (All 39 methods listed in `CHAP-with-MCP.md` §10.)
 
-A2A messages carry the CHAP params in a `DataPart`. The skill id
+A2A messages carry the CHAP params in a data part. The skill id
 identifies which CHAP method to dispatch, looked up in this order:
-`message.metadata.skill` first, then `part.data.skill` on the first
-data part. Either is acceptable; orchestrators typically populate
-the metadata path.
+`message.metadata.skill` first, then `skill` in the first data part.
+Either is acceptable; orchestrators typically populate the metadata path.
+
+An answer is an agent message whose data part is the call's result. A
+call CHAP refuses is a failure in A2A's terms: a task in
+`TASK_STATE_REJECTED`, or `TASK_STATE_FAILED` when the coordinator could
+not complete it, whose status message carries the CHAP error as
+`{chap_error, message, data?}`. An orchestrator that reads only A2A
+states sees the failure; one that reads CHAP codes has them.
+
+### Who the server acts as
+
+An A2A message carries no signature, so an executor that lets each call
+name its own `from` lets any caller act as anyone, a person included.
+Both executors take `participant`, as the MCP servers do: `from` is filled
+in on every call, and a call naming anyone else is refused with `-32011`.
+The reference servers and the Python command act as
+`agent:orchestrator@local` unless `CHAP_PARTICIPANT`, or `--as` for the
+TypeScript server and the Python command, names another, and refuse a
+`human:` participant: a person decides in a desk, never through an
+orchestrator. They offer every skill, as one participant, so the
+orchestrator can also open workspaces, join them as itself and request
+reviews; `skillFilter` (`skill_filter=`) restricts the skills, on the card
+and in the executor alike.
+
+### What a local server checks
+
+A browser sends a request to a loopback address from any page, so an A2A
+server on the user's machine makes the create-chap-app servers' checks
+before its routes: a `Host` that is not one of its names is refused with
+421, which defeats DNS rebinding; an `Origin` naming another site with 403;
+a POST that is not `application/json` with 415, which stops a page's
+cross-site `fetch` with a `text/plain` body; and a body over 1,114,112
+bytes with 413 before the rest is read. Each refusal is a short JSON body.
+A fault inside the coordinator or the server reaches the client as a
+failure without its detail, which stays in the server's log, so no stack
+trace, path or exception text crosses the wire; a malformed A2A request is
+answered with the SDK's own account of what is wrong with it.
+
+None of this authenticates a caller: any local process can call the server,
+as its one participant. A2A's security schemes, declared on the card and
+enforced at the transport, are how a deployment names its callers.
 
 ### Quickstart
 
-Start either reference server, then point an A2A client at its
-agent-card URL:
+Start either reference server, or the Python command, then point an A2A
+client at its agent-card URL:
 
 ```bash
 # TypeScript
 tsx reference/a2a-server-ts/server.ts --port 9090
 # Python
 python3 reference/a2a-server-py/server.py --port 9090
+python -m chap_coordinator.transports.a2a_cli --port 9090 --db ~/chap-a2a.db
 ```
 
 ```bash
 curl http://localhost:9090/.well-known/agent-card.json
 ```
 
-A worked walkthrough using a real orchestrator is at
+A worked walkthrough is at
 [`examples/drive-chap-from-an-a2a-orchestrator.md`](../examples/drive-chap-from-an-a2a-orchestrator.md).
 
 ### Composition
