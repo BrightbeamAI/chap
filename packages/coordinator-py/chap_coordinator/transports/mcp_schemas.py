@@ -474,6 +474,29 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         ],
     },
 
+    "chap.review.acknowledge": {
+        "type": "object",
+        "properties": {
+            "workspace": {
+                "type": "string",
+                "description": "Workspace identifier, e.g. 'wsp_techcorp_support'.",
+            },
+            "from": {
+                "type": "string",
+                "description": "Participant URI, e.g. 'human:alice@example.org' or 'agent:bot@local'.",
+            },
+            "task_id": {
+                "type": "string",
+                "description": "Task identifier returned by chap.task.create.",
+            },
+        },
+        "required": [
+            "workspace",
+            "from",
+            "task_id",
+        ],
+    },
+
     "chap.decide.approve": {
         "type": "object",
         "properties": {

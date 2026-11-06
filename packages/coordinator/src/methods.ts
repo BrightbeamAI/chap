@@ -12,7 +12,7 @@
  * the schemas automatically; for now the source of truth remains
  * the running tests under `tests/`.
  *
- * Scope: 39 method handlers shipped by both reference
+ * Scope: 40 method handlers shipped by both reference
  * implementations (Core + every shipped profile). Spec-only methods
  * are excluded - they would mislead callers into thinking the local
  * Coordinator can dispatch them.
@@ -122,6 +122,10 @@ export interface ReviewRequestParams extends WorkspaceParam, ActorParam, TaskPar
   deadline?: string;
 }
 export interface ReviewRequestResult { state: string; review_id: TaskId }
+
+export interface ReviewAcknowledgeParams extends WorkspaceParam, ActorParam, TaskParam {}
+/** `requested_at` is when the round acknowledged opened, and names it. */
+export interface ReviewAcknowledgeResult { acknowledged: true; requested_at: string }
 
 export interface DecideApproveParams extends WorkspaceParam, ActorParam, TaskParam {
   rationale?: string;
@@ -377,6 +381,7 @@ export interface MethodTable {
   "task.complete":             { params: TaskCompleteParams,          result: TaskCompleteResult          };
 
   "review.request":            { params: ReviewRequestParams,         result: ReviewRequestResult         };
+  "review.acknowledge":        { params: ReviewAcknowledgeParams,     result: ReviewAcknowledgeResult     };
   "decide.approve":            { params: DecideApproveParams,         result: DecideApproveResult         };
   "decide.reject":             { params: DecideRejectParams,          result: DecideRejectResult          };
   "decide.override":           { params: DecideOverrideParams,        result: DecideOverrideResult        };

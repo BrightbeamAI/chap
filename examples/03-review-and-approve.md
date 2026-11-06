@@ -53,8 +53,8 @@ the agent's self-reported confidence.
 
 ## 3.2 Reviewer acknowledges
 
-Alice's client signals engagement so the agent and the Coordinator can
-update their UIs:
+Alice's client says she has begun the review, so the log records when
+she took it up as well as when she decides:
 
 ```json
 {
@@ -64,17 +64,19 @@ update their UIs:
   "workspace": "wsp_support_triage",
   "from": "human:alice@example.org",
   "to":   "workspace:wsp_support_triage",
-  "type": "notification",
+  "type": "request",
   "method": "review.acknowledge",
   "params": {
-    "task_id": "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B",
-    "artefact_id": "art_01HZ9YX7K3X8M2V4N6P8R0T3G"
+    "task_id": "tsk_01HZ9YX7K3X8M2V4N6P8R0T3B"
   },
   "evidence": { "prev_hash": "sha256:30c3…41d4", "sig": "ed25519:…" }
 }
 ```
 
-This is informational; the protocol does not require it.
+The protocol does not require it, and it decides nothing. The
+Coordinator answers with `acknowledged: true` and the `requested_at` of
+the review round, and takes it once from each reviewer in a round
+([`profiles/review.md`](../profiles/review.md) §3.6).
 
 ---
 

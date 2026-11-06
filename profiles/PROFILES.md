@@ -21,7 +21,7 @@ Each row is a self-contained document.
 | [`audit-scitt`](./audit-scitt.md)                             | Cryptographic transparency log via IETF SCITT.                     | Regulatory audit; offline-verifiable proofs.                  |
 | [`identity-oidc`](./identity-oidc.md)                         | OIDC-bound human identity with `cnf.jwk` and step-up auth.         | Most enterprise SaaS deployments.                             |
 | [`identity-vc`](./identity-vc.md)                             | W3C Verifiable Credentials for richer identity claims.             | Regulated professions; cross-org credentials.                 |
-| [`review`](./review.md)                                       | `review.request`, `decide.approve`/`reject`/`override`, `abstain`. | Humans approving agent output. **The highest-value profile.** |
+| [`review`](./review.md)                                       | `review.request`, `review.acknowledge`, `decide.approve`/`reject`/`override`, `abstain`. | Humans approving agent output. **The highest-value profile.** |
 | [`whisper`](./whisper.md)                                     | Deadline-bound interrupt questions with default-if-lapsed.         | Mid-task disambiguation.                                      |
 | [`deliberation`](./deliberation.md)                           | Multi-party voting with quorum, weights, vetoes.                   | Group decisions; release-gate boards.                         |
 | [`modes`](./modes.md)                                         | Shadow / Trial / Production task mode ladder.                      | Safely rolling out new agents.                                |

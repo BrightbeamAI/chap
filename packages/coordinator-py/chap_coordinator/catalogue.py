@@ -40,6 +40,7 @@ OWNING_PROFILE: dict[str, str] = {
     "participant.leave":       "core/1.0",
     "participant.revoke_key":  "core/1.0",
     "participant.rotate_key":  "core/1.0",
+    "review.acknowledge":      "review/1.0",
     "review.depth":            "routing/1.0",
     "review.request":          "review/1.0",
     "task.complete":           "core/1.0",

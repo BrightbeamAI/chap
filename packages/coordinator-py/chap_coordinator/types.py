@@ -166,6 +166,10 @@ class ReviewState:
     # Who made the work under review: the task's assignee, then the member
     # that completed it. None of them may decide the review.
     authors: list[str] = field(default_factory=list)
+    # The reviewers who have said they began this round, as {reviewer, ts}
+    # in the order they did (review.acknowledge). A new round starts with
+    # none.
+    acknowledgements: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         out: dict[str, Any] = {
@@ -174,6 +178,7 @@ class ReviewState:
             "rule": self.rule,
             "decisions": self.decisions,
             "authors": self.authors,
+            "acknowledgements": self.acknowledgements,
         }
         if self.deadline:
             out["deadline"] = self.deadline

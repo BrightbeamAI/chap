@@ -1,8 +1,8 @@
 """End-to-end composition test exercising every profile in one workspace.
 
 This is the canary test: if every profile is implemented correctly, a
-single workspace can exercise all 39 method handlers in sequence
-without any spec-deviation surprises.
+single workspace can exercise every profile's method handlers in
+sequence without any spec-deviation surprises.
 """
 from __future__ import annotations
 
@@ -79,11 +79,14 @@ def test_full_lifecycle_every_profile(coord):
              **{"from": "human:alice@x"})
     assert r["result"]["escalate"] in (True, False)
 
-    # ----- review.request + decide.override (review/1.0) -----
+    # ----- review.request + review.acknowledge + decide.override (review/1.0) -----
     draft = {"comments": [{"severity": "warning", "text": "x"}]}
     send(coord, "review.request", workspace="wsp_e2e",
          **{"from": "agent:bot", "to": "human:alice@x"},
          task_id=tid, artefact=draft)
+    r = send(coord, "review.acknowledge", workspace="wsp_e2e",
+             **{"from": "human:alice@x"}, task_id=tid)
+    assert r["result"]["acknowledged"] is True
     r = send(coord, "decide.override", workspace="wsp_e2e",
              **{"from": "human:alice@x"},
              task_id=tid,

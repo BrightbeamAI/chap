@@ -2,7 +2,7 @@
 
 TypeScript reference implementation of the Collaborative Human-Agent Protocol (CHAP).
 
-Covers Core plus every profile, 39 method handlers in total. Spec-aligned
+Covers Core plus every profile, 40 method handlers in total. Spec-aligned
 field names, error codes, and response shapes against `profiles/*.md`.
 The Python reference at `packages/coordinator-py/` implements the same
 surface, so the two interoperate on the same JSON-RPC 2.0 wire.
@@ -87,7 +87,7 @@ console.log(resp.result);  // { task_id: "tsk_...", state: "created" }
 | Profile               | Methods (per profile spec)                                                                |
 |-----------------------|-------------------------------------------------------------------------------------------|
 | `core/1.0`            | `workspace.create`, `workspace.describe`, `workspace.set_profiles`, `participant.join`, `participant.leave`, `task.create`, `task.update`, `task.complete`, `audit.read`; a task created with `review_required` completes only on a reviewer decision |
-| `review/1.0`          | `review.request`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`, `escalate.raise` |
+| `review/1.0`          | `review.request`, `review.acknowledge`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`, `escalate.raise` |
 | `whisper/1.0`         | `whisper.ask`, `whisper.answer`; lapse hook via `coord.checkWhisperLapses(workspaceId, now?)` |
 | `deliberation/1.0`    | `deliberate.open`, `deliberate.comment`, `deliberate.vote`, `deliberate.close` |
 | `handoff/1.0`         | `handoff.propose`, `handoff.accept`, `handoff.decline`; multi-task; recipient may be a URI or `group:` |
@@ -99,7 +99,7 @@ console.log(resp.result);  // { task_id: "tsk_...", state: "created" }
 | `identity-oidc/1.0`   | `participant.join` binding via `verifyOidcToken`; `cnf.jwk` pinning, step-up auth via `enforceStepUp` |
 | `identity-vc/1.0`     | `participant.join` binding via `verifyVc`; holder-key pinning |
 
-**39 method handlers in total**, matching the Python reference exactly.
+**40 method handlers in total**, matching the Python reference exactly.
 
 **The review gate.** A task carrying `review_required` does not complete on
 `task.complete`. The call opens a review, holding the submitted output as the

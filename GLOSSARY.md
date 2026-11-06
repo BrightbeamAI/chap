@@ -344,7 +344,8 @@ rule. Opened by `review.request`; closed by `decide.*` operations.
 `task.complete`, the human members other than the completer and the
 assignee. Under `review/1.0`, only a
 member in the reviewer set may act on the review (`decide.*`,
-`abstain.declare`); a member outside it is rejected with `-32011`. The
+`abstain.declare`, `review.acknowledge`); a member outside it is rejected
+with `-32011`. The
 decision rule governs how many of the set must decide; the set governs
 who is eligible. See profiles/review.md S3.2.
 

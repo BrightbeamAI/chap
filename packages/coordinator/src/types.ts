@@ -318,6 +318,11 @@ export interface Task {
      * that completed it. None of them may decide the review.
      */
     authors:      ParticipantUri[];
+    /**
+     * The reviewers who have said they began this round, in the order they
+     * did (review.acknowledge). A new round starts with none.
+     */
+    acknowledgements: { reviewer: ParticipantUri; ts: string }[];
   };
   history:      { ts: string; from: ParticipantUri; state: TaskState; note?: string }[];
   supersedes?:  TaskId;

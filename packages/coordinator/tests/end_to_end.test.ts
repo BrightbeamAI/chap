@@ -64,10 +64,12 @@ test("full lifecycle exercises every profile in one sequence", () => {
     default_escalation_target: "human:bob" });
   assert.ok(typeof (escR.result as { escalate: boolean }).escalate === "boolean");
 
-  // review.request + decide.override
+  // review.request + review.acknowledge + decide.override
   const draft = { comments: [{ severity: "warning", text: "x" }] };
   send("review.request", { workspace: "wsp_e2e", from: "agent:bot",
     to: "human:alice", task_id: tid, artefact: draft });
+  const ackR = send("review.acknowledge", { workspace: "wsp_e2e", from: "human:alice", task_id: tid });
+  assert.equal((ackR.result as { acknowledged: boolean }).acknowledged, true);
   const ovR = send("decide.override", { workspace: "wsp_e2e", from: "human:alice",
     task_id: tid,
     diff: [{ op: "replace", path: "/comments/0/severity", value: "info" }],

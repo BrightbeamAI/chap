@@ -108,6 +108,8 @@ interface Task {
     deadline?:    string;
     /** The assignee, then the completer: who made the work, and may not decide it. */
     authors:      ParticipantUri[];
+    /** The reviewers who have said they began this round (review.acknowledge). */
+    acknowledgements: { reviewer: ParticipantUri; ts: string }[];
     decisions:    {
       reviewer: ParticipantUri;
       kind:     "approve" | "reject" | "override" | "abstain";
@@ -569,7 +571,7 @@ const handlers: Record<string, Handler> = {
             "(needs a human member other than its assignee and completer)") };
         }
         task.review = { requested_at: now, requested_to: eligible,
-                        rule: "any_one_approves", decisions: [], authors };
+                        rule: "any_one_approves", decisions: [], authors, acknowledgements: [] };
       } else {
         // A task that holds a review completes only through a decision: the
         // completion opens a new round with no decisions, the same rule, and
@@ -580,7 +582,8 @@ const handlers: Record<string, Handler> = {
           return { error: err(E.NOT_AUTHORISED,
             "No reviewer of this task remains once the authors of the work are left out") };
         }
-        task.review = { ...task.review, requested_at: now, requested_to: reviewers, decisions: [], authors };
+        task.review = { ...task.review, requested_at: now, requested_to: reviewers, decisions: [], authors,
+                        acknowledgements: [] };
         note = "a new round of the review; opened on task.complete";
       }
       task.pending_artefact = p.output;
@@ -696,11 +699,36 @@ const handlers: Record<string, Handler> = {
       deadline:     p.deadline as string,
       decisions:    [],
       authors,
+      acknowledgements: [],
     };
     task.history.push({ ts: task.updated_at, from: p.from as string, state: "review_requested" });
     // Stash artefact on the task for diff base lookup
     task.pending_artefact = p.artefact;
     return { result: { state: "review_requested", review_id: task.id } };
+  },
+
+  // A reviewer says they have begun the open review (review/1.0 §3.6). It
+  // is recorded and decides nothing.
+  "review.acknowledge": (p) => {
+    const missing = requireFields(p, ["workspace", "from", "task_id"]);
+    if (missing) return { error: err(E.PARAMS, `Missing field: ${missing}`) };
+    const ws = getWorkspace(p.workspace as string);
+    if (!ws) return { error: err(E.PARAMS, `Unknown workspace`) };
+    const notMember = requireMember(ws, p.from);
+    if (notMember) return { error: notMember };
+    const task = ws.tasks.get(p.task_id as string);
+    if (!task) return { error: err(E.PARAMS, `Unknown task`) };
+    if (task.state !== "review_requested") {
+      return { error: err(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
+    }
+    const notReviewer = requireReviewer(ws, task, p.from);
+    if (notReviewer) return { error: notReviewer };
+    const review = task.review!;
+    if (review.acknowledgements.some((a) => a.reviewer === p.from)) {
+      return { error: err(E.PARAMS, "Already acknowledged in this round") };
+    }
+    review.acknowledgements.push({ reviewer: p.from as string, ts: new Date().toISOString() });
+    return { result: { acknowledged: true, requested_at: review.requested_at } };
   },
 
   "decide.approve": (p) => {

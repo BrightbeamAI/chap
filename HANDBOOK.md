@@ -398,7 +398,7 @@ Role-to-method permissions live in your deployment's policy. Example:
 role_permissions:
   auditor:    [audit.read]
   drafter:    [task.update, task.complete, notify.message]
-  reviewer:   [decide.approve, decide.reject, decide.override, abstain.declare, escalate.raise]
+  reviewer:   [review.acknowledge, decide.approve, decide.reject, decide.override, abstain.declare, escalate.raise]
   operator:   [control.*, workspace.*, participant.leave]
 ```
 
@@ -422,8 +422,8 @@ role-to-method policy you configure above:
    `requireReadMembership` option adds the check to `audit.read` and
    `workspace.describe`; the rest is always on.
 2. **Reviewer-set eligibility (with `review/1.0`).** A review decision
-   (`decide.*`, `abstain.declare`) is accepted only from a member who was
-   named in the review's `to` set. A member who was not asked to review
+   (`decide.*`, `abstain.declare`), and a `review.acknowledge`, is accepted
+   only from a member who was named in the review's `to` set. A member who was not asked to review
    cannot decide it. The decision `rule` controls how many of the
    addressed reviewers must act; the `to` set controls who is eligible.
    To let any member review, address the request to `workspace:<id>` or

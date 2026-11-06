@@ -34,6 +34,8 @@ success.
   `task.update` cannot complete it, and `task.complete` opens a new round.
 - A signed call that took effect is answered with `-32075` when it is sent
   again, and the copy is not recorded.
+- `review.acknowledge` is recorded once a round from a reviewer, and refused
+  where no review is open, from the work's author, and a second time.
 - `decide.reject` with `request_revision: true` returns to
   `in_progress`.
 - A member's refused decision is recorded on the log under `request`,

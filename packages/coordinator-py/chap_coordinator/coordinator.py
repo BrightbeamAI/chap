@@ -319,6 +319,9 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
             # assignee, the one author every review has.
             if not isinstance(review.get("authors"), list):
                 review["authors"] = [v.get("assignee")]
+            # and one written before acknowledgements were kept has none.
+            if not isinstance(review.get("acknowledgements"), list):
+                review["acknowledgements"] = []
             v["review"] = ReviewState(**review)
         tasks[k] = Task(**v)
 
@@ -553,13 +556,13 @@ class Coordinator:
     def _require_reviewer(ws: Workspace, task: Task, sender: str | None) -> dict | None:
         """Assert that ``sender`` may decide the task's open review.
 
-        Applied to review-decision methods (decide.* and abstain.declare):
-        to act on a review you must not be an author of the work under
-        review, must be a human member where the task requires review, and
-        must be one of the reviewers it was addressed to (the ``to`` set on
-        review.request). Membership is the floor; this is the eligibility
-        ceiling for decisions. Returns an error envelope fragment if not
-        eligible, else ``None``.
+        Applied to review-decision methods (decide.* and abstain.declare) and
+        to review.acknowledge: to act on a review you must not be an author of
+        the work under review, must be a human member where the task requires
+        review, and must be one of the reviewers it was addressed to (the
+        ``to`` set on review.request). Membership is the floor; this is the
+        eligibility ceiling for decisions. Returns an error envelope fragment
+        if not eligible, else ``None``.
 
         A broadcast-scoped reviewer (a ``workspace:`` or ``group:`` URI in
         the ``to`` set) is satisfied by any workspace member, so in that
@@ -1254,6 +1257,7 @@ class Coordinator:
         # review/1.0
         self._handlers.update({
             "review.request":  self._op_review_request,
+            "review.acknowledge": self._op_review_acknowledge,
             "decide.approve":  lambda p: self._op_decide(p, "approve"),
             "decide.reject":   lambda p: self._op_decide(p, "reject"),
             "decide.override": self._op_decide_override,
@@ -1759,7 +1763,7 @@ class Coordinator:
                         "are left out")}
                 task.review = dataclasses.replace(
                     task.review, requested_at=now, requested_to=reviewers, decisions=[],
-                    authors=authors)
+                    authors=authors, acknowledgements=[])
                 note = "a new round of the review; opened on task.complete"
             task.pending_artefact = p.get("output")
             task.state = "review_requested"
@@ -1963,6 +1967,39 @@ class Coordinator:
         ))
         task.pending_artefact = p["artefact"]
         return {"result": {"state": "review_requested", "review_id": task.id}}
+
+    def _op_review_acknowledge(self, p: dict) -> dict:
+        """review/1.0 S3.6: a reviewer says they have begun the open review.
+
+        Only someone who may decide it can, so the log's record of who took a
+        review up, and when, names reviewers alone. It changes nothing else:
+        the review stays open and the acknowledgement counts towards no rule.
+        """
+        miss = _missing(p, ["workspace", "from", "task_id"])
+        if miss:
+            return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
+        ws = self.workspaces.get(p["workspace"])
+        if not ws:
+            return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p.get("from"))
+        if not_member:
+            return not_member
+        task = lookup(ws.tasks, p["task_id"])
+        if not task:
+            return {"error": rpc_error(E.PARAMS, "Unknown task")}
+        if task.state != "review_requested":
+            return {"error": rpc_error(
+                E.NOT_REVIEWABLE, f"Task not awaiting review: {task.state}"
+            )}
+        not_reviewer = self._require_reviewer(ws, task, p.get("from"))
+        if not_reviewer:
+            return not_reviewer
+        review = task.review
+        assert review is not None
+        if any(a.get("reviewer") == p["from"] for a in review.acknowledgements):
+            return {"error": rpc_error(E.PARAMS, "Already acknowledged in this round")}
+        review.acknowledgements.append({"reviewer": p["from"], "ts": self.now_iso()})
+        return {"result": {"acknowledged": True, "requested_at": review.requested_at}}
 
     def _check_artefact_digest(self, p: dict, task: "Task") -> "dict | None":
         """Verify an optional ``approved_artefact_digest`` (review/1.0 S3.2).

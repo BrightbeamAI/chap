@@ -96,6 +96,7 @@ METHOD_PARAMS: dict[str, tuple[str, ...]] = {
     "task.complete": ("task_id", "output", "confidence"),
     "audit.read": ("range", "filter"),
     "review.request": ("task_id", "artefact", "to", "rule", "deadline"),
+    "review.acknowledge": ("task_id",),
     "decide.approve": ("task_id", "comment", "tags", "approved_artefact_digest"),
     "decide.reject": ("task_id", "comment", "tags", "request_revision",
                       "approved_artefact_digest"),
@@ -301,7 +302,7 @@ class Recorder:
         if live:
             menu += ["review"] * 4
         if self._by_state("review_requested"):
-            menu += ["decide"] * 8
+            menu += ["decide"] * 8 + ["acknowledge"] * 3
         if self._by_state("paused"):
             menu += ["resume"] * 3
         if live:
@@ -403,6 +404,16 @@ class Recorder:
                 if kind == "decide.reject":
                     p["request_revision"] = rnd.random() < 0.5
                 self._send(kind, human, **p)
+            return
+        if a == "acknowledge":
+            # A reviewer says they have begun, at times twice in a round, and
+            # now and then the author or an agent tries: taken once a round
+            # from whoever may decide the review, and refused otherwise.
+            tid = rnd.choice(self._by_state("review_requested"))
+            who = rnd.choice(self._reviewers(tid))
+            if rnd.random() < 0.15:
+                who = rnd.choice([self._assignee(tid), *AGENTS])
+            self._send("review.acknowledge", who, task_id=tid)
             return
         if a == "resume":
             self._send("control.resume", "human:a",
@@ -588,6 +599,7 @@ class Recorder:
             lambda: self._send("task.update", AGENTS[0], task_id=tid, state="paused"),
             lambda: self._send("abstain.declare", rnd.choice(HUMANS), task_id=tid,
                                reason="not mine"),
+            lambda: self._send("review.acknowledge", rnd.choice(HUMANS), task_id=tid),
             lambda: self._send("handoff.accept", rnd.choice(HUMANS),
                                handoff_id="hnd_absent"),
             lambda: self._send("whisper.answer", rnd.choice(HUMANS),

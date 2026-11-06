@@ -87,8 +87,16 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   // review/1.0
   "chap.review.request":
     "Open a review on a task and address it to one or more reviewers. They then call chap.decide.approve, " +
-    "chap.decide.reject, chap.decide.override or chap.abstain.declare. Repeating the request with the same " +
-    "artefact adds reviewers to the open review.",
+    "chap.decide.reject, chap.decide.override or chap.abstain.declare, and may first say they have begun with " +
+    "chap.review.acknowledge. Repeating the request with the same artefact adds reviewers to the open review.",
+
+  "chap.review.acknowledge":
+    "Say that this reviewer has begun the open review on a task, before deciding it. The call is recorded, so " +
+    "the audit log shows when each reviewer took the review up as well as when they decided. It decides " +
+    "nothing: the review stays open and the acknowledgement counts towards no rule. Only someone who may " +
+    "decide the review may send it, and anyone else is refused with -32011. A task with no open review is " +
+    "refused with -32010, and a second acknowledgement from the same reviewer in the same round with -32602. " +
+    "Returns requested_at, the time the round opened, which names it.",
 
   "chap.decide.approve":
     "Approve the artefact under review as it stands. Only a reviewer the review was addressed to may decide, " +
@@ -304,6 +312,7 @@ const IDEMPOTENT = new Set([
   "chap.control.pause",            // pausing an already paused target changes nothing
   "chap.control.set_mode_ceiling", // setting the ceiling it already has changes nothing
   "chap.deliberate.close",         // returns the same outcome, recomputing nothing
+  "chap.review.acknowledge",       // a second acknowledgement in the round is refused and records nothing
 ]);
 
 /** Reaches a transparency service outside this coordinator. */
@@ -326,6 +335,7 @@ const TITLES: Record<string, string> = {
   "chap.task.complete": "Submit task output",
   "chap.audit.read": "Read audit log",
   "chap.review.request": "Request review",
+  "chap.review.acknowledge": "Acknowledge review",
   "chap.decide.approve": "Approve",
   "chap.decide.reject": "Reject",
   "chap.decide.override": "Override with a correction",

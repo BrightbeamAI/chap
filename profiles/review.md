@@ -16,7 +16,7 @@ If you implement only one profile beyond Core, implement this one.
 | Method               | Type            | Privileged? | Summary                                                |
 |----------------------|-----------------|-------------|--------------------------------------------------------|
 | `review.request`     | request         | no          | Ask one or more reviewers to evaluate an artefact.     |
-| `review.acknowledge` | notification    | no          | Optional: reviewer signals they have begun review.     |
+| `review.acknowledge` | request         | no          | Optional: reviewer signals they have begun review.     |
 | `decide.approve`     | request         | no          | Approve a draft as-is.                                 |
 | `decide.reject`      | request         | no          | Reject a draft with reasoning.                         |
 | `decide.override`    | request         | no          | Approve a modified version; produces an override artefact. |
@@ -124,9 +124,9 @@ the task's latest `completed` history entry, where there is one. A review
 recorded before authors were kept is read as having the assignee alone.
 
 A Coordinator MUST refuse with `-32011`, "The author of the work under review
-cannot decide it", a `decide.approve`, `decide.reject`, `decide.override` or
-`abstain.declare` from an author, however the review is addressed, broadcast
-scopes included. A decision by whoever made the work is not a review of it,
+cannot decide it", a `decide.approve`, `decide.reject`, `decide.override`,
+`abstain.declare` or `review.acknowledge` (§3.6) from an author, however the
+review is addressed, broadcast scopes included. A decision by whoever made the work is not a review of it,
 and without this rule an agent could request review of its own output from
 `group:` or `workspace:` and approve it.
 
@@ -449,6 +449,47 @@ and a mode above the workspace's current `mode_ceiling` with `-32040`. After
 the ceiling has been lowered, naming a mode within it in `new_task.mode` is
 how such a task is escalated.
 
+### 3.6 `review.acknowledge`
+
+A reviewer says they have begun the open review, before deciding it. The
+call is recorded, so the log holds when each reviewer took a review up as
+well as when they decided it, and a reader can tell a review nobody has
+opened from one that is being worked on.
+
+```json
+{
+  "method": "review.acknowledge",
+  "params": {
+    "workspace": "wsp_demo",
+    "from":      "human:alice@example.org",
+    "task_id":   "tsk_…"
+  }
+}
+```
+
+The result is `{"acknowledged": true, "requested_at": "…"}`, where
+`requested_at` is the time the current round of the review opened (§3.1),
+which identifies the round.
+
+- Only a participant who may decide the open review may acknowledge it,
+  under the rules of §3.1 and §3.2: an author of the work, a member outside
+  the reviewer set, and a member who is not human on a task that requires
+  review are refused with `-32011`. Otherwise the log would name as having
+  taken up a review someone who cannot decide it.
+- A task that is not in `review_requested` has no open review, and the call
+  is refused with `-32010`.
+- Each reviewer acknowledges a round once. A second acknowledgement from
+  the same reviewer in the same round MUST be refused with `-32602`,
+  "Already acknowledged in this round", so the first stays the one that
+  says when the reviewer began; like every `-32602`, the refusal is not
+  recorded (SPECIFICATION §10.1).
+- The open review keeps `acknowledgements`, a list of `{reviewer, ts}` in
+  the order they arrived. A new round of the review (§3.1) starts with
+  none, and an amendment that adds reviewers keeps them. A review recorded
+  before acknowledgements were kept is read as having none.
+- An acknowledgement decides nothing. It counts towards no rule, and the
+  task stays `review_requested` until a decision.
+
 ---
 
 ## 4. Override-as-data: the unique value
@@ -483,8 +524,8 @@ piece of the protocol is plumbing.
 
 | Code      | Meaning                                                |
 |-----------|--------------------------------------------------------|
-| `-32010`  | Task is not in a reviewable state: no open review for a decision, or a `review.request` on a cancelled, superseded or paused task. |
-| `-32011`  | Actor is not authorised: not a workspace member, an author of the work under review, a member who is not human on a task that requires review, or a member who was not an addressed reviewer for this task. Also a `review.request` on a task that requires review whose `to` names an author or a member who is not human, and a completion that would leave a review with no reviewer. |
+| `-32010`  | Task is not in a reviewable state: no open review for a decision or an acknowledgement, or a `review.request` on a cancelled, superseded or paused task. |
+| `-32011`  | Actor is not authorised to decide or acknowledge the review: not a workspace member, an author of the work under review, a member who is not human on a task that requires review, or a member who was not an addressed reviewer for this task. Also a `review.request` on a task that requires review whose `to` names an author or a member who is not human, and a completion that would leave a review with no reviewer. |
 | `-32012`  | JSON Patch application failed; the message names the failure and any failing path. |
 | `-32013`  | Reserved for a lapsed review. No Coordinator returns it, and the review `deadline` is not enforced. |
 | `-32014`  | A review is already open on this task with different content, or the request would change the decision rule of an open review. |

@@ -205,8 +205,8 @@ def make_chap_mcp_server(
         Server version string.
     tool_filter
         Optional predicate to restrict which CHAP methods are offered.
-        Default: all 39. A tool the predicate excludes is left out of the
-        list and refused when called.
+        Default: all of them. A tool the predicate excludes is left out of
+        the list and refused when called.
     envelope_id_factory
         Optional callable returning a fresh envelope id per call.
         Default: a counter producing ``"mcp-1"``, ``"mcp-2"``, ...

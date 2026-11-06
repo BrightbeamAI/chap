@@ -93,8 +93,9 @@ export function makeApi(coord: Coordinator) {
       route:    (p: MethodParams<"task.route">)    => c("task.route", p),
     },
     review: {
-      request: (p: MethodParams<"review.request">) => c("review.request", p),
-      depth:   (p: MethodParams<"review.depth">)   => c("review.depth", p),
+      request:     (p: MethodParams<"review.request">)     => c("review.request", p),
+      acknowledge: (p: MethodParams<"review.acknowledge">) => c("review.acknowledge", p),
+      depth:       (p: MethodParams<"review.depth">)       => c("review.depth", p),
     },
     decide: {
       approve:  (p: MethodParams<"decide.approve">)  => c("decide.approve", p),

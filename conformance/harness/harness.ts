@@ -715,6 +715,25 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
     const { result: after } = await client.call("workspace.describe", { workspace: ws });
     assertEq(after.audit_count, before.audit_count, "the copy must not be recorded");
   });
+
+  await test("Review profile", "rv-19", "a reviewer acknowledges an open review once a round, and its author cannot", async () => {
+    const { result: t } = await call("task.create", "human:alice@example.org", { kind: "review_test", assignee: BOT, input: {} });
+    const { error: unopened } = await call("review.acknowledge", "human:alice@example.org", { task_id: t.task_id });
+    assert(unopened?.code === -32010, `a task with no open review was acknowledged, got ${JSON.stringify(unopened)}`);
+    await call("review.request", BOT, { task_id: t.task_id, artefact: { draft: "v1" }, to: ["human:alice@example.org"] });
+    const { error: author } = await call("review.acknowledge", BOT, { task_id: t.task_id });
+    assert(author?.code === -32011, `the author acknowledged the review of its own work, got ${JSON.stringify(author)}`);
+    const { result: before } = await client.call("workspace.describe", { workspace: ws });
+    const { result: ack } = await call("review.acknowledge", "human:alice@example.org", { task_id: t.task_id });
+    assertEq(ack?.acknowledged, true, "the reviewer's acknowledgement should be taken");
+    assert(typeof ack?.requested_at === "string", `the answer names the round, got ${JSON.stringify(ack)}`);
+    const { result: after } = await client.call("workspace.describe", { workspace: ws });
+    assertEq(after.audit_count, before.audit_count + 1, "the acknowledgement is recorded");
+    const { error: again } = await call("review.acknowledge", "human:alice@example.org", { task_id: t.task_id });
+    assert(again?.code === -32602, `a second acknowledgement in the round was taken, got ${JSON.stringify(again)}`);
+    const { result } = await call("decide.approve", "human:alice@example.org", { task_id: t.task_id });
+    assertEq(result?.state, "completed", "an acknowledged review is still decided by a decision");
+  });
 }
 
 

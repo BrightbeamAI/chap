@@ -599,9 +599,10 @@ Membership is the floor, not the ceiling. Individual profiles MAY
 impose a stricter eligibility rule on top of it. In particular, the
 `review/1.0` profile requires that the actor of a review decision
 (`decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`)
-not be an author of the work under review, be a person where the task
-requires review, and be one of the reviewers the review was addressed to
-in `review.request`'s `to` set; see [`profiles/review.md`](./profiles/review.md).
+or of a `review.acknowledge` not be an author of the work under review,
+be a person where the task requires review, and be one of the reviewers
+the review was addressed to in `review.request`'s `to` set; see
+[`profiles/review.md`](./profiles/review.md).
 A `to` entry that is a broadcast scope (`workspace:<id>` or `group:<name>`)
 is satisfied by any workspace member other than the authors: the
 Coordinator does not model group membership,
@@ -645,7 +646,7 @@ entry means. §15.4's dispatch rule follows from it.
 | Profile | What advertising it does |
 |---|---|
 | `core/1.0` | Nothing. Core is always present, and a Core method is never refused for want of an entry. |
-| `review/1.0` | Admits `review.request`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare` and `escalate.raise`. |
+| `review/1.0` | Admits `review.request`, `review.acknowledge`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare` and `escalate.raise`. |
 | `modes/1.0` | Makes a `trial` task require review whatever its own `review_required` says. Task modes and the mode ceiling of §11 apply whether or not it is advertised. |
 | `control/1.0` | Admits `control.*`: pause, resume, cancel, supersede, snapshot, rollback and the mode ceiling. |
 | `whisper/1.0` | Admits `whisper.ask` and `whisper.answer`. |
@@ -816,7 +817,8 @@ Preconditions that are narrower or wider than "non-terminal":
 - **`control.pause` and `control.cancel` treat `declined` as settled** as well
   as the three terminal states, and answer `-32061`.
 - **`abstain.declare` requires an open review**, not merely a non-terminal
-  task, and answers `-32010` otherwise.
+  task, and answers `-32010` otherwise. So does `review.acknowledge`, which
+  changes no state: it records that a reviewer has begun the review.
 - **`escalate.raise` accepts any non-terminal state**, including `declined`,
   `abstained` and `escalated`. A second escalation on an already escalated
   task replaces its `superseded_by` link with the newer successor.
@@ -1594,7 +1596,7 @@ per-workspace map of recent keys.
 | Method               | Type         | Privileged | Status      | Description                                   |
 |----------------------|--------------|------------|-------------|-----------------------------------------------|
 | `review.request`     | request      | no         | implemented | Ask one or more reviewers to evaluate an artefact. |
-| `review.acknowledge` | notification | no         | spec-only   | Reviewer signals they have begun review.      |
+| `review.acknowledge` | request      | no         | implemented | Reviewer signals they have begun review.      |
 
 ### 12.5 `decide.*` / `abstain.*` / `escalate.*`
 

@@ -126,8 +126,8 @@ export interface ChapMcpOptions {
   /** Server version. Default: "0.3.4". */
   version?: string;
   /**
-   * Restrict the CHAP methods this server offers. Default: all 39. A tool the
-   * filter excludes is left out of the list and refused when called.
+   * Restrict the CHAP methods this server offers. Default: all of them. A
+   * tool the filter excludes is left out of the list and refused when called.
    */
   toolFilter?: (toolName: string) => boolean;
   /**

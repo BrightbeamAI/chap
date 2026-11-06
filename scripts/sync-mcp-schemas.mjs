@@ -3,8 +3,8 @@
  *
  * `packages/coordinator-py/.../mcp_schemas.py` and `.../mcp_tools.py` each say
  * they mirror their TypeScript counterpart exactly. Hand-maintained copies of
- * 195 parameter descriptions and 39 tool descriptions do not stay identical, so
- * both Python tables are generated from the TypeScript ones between markers.
+ * every parameter and tool description do not stay identical, so both Python
+ * tables are generated from the TypeScript ones between markers.
  *
  *   node scripts/sync-mcp-schemas.mjs           rewrite the Python tables
  *   node scripts/sync-mcp-schemas.mjs --check   fail if either is out of date

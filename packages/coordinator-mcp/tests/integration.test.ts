@@ -63,7 +63,7 @@ test("tools/list returns every CHAP method", async () => {
   const { client, cleanup } = await setup();
   try {
     const result = await client.listTools();
-    assert.equal(result.tools.length, TOOL_NAMES.length, "should expose all 39 methods");
+    assert.equal(result.tools.length, TOOL_NAMES.length, "should expose every method");
     const names = result.tools.map((t: { name: string }) => t.name);
     assert.ok(names.includes("chap.workspace.create"));
     assert.ok(names.includes("chap.task.create"));

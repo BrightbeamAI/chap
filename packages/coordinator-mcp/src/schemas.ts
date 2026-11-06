@@ -279,6 +279,12 @@ export const SCHEMAS: Record<string, JsonSchema> = {
     required: ["workspace", "from", "task_id", "to", "artefact"],
   },
 
+  "chap.review.acknowledge": {
+    type: "object",
+    properties: { workspace: WORKSPACE_ID, from: PARTICIPANT_URI, task_id: TASK_ID },
+    required: ["workspace", "from", "task_id"],
+  },
+
   "chap.decide.approve": {
     type: "object",
     properties: {
@@ -735,7 +741,7 @@ export const SCHEMAS: Record<string, JsonSchema> = {
   },
 };
 
-/** Methods that map to MCP tools. Currently: all 39 CHAP methods. */
+/** Methods that map to MCP tools: every CHAP method the coordinators implement. */
 export const TOOL_NAMES = Object.keys(SCHEMAS);
 
 /** Get the JSON Schema for a tool, or null if not a known CHAP method. */

@@ -88,7 +88,7 @@ is the structured-override dividend made tangible.
 
 ## Implementing the review profile yourself
 
-The 6 review-profile methods, in implementation order:
+The 7 review-profile methods, in implementation order:
 
 1. **`review.request`**: opens a review on a task; takes the
    draft artefact, the rule (`any_one_approves` / `all_approve`),
@@ -103,17 +103,21 @@ The 6 review-profile methods, in implementation order:
    another agent can approve agent output. If nobody qualifies the
    completion is refused with `-32011`. An explicit `review.request`
    keeps whatever `to` it was given.
-2. **`decide.approve`**: terminal acceptance. Sets task state to
+2. **`review.acknowledge`**: a reviewer says they have begun the
+   open review. It is recorded, decides nothing, and is taken once
+   from each reviewer in a round; only someone who may decide the
+   review may send it.
+3. **`decide.approve`**: terminal acceptance. Sets task state to
    `completed`.
-3. **`decide.reject`**: terminal rejection, or revision-request
+4. **`decide.reject`**: terminal rejection, or revision-request
    (state → `in_progress`) if `request_revision: true`.
-4. **`decide.override`**: the differentiator. Accepts an RFC 6902
+5. **`decide.override`**: the differentiator. Accepts an RFC 6902
    JSON Patch and applies it deterministically to the base artefact.
    Stores the patch, rationale, tags, and policy refs as an
    override artefact.
-5. **`abstain.declare`**: typed "I shouldn't decide this." Records
+6. **`abstain.declare`**: typed "I shouldn't decide this." Records
    a categorised abstention.
-6. **`escalate.raise`**: creates a successor task referencing the
+7. **`escalate.raise`**: creates a successor task referencing the
    original via `supersedes`. The successor keeps the original's review
    requirement, so completing the successor of a reviewed task opens a
    review.

@@ -725,10 +725,11 @@ export class Coordinator {
 
   /**
    * Assert that `sender` may decide the task's open review. Applied to
-   * review-decision methods (decide.* and abstain.declare): to act on a
-   * review you must not be an author of the work under review, must be a
-   * human member where the task requires review, and must be one of the
-   * reviewers it was addressed to (the `to` set on review.request).
+   * review-decision methods (decide.* and abstain.declare) and to
+   * review.acknowledge: to act on a review you must not be an author of the
+   * work under review, must be a human member where the task requires
+   * review, and must be one of the reviewers it was addressed to (the `to`
+   * set on review.request).
    * Membership is the floor; this is the eligibility ceiling for decisions.
    * Returns an error fragment if not eligible, else null.
    */
@@ -870,6 +871,8 @@ export class Coordinator {
       // A review written before authors were recorded takes the assignee,
       // the one author every review has.
       if (t.review && !Array.isArray(t.review.authors)) t.review.authors = [t.assignee];
+      // and one written before acknowledgements were kept has none.
+      if (t.review && !Array.isArray(t.review.acknowledgements)) t.review.acknowledgements = [];
       ws.tasks.set(t.id, t);
     }
     for (const o of (w.overrides as OverrideArtefact[]) ?? []) ws.overrides.set(o.id, o);
@@ -1373,6 +1376,7 @@ export class Coordinator {
     this.handlers.set("task.complete",          p => this.opTaskComplete(p));
     this.handlers.set("audit.read",             p => this.opAuditRead(p));
     this.handlers.set("review.request",         p => this.opReviewRequest(p));
+    this.handlers.set("review.acknowledge",     p => this.opReviewAcknowledge(p));
     this.handlers.set("decide.approve",         p => this.opDecide(p, "approve"));
     this.handlers.set("decide.reject",          p => this.opDecide(p, "reject"));
     this.handlers.set("decide.override",        p => this.opDecideOverride(p));
@@ -1815,7 +1819,7 @@ export class Coordinator {
             "Task requires review but has no eligible human reviewer (needs a human member other than its assignee and completer)") };
         }
         task.review = { requested_at: now, requested_to: eligible as ParticipantUri[], rule: "any_one_approves",
-                        decisions: [], authors };
+                        decisions: [], authors, acknowledgements: [] };
       } else {
         // The task held a review already: it went back to in_progress through
         // task.update or a reject with request_revision, and this completion
@@ -1832,7 +1836,8 @@ export class Coordinator {
           return { error: rpcError(E.NOT_AUTHORISED,
             "No reviewer of this task remains once the authors of the work are left out") };
         }
-        task.review = { ...task.review, requested_at: now, requested_to: reviewers, decisions: [], authors };
+        task.review = { ...task.review, requested_at: now, requested_to: reviewers, decisions: [], authors,
+                        acknowledgements: [] };
         note = "a new round of the review; opened on task.complete";
       }
       task.pending_artefact = p.output;
@@ -2018,10 +2023,39 @@ export class Coordinator {
       deadline: p.deadline as string | undefined,
       decisions: [],
       authors,
+      acknowledgements: [],
     };
     task.history.push({ ts: now, from: p.from as ParticipantUri, state: "review_requested" });
     task.pending_artefact = p.artefact;
     return { result: { state: "review_requested", review_id: task.id } };
+  }
+
+  /**
+   * review/1.0 S3.6: a reviewer says they have begun the open review. Only
+   * someone who may decide it can, so the log's record of who took a review
+   * up, and when, names reviewers alone. It changes nothing else: the review
+   * stays open and the acknowledgement counts towards no rule.
+   */
+  private opReviewAcknowledge(p: Record<string, unknown>): ReturnType<Handler> {
+    const miss = missing(p, ["workspace", "from", "task_id"]);
+    if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
+    const ws = this.workspaces.get(p.workspace as string);
+    if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
+    const task = ws.tasks.get(p.task_id as string);
+    if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
+    if (task.state !== "review_requested") {
+      return { error: rpcError(E.NOT_REVIEWABLE, `Task not awaiting review: ${task.state}`) };
+    }
+    const notReviewer = this.requireReviewer(ws, task, p.from);
+    if (notReviewer) return notReviewer;
+    const review = task.review!;
+    if (review.acknowledgements.some((a) => a.reviewer === p.from)) {
+      return { error: rpcError(E.PARAMS, "Already acknowledged in this round") };
+    }
+    review.acknowledgements.push({ reviewer: p.from as ParticipantUri, ts: this.now() });
+    return { result: { acknowledged: true, requested_at: review.requested_at } };
   }
 
   /**

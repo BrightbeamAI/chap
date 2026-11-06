@@ -2,7 +2,7 @@
 
 Python reference implementation of the Collaborative Human-Agent Protocol (CHAP).
 
-Covers Core plus every profile, 39 method handlers in total. Spec-aligned
+Covers Core plus every profile, 40 method handlers in total. Spec-aligned
 field names, error codes, and response shapes against `profiles/*.md`.
 
 ## Install
@@ -94,7 +94,7 @@ This package implements **CHAP Core plus every profile**:
 | Profile               | Methods (per profile spec)                                                  |
 |-----------------------|------------------------------------------------------------------------------|
 | `core/1.0`            | `workspace.create`, `workspace.describe`, `workspace.set_profiles`, `participant.join`, `participant.leave`, `task.create`, `task.update`, `task.complete`, `audit.read`; a task created with `review_required` completes only on a reviewer decision |
-| `review/1.0`          | `review.request`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`, `escalate.raise` |
+| `review/1.0`          | `review.request`, `review.acknowledge`, `decide.approve`, `decide.reject`, `decide.override`, `abstain.declare`, `escalate.raise` |
 | `whisper/1.0`         | `whisper.ask`, `whisper.answer`; lapse hook via `coord.check_whisper_lapses(workspace_id, now)` |
 | `deliberation/1.0`    | `deliberate.open`, `deliberate.comment`, `deliberate.vote`, `deliberate.close` |
 | `handoff/1.0`         | `handoff.propose`, `handoff.accept`, `handoff.decline`; carries multiple tasks; recipient may be a URI or `group:` |
@@ -106,7 +106,7 @@ This package implements **CHAP Core plus every profile**:
 | `identity-oidc/1.0`   | `participant.join` binding via `options.verify_oidc_token`; `cnf.jwk` pinning, step-up auth via `enforce_step_up=True` |
 | `identity-vc/1.0`     | `participant.join` binding via `options.verify_vc`; holder-key pinning |
 
-**39 method handlers in total.**
+**40 method handlers in total.**
 
 **The review gate.** A task carrying `review_required` does not complete on
 `task.complete`. The call opens a review, holding the submitted output as the
