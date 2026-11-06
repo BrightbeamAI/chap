@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -412,7 +413,9 @@ def test_where_every_call_is_signed_an_agent_with_another_key_is_told_why_it_can
 def test_the_project_ships_with_people_signing_and_the_chain_on():
     shipped = json.loads((ROOT / "chap.config.json").read_text(encoding="utf-8"))
     assert shipped["require_signatures"] == "humans" and shipped["chain"] is True
-    assert shipped["template"]["name"] == "support-desk" and shipped["template"]["version"]
+    # The generator stamps the release that made the project.
+    assert shipped["template"]["name"] == "support-desk"
+    assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?", shipped["template"]["version"])
     assert "keys/" in (ROOT / ".gitignore").read_text(encoding="utf-8").split()
 
 

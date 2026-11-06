@@ -1,5 +1,5 @@
 {
-  "template": { "name": "outbound-approval", "version": "0.3.4" },
+  "template": { "name": "__TEMPLATE_NAME__", "version": "__TEMPLATE_VERSION__" },
   "workspace": "__WORKSPACE__",
   "profiles": __PROFILES_JSON__,
   "mode": "trial",
