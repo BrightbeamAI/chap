@@ -67,15 +67,17 @@ to the desk, which uses it in the commands it writes for an agent.
 - `allowed_hosts`: host names, with their ports, the server answers to
   besides its own loopback names, for a proxy or a Compose service.
 - `max_envelope_bytes`: the largest call accepted, 1 MiB by default.
-- `oidc`: `{ issuer, jwks_url, audience }` verifies an OIDC token presented
-  at `participant.join` (`identity-oidc/1.0`).
+- `oidc`: `{ issuer, client_id }`: people sign in at the desk with this
+  OpenID provider, and join only with its ID token (`identity-oidc/1.0`,
+  below). A person's entry in `humans` may give `oidc_sub`, the subject the
+  provider knows them by.
 - `mode`, `mode_ceiling`: the workspace's mode under `modes/1.0`.
 
 The environment overrides it: `CHAP_CONFIG` names the file; `PORT`,
 `CHAP_HOST` and `CHAP_DB_PATH` replace the port, the host and the store;
 `CHAP_REQUIRE_SIGNATURES` (`1`, `true`, `humans`, `0` or `false`),
 `CHAP_CHAIN` and `CHAP_MCP` (`1` or `true`) replace the flags; `CHAP_DESK_SIGNING` replaces `desk_signing` and `CHAP_DESK_URL` `desk_url`; `CHAP_ALLOWED_HOSTS` adds host names, comma separated;
-`OIDC_ISSUER`, `OIDC_JWKS_URL` and `OIDC_AUDIENCE` set the token verifier.
+`OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` set the sign-in.
 
 ## What it refuses
 
@@ -169,6 +171,37 @@ have the browser sign with it, or copy it from the browser's files. A
 passkey asks the reviewer for each signature, which such a program cannot
 give; it can still put a request in front of them, so a passkey prompt the
 reviewer did not expect is one to refuse.
+
+## Signing people in
+
+With `oidc` set, a person joins the workspace only with an ID token from
+its issuer, for someone `chap.config.json` names, and the desk signs them
+in to get one. The desk sends the browser to the issuer with the
+authorisation code flow and PKCE (S256), its `nonce` the RFC 7638
+thumbprint of the key it signs with. The issuer sends it back with a code,
+which the desk posts to `POST /api/oidc/token`; the server redeems it at
+the issuer's token endpoint, with the client secret where one is set, which
+never reaches the browser, checks the ID token and its nonce, and answers
+with the token and the participant it is for. The desk then joins with the
+token and its key, and the coordinator binds the key the nonce names.
+
+The server reads the issuer's discovery document, which must name the
+issuer exactly, and the keys at its `jwks_uri`; an issuer that is not
+`https` is refused, unless it is on this machine. A token is checked for
+its signature (RS256, ES256 or EdDSA), `iss`, `aud` (the client id, always
+required), `azp`, `exp`, `nbf` and `sub`, and bound to a person: the one
+whose entry gives its subject as `oidc_sub`, or the one its
+`chap_participant_uri` names, for an issuer that knows CHAP. A token for
+anyone else is refused, and the desk shows who signed in, with the subject
+to add. The coordinator records the join's token as its SHA-256.
+
+`chap-server dev-issuer` serves the whole flow for local runs, on port
+8793. Its authorisation endpoint signs in whoever the desk's `login_hint`
+names, with no question asked, so it authenticates nobody, and its
+discovery document says so, as `chap_development_issuer`; the desk then
+sends the participant's URI as the hint, and `/api/config` marks the issuer
+`development`. The production template's README has a recipe for a real
+provider.
 
 ## Taking up a review
 
@@ -277,7 +310,7 @@ sent there.
 ```
 chap-server [--config <file>]                   the server for a project
 chap-server keys [--uri <uri>] [--config <file>]  the agent's signing key, in keys/ beside the config
-chap-server dev-issuer [<port>]                 a development OIDC issuer, for tests and local runs only
+chap-server dev-issuer [<port>]                 a development OIDC issuer on 8793, for tests and local runs only
 ```
 
 `chap-server keys` writes an Ed25519 key as a JWK readable by its owner
@@ -294,8 +327,8 @@ never overwrites a key file.
 | `@brightbeamai/chap-server/keys` | the agent's key file and its OpenSSH form |
 | `@brightbeamai/chap-server/providers` | model providers, one HTTP call each, and a scripted drafter |
 | `@brightbeamai/chap-server/profiles-diff` | a workload under two profile sets, side by side |
-| `@brightbeamai/chap-server/oidc` | an OIDC token verifier with no dependencies |
-| `@brightbeamai/chap-server/dev-issuer` | a development OIDC issuer |
+| `@brightbeamai/chap-server/oidc` | the issuer's discovery document, the ID token check, and the binding of a token to a configured person, with no dependencies |
+| `@brightbeamai/chap-server/dev-issuer` | a development OIDC issuer, with the authorisation code flow and PKCE, which authenticates nobody |
 | `@brightbeamai/chap-server/desk/*` | the desk's own modules |
 
 ## Licence

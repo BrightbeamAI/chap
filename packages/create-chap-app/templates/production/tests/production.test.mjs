@@ -8,9 +8,9 @@ import { mkdtemp, readdir, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { loadConfig as loadConfigFrom, makeCoordinator, makeServer } from "@brightbeamai/chap-server";
-import { makeClient, generateSigner, signerFromJwk } from "@brightbeamai/chap-server/client";
+import { makeClient, generateSigner, signerFromJwk, thumbprint as jwkThumbprint } from "@brightbeamai/chap-server/client";
 import { generateKeyFile, readKeyFile, kidFor, thumbprint } from "@brightbeamai/chap-server/keys";
 import { startDevIssuer, signJwt } from "@brightbeamai/chap-server/dev-issuer";
 import { makeOidcVerifier } from "@brightbeamai/chap-server/oidc";
@@ -158,7 +158,7 @@ describe("with an OIDC issuer", () => {
     oconfig = await loadConfig();
     oconfig.store = ":memory:";
     oconfig.workspace = `${oconfig.workspace}_oidc`;
-    oconfig.oidc = { issuer: issuer.issuer, jwks_url: issuer.jwks_url, audience: issuer.audience };
+    oconfig.oidc = { issuer: issuer.issuer, client_id: issuer.audience };
     ({ coord: ocoord, server: oserver, base: obase } = await startServer(oconfig));
     reviewer = makeClient({ url: `${obase}/chap`, workspace: oconfig.workspace, from: oconfig.humans[0].uri, signer: await generateSigner(oconfig.humans[0].uri) });
   });
@@ -168,40 +168,61 @@ describe("with an OIDC issuer", () => {
     await issuer.close();
   });
 
-  test("the workspace advertises identity-oidc/1.0 and /api/config names the issuer", async () => {
+  /** An ID token for `who` with `nonce`, through the sign-in the desk makes: the issuer's code, redeemed by the server. */
+  async function signIn(who, nonce) {
+    const verifier = randomBytes(32).toString("base64url");
+    const url = new URL(`${issuer.issuer}/authorize`);
+    for (const [k, v] of Object.entries({ response_type: "code", client_id: issuer.audience, redirect_uri: `${obase}/`, scope: "openid", state: "s", nonce,
+      code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256", login_hint: who })) url.searchParams.set(k, v);
+    const code = new URL((await fetch(url, { redirect: "manual" })).headers.get("location")).searchParams.get("code");
+    const res = await fetch(`${obase}/api/oidc/token`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: `${obase}/`, nonce }) });
+    return (await res.json()).id_token;
+  }
+
+  test("the workspace advertises identity-oidc/1.0 and /api/config names the issuer and the client the desk signs in as", async () => {
     const cfg = await (await fetch(`${obase}/api/config`)).json();
-    assert.equal(cfg.oidc.issuer, issuer.issuer);
+    assert.deepEqual(cfg.oidc, { issuer: issuer.issuer, client_id: issuer.audience, authorization_endpoint: `${issuer.issuer}/authorize`, development: true });
     assert.ok(cfg.profiles.includes("identity-oidc/1.0"));
     assert.ok(ocoord.getWorkspace(oconfig.workspace).profiles.includes("identity-oidc/1.0"));
   });
 
-  test("a join with a minted token pins cnf.jwk, and the human then signs with that key", async () => {
-    const token = issuer.mintToken({ sub: "user-7f3c2a8e", uri: reviewer.from, cnfJwk: reviewer.signer.publicJwk, acr: "urn:example:authn:mfa" });
-    // No jwks on the join: the only key the member gets is the one the token carries.
-    const joined = await reviewer.call("participant.join", { type: "human", role: "reviewer", oidc_token: token });
+  test("a person's join with no token is refused with -32403, so nobody takes the reviewer's name first", async () => {
+    const stranger = await generateSigner(reviewer.from);
+    const r = await post(obase, { jsonrpc: "2.0", id: "t0", method: "participant.join", params: { workspace: oconfig.workspace, from: reviewer.from, type: "human", jwks: { keys: [stranger.publicJwk] } } });
+    assert.equal(r.error?.code, -32403);
+    assert.equal(ocoord.getWorkspace(oconfig.workspace).members.has(reviewer.from), false);
+  });
+
+  test("the desk's sign-in binds its key through the nonce, and the reviewer then signs with that key", async () => {
+    const token = await signIn(reviewer.from, await jwkThumbprint(reviewer.signer.publicJwk));
+    const joined = await reviewer.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [reviewer.signer.publicJwk] }, oidc_token: token });
     assert.equal(joined.joined, true);
-    const created = await reviewer.call("task.create", { kind: "note", assignee: reviewer.from, input: { text: "signed with the pinned key" } });
+    const created = await reviewer.call("task.create", { kind: "note", assignee: reviewer.from, input: { text: "signed with the bound key" } });
     assert.equal(created.state, "created");
-    const d = await reviewer.call("workspace.describe", {});
-    const me = d.members.find((m) => m.uri === reviewer.from);
-    assert.equal(me.oidc_sub, "user-7f3c2a8e");
+    const me = (await reviewer.call("workspace.describe", {})).members.find((m) => m.uri === reviewer.from);
+    assert.equal(me.oidc_sub, reviewer.from, "the development issuer's subject is the URI it signed in");
     assert.deepEqual(me.jwks.keys.map((k) => k.kid), [reviewer.signer.kid]);
+    const entry = ocoord.getWorkspace(oconfig.workspace).audit.find((e) => e.envelope?.method === "participant.join" && e.envelope.params.from === reviewer.from);
+    assert.equal(entry.envelope.params.oidc_token, `sha256:${createHash("sha256").update(token).digest("hex")}`, "the chain keeps the token's digest, never the token");
   });
 
-  test("a token for another participant's URI is refused with -32404", async () => {
+  test("a token for someone chap.config.json does not name is refused, and one for another participant than the join's with -32404", async () => {
     const other = await generateSigner("human:someone-else@local");
-    const token = issuer.mintToken({ sub: "user-other", uri: "human:someone-else@local", cnfJwk: other.publicJwk });
+    const unnamed = issuer.mintToken({ sub: "user-other", uri: "human:someone-else@local" });
     const r = await post(obase, { jsonrpc: "2.0", id: "o1", method: "participant.join",
-      params: { workspace: oconfig.workspace, from: "human:newcomer@local", type: "human", oidc_token: token } });
-    assert.equal(r.error?.code, -32404);
-    // A join under the reviewer's name with a token for a different subject is refused the same way.
-    const stranger = issuer.mintToken({ sub: "user-other", uri: reviewer.from, cnfJwk: other.publicJwk });
+      params: { workspace: oconfig.workspace, from: "human:someone-else@local", type: "human", jwks: { keys: [other.publicJwk] }, oidc_token: unnamed } });
+    assert.equal(r.error?.code, -32403);
+    const forReviewer = issuer.mintToken({ sub: "user-other", uri: reviewer.from });
     const r2 = await post(obase, { jsonrpc: "2.0", id: "o2", method: "participant.join",
-      params: { workspace: oconfig.workspace, from: reviewer.from, type: "human", oidc_token: stranger } });
+      params: { workspace: oconfig.workspace, from: "human:newcomer@local", type: "human", oidc_token: forReviewer } });
     assert.equal(r2.error?.code, -32404);
+    // A join under the reviewer's name with a token for a different subject is refused the same way.
+    const r3 = await post(obase, { jsonrpc: "2.0", id: "o3", method: "participant.join",
+      params: { workspace: oconfig.workspace, from: reviewer.from, type: "human", oidc_token: forReviewer } });
+    assert.equal(r3.error?.code, -32404);
   });
 
-  test("a garbage token, a token from an unknown key and an expired token are refused with -32403", async () => {
+  test("a garbage token, a token from an unknown key, an expired token and one for another audience are refused with -32403", async () => {
     const join = (oidc_token, id) => post(obase, { jsonrpc: "2.0", id, method: "participant.join",
       params: { workspace: oconfig.workspace, from: "human:probe@local", type: "human", oidc_token } });
     assert.equal((await join("garbage", "g1")).error?.code, -32403);
@@ -216,17 +237,18 @@ describe("with an OIDC issuer", () => {
     assert.equal(ocoord.getWorkspace(oconfig.workspace).members.has("human:probe@local"), false);
   });
 
-  test("the verifier checks signature, issuer, audience and time, and refetches the JWKS once on an unknown kid", async () => {
+  test("the verifier reads the issuer's discovery document and keys, checks signature, issuer, audience and time, and refetches the keys once on an unknown kid", async () => {
     let fetches = 0;
     const counting = (url, init) => { fetches++; return fetch(url, init); };
-    const verify = await makeOidcVerifier({ issuer: issuer.issuer, jwks_url: issuer.jwks_url, audience: issuer.audience, fetchImpl: counting, refresh_min_ms: 0 });
-    assert.equal(fetches, 1);
+    const verify = await makeOidcVerifier({ issuer: issuer.issuer, audience: issuer.audience, fetchImpl: counting, refresh_min_ms: 0 });
+    assert.equal(fetches, 2, "the discovery document, then the keys");
     const key = await generateSigner("human:claims@local");
-    const good = verify(issuer.mintToken({ sub: "user-1", uri: "human:claims@local", cnfJwk: key.publicJwk, auth_time: 1747476000, acr: "mfa" }));
+    const good = verify(issuer.mintToken({ sub: "user-1", uri: "human:claims@local", cnfJwk: key.publicJwk, auth_time: 1747476000, acr: "mfa", extra: { nonce: "n-1" } }));
     assert.equal(good.sub, "user-1");
     assert.equal(good.iss, issuer.issuer);
     assert.equal(good.auth_time, 1747476000);
     assert.equal(good.acr, "mfa");
+    assert.equal(good.nonce, "n-1");
     assert.equal(good.chap_participant_uri, "human:claims@local");
     assert.deepEqual(good.cnf.jwk, key.publicJwk);
 
@@ -234,24 +256,49 @@ describe("with an OIDC issuer", () => {
     const rogue = generateKeyPairSync("ec", { namedCurve: "P-256" });
     assert.equal(verify(signJwt({ privateKey: rogue.privateKey, kid: "unknown-kid", payload })), null);
     await new Promise((r) => setTimeout(r, 50));
-    assert.equal(fetches, 2, "an unknown kid fetched the JWKS again");
+    assert.equal(fetches, 3, "an unknown kid fetched the keys again");
     assert.equal(verify(signJwt({ privateKey: rogue.privateKey, kid: issuer.kid, payload })), null, "a forged signature under the right kid");
     assert.equal(verify(issuer.mintToken({ sub: "user-1", extra: { iss: "https://elsewhere.example" } })), null, "a wrong issuer");
     assert.equal(verify(issuer.mintToken({ sub: "user-1", audience: "someone-else" })), null, "a wrong audience");
     assert.equal(verify(issuer.mintToken({ sub: "user-1", expires_in_sec: -120 })), null, "an expired token");
     assert.equal(verify(issuer.mintToken({ sub: "user-1", extra: { nbf: Math.floor(Date.now() / 1000) + 600 } })), null, "a token not yet valid");
     assert.equal(verify(issuer.mintToken({ sub: "user-1", extra: { sub: "" } })), null, "an empty subject");
-    const noAudience = await makeOidcVerifier({ issuer: issuer.issuer, jwks_url: issuer.jwks_url, audience: null });
-    assert.equal(noAudience(issuer.mintToken({ sub: "user-1", audience: "anything" })).sub, "user-1", "no audience configured means none is checked");
+    await assert.rejects(makeOidcVerifier({ issuer: issuer.issuer, audience: null }), /audience, the client id tokens are issued to, is required/, "an issuer without an audience is refused");
   });
 
-  test("the doctor's checks pass against the in-process server with the issuer", async () => {
+  test("the doctor's checks pass against the in-process server with the issuer, the nonce check included", async () => {
     const results = await runChecks({ url: `${obase}/chap`, dir: projectDir, keyPath, storePath: ":memory:" });
     const byName = Object.fromEntries(results.map((r) => [r.name, r]));
-    for (const name of ["health", "config", "unsigned", "describe", "chain", "oidc"]) assert.equal(byName[name].status, "ok", `${name}: ${byName[name].detail}`);
+    for (const name of ["health", "config", "unsigned", "describe", "chain", "oidc", "nonce"]) assert.equal(byName[name].status, "ok", `${name}: ${byName[name].detail}`);
+    assert.match(byName.oidc.detail, /a person's join with no token, and one with a garbage token, are refused with -32403/);
+    assert.match(byName.nonce.detail, /whose nonce names another key binds nothing: the join is refused with -32011/);
     assert.equal(byName.store.status, "skip");
     assert.equal(results.filter((r) => r.status === "FAIL").length, 0);
   });
+});
+
+test("the doctor fails a server that takes a person's join with no token, and skips the nonce check before the reviewer has signed in", async () => {
+  // A verifier that takes any token, on a workspace that does not ask for one, stands for the 0.3.4 server.
+  const issuer = await startDevIssuer(0);
+  const lax = await loadConfig();
+  lax.store = ":memory:";
+  lax.workspace = `${lax.workspace}_lax`;
+  lax.oidc = { issuer: issuer.issuer, client_id: issuer.audience };
+  const coord = await makeCoordinator(lax, { verifyOidcToken: () => ({ sub: "anyone" }) });
+  coord.getWorkspace(lax.workspace).profiles = coord.getWorkspace(lax.workspace).profiles.filter((p) => !p.startsWith("identity-oidc"));
+  const server = await makeServer(lax, coord);
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  try {
+    const results = await runChecks({ url: `http://127.0.0.1:${server.address().port}/chap`, dir: projectDir, keyPath, storePath: ":memory:" });
+    const byName = Object.fromEntries(results.map((r) => [r.name, r]));
+    assert.equal(byName.oidc.status, "FAIL", byName.oidc.detail);
+    assert.match(byName.oidc.detail, /expected -32403 for both, got an accepted join with no token/);
+    assert.equal(byName.nonce.status, "skip");
+    assert.match(byName.nonce.detail, /has not signed in at the desk yet/);
+  } finally {
+    await new Promise((r) => server.close(r));
+    await issuer.close();
+  }
 });
 
 /** Poll until `read` gives something true, and give that back. */

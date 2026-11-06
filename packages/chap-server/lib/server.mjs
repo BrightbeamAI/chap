@@ -45,8 +45,9 @@ const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.u
  * the environment applied: PORT, CHAP_HOST and
  * CHAP_DB_PATH replace the port, host and store; CHAP_REQUIRE_SIGNATURES,
  * CHAP_CHAIN and CHAP_MCP (1 or true) replace the flags; CHAP_ALLOWED_HOSTS
- * adds host names, comma separated; OIDC_ISSUER, OIDC_JWKS_URL and
- * OIDC_AUDIENCE set the token verifier. `dir` is the directory that holds
+ * adds host names, comma separated; OIDC_ISSUER, OIDC_CLIENT_ID and
+ * OIDC_CLIENT_SECRET set the sign-in and the token verifier (oidcSettings).
+ * `dir` is the directory that holds
  * the file: the project. A relative store path, in the file or in
  * CHAP_DB_PATH, is taken from there, and a leading ~ is the home directory,
  * so a server started from anywhere opens the project's store.
@@ -80,7 +81,7 @@ export async function loadConfig(path = process.env.CHAP_CONFIG ?? "chap.config.
   config.desk_signing = deskSigning(process.env.CHAP_DESK_SIGNING || config.desk_signing);
   config.notify = notifySettings(config.notify);
   config.desk_url = process.env.CHAP_DESK_URL || config.desk_url || null;
-  config.oidc = oidcFromEnv(config.oidc);
+  config.oidc = oidcSettings(config.oidc);
   config.allowed_hosts = [...(config.allowed_hosts ?? []), ...envList("CHAP_ALLOWED_HOSTS")];
   return config;
 }
@@ -145,14 +146,44 @@ function envList(name) {
   return (process.env[name] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-function oidcFromEnv(configured) {
-  const issuer = process.env.OIDC_ISSUER ?? configured?.issuer;
+/**
+ * The OIDC provider the desk signs people in with, from `oidc` in
+ * chap.config.json and the environment: the issuer, and the client id the
+ * provider gave the desk, which every ID token must be issued to. Tokens
+ * are checked against the keys the issuer's discovery document names. A
+ * client secret is for a provider that gives a web redirect only to a
+ * client with one; the server sends it with the code and never to the
+ * browser. OIDC_AUDIENCE, the name before 0.3.5, is read as the client id.
+ */
+function oidcSettings(configured) {
+  const issuer = process.env.OIDC_ISSUER || configured?.issuer;
   if (!issuer) return null;
-  return {
-    issuer,
-    jwks_url: process.env.OIDC_JWKS_URL ?? configured?.jwks_url ?? issuer.replace(/\/$/, "") + "/.well-known/jwks.json",
-    audience: process.env.OIDC_AUDIENCE ?? configured?.audience ?? null,
-  };
+  const clientId = process.env.OIDC_CLIENT_ID || configured?.client_id || process.env.OIDC_AUDIENCE || configured?.audience;
+  if (!clientId) throw new Error(`The OIDC issuer ${issuer} is set and no client id is: set OIDC_CLIENT_ID, or "client_id" under "oidc" in chap.config.json, to the client id the provider gave the desk. Every ID token must be issued to it.`);
+  const secret = process.env.OIDC_CLIENT_SECRET || configured?.client_secret || null;
+  return { issuer, client_id: clientId, ...(secret ? { client_secret: secret } : {}) };
+}
+
+/** The provider for each oidc setting, read once: its discovery document, the token check, and the check bound to the configured people. */
+const providers = new WeakMap();
+
+/**
+ * The OIDC provider a configuration names: { discovery, verify, people },
+ * where people(token) gives the claims of a token for a person
+ * chap.config.json names, with chap_participant_uri set, or why it is
+ * refused (oidc.mjs).
+ */
+async function oidcProvider(config) {
+  if (!providers.has(config.oidc)) {
+    providers.set(config.oidc, (async () => {
+      const { discover, forPeople, makeOidcVerifier } = await import("./oidc.mjs");
+      const discovery = await discover(config.oidc.issuer);
+      const verify = await makeOidcVerifier({ issuer: config.oidc.issuer, audience: config.oidc.client_id, discovery });
+      config.oidc.discovery = discovery;
+      return { discovery, verify, people: forPeople(verify.check, config.humans ?? []) };
+    })());
+  }
+  return providers.get(config.oidc);
 }
 
 /**
@@ -226,8 +257,9 @@ export async function makeCoordinator(config, { enrol = [], log = console.log, .
     ...extra,
   };
   if (config.oidc && !options.verifyOidcToken) {
-    const { makeOidcVerifier } = await import("./oidc.mjs");
-    options.verifyOidcToken = await makeOidcVerifier(config.oidc);
+    // A token joins a person only as someone chap.config.json names.
+    const { people } = await oidcProvider(config);
+    options.verifyOidcToken = (token) => people(token).claims ?? null;
   }
   const coord = new Coordinator(options);
   await coord.start();
@@ -510,7 +542,12 @@ export function publicConfig(config) {
     persistent: config.store !== ":memory:",
     // Where this project lives, so a prompt the desk writes can name its commands.
     gate_dir: config.dir,
-    oidc: config.oidc ? { issuer: config.oidc.issuer } : null,
+    // What the desk signs people in with; never the client secret.
+    oidc: config.oidc ? {
+      issuer: config.oidc.issuer, client_id: config.oidc.client_id,
+      authorization_endpoint: config.oidc.discovery?.authorization_endpoint ?? null,
+      development: config.oidc.discovery?.chap_development_issuer === true,
+    } : null,
     mcp: !!config.mcp,
   };
 }
@@ -621,7 +658,43 @@ async function readDirectory(dir) {
 export { AGENT_MCP_TOOLS };
 
 /** The paths under /api/ the desk reads. */
-const API_PATHS = new Set(["/api/config", "/api/reviews", "/api/tasks", "/api/health", "/api/members", "/api/chain", "/api/chain/verify"]);
+const API_PATHS = new Set(["/api/config", "/api/reviews", "/api/tasks", "/api/health", "/api/members", "/api/chain", "/api/chain/verify", "/api/oidc/token"]);
+
+/**
+ * Redeem a sign-in's code at the provider's token endpoint, for the desk.
+ * The browser sends the code it was given and the PKCE verifier it kept,
+ * and the server makes the request, with the client secret where there is
+ * one, which the browser never sees, and over a connection the desk's
+ * policy needs no exception for. Only the ID token goes back, checked as
+ * the join will check it, with its nonce held to the one the desk asked
+ * for, so the desk can say who signed in and why a token will not do.
+ * Returns { status, body }.
+ */
+async function redeemCode(config, provider, { code, code_verifier, redirect_uri, nonce }) {
+  const { issuer, client_id: clientId, client_secret: secret } = config.oidc;
+  const form = new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri, client_id: clientId, code_verifier });
+  const headers = { "content-type": "application/x-www-form-urlencoded", accept: "application/json" };
+  if (secret) {
+    // HTTP Basic, which every provider takes (RFC 6749 2.3.1), unless the
+    // provider lists only client_secret_post.
+    const methods = provider.discovery.token_endpoint_auth_methods_supported ?? ["client_secret_basic"];
+    if (!methods.includes("client_secret_basic") && methods.includes("client_secret_post")) form.set("client_secret", secret);
+    else headers.authorization = `Basic ${Buffer.from(`${encodeURIComponent(clientId)}:${encodeURIComponent(secret)}`).toString("base64")}`;
+  }
+  let answer;
+  try {
+    const res = await fetch(provider.discovery.token_endpoint, { method: "POST", headers, body: form, signal: AbortSignal.timeout(10_000) });
+    answer = await res.json().catch(() => ({}));
+    if (!res.ok) return { status: 400, body: { error: `${issuer} refused the sign-in's code: ${answer.error ?? `HTTP ${res.status}`}${answer.error_description ? `, ${answer.error_description}` : ""}` } };
+  } catch (e) {
+    return { status: 502, body: { error: `${issuer}'s token endpoint could not be reached: ${e.cause?.code ?? e.message}` } };
+  }
+  if (typeof answer.id_token !== "string") return { status: 502, body: { error: `${issuer} gave no ID token for the code` } };
+  const checked = provider.people(answer.id_token);
+  if (!checked.claims) return { status: 403, body: { error: `The sign-in cannot join you: ${checked.reason}.`, ...(checked.subject ? { subject: checked.subject } : {}), ...(checked.email ? { email: checked.email } : {}) } };
+  if (checked.claims.nonce !== nonce) return { status: 400, body: { error: "The ID token was issued for another sign-in; sign in again." } };
+  return { status: 200, body: { id_token: answer.id_token, as: checked.claims.chap_participant_uri, subject: checked.claims.sub } };
+}
 
 /**
  * A read the coordinator answers from the workspace it holds: audit.read
@@ -680,6 +753,8 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
   if (config.mcp && !config.agent?.uri) {
     throw new Error("chap.config.json turns on mcp, and /mcp acts as the agent: set agent.uri");
   }
+  // The provider the desk signs people in with, read before the first request.
+  const provider = config.oidc ? await oidcProvider(config) : null;
   if (config.mcp) {
     // Stateless: the MCP client keeps no session with this process. Both
     // protocol eras are answered, the handshake one and 2026-07-28.
@@ -738,6 +813,20 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
         return reply(res, 200, coord.dispatch(envelope));
       }
       if (path === "/api/config") return reply(res, 200, publicConfig(config));
+      if (path === "/api/oidc/token") {
+        if (!provider) return reply(res, 404, { error: "no OIDC issuer is configured" });
+        if (req.method !== "POST") return reply(res, 405, { error: "POST /api/oidc/token takes a sign-in's code" });
+        if (!(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return reply(res, 415, { error: "POST /api/oidc/token takes application/json" });
+        let body;
+        try { body = JSON.parse(await readBody(req, 64 * 1024)); } catch (e) {
+          if (e instanceof BodyTooLarge) throw e;
+          return reply(res, 400, { error: "the body is not JSON" });
+        }
+        const fields = ["code", "code_verifier", "redirect_uri", "nonce"];
+        if (!fields.every((f) => typeof body?.[f] === "string" && body[f])) return reply(res, 400, { error: `${fields.join(", ")} are each a string` });
+        const answer = await redeemCode(config, provider, body);
+        return reply(res, answer.status, answer.body);
+      }
       if (path === "/api/members") return reply(res, 200, { members: listMembers(coord, config.workspace) });
       if (path === "/api/chain") {
         const range = {};
@@ -840,7 +929,8 @@ export async function createChapServer(options = {}) {
         if (config.signature_policy === "all") log(`           every call is signed here and /mcp's are not, so they are refused; "require_signatures": "humans" takes them`);
       }
       log(`  profiles ${config.profiles.join(", ")}`);
-      log(`  store    ${config.store}${config.chain ? ", chain on" : ""}${config.oidc ? `, oidc ${config.oidc.issuer}` : ""}`);
+      log(`  store    ${config.store}${config.chain ? ", chain on" : ""}`);
+      if (config.oidc) log(`  oidc     people sign in at ${config.oidc.issuer}, as client ${config.oidc.client_id}${config.oidc.discovery?.chap_development_issuer ? "; a development issuer, which authenticates nobody" : ""}`);
       log(`  signing  ${SIGNING[config.signature_policy]}`);
       if (config.require_signatures) log(`           ${DESK_SIGNING[config.desk_signing ?? "browser-key"]}`);
       if (config.notify) log(`  notify   ${[config.notify.console ? "console" : null, config.notify.webhook ? `webhook ${new URL(config.notify.webhook.url).origin}` : null].filter(Boolean).join(", ") || "nothing"}, linking ${config.desk_url}`);

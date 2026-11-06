@@ -14,19 +14,27 @@
 //   chain      audit.verify_chain answers status verified with ok true
 //   store      the coordinator reports a persistent store, and the store file
 //              exists and changes after a call (skipped when CHAP_DB_PATH is :memory:)
-//   oidc       with an issuer configured, a join with a garbage token is refused with -32403
+//   oidc       with an issuer configured, a person's join with no token, and one with a
+//              garbage token, are each refused with -32403
+//   nonce      with the development issuer, which hands a token to anyone, a token for the
+//              reviewer whose nonce names another key than the join brings binds nothing:
+//              the join is refused with -32011 and the reviewer's keys stay as they were.
+//              Skipped before the reviewer has signed in at the desk, and with a provider
+//              that asks a person to sign in, which doctor cannot do.
 //
 // The signed checks join the agent first with its public key, which is
 // accepted unsigned and changes nothing for a member already on record. The
-// unsigned probe and the garbage token are refused calls, and a refused call
-// is recorded on the chain, so each run leaves those refusals on it.
+// unsigned probe, the joins with no token or a garbage one, and the nonce
+// probe are refused calls, and a refused call is recorded on the chain, so
+// each run leaves those refusals on it, a token as its digest.
 // runChecks is exported, so the tests run the same checks in-process.
 
+import { createHash, randomBytes } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMain, storePath as resolveStore, usage, wantsHelp } from "@brightbeamai/chap-server";
-import { makeClient, signerFromJwk } from "@brightbeamai/chap-server/client";
+import { generateSigner, makeClient, signerFromJwk, thumbprint } from "@brightbeamai/chap-server/client";
 import { keyPathFor, readKeyFile } from "@brightbeamai/chap-server/keys";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -139,18 +147,66 @@ export async function runChecks({ url = process.env.CHAP_URL ?? "http://127.0.0.
       : `${storeFile} did not change after a call`);
   }
 
-  // oidc
+  // oidc: a person joins with a token from the issuer, or not at all
   if (!oidcOn) {
-    record("oidc", "skip", "no issuer configured; set OIDC_ISSUER to verify tokens at participant.join");
+    record("oidc", "skip", "no issuer configured; set OIDC_ISSUER and OIDC_CLIENT_ID to sign people in and verify their tokens at participant.join");
+    record("nonce", "skip", "no issuer configured");
   } else {
-    const r = await post(`${base}/chap`, { jsonrpc: "2.0", id: "doctor-oidc", method: "participant.join",
-      params: { workspace: cfg.workspace, from: PROBE_URI, type: "human", oidc_token: "not.a.token" } });
-    const code = r.error?.code;
-    record("oidc", code === -32403 ? "ok" : "FAIL",
-      code === -32403 ? `a join with a garbage token is refused with -32403 (issuer ${cfg.oidc.issuer})` : `expected -32403, got ${r.error ? `${code} ${r.error.message}` : "an accepted join"}`);
+    const joinWith = (id, extra) => post(`${base}/chap`, { jsonrpc: "2.0", id, method: "participant.join", params: { workspace: cfg.workspace, from: PROBE_URI, type: "human", ...extra } });
+    const bare = (await joinWith("doctor-oidc-none", {})).error?.code;
+    const garbage = (await joinWith("doctor-oidc-garbage", { oidc_token: "not.a.token" })).error?.code;
+    const good = bare === -32403 && garbage === -32403;
+    record("oidc", good ? "ok" : "FAIL", good ? `a person's join with no token, and one with a garbage token, are refused with -32403 (issuer ${cfg.oidc.issuer})`
+      : `expected -32403 for both, got ${bare ?? "an accepted join"} with no token and ${garbage ?? "an accepted join"} with a garbage one`);
+    await nonceCheck({ cfg, config, base, record });
   }
 
   return results;
+}
+
+/**
+ * A token whose nonce names another key binds nothing: with the reviewer
+ * on record, a join under their name that brings a key of its own, with a
+ * token for them whose nonce is another key's thumbprint, is refused with
+ * -32011, and their keys stay as they were. The token comes from the
+ * development issuer, which hands one to anyone through the sign-in the
+ * desk makes; a real provider asks a person to sign in, which doctor does
+ * not do.
+ */
+async function nonceCheck({ cfg, config, base, record }) {
+  const reviewer = config.humans?.[0]?.uri;
+  if (!cfg.oidc.development) return record("nonce", "skip", `a token needs a person to sign in at ${cfg.oidc.issuer}; the template's tests check this against the development issuer`);
+  const keysOf = async () => (await (await fetch(`${base}/api/members`)).json()).members.find((m) => m.uri === reviewer)?.keys.map((k) => k.kid);
+  const before = await keysOf();
+  if (!before) return record("nonce", "skip", `${reviewer} has not signed in at the desk yet; sign in there, then run doctor again`);
+  const [named, brought] = [await generateSigner(reviewer), await generateSigner(reviewer)];
+  let token;
+  try { token = await devToken(cfg, base, reviewer, await thumbprint(named.publicJwk)); } catch (e) {
+    return record("nonce", "FAIL", `no token from the development issuer: ${e.message}`);
+  }
+  const r = await post(`${base}/chap`, { jsonrpc: "2.0", id: "doctor-nonce", method: "participant.join",
+    params: { workspace: cfg.workspace, from: reviewer, type: "human", jwks: { keys: [brought.publicJwk] }, oidc_token: token } });
+  const after = await keysOf();
+  const held = JSON.stringify(after) === JSON.stringify(before);
+  record("nonce", r.error?.code === -32011 && held ? "ok" : "FAIL", r.error?.code === -32011 && held
+    ? `a token for ${reviewer} whose nonce names another key binds nothing: the join is refused with -32011, and ${reviewer} keeps ${before.length} key${before.length === 1 ? "" : "s"}`
+    : `expected -32011 and ${reviewer}'s keys as they were; got ${r.error ? `${r.error.code} ${r.error.message}` : "an accepted join"}, keys ${JSON.stringify(after)}`);
+}
+
+/** An ID token for `who` with `nonce`, through the sign-in the desk makes: the development issuer's code, redeemed by the server. */
+async function devToken(cfg, base, who, nonce) {
+  const verifier = randomBytes(32).toString("base64url");
+  const url = new URL(cfg.oidc.authorization_endpoint);
+  const redirect = `${base}/`;
+  for (const [k, v] of Object.entries({ response_type: "code", client_id: cfg.oidc.client_id, redirect_uri: redirect, scope: "openid", state: "doctor", nonce,
+    code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256", login_hint: who })) url.searchParams.set(k, v);
+  const sent = await fetch(url, { redirect: "manual" });
+  const code = sent.headers.get("location") ? new URL(sent.headers.get("location")).searchParams.get("code") : null;
+  if (!code) throw new Error(`${url.origin} gave no code (${sent.status})`);
+  const res = await fetch(`${base}/api/oidc/token`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: redirect, nonce }) });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error ?? `the server answered ${res.status}`);
+  return body.id_token;
 }
 
 function has(profiles, name) {

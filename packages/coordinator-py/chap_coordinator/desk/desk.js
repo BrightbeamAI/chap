@@ -10,9 +10,10 @@
 // the members the server lists. Activity reads the chain; Insights counts
 // what happened.
 
-import { contentHash, deepEqual, fingerprint, jsonPatch, makeClient } from "./chap-client.mjs";
+import { contentHash, deepEqual, fingerprint, jsonPatch, makeClient, thumbprint } from "./chap-client.mjs";
 import { browserKey, keepSigner, makePasskey, storedSigner } from "./keystore.js";
 import { atLocalhost, isAddress, signingFor } from "./signing.js";
+import { returnedSignIn, signInUrl } from "./login.js";
 import { ago, artefactAnomalies, el, renderArtefact, renderDiff, renderJson, shapeOf, stateBadge, titleOf } from "./render.js";
 import { parsePatch } from "./diff.js";
 import { decisionsOf, outcomeOf, renderInsights, renderMarkdown } from "./insights.js";
@@ -56,6 +57,11 @@ async function getJson(path) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path} answered ${res.status}`);
   return res.json();
+}
+/** POST JSON to the server; resolves { ok, body }. */
+async function postJson(path, body) {
+  const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  return { ok: res.ok, body: await res.json().catch(() => ({})) };
 }
 let toastTimer = null;
 function toast(message, kind = "") {
@@ -142,6 +148,13 @@ async function boot() {
   document.addEventListener("keydown", onKey);
 
   state.config = await getJson("api/config");
+  // Back from the provider: the page's address loses the code at once, and
+  // the server redeems it for the ID token the join presents.
+  const back = returnedSignIn();
+  if (back) {
+    history.replaceState(null, "", `${location.pathname}${back.hash}`);
+    state.signIn = back.code ? await redeemSignIn(back) : back;
+  }
   $("workspace").textContent = state.config.workspace;
   const short = state.config.profiles.map((p) => p.replace(/\/1\.0$/, "").replace("security-signed", "signed").replace("audit-scitt", "scitt"));
   $("profiles").replaceChildren(el("span", { class: "chip profiles", title: state.config.profiles.join(", "), text: short.join(" · ") }));
@@ -152,7 +165,7 @@ async function boot() {
   const humans = state.config.humans;
   const shared = (name) => humans.filter((h) => h.display_name === name).length > 1;
   for (const h of humans) select.append(el("option", { value: h.uri, title: h.uri, text: h.display_name ? (shared(h.display_name) ? `${h.display_name} (${h.uri})` : h.display_name) : h.uri }));
-  const wanted = hashParams().get("reviewer");
+  const wanted = state.signIn?.uri ?? hashParams().get("reviewer");
   if (wanted && humans.some((h) => h.uri === wanted)) select.value = wanted;
   const titleSelect = () => { select.title = `Deciding as ${select.value}`; };
   titleSelect();
@@ -210,7 +223,10 @@ async function useSigner(uri, signer, setup = null) {
   state.key = { signer, fingerprint: signer ? await fingerprint(signer.publicJwk) : null, status: !state.config.require_signatures ? "unsigned" : signer ? "unchecked" : "setup", refused: false, setup };
   if (signer) {
     await checkKey();
-    if (state.key.status !== "on record" && !setup) await join();
+    if (state.key.status !== "on record" && !setup) {
+      if (state.config.oidc) await joinSignedIn();
+      else await join();
+    }
   }
   if (setup?.need === "localhost") location.replace(atLocalhost(location));
   showKey();
@@ -231,6 +247,9 @@ async function makeKey() {
   const uri = state.client.from;
   const ws = state.config.workspace;
   const before = state.key.signer;
+  // Where people sign in, the key this browser signs with is bound by the
+  // sign-in: the one held, or a passkey made now, in this click.
+  if (state.key.setup?.need === "sign in" && before) { await startSignIn(before); return; }
   let passkey;
   try {
     passkey = await makePasskey(ws, uri, { displayName: humanOf(uri)?.display_name, platform: state.config.desk_signing === "auto" });
@@ -247,25 +266,67 @@ async function makeKey() {
     }
     toast("Your name is held by the passkey now; the key this browser kept is given up.", "ok");
   }
-  await useSigner(uri, await keepSigner(ws, uri, passkey));
+  await keepSigner(ws, uri, passkey);
+  if (state.config.oidc && !(before && state.key.status === "on record")) {
+    state.client = makeClient({ url: "chap", workspace: ws, from: uri, signer: passkey });
+    await startSignIn(passkey);
+    return;
+  }
+  await useSigner(uri, passkey);
 }
 
 /**
- * Join the reviewer with this browser's key. A refusal because the name is
- * held by keys the member brought before (-32011) leaves the desk signing
- * nothing; any other is shown, and the join is tried again when the
- * reviewer is chosen again.
+ * Join the reviewer with this browser's key, and with `token`, an ID token,
+ * where people sign in. A refusal because the name is held by keys the
+ * member brought before (-32011) leaves the desk signing nothing; a token
+ * refused (-32403, -32404) is said in the sign-in banner; any other
+ * refusal is shown, and the join is tried again when the reviewer is chosen
+ * again.
  */
-async function join() {
+async function join(token = null) {
   const uri = state.client.from;
   const me = humanOf(uri);
   try {
-    await state.client.call("participant.join", { type: "human", role: me?.role ?? "reviewer", display_name: me?.display_name, jwks: { keys: [state.key.signer.publicJwk] } });
+    await state.client.call("participant.join", { type: "human", role: me?.role ?? "reviewer", display_name: me?.display_name, jwks: { keys: [state.key.signer.publicJwk] }, ...(token ? { oidc_token: token } : {}) });
   } catch (e) {
     if (e.code === -32011) { state.key.status = "another key"; state.key.refused = true; return; }
+    if (token && (e.code === -32403 || e.code === -32404)) { state.key.setup = { need: "sign in", error: `The workspace refused the sign-in: ${e.message}` }; return; }
     toast(`Could not join as ${uri}: ${e.message}`, "bad");
   }
   await checkKey();
+}
+
+/**
+ * Where people sign in at a provider, a join presents an ID token for this
+ * reviewer whose nonce names this browser's key. One the browser came back
+ * with is presented; without one, the desk asks the reviewer to sign in,
+ * which also binds this browser's key where the workspace holds another for
+ * them from a sign-in elsewhere.
+ */
+async function joinSignedIn() {
+  const uri = state.client.from;
+  const back = state.signIn;
+  state.signIn = null;
+  if (back?.token && back.uri === uri && back.nonce === (await thumbprint(state.key.signer.publicJwk))) {
+    if (back.as !== uri) { state.key.setup = { need: "sign in", error: `You signed in as ${back.as}, and the desk decides as ${uri}: sign in as ${uri}, or choose ${back.as} above.` }; return; }
+    await join(back.token);
+    return;
+  }
+  state.key.setup = { need: "sign in", error: back?.uri === uri ? back.error ?? null : null };
+}
+
+/** Redeem the code a sign-in came back with, through the server: { uri, token, nonce, as }, or { uri, error }. */
+async function redeemSignIn(back) {
+  const { ok, body } = await postJson("api/oidc/token", { code: back.code, code_verifier: back.verifier, redirect_uri: back.redirect_uri, nonce: back.nonce });
+  return ok ? { uri: back.uri, token: body.id_token, nonce: back.nonce, as: body.as } : { uri: back.uri, error: body.error ?? "The server could not redeem the sign-in's code." };
+}
+
+/** Send the browser to the provider to sign the reviewer in, for the key `signer` holds. */
+async function startSignIn(signer) {
+  const uri = state.client.from;
+  const oidc = state.config.oidc;
+  const loginHint = oidc.development ? uri : humanOf(uri)?.email ?? null;
+  location.assign(await signInUrl({ oidc, uri, signer, loginHint }));
 }
 
 /**
@@ -335,7 +396,10 @@ function showKey() {
       : status === "not joined" ? `${uri} has not joined the workspace with this key, so decisions signed here would not count.`
         : status === "no key" ? `The workspace holds no key for ${uri} now, so decisions signed here would not count.`
           : "Not checked with the workspace yet.";
-  $("key-alert").hidden = status !== "another key" && status !== "no key";
+  // Where people sign in, another key on record for the reviewer is one a
+  // sign-in elsewhere bound, and signing in here binds this browser's: the
+  // sign-in banner says so.
+  $("key-alert").hidden = !(status === "no key" || (status === "another key" && (!state.config.oidc || state.key.refused)));
   if (status === "another key") {
     const how = state.key.refused ? `The workspace refused this browser's key when the desk joined you, because another key already holds ${uri} in ${state.config.workspace}.` : `Another key holds ${uri} in ${state.config.workspace}.`;
     $("key-alert-title").textContent = "This browser's key is not the reviewer's.";
@@ -364,8 +428,14 @@ function showSetup() {
   const noteSeen = localStorage.getItem(`chap-desk-browser-key-note:${ws}`) === "seen";
   let text = null;
   if (setup?.need === "passkey") {
-    text = "Your decisions here are signed with a passkey, which asks for your fingerprint, face or PIN each time, so nothing signs in your name without you. Make one to start.";
-    action.textContent = "Make a passkey";
+    text = `Your decisions here are signed with a passkey, which asks for your fingerprint, face or PIN each time, so nothing signs in your name without you. ${state.config.oidc ? `Make one, and sign in at ${state.config.oidc.issuer} to bind it to you.` : "Make one to start."}`;
+    action.textContent = state.config.oidc ? "Make a passkey and sign in" : "Make a passkey";
+    action.hidden = false;
+  } else if (setup?.need === "sign in") {
+    const name = humanOf(state.client.from)?.display_name ?? state.client.from;
+    text = `${setup.error ? `${setup.error} ` : ""}Sign in at ${state.config.oidc.issuer} to decide as ${name}: the desk joins you with your sign-in, which binds the key this browser signs with to you.`;
+    if (setup.error) box.className = "alert setup bad";
+    action.textContent = "Sign in";
     action.hidden = false;
   } else if (setup?.need === "move") {
     text = "This desk signs with a passkey, and the workspace holds the key this browser kept for you before. Make a passkey, and the desk moves your name to it with a request that key signs.";

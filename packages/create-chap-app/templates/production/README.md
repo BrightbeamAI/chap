@@ -5,7 +5,8 @@ The Handbook's production set, running: `core/1.0`, `review/1.0`,
 on. One coordinator process owns a SQLite store on a volume and refuses an
 unsigned call from a person. An agent runs as a second process with its own key,
 drafts a message for each row of `messages.csv`, and waits for your decision.
-The review desk signs in the browser with a key it generates there. An
+The review desk signs your decisions with a passkey where the browser has
+one, and with an OpenID provider configured, signs you in there first. An
 approved message is written to `outbox/`; a rejected one is written nowhere.
 
 ## Run it
@@ -103,49 +104,87 @@ Clearing the browser's storage loses a browser key, and with it the member's
 key: the desk then needs a new participant URI, or a
 `participant.rotate_key` signed with the old key before it is cleared.
 
-## OIDC
+## Signing in with OIDC
 
-With `OIDC_ISSUER` set, the coordinator verifies the token a
-`participant.join` presents against the issuer's keys, and the workspace
-advertises `identity-oidc/1.0`. Without it the profile is left out, and the
-console says so, because the coordinator refuses a workspace that advertises
-a verification it does not perform.
+With an issuer set, people sign in at the desk, and a person joins the
+workspace only with an ID token from that issuer, for someone
+`chap.config.json` names; the workspace advertises `identity-oidc/1.0`.
+Without one the profile is left out, and the console says so, because the
+coordinator refuses a workspace that advertises a check it does not make.
 
-```
-OIDC_ISSUER=https://idp.example.org             # the token's iss, as the provider states it
-OIDC_JWKS_URL=https://idp.example.org/keys      # the jwks_uri from the provider's /.well-known/openid-configuration
-OIDC_AUDIENCE=chap-coordinator-prod             # the token's aud; unchecked when unset
+```json
+"oidc": { "issuer": "https://login.example.org", "client_id": "chap-desk" }
 ```
 
-`OIDC_JWKS_URL` defaults to the issuer followed by `/.well-known/jwks.json`.
-Providers differ here, so take the value from `jwks_uri` in the provider's
-discovery document.
+or `OIDC_ISSUER` and `OIDC_CLIENT_ID` in the environment, as the Compose
+file passes them. The sign-in:
 
-The verifier, `@brightbeamai/chap-server/oidc`, has no dependencies. It fetches the JWKS at
-start, accepts RS256, ES256 and EdDSA, checks `iss`, `aud`, `exp` and `nbf`,
-and fetches the JWKS again when a token names a key it does not hold, so a
-key rotation at the issuer costs one refused join. A token that fails any
-check is refused with `-32403`.
+1. The desk sends you to the issuer with the authorisation code flow and
+   PKCE (S256), and with a `nonce` that is the RFC 7638 thumbprint of the
+   key the desk signs with, your passkey or the browser key.
+2. The issuer sends you back to the desk with a code. The server redeems it
+   at the issuer's token endpoint, checks the ID token, and gives it to the
+   desk.
+3. The desk joins you with the token and that key. The coordinator binds
+   the key whose thumbprint is the token's nonce, so the key is yours
+   because your sign-in names it, and records the token as its SHA-256,
+   never the token itself.
 
-The token is an ID token in the shape
-[`integrations/CHAP-with-OIDC-OAuth2.md`](https://github.com/BrightbeamAI/chap/blob/main/integrations/CHAP-with-OIDC-OAuth2.md)
-describes: `iss`, `sub`, `aud`, `exp`, `auth_time`, `acr`, and for CHAP
-`chap_participant_uri`, the URI the token authorises, and `cnf.jwk`, the
-participant's Ed25519 public key with a `kid`. The coordinator pins
-`cnf.jwk` as the member's signing key and ignores any `jwks` the join also
-carries. A token whose `chap_participant_uri` names another participant, or
-whose `sub` is not the member's recorded subject, is refused with `-32404`.
+The server reads the issuer's discovery document,
+`<issuer>/.well-known/openid-configuration`, which must name the issuer
+exactly, and the keys it names (`jwks_uri`). A token must be signed with
+RS256, ES256 or EdDSA by one of those keys, carry the issuer as `iss`, be
+issued to the client id (`aud`, and `azp` where it names one), be inside
+its validity window and name a subject. It must also be for a person
+`chap.config.json` names: one whose entry gives the token's subject as
+`oidc_sub`, or the one its `chap_participant_uri` names, for an issuer that
+puts the participant's URI in its tokens. An account at the provider is
+not by itself a way in: the first time you sign in, the desk shows the
+subject the issuer gave you, to add to your entry in `humans`:
 
-The coordinator verifies a token when a join presents one. The desk in this
-project has no login and presents none. A deployment's login authenticates
-the person, sends the browser key to the provider as `cnf.jwk`, and presents
-the token at `participant.join`, as section 1 of the guide above shows.
-`@brightbeamai/chap-server/dev-issuer` is a development issuer for the tests
-and for local runs only. It signs any claims it is asked to and
-authenticates nobody. `npx chap-server dev-issuer` starts it and prints the
-`OIDC_*` lines to export;
-`tests/production.test.mjs` shows the whole path from a minted token to a
-signed decision.
+```json
+"humans": [{ "uri": "human:you@example.org", "display_name": "You", "role": "reviewer", "oidc_sub": "248289761001" }]
+```
+
+A person's join with no token, or with a token that fails a check, is
+refused with `-32403`; one whose token is for someone other than the join
+names, with `-32404`. A key rotation at the issuer costs one refused join:
+the server fetches the keys again when a token names one it does not have.
+
+**At the provider,** register a client for the desk:
+
+- the redirect URI: the desk's address as people open it,
+  `http://localhost:8790/` on this machine, or the `https://` address your
+  proxy serves it at;
+- a public client, with PKCE (S256), and the `openid` and `email` scopes;
+- no client secret. Where a provider gives a web redirect only to a client
+  with a secret, set it as `OIDC_CLIENT_SECRET`: the server sends it with
+  the code, and the browser never sees it.
+
+Notes from the providers' documentation:
+
+- **Google.** The issuer is `https://accounts.google.com`. For a desk on
+  this machine, a "Desktop app" client: Google takes a loopback redirect
+  on any port, and the client secret it gives such a client is optional at
+  the token endpoint. For a desk at its own `https://` address, a "Web
+  application" client with the redirect URI registered, and its secret as
+  `OIDC_CLIENT_SECRET`. Google writes its issuer into a token as
+  `https://accounts.google.com` or `accounts.google.com`, and the server
+  takes either.
+- **Microsoft Entra ID.** The issuer is your tenant's,
+  `https://login.microsoftonline.com/<tenant id>/v2.0`, since the server
+  checks it against the discovery document exactly. Register the redirect
+  URI under "Mobile and desktop applications", a public client, where
+  `http://localhost` is accepted whatever its port, or under "Web" with a
+  client secret. The server redeems the code, and Entra takes a
+  single-page application's code from the browser alone, so that platform
+  does not work here.
+
+For local runs, `npx chap-server dev-issuer` starts a development issuer on
+port 8793 and prints the two settings. It signs in whoever the desk asks
+it to, with no question asked: it authenticates nobody, and its discovery
+document and console say so. `tests/production.test.mjs` runs the whole
+path against it, from the sign-in to a signed decision.
 
 ## doctor
 
@@ -170,7 +209,13 @@ the file the coordinator writes. The checks:
 - the coordinator reports a persistent store, and the store file exists and
   changes after a call (skipped with a note when `CHAP_DB_PATH` is
   `:memory:`);
-- with an issuer set, a join with a garbage token is refused with `-32403`.
+- with an issuer set, a person's join with no token, and one with a garbage
+  token, are each refused with `-32403`;
+- with the development issuer, a token for the reviewer whose nonce names
+  another key than the join brings binds nothing: the join is refused with
+  `-32011`, and the reviewer's keys stay as they were. It needs the
+  reviewer to have signed in at the desk, and is skipped with a real
+  provider, where a token needs a person to sign in.
 
 ## The desk, insights and analytics
 
@@ -203,9 +248,9 @@ chap-analytics`; `--watch 300` keeps the pages current.
   review whatever the agent asks for. The ceiling is `trial` as well, so a
   task that asks for `production` is refused (`-32040`); the ceiling is
   enforced on every workspace, and the profile adds the trial rule.
-- `identity-oidc/1.0`: a join that presents a token has it verified against
-  the issuer's keys, and the token's `cnf.jwk` becomes the member's signing
-  key (`-32403`, `-32404`).
+- `identity-oidc/1.0`: a person joins only with an ID token from the issuer
+  for someone `chap.config.json` names, and the key the token's nonce names
+  becomes their signing key (`-32403`, `-32404`).
 - `security-signed/1.0`: a call that carries a signature is checked against
   the sender's registered key, and refused when it does not verify
   (`-32070`). `"require_signatures": "humans"` in `chap.config.json`, the
@@ -248,9 +293,9 @@ and `--dry-run` changes nothing.
   host names only, so the name the proxy passes goes in `allowed_hosts` in
   `chap.config.json` or in `CHAP_ALLOWED_HOSTS`; a browser request from
   another origin is refused.
-- Its own login, which authenticates each person, obtains the OIDC token
-  with the browser key in `cnf.jwk`, and checks that each caller sends only
-  its own `from`.
+- An OpenID provider people sign in at, registered as above, and a login in
+  front of the read API under `/api/`, which serves every task, the members
+  and the chain to whoever reaches it.
 - Delivery beyond a webhook, and showing shadow-mode output only to its
   observers. `notify` in `chap.config.json` prints a line and POSTs a notice,
   signed with HMAC-SHA256, to a webhook when a review opens or a question is

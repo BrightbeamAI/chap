@@ -12,7 +12,7 @@ const USAGE = `Usage:
   chap-server [--config <file>]               the desk, POST /chap, the read API and /mcp for a project
   chap-server keys [--uri <uri>] [--config <file>]
                                               the agent's signing key, written to keys/ beside the config
-  chap-server dev-issuer [<port>]             a development OIDC issuer, for tests and local runs only
+  chap-server dev-issuer [<port>]             a development OIDC issuer on 8793, for tests and local runs only
 
 The project is the directory that holds its chap.config.json: --config names
 the file, CHAP_CONFIG does the same, and by default it is chap.config.json in
@@ -70,12 +70,12 @@ async function keys(argv) {
 async function devIssuer(argv) {
   const args = parse(argv, []);
   if (args.help) return console.log(USAGE);
-  const port = Number(args.positional[0] ?? 8791);
-  const dev = await startDevIssuer(port);
-  console.log("Development OIDC issuer. Tests and local runs only: it signs any claims it is asked to.");
+  const port = Number(args.positional[0] ?? 8793);
+  const dev = await startDevIssuer(port, { log: console.log });
+  console.log("Development OIDC issuer, for tests and local runs only: it signs in whoever the desk asks it to, with no question asked, and authenticates nobody.");
+  console.log("Start the server with:");
   console.log(`OIDC_ISSUER=${dev.issuer}`);
-  console.log(`OIDC_JWKS_URL=${dev.jwks_url}`);
-  console.log(`OIDC_AUDIENCE=${dev.audience}`);
+  console.log(`OIDC_CLIENT_ID=${dev.audience}`);
 }
 
 const [command, ...rest] = process.argv.slice(2);
