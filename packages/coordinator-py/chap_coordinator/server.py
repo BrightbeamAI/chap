@@ -11,9 +11,10 @@ on it, and serves
     GET  /analytics/    the pages chap-analytics wrote, when they exist
 
 Two servers run the same routes. :func:`serve` runs them on the standard
-library's HTTP server, and :class:`ChapDesk` is the routes as an ASGI app,
-to mount in FastAPI or Starlette. Everything comes from
-``chap.config.json``, read by :func:`load_config`::
+library's HTTP server, as ``chap-coordinator serve`` does, and
+:class:`ChapDesk` is the routes as an ASGI app, to mount in FastAPI or
+Starlette. Everything comes from ``chap.config.json``, read by
+:func:`load_config`::
 
     from chap_coordinator.server import load_config, serve
 
@@ -55,6 +56,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -198,7 +200,10 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
     """
     config_path = Path(os.path.abspath(os.path.expanduser(
         path if path is not None else os.environ.get("CHAP_CONFIG") or "chap.config.json")))
-    config = json.loads(config_path.read_text(encoding="utf-8"))
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as err:
+        raise ValueError(f"{config_path} is not JSON: {err}") from None
     if not isinstance(config, dict) or not isinstance(config.get("workspace"), str) or not config["workspace"]:
         raise ValueError(f"{config_path} names no workspace")
     if not isinstance(config.get("profiles"), list) or not all(isinstance(p, str) for p in config["profiles"]):
@@ -788,9 +793,13 @@ def make_server(config: dict, coord: Coordinator) -> ChapServer:
 
 def serve(config: dict) -> int:
     """Run the desk server until it is interrupted, and return the exit code:
-    0 after Ctrl-C, 1 when the port is taken. ``config`` is what
-    :func:`load_config` returns."""
-    coord = make_coordinator(config)
+    0 after Ctrl-C, 1 when the store cannot be opened or the port is taken.
+    ``config`` is what :func:`load_config` returns."""
+    try:
+        coord = make_coordinator(config)
+    except (OSError, sqlite3.Error) as err:
+        print(f"The store at {config['store']} could not be opened: {err}", file=sys.stderr)
+        return 1
     try:
         server = make_server(config, coord)
     except OSError as err:
@@ -801,7 +810,8 @@ def serve(config: dict) -> int:
               "Stop that one, or set PORT to a free port.", file=sys.stderr)
         return 1
     base = server.base
-    flags = (", chain on" if config.get("chain") else "") + (", signatures required" if config.get("require_signatures") else "")
+    flags = ((", chain on" if config.get("chain") else "")
+             + (", signatures required" if config.get("require_signatures") else ""))
     print(f"CHAP {config['workspace']} on {base}")
     print(f"  desk     {base}/")
     print(f"  calls    POST {base}/chap")

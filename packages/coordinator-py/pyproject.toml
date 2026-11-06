@@ -44,6 +44,9 @@ dev = [
     "uvicorn>=0.27",
 ]
 
+[project.scripts]
+chap-coordinator = "chap_coordinator.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/BrightbeamAI/chap"
 Repository = "https://github.com/BrightbeamAI/chap"
