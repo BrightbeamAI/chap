@@ -459,10 +459,11 @@ hashes of the canonicalised inputs and outputs. The helper returns the
 new task id and both hashes so downstream callers can cite the
 wrapped event directly.
 
-Python's helper takes `review_required=True`: the task is created
-requiring review, so the call's result waits as the artefact under review
-for a person in the workspace to decide, and the helper raises where no one
-could. The TypeScript helper completes the task at once.
+Both helpers take `review_required=True` (`reviewRequired: true` in
+TypeScript): the task is created requiring review, so the call's result
+waits as the artefact under review for a person in the workspace to
+decide, and the helper raises, or throws, where no one could. Without it
+the task completes at once.
 
 Pass `fulfils` (TypeScript) / `fulfils=` (Python) with the id of the
 decision the call carries out, and the helper records it as a `fulfils`

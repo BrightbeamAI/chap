@@ -36,6 +36,15 @@ export interface WrapMcpToolCallOptions {
   routingHints?: Record<string, unknown>;
   /** Optional confidence value attached to task.complete. */
   confidence?: number | string;
+  /**
+   * Create the task with ``review_required``, so ``task.complete`` holds the
+   * result as the artefact under review, opens a review addressed to the
+   * workspace's human members, and leaves the task in ``review_requested``
+   * until one of them decides. A workspace with no member who could review
+   * it refuses the completion, and this throws. Default false: the task
+   * completes at once.
+   */
+  reviewRequired?: boolean;
   /** Optional id of the decision this call fulfils; recorded as a ``fulfils`` link on the result artefact. Asserted by the caller and not verified by the coordinator. */
   fulfils?: string;
 }
@@ -84,6 +93,7 @@ export function wrapMcpToolCall(
     input:    options.args,
   };
   if (options.routingHints) createParams.routing_hints = { ...options.routingHints };
+  if (options.reviewRequired) createParams.review_required = true;
 
   const createResp = coord.dispatch({
     jsonrpc: "2.0",

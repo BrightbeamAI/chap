@@ -105,6 +105,30 @@ test("wrapMcpToolCall omits fulfils by default", () => {
   assert.ok(!("fulfils" in (task.output as object)));
 });
 
+test("wrapMcpToolCall with reviewRequired leaves the call for a person to review", () => {
+  // The option did not exist, so a wrapped call completed at once, with no
+  // review, whatever the caller needed. Mirrors test_wrap_helpers.py.
+  const coord = makeCoord();
+  coord.dispatch({ jsonrpc: "2.0", id: "h", method: "participant.join",
+    params: { workspace: "wsp_wrap", from: "human:alice", type: "human", role: "reviewer" } });
+  const res = wrapMcpToolCall(coord, "wsp_wrap", {
+    caller: "agent:bot", tool: "payments.refund",
+    args: { amount: 50 }, result: { refund_id: "R-1" }, reviewRequired: true,
+  });
+  const task = coord.getWorkspace("wsp_wrap")!.tasks.get(res.task_id)!;
+  assert.equal(task.review_required, true);
+  assert.equal(task.state, "review_requested");
+  assert.ok(task.review!.requested_to.includes("human:alice"));
+});
+
+test("wrapMcpToolCall with reviewRequired and no reviewer throws", () => {
+  const coord = makeCoord();
+  assert.throws(() => wrapMcpToolCall(coord, "wsp_wrap", {
+    caller: "agent:bot", tool: "payments.refund",
+    args: { amount: 50 }, result: { refund_id: "R-1" }, reviewRequired: true,
+  }), /task\.complete failed/);
+});
+
 test("wrapA2aMessageExchange records fulfils when given", () => {
   const coord = makeCoord();
   const res = wrapA2aMessageExchange(coord, "wsp_wrap", {
