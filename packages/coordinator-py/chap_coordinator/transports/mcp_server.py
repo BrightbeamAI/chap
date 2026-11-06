@@ -66,6 +66,7 @@ Architecture notes
 from __future__ import annotations
 
 import json
+import logging
 from itertools import count
 from typing import Any, Callable, Optional
 
@@ -87,6 +88,14 @@ from chap_coordinator.coordinator import Coordinator
 from .mcp_schemas import SCHEMAS, TOOL_NAMES, method_for_tool, coerce_tool_args
 from .mcp_tools import TOOL_ANNOTATIONS, TOOL_DESCRIPTIONS
 
+
+logger = logging.getLogger(__name__)
+
+#: JSON-RPC's internal error: a fault inside the coordinator, which refused nothing.
+_INTERNAL_ERROR = -32603
+
+#: What a client is told of a fault inside the server; the detail is in the server's log.
+_FAILED_INSIDE = "The CHAP call failed inside the server; its log has the detail."
 
 #: Revisions that may be declared in a per-request ``_meta`` envelope.
 MODERN_PROTOCOL_VERSIONS = ("2026-07-28",)
@@ -242,10 +251,13 @@ def make_chap_mcp_server(
 
         try:
             response = coord.dispatch(envelope)
-        except Exception as exc:  # noqa: BLE001 - we want to surface any handler bug
+        except Exception:  # noqa: BLE001 - a fault in the server, reported without its text
+            # The exception's text can carry a path or a stack line, so it
+            # goes to the server's log, which the client never sees.
+            logger.exception("CHAP dispatch failed")
             return CallToolResult(
                 isError=True,
-                content=[TextContent(type="text", text=f"CHAP dispatch threw: {exc}")],
+                content=[TextContent(type="text", text=_FAILED_INSIDE)],
             )
 
         if "error" in response:
@@ -256,6 +268,13 @@ def make_chap_mcp_server(
             }
             if "data" in err:
                 body["data"] = err["data"]
+            if err.get("code") == _INTERNAL_ERROR:
+                # A fault inside the coordinator, whose data can carry the
+                # exception's text. It goes to the server's log, and the
+                # client is told only that the call failed. A refusal is
+                # passed on as it came.
+                logger.error("CHAP call failed: %s", err)
+                body = {"chap_error": _INTERNAL_ERROR, "message": _FAILED_INSIDE}
             return CallToolResult(
                 isError=True,
                 content=[TextContent(type="text", text=json.dumps(body, indent=2, default=str))],

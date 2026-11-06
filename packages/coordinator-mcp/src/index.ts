@@ -105,6 +105,12 @@ export const ServerDiscoverRequestSchema = z.object({
   params: z.optional(z.object({ _meta: z.optional(z.record(z.string(), z.unknown())) }).passthrough()),
 });
 
+/** JSON-RPC's internal error: a fault inside the coordinator, which refused nothing. */
+const INTERNAL_ERROR = -32603;
+
+/** What a client is told of a fault inside the server; the detail is in the server's log. */
+const FAILED_INSIDE = { chap_error: INTERNAL_ERROR, message: "The CHAP call failed inside the server; its log has the detail." };
+
 /**
  * What the server dispatches each call through: a Coordinator, or anything
  * with the same `dispatch`, such as a client that forwards the envelope to a
@@ -314,19 +320,26 @@ export function makeChapMcpServer(coord: ChapDispatcher, options: ChapMcpOptions
       if (e instanceof ChapEndpointError) {
         return terminal({ isError: true, content: [{ type: "text", text: e.message }] });
       }
-      const msg = e instanceof Error ? e.message : String(e);
+      // Anything else is a fault in the server. Its message can carry a path
+      // or a stack line, so it goes to the server's log, which the client never sees.
+      console.error("CHAP dispatch failed:", e);
       return terminal({
         isError: true,
-        content: [{ type: "text", text: `CHAP dispatch threw: ${msg}` }],
+        content: [{ type: "text", text: FAILED_INSIDE.message }],
       });
     }
 
     if (response.error) {
+      // -32603 is a fault inside the coordinator, and its data can carry the
+      // exception's text. It goes to the server's log, and the client is
+      // told only that the call failed. A refusal is passed on as it came.
+      const internal = response.error.code === INTERNAL_ERROR;
+      if (internal) console.error("CHAP call failed:", response.error);
       return terminal({
         isError: true,
         content: [{
           type: "text",
-          text: JSON.stringify({
+          text: JSON.stringify(internal ? FAILED_INSIDE : {
             chap_error: response.error.code,
             message:    response.error.message,
             ...(response.error.data !== undefined ? { data: response.error.data } : {}),
