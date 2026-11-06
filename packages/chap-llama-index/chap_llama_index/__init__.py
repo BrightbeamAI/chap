@@ -1,10 +1,19 @@
 """
-chap-llama-index: record a CHAP human-decision when a LlamaIndex Workflow
-pauses for human input.
+chap-llama-index: put a LlamaIndex Workflow's paused output in front of a
+person, or record a decision made elsewhere, as a CHAP decision.
 
 A Workflow step returns an InputRequiredEvent carrying the proposed
-output and waits; a human replies with a HumanResponseEvent. This adapter
-records that reply against the proposed output:
+output and waits; a HumanResponseEvent answers it. The adapter works at
+that pause in one of two ways.
+
+request_response opens a review of the proposed output, waits for the
+person's decision, made at a CHAP desk, and returns the HumanResponseEvent
+that carries it: `response` is the output as decided, or the reviewer's
+note when nothing was approved, and `decision` is approve, override or
+reject.
+
+record_decision records a reply your own code made, against the proposed
+output, in the reviewer's name:
 
     decision      CHAP envelope
     --------      ---------------------------
@@ -18,13 +27,17 @@ tags, and the approver are read off the HumanResponseEvent by convention,
 each overridable with a keyword argument.
 
 The bridge depends only on chap-coordinator. llama-index-workflows is
-never imported here: events are read structurally via event.get(...), so
-the same code runs against the real types or a test stand-in.
+imported only by request_response, to build the event it returns;
+record_decision reads events structurally via event.get(...), so the same
+code runs against the real types or a test stand-in.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+import dataclasses
+import time
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from chap_coordinator import Coordinator
@@ -90,6 +103,12 @@ def _diff(before: Any, after: Any, path: str) -> list[dict]:
     return ops
 
 
+def _ended_without_approval(decision: Decision) -> str:
+    if decision.kind == "reject":
+        return "rejected by the reviewer"
+    return f"The review ended without an approval ({decision.state})."
+
+
 def _participant_type(uri: str) -> str:
     scheme = uri.split(":", 1)[0]
     if scheme not in ("human", "agent", "service", "group"):
@@ -98,6 +117,91 @@ def _participant_type(uri: str) -> str:
             f"(human/agent/service/group): {uri!r}"
         )
     return scheme
+
+
+# ============================================================
+#   Decisions read back from the coordinator
+# ============================================================
+
+
+# A task in these states still waits for its reviewer: under review, or
+# paused during its review.
+_UNDECIDED = ("review_requested", "paused")
+
+
+@dataclass(frozen=True)
+class Decision:
+    """A reviewer's decision on a review, as the coordinator recorded it.
+
+    `approved` is true when the task completed through an approval or an
+    override, and `output` is then the artefact as decided: the output as
+    proposed, or the reviewer's version. Any other ending, a rejection, an
+    abstention, or a review escalated or cancelled, approves nothing, and
+    `output` is None.
+    """
+
+    task_id:  str
+    state:    str
+    kind:     Optional[str] = None   # approve, override, reject or abstain
+    reviewer: Optional[str] = None
+    output:   Any = None
+    comment:  Optional[str] = None   # the reviewer's note, or an override's rationale
+    tags:     tuple = ()
+
+    @property
+    def approved(self) -> bool:
+        return self.state == "completed" and self.kind in ("approve", "override")
+
+    @property
+    def revision_requested(self) -> bool:
+        """The reviewer rejected the output and asked the agent for another."""
+        return self.kind == "reject" and self.state == "in_progress"
+
+
+def _read_task(source: Any, workspace: str, task_id: str) -> Optional[dict]:
+    """The task as GET /api/tasks/<id> shows it: its state, its output and
+    its review's decisions, or None when the task is unknown.
+
+    An in-process Coordinator is read directly. Any other source is read
+    with source.task(task_id), the call a desk client offers."""
+    if isinstance(source, Coordinator):
+        ws = source.workspaces.get(workspace)
+        task = ws.tasks.get(task_id) if ws is not None else None
+        if task is None:
+            return None
+        decisions = []
+        for decided in (task.review.decisions if task.review else []):
+            decided = dict(decided)
+            override = ws.overrides.get(decided.get("override_artefact_id") or "")
+            if override is not None:
+                decided["rationale"] = override.rationale
+            decisions.append(decided)
+        return {"state": task.state, "output": task.output,
+                "review": {"decisions": decisions}}
+    read = getattr(source, "task", None)
+    if not callable(read):
+        raise TypeError(
+            "waiting for a decision reads the task: give the bridge an "
+            "in-process Coordinator, or a client with task(task_id) as `client`"
+        )
+    return read(task_id)
+
+
+def _decision(task_id: str, view: dict) -> Decision:
+    """The decision that ended the review: the last one recorded on it."""
+    decisions = (view.get("review") or {}).get("decisions") or []
+    last = decisions[-1] if decisions else {}
+    decision = Decision(
+        task_id=task_id,
+        state=view.get("state"),
+        kind=last.get("kind"),
+        reviewer=last.get("reviewer"),
+        comment=last.get("comment") or last.get("rationale"),
+        tags=tuple(last.get("tags") or ()),
+    )
+    if decision.approved:
+        decision = dataclasses.replace(decision, output=view.get("output"))
+    return decision
 
 
 # ============================================================
@@ -111,6 +215,10 @@ class ChapHitlBridge:
     writes into, the agent whose step proposed the output, and the default
     approver. Share it across runs; pass a per-decision approver when the
     decision belongs to someone else.
+
+    The bridge joins the agent when it is made. It joins an approver only
+    when it records a decision in their name, so a person who decides at a
+    desk joins there, with their own key.
     """
 
     coord:     Coordinator
@@ -119,14 +227,90 @@ class ChapHitlBridge:
     reviewer:  str
     profiles:  tuple = ("core/1.0", "review/1.0")
     on_envelope: Optional[Callable[[str, dict], None]] = None
+    # Reads a task for wait_for_decision: anything with task(task_id)
+    # returning the GET /api/tasks/<id> view. Leave it unset with an
+    # in-process Coordinator, which is read directly.
+    client: Any = None
+    _joined: set = field(default_factory=set, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        if self.reviewer == self.agent:
+            raise ValueError(
+                "the reviewer cannot be the agent whose output is under review: "
+                f"{self.reviewer!r}"
+            )
         _safe_dispatch(self.coord, "workspace.create", {
             "workspace": self.workspace,
             "profiles":  list(self.profiles),
         })
         self._join(self.agent)
-        self._join(self.reviewer)
+
+    # ---- request and wait -----------------------------------------
+
+    async def request_response(self, input_event: Any, *,
+                               proposed: Any = None,
+                               timeout: Optional[float] = None,
+                               poll_seconds: float = 2.0) -> Any:
+        """Open a review of the output an InputRequiredEvent proposes, wait
+        for the reviewer's decision, and return the HumanResponseEvent that
+        answers the pause.
+
+        The review is on a task that requires review, so only a person's
+        decision completes it. The event carries `response`, the output as
+        decided, or the reviewer's note when nothing was approved;
+        `decision`, which is approve, override or reject (any ending without
+        an approval reads as reject); `user_name`, the reviewer; and
+        `rationale`, `tags` and `chap_task_id`.
+
+        `proposed` defaults to the event's `proposed` field, or else its
+        payload. Raises TimeoutError after `timeout` seconds; None waits as
+        long as the reviewer takes.
+        """
+        from workflows.events import HumanResponseEvent
+
+        if not self.reviewer.startswith("human:"):
+            raise ValueError(
+                "a review that waits for a person needs a 'human:' reviewer, "
+                f"got {self.reviewer!r}"
+            )
+        if proposed is None:
+            proposed = _event_get(input_event, "proposed") or _payload(input_event)
+        task_id = self._submit(proposed, self.reviewer, review_required=True)
+        decision = await self.wait_for_decision(task_id, timeout=timeout,
+                                                poll_seconds=poll_seconds)
+        if decision.approved:
+            kind, response = decision.kind, decision.output
+        else:
+            kind = "reject"
+            response = decision.comment or _ended_without_approval(decision)
+        return HumanResponseEvent(
+            response=response,
+            decision=kind,
+            user_name=decision.reviewer,
+            rationale=decision.comment,
+            tags=list(decision.tags),
+            chap_task_id=task_id,
+        )
+
+    async def wait_for_decision(self, task_id: str, *,
+                                timeout: Optional[float] = None,
+                                poll_seconds: float = 2.0) -> Decision:
+        """Wait for the reviewer's decision on a review this bridge opened,
+        and return it. The task is read every `poll_seconds` until it is no
+        longer under review. Raises TimeoutError after `timeout` seconds;
+        None waits as long as the reviewer takes."""
+        started = time.monotonic()
+        while True:
+            view = _read_task(self.client or self.coord, self.workspace, task_id)
+            if view is None:
+                raise KeyError(f"Unknown task: {task_id}")
+            if view.get("state") not in _UNDECIDED:
+                return _decision(task_id, view)
+            if timeout is not None and time.monotonic() - started >= timeout:
+                raise TimeoutError(f"No decision on {task_id} after {timeout} seconds")
+            await asyncio.sleep(poll_seconds)
+
+    # ---- record a decision made elsewhere --------------------------
 
     def record_decision(self, input_event: Any, response_event: Any, *,
                         decision: str,
@@ -145,10 +329,12 @@ class ChapHitlBridge:
         no approve/edit/reject signal to infer from. `proposed`, `returned`,
         `rationale`, `tags`, `intent_preserved`, and `approver` default to
         fields read off the events and can be overridden per call.
+
+        The decision is recorded in the approver's name, and the approver
+        joins the workspace first if the bridge has not joined them yet.
         """
         approver = approver or _event_get(response_event, "user_name") or self.reviewer
-        if approver != self.reviewer:
-            self._join(approver)
+        self._join(approver)
 
         if proposed is None:
             proposed = _event_get(input_event, "proposed") or _payload(input_event)
@@ -198,23 +384,30 @@ class ChapHitlBridge:
 
     # ---- internal -------------------------------------------------
 
-    def _submit(self, artefact: Any, approver: str) -> str:
-        """Record the proposed output as the agent's task output and send
-        it for review -- the agent's half of the handshake."""
-        env = self._dispatch("task.create", {
+    def _submit(self, artefact: Any, approver: str,
+                review_required: bool = False) -> str:
+        """Open the task and send the proposed output for review, the
+        agent's half of the handshake. A task that requires review waits
+        under review until a person decides it; otherwise the output is
+        first recorded as the task's output."""
+        params: dict = {
             "workspace": self.workspace,
             "from":      self.agent,
             "assignee":  self.agent,
             "kind":      "workflow_output",
             "input":     artefact,
-        })
+        }
+        if review_required:
+            params["review_required"] = True
+        env = self._dispatch("task.create", params)
         task_id = env["result"]["task_id"]
-        self._dispatch("task.complete", {
-            "workspace": self.workspace,
-            "from":      self.agent,
-            "task_id":   task_id,
-            "output":    artefact,
-        })
+        if not review_required:
+            self._dispatch("task.complete", {
+                "workspace": self.workspace,
+                "from":      self.agent,
+                "task_id":   task_id,
+                "output":    artefact,
+            })
         self._dispatch("review.request", {
             "workspace": self.workspace,
             "from":      self.agent,
@@ -240,11 +433,14 @@ class ChapHitlBridge:
         self._dispatch(method, params)
 
     def _join(self, uri: str) -> None:
+        if uri in self._joined:
+            return
         _safe_dispatch(self.coord, "participant.join", {
             "workspace": self.workspace,
             "from":      uri,
             "type":      _participant_type(uri),
         })
+        self._joined.add(uri)
 
     def _dispatch(self, method: str, params: dict) -> dict:
         if self.on_envelope is not None:
@@ -295,4 +491,5 @@ def _safe_dispatch(coord: Coordinator, method: str, params: dict) -> None:
 __all__ = [
     "ChapHitlBridge",
     "ChapBridgeError",
+    "Decision",
 ]

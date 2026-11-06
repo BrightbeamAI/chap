@@ -8,6 +8,7 @@ InputRequiredEvent or HumanResponseEvent.
     3. The audit chain carries the whole trail, hash-linked.
 """
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -18,7 +19,7 @@ sys.path.insert(0, str(THIS.parents[2] / "coordinator-py"))
 import pytest
 
 from chap_coordinator import Coordinator, CoordinatorOptions
-from chap_llama_index import ChapHitlBridge, ChapBridgeError
+from chap_llama_index import ChapHitlBridge, ChapBridgeError, Decision
 
 
 def ask(proposed, **extra):
@@ -60,16 +61,26 @@ def last_params(bridge, method):
 # ---- setup ---------------------------------------------------------
 
 
-def test_bridge_joins_agent_and_reviewer(coord, bridge):
+def test_bridge_joins_the_agent_and_the_reviewer_when_it_records(coord, bridge):
     ws = coord.workspaces["wsp_li_test"]
     assert "agent:writer#v1" in ws.members
-    assert "human:alice@example.org" in ws.members
+    # A person who decides at a desk joins there, with their own key, so the
+    # bridge joins the reviewer only to record a decision in their name.
+    assert "human:alice@example.org" not in ws.members
+    bridge.record_decision(ask({"reply": "hi"}), reply(response="ok"), decision="approve")
+    assert ws.members["human:alice@example.org"].type == "human"
 
 
 def test_bridge_is_idempotent(coord, bridge):
     ChapHitlBridge(coord, workspace="wsp_li_test",
                    agent="agent:writer#v1", reviewer="human:alice@example.org")
-    assert len(coord.workspaces["wsp_li_test"].members) == 2
+    assert len(coord.workspaces["wsp_li_test"].members) == 1
+
+
+def test_the_agent_cannot_review_its_own_output(coord):
+    with pytest.raises(ValueError, match="cannot be the agent"):
+        ChapHitlBridge(coord, workspace="wsp_li_self",
+                       agent="human:alice@example.org", reviewer="human:alice@example.org")
 
 
 # ---- the three decisions -------------------------------------------
@@ -139,6 +150,74 @@ def test_per_decision_approver_from_response(coord, bridge):
     ws = coord.workspaces["wsp_li_test"]
     assert ws.members["service:autodeploy"].type == "service"
     assert last_params(bridge, "decide.approve")["from"] == "service:autodeploy"
+
+
+# ---- waiting for a decision made at a desk ---------------------------
+
+
+def desk_decides(coord, method, task_id, **params):
+    """A decision made outside the bridge, as a desk sharing the
+    coordinator would make it: the person joins, then decides."""
+    coord.dispatch({"jsonrpc": "2.0", "id": "join", "method": "participant.join",
+                    "params": {"workspace": "wsp_li_test", "from": "human:alice@example.org",
+                               "type": "human"}})
+    out = coord.dispatch({"jsonrpc": "2.0", "id": "desk", "method": method,
+                          "params": {"workspace": "wsp_li_test",
+                                     "from": "human:alice@example.org",
+                                     "task_id": task_id, **params}})
+    assert "error" not in out, out
+
+
+def test_the_review_waits_for_a_person(coord, bridge):
+    seen = []
+    bridge.on_envelope = lambda m, p: seen.append(m)
+    task_id = bridge._submit({"amount": 100}, bridge.reviewer, review_required=True)
+    assert seen == ["task.create", "review.request"]
+    task = coord.workspaces["wsp_li_test"].tasks[task_id]
+    assert (task.state, task.review_required) == ("review_requested", True)
+    assert "human:alice@example.org" not in coord.workspaces["wsp_li_test"].members
+
+
+def test_wait_for_decision_yields_to_the_desk(coord, bridge):
+    """The wait is a coroutine: a desk on the same event loop decides
+    during the wait."""
+    task_id = bridge._submit({"amount": 100}, bridge.reviewer, review_required=True)
+
+    async def desk():
+        await asyncio.sleep(0.05)
+        desk_decides(coord, "decide.override", task_id,
+                     diff=[{"op": "replace", "path": "/amount", "value": 50}],
+                     rationale="capped", tags=["limit"])
+
+    async def both():
+        waiting = asyncio.ensure_future(
+            bridge.wait_for_decision(task_id, timeout=5, poll_seconds=0.01))
+        await desk()
+        return await waiting
+
+    assert asyncio.run(both()) == Decision(
+        task_id=task_id, state="completed", kind="override",
+        reviewer="human:alice@example.org", output={"amount": 50},
+        comment="capped", tags=("limit",))
+
+
+def test_wait_for_decision_reads_a_client_with_task(coord):
+    class DeskClient:
+        def task(self, task_id):
+            return {"task_id": task_id, "state": "completed", "output": {"amount": 100},
+                    "review": {"decisions": [{"reviewer": "human:alice@example.org",
+                                              "kind": "approve", "comment": None}]}}
+
+    bridge = ChapHitlBridge(coord, workspace="wsp_li_test", agent="agent:writer#v1",
+                            reviewer="human:alice@example.org", client=DeskClient())
+    decision = asyncio.run(bridge.wait_for_decision("tsk_remote", timeout=1))
+    assert (decision.approved, decision.output) == (True, {"amount": 100})
+
+
+def test_wait_for_decision_times_out(bridge):
+    task_id = bridge._submit({"amount": 100}, bridge.reviewer, review_required=True)
+    with pytest.raises(TimeoutError):
+        asyncio.run(bridge.wait_for_decision(task_id, timeout=0.05, poll_seconds=0.01))
 
 
 # ---- guards --------------------------------------------------------

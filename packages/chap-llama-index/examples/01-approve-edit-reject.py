@@ -7,9 +7,10 @@ Run (needs the optional LlamaIndex extra):
     python3 examples/01-approve-edit-reject.py
 
 The workflow proposes a payment and pauses on an InputRequiredEvent. The
-driver streams events, records each human decision through the bridge,
-and sends a HumanResponseEvent back to resume the run -- as
-decide.approve / decide.override / decide.reject.
+driver streams events, records the decision this script makes for the
+human through the bridge (as decide.approve, decide.override or
+decide.reject, on a hash-linked chain), and sends the same
+HumanResponseEvent back to resume the run.
 """
 
 import asyncio
@@ -52,7 +53,7 @@ async def run_once(bridge: ChapHitlBridge, response: HumanResponseEvent) -> None
 
 
 async def main() -> None:
-    coord = Coordinator()
+    coord = Coordinator(enable_chain=True)
     bridge = ChapHitlBridge(
         coord,
         workspace="wsp_payments",
@@ -97,6 +98,9 @@ async def main() -> None:
         elif env["method"] in ("decide.approve", "decide.reject"):
             detail = f"  {params.get('comment', '')}"
         print(f"  seq={entry['seq']:<2} {env['method']:<16} {who}{detail}")
+    verified = coord.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
+                               "params": {"workspace": "wsp_payments"}})
+    print(f"\nChain verified: {verified['result']['ok']}")
 
 
 if __name__ == "__main__":
