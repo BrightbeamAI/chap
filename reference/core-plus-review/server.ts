@@ -925,8 +925,12 @@ function decide(p: Params, kind: "approve" | "reject"): { result?: unknown; erro
 // Exported so the tests can drive the method surface directly, the same way
 // patch.test.ts drives applyJsonPatch, without standing up an HTTP listener.
 export function dispatch(env: Envelope): Envelope {
-  if (env.jsonrpc !== "2.0" || typeof env.method !== "string") {
-    return { jsonrpc: "2.0", id: env.id ?? null as any, error: err(E.REQUEST, "Invalid JSON-RPC 2.0 request") };
+  // A body of null, a number or a list is valid JSON and no request; reading
+  // its fields threw, and the server stopped.
+  if (env === null || typeof env !== "object" || Array.isArray(env)
+      || env.jsonrpc !== "2.0" || typeof env.method !== "string") {
+    const id = env !== null && typeof env === "object" && !Array.isArray(env) ? env.id ?? null : null;
+    return { jsonrpc: "2.0", id: id as any, error: err(E.REQUEST, "Invalid JSON-RPC 2.0 request") };
   }
   const handler = handlers[env.method];
   if (!handler) {
@@ -960,8 +964,10 @@ export function dispatch(env: Envelope): Envelope {
     if (out.error) return { jsonrpc: "2.0", id: env.id ?? null as any, error: out.error };
     return { jsonrpc: "2.0", id: env.id ?? null as any, result: out.result };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { jsonrpc: "2.0", id: env.id ?? null as any, error: err(E.INTERNAL, msg) };
+    // The caller learns only that the call failed: an exception's text can
+    // name a path or another workspace's data. The operator sees it here.
+    console.error(`chap core-plus-review: ${env.method} failed with an internal error:`, e);
+    return { jsonrpc: "2.0", id: env.id ?? null as any, error: err(E.INTERNAL, "Internal error") };
   }
 }
 
@@ -1006,24 +1012,16 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+// No Access-Control-Allow-Origin: a page on another origin cannot read this
+// coordinator's answers, and the browser asks first before it sends a JSON
+// call, so such a page cannot act on it either.
 function reply(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.end(JSON.stringify(body));
 }
 
 const server = createServer(async (req, res) => {
-  if (req.method === "OPTIONS") {
-    res.statusCode = 204;
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    res.end();
-    return;
-  }
   if (req.method !== "POST" || req.url !== "/chap") {
     return reply(res, 404, { error: "POST /chap" });
   }

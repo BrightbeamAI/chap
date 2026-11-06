@@ -157,6 +157,16 @@ async function runCoreTests(client: HapClient, ws: string): Promise<void> {
     assert(error?.code === -32601, `Expected -32601, got ${JSON.stringify(error)}`);
   });
 
+  await test("Wire format", "wf-04", "JSON that is no request returns -32600, and the server keeps answering", async () => {
+    for (const raw of ["null", "5", "[]", "\"x\""]) {
+      const { body } = await client.callRaw(raw);
+      assert(body?.error?.code === -32600, `${raw}: expected -32600, got ${JSON.stringify(body)}`);
+      assertEq(body?.id, null, `${raw}: the answer's id`);
+    }
+    const { raw } = await client.call("workspace.describe", { workspace: ws });
+    assertEq(raw?.jsonrpc, "2.0", "the server should still answer");
+  });
+
   // -------- Core methods --------
 
   await test("Core methods", "cm-01", "participant.join admits a human", async () => {

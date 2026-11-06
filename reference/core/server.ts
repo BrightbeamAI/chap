@@ -342,8 +342,12 @@ const handlers: Record<string, Handler> = {
 // ============================================================
 
 function dispatch(env: Envelope): Envelope {
-  if (env.jsonrpc !== "2.0" || typeof env.method !== "string") {
-    return { jsonrpc: "2.0", id: env.id ?? null, error: err(E.REQUEST, "Invalid JSON-RPC 2.0 request") };
+  // A body of null, a number or a list is valid JSON and no request; reading
+  // its fields threw, and the server stopped.
+  if (env === null || typeof env !== "object" || Array.isArray(env)
+      || env.jsonrpc !== "2.0" || typeof env.method !== "string") {
+    const id = env !== null && typeof env === "object" && !Array.isArray(env) ? env.id ?? null : null;
+    return { jsonrpc: "2.0", id, error: err(E.REQUEST, "Invalid JSON-RPC 2.0 request") };
   }
 
   const handler = handlers[env.method];
@@ -371,8 +375,10 @@ function dispatch(env: Envelope): Envelope {
     }
     return { jsonrpc: "2.0", id: env.id ?? null, result: out.result };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { jsonrpc: "2.0", id: env.id ?? null, error: err(E.INTERNAL, msg) };
+    // The caller learns only that the call failed: an exception's text can
+    // name a path or another workspace's data. The operator sees it here.
+    console.error(`chap core: ${env.method} failed with an internal error:`, e);
+    return { jsonrpc: "2.0", id: env.id ?? null, error: err(E.INTERNAL, "Internal error") };
   }
 }
 

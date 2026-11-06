@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from chap_coordinator import Coordinator, CoordinatorOptions
@@ -53,26 +52,15 @@ def _parse_error(message: str) -> dict:
 
 
 def make_handler(coord: Coordinator):
-    # The Coordinator is a single-writer, lock-free library, but this server
-    # runs it under ThreadingHTTPServer. Serialise dispatch so concurrent
-    # requests cannot interleave the audit chain's read-link-append.
-    dispatch_lock = threading.Lock()
-
+    # The server runs under ThreadingHTTPServer; the Coordinator's dispatch
+    # holds a lock, so concurrent requests are handled one at a time. No
+    # Access-Control-Allow-Origin header is sent: a page on another origin
+    # cannot read the answers, and the browser asks first before it sends a
+    # JSON call, so such a page cannot act on the coordinator either.
     class Handler(BaseHTTPRequestHandler):
-        def _cors(self) -> None:
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
-
-        def do_OPTIONS(self) -> None:  # noqa: N802
-            self.send_response(204)
-            self._cors()
-            self.end_headers()
-
         def do_POST(self) -> None:  # noqa: N802
             if self.path not in ("/chap", "/"):
                 self.send_response(404)
-                self._cors()
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(b'{"error":"POST /chap"}')
@@ -97,15 +85,13 @@ def make_handler(coord: Coordinator):
                 self._write(400, _parse_error("Envelope nesting too deep"))
                 return
 
-            with dispatch_lock:
-                response = coord.dispatch(envelope)
+            response = coord.dispatch(envelope)
             status = 400 if "error" in response else 200
             self._write(status, response)
 
         def _write(self, status: int, body: dict) -> None:
             payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
-            self._cors()
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()

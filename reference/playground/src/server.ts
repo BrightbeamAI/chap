@@ -204,12 +204,12 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+// No Access-Control-Allow-Origin: the playground's pages come from this
+// server, and a page on another origin can neither read its answers nor
+// send it a JSON call without the browser asking first.
 function jsonReply(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Access-Control-Allow-Origin",  "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.end(JSON.stringify(body));
 }
 
@@ -225,16 +225,6 @@ const server = createServer(async (req, res) => {
   }
   const pathname = url.pathname;
 
-  // CORS preflight
-  if (req.method === "OPTIONS") {
-    res.statusCode = 204;
-    res.setHeader("Access-Control-Allow-Origin",  "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    res.end();
-    return;
-  }
-
   // SSE event stream
   if (req.method === "GET" && pathname === "/events") {
     const participant = url.searchParams.get("participant") ?? "anonymous";
@@ -242,7 +232,6 @@ const server = createServer(async (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-    res.setHeader("Access-Control-Allow-Origin", "*");
     res.write(`: connected as ${participant}\n\n`);
     // Heartbeat to keep proxies happy.
     const hb = setInterval(() => { try { res.write(": hb\n\n"); } catch {} }, 20000);
