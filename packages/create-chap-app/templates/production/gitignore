@@ -1,5 +1,9 @@
 node_modules/
-data/
 keys/
-outbox/
-analytics/
+# The directories stay, by their .gitkeep, for the containers to mount.
+data/*
+!data/.gitkeep
+outbox/*
+!outbox/.gitkeep
+analytics/*
+!analytics/.gitkeep

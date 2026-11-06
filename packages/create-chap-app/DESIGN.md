@@ -22,11 +22,14 @@ npx create-chap-app my-gate
 
 Three questions: the template, the profiles, and the project name. Each
 question has a default, and `--template`, `--profiles`, `--yes` and a name on
-the command line answer them without a prompt. The generator copies the
+the command line answer them without a prompt. The template question says
+which templates run on Node.js and which on Python, and the profile
+question gives a line on what each profile adds. The generator copies the
 template, fills in the name, the workspace id, the participant URIs and the
-profile list, and prints how to run the project. It has no dependencies, and
-it never installs anything itself: the project's README says what to
-install.
+profile list, and prints how to run the project in commands that a POSIX
+shell, PowerShell and cmd all have, with the desk's address as a sentence.
+It has no dependencies, and it never installs anything itself: the
+project's README says what to install.
 
 What a project shares with every other project lives in packages, so a fix
 reaches a project through `npm update`: `@brightbeamai/chap-server` holds

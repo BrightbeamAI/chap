@@ -34,7 +34,6 @@ With Docker Compose:
 ```
 npm install
 npm run keys
-mkdir -p data outbox analytics
 docker compose up --build
 ```
 
@@ -45,8 +44,11 @@ store in `./data`, the agent reads its key from `./keys` and writes to
 `./outbox`, and the desk is at the same address. The
 agent reaches the coordinator by its service name, which
 `CHAP_ALLOWED_HOSTS` in the Compose file tells the coordinator to answer to.
-Both containers run as the `node` user, so the directories you create are
-yours and the containers can write to them. `docker compose run --rm agent
+Both containers run as the `node` user. The project ships `data/`,
+`outbox/` and `analytics/`, each holding an empty `.gitkeep` that git keeps,
+so the directories exist and are yours before the first
+`docker compose up` mounts them, in a fresh clone too, and the containers
+can write to them. `docker compose run --rm agent
 node agent.mjs --once` runs the agent for the rows in `messages.csv` and
 exits once each is decided.
 

@@ -19,7 +19,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test tests/generate.test.mjs",
+    "test": "node --test tests/*.test.mjs",
     "prepublishOnly": "npm test",
     "build:explorer": "node scripts/build-explorer.mjs",
     "check:explorer": "node scripts/build-explorer.mjs --check"

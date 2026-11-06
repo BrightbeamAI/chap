@@ -9,15 +9,18 @@ npx create-chap-app my-gate
 cd my-gate && npm install && npm run demo
 ```
 
-Three questions: the template, the profiles and the project name. Each has a
-default, and the flags answer them without a prompt:
+Three questions: the template, the profiles and the project name. The
+prompt says which templates run on Node.js and which on Python, and what
+each profile adds. Each question has a default, and the flags answer them
+without a prompt:
 
 ```bash
 npx create-chap-app my-desk --template support-desk --profiles core/1.0,review/1.0,modes/1.0 --yes
 ```
 
 The generator copies the template, fills in the names, and prints how to run
-the project. It installs nothing. A TypeScript project depends on
+the project, in commands that work in PowerShell and cmd as well as in a
+POSIX shell. It installs nothing. A Node.js project depends on
 `@brightbeamai/chap-server`, which holds the server and the desk, and the
 code gate on `@brightbeamai/chap-code-gate` too, so `npm update` brings a
 fix to them; the project keeps its configuration, its sample data, its
@@ -34,13 +37,13 @@ default, `commit`, reviews each change before it is committed.
 
 ## The templates
 
-| Template | Language | What it does |
+| Template | Runs on | What it does |
 |---|---|---|
-| `code-gate` | TypeScript | Every change a coding agent makes in a git repository is proposed as a patch, reviewed as a diff, signed and committed only once approved, or, for an agent that commits on its own, its branch is reviewed commit by commit before it is pushed. Each governed commit names its reviewers by name and email and the model that wrote it, with the evidence beside it, a verifier for CI, and insights on what reviewers correct. Claude Code, Cursor, the built-in agent or any agent that can run a command. `npm run demo` runs it all. |
-| `mcp-gate` | TypeScript | Claude Desktop, Cursor or Claude Code connects to an MCP server over HTTP. Every call that changes state is recorded, and work that requires review waits for you in the desk. No API key needed. |
+| `code-gate` | Node.js | Every change a coding agent makes in a git repository is proposed as a patch, reviewed as a diff, signed and committed only once approved, or, for an agent that commits on its own, its branch is reviewed commit by commit before it is pushed. Each governed commit names its reviewers by name and email and the model that wrote it, with the evidence beside it, a verifier for CI, and insights on what reviewers correct. Claude Code, Cursor, the built-in agent or any agent that can run a command. `npm run demo` runs it all. |
+| `mcp-gate` | Node.js | Claude Desktop, Cursor or Claude Code connects to an MCP server over HTTP. Every call that changes state is recorded, and work that requires review waits for you in the desk. No API key needed. |
 | `support-desk` | Python | Tickets from a CSV. The agent drafts a reply to each, the draft waits for your decision, and the reply as you decided it is written to `replies/`. |
 | `outbound-approval` | Python | Drafts are held until the named approver decides, and only an approved message reaches `outbox/`. Trial mode requires review whatever the agent says, and a pause stops the agent. |
-| `production` | TypeScript | The Handbook's production set: signed calls, a token presented at join verified against its issuer, the chain on, SQLite on a volume. A coordinator service, an agent service with its own key, the desk signing in the browser, and a `doctor` that checks the setup. |
+| `production` | Node.js | The Handbook's production set: signed calls, a token presented at join verified against its issuer, the chain on, SQLite on a volume. A coordinator service, an agent service with its own key, the desk signing in the browser, and a `doctor` that checks the setup. |
 
 `npx create-chap-app --list` prints them.
 

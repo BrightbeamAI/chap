@@ -22,6 +22,32 @@ export const TEMPLATES_DIR = join(here, "templates");
 /** The template generated when none is named. */
 export const DEFAULT_TEMPLATE = "code-gate";
 
+/** What a template needs installed, from its manifest's language. */
+export const LANGUAGES = { typescript: "Node.js", python: "Python" };
+
+/**
+ * What each profile a template offers adds to the workspace, one line each,
+ * for the prompt. profiles/PROFILES.md is the catalogue.
+ */
+export const PROFILE_NOTES = {
+  "core/1.0": "workspaces, members, tasks and the audit log; always on",
+  "review/1.0": "a person approves, rejects or overrides the agent's work",
+  "modes/1.0": "shadow, trial and production: a new agent's work reviewed until it is trusted",
+  "control/1.0": "pause, resume, snapshot, supersede and roll back",
+  "whisper/1.0": "the agent asks a person a question with a deadline and a default answer",
+  "deliberation/1.0": "several people vote, with a quorum, weights and vetoes",
+  "handoff/1.0": "a task passed from one participant to another, who accepts or declines it",
+  "routing/1.0": "who takes a task and how deep its review goes, from the task's hints",
+  "audit-scitt/1.0": "the hash chain over the log, and receipts from a SCITT transparency service",
+  "identity-oidc/1.0": "a person joins with a token from your identity provider",
+  "security-signed/1.0": "calls signed with each participant's Ed25519 key",
+};
+
+/** A template as one line: its name, what it needs installed and what it is. */
+function templateLine(t) {
+  return `${t.name.padEnd(20)} ${(LANGUAGES[t.language] ?? t.language).padEnd(8)} ${t.description}`;
+}
+
 export async function listTemplates(dir = TEMPLATES_DIR) {
   const names = (await readdir(dir, { withFileTypes: true }))
     .filter((d) => d.isDirectory() && !d.name.startsWith("_"))
@@ -121,7 +147,9 @@ export function dotted(rel) {
 }
 
 /**
- * Generate a project. Returns the list of files written.
+ * Generate a project. Returns { target, written, manifest, fill, config }:
+ * the directory, the files written, the template's manifest, the
+ * placeholders' values and the project's chap.config.json as generated.
  *
  * `answers`: { name, template, profiles, human_uri, human_name, human_email,
  * agent_uri, review_at }. Placeholders replaced in text files:
@@ -183,7 +211,9 @@ export async function generate(answers, { templatesDir = TEMPLATES_DIR, targetDi
     if (mode & 0o111) await chmod(dest, mode);
     written.push(to);
   }
-  return { target, written, manifest, fill };
+  let config = null;
+  try { config = JSON.parse(await readFile(join(target, "chap.config.json"), "utf8")); } catch { config = null; }
+  return { target, written, manifest, fill, config };
 }
 
 async function exists(p) {
@@ -194,8 +224,8 @@ function usage(templates) {
   const lines = [
     "Usage: npx create-chap-app <name> [--template <name>] [--profiles a,b] [--yes]",
     "",
-    "Templates:",
-    ...templates.map((t) => `  ${t.name.padEnd(20)} ${t.description}`),
+    "Templates, with what each needs installed:",
+    ...templates.map((t) => `  ${templateLine(t)}`),
     "",
     "Options:",
     "  --template, -t   the template (asked for when missing)",
@@ -212,27 +242,44 @@ function usage(templates) {
   return lines.join("\n");
 }
 
+/**
+ * What to run next, in commands that work in a POSIX shell, PowerShell and
+ * cmd alike: the cd, the template's run steps, and the desk's address as a
+ * sentence, since opening a page has no command common to all three.
+ */
+export function nextSteps({ target, manifest, config }, { relative = true } = {}) {
+  const dir = relative ? basename(target) : target;
+  const lines = ["Next:", `  cd ${/^[\w./:\\-]+$/.test(dir) ? dir : `"${dir}"`}`, ...(manifest.run ?? []).map((step) => `  ${step}`)];
+  if (config?.port) lines.push("", `The desk is at http://127.0.0.1:${config.port}/ once it runs; open it in a browser.`);
+  lines.push("", "README.md says what each profile changes in this project and how to attach your own agent and data.");
+  return lines.join("\n");
+}
+
 async function ask(rl, question, fallback) {
   const answer = (await rl.question(`${question} [${fallback}] `)).trim();
   return answer || fallback;
 }
 
-export async function main(argv = process.argv.slice(2)) {
+/**
+ * The command. It asks on `input` and writes to `output`, the terminal by
+ * default, and asks nothing where `input` is not a terminal or --yes is given.
+ */
+export async function main(argv = process.argv.slice(2), { input = stdin, output = stdout, interactive = !!input.isTTY } = {}) {
+  const say = (text = "") => output.write(`${text}\n`);
   const args = parseArgs(argv);
   const templates = await listTemplates();
-  if (args.help) { console.log(usage(templates)); return 0; }
-  if (args.list) { for (const t of templates) console.log(`${t.name.padEnd(20)} ${t.description}`); return 0; }
+  if (args.help) { say(usage(templates)); return 0; }
+  if (args.list) { for (const t of templates) say(templateLine(t)); return 0; }
 
-  const interactive = !args.yes && stdin.isTTY;
-  const rl = interactive ? createInterface({ input: stdin, output: stdout }) : null;
+  const rl = interactive && !args.yes ? createInterface({ input, output }) : null;
   try {
     let template = args.template;
     if (!template) {
       const fallback = templates.find((t) => t.name === DEFAULT_TEMPLATE) ?? templates[0];
       if (!rl) template = fallback.name;
       else {
-        console.log("Which template?");
-        templates.forEach((t, i) => console.log(`  ${i + 1}. ${t.name.padEnd(20)} ${t.description}`));
+        say("Which template? Each runs on Node.js or on Python, as it says.");
+        templates.forEach((t, i) => say(`  ${i + 1}. ${templateLine(t)}`));
         const pick = await ask(rl, "Template (number or name)", String(templates.indexOf(fallback) + 1));
         template = /^\d+$/.test(pick) ? templates[Number(pick) - 1]?.name : pick;
       }
@@ -244,7 +291,8 @@ export async function main(argv = process.argv.slice(2)) {
     if (!profiles) {
       if (!rl) profiles = manifest.default_profiles;
       else {
-        console.log(`Profiles the workspace advertises. Choices: ${manifest.profile_choices.join(", ")}`);
+        say("Profiles the workspace advertises. Each turns on a part of CHAP, and the coordinator enforces it:");
+        for (const id of manifest.profile_choices) say(`  ${id.padEnd(20)} ${PROFILE_NOTES[id] ?? ""}`.trimEnd());
         profiles = (await ask(rl, "Profiles (comma separated)", manifest.default_profiles.join(","))).split(",").map((s) => s.trim()).filter(Boolean);
       }
     }
@@ -267,12 +315,9 @@ export async function main(argv = process.argv.slice(2)) {
       },
       { targetDir: args.dir ?? undefined },
     );
-    console.log(`\nCreated ${result.target} from the ${manifest.title} template with ${profiles.join(", ")}.`);
-    console.log(`The reviewer is ${result.fill.__HUMAN_NAME__} <${result.fill.__HUMAN_EMAIL__}> as ${result.fill.__HUMAN_URI__}; change it in chap.config.json.\n`);
-    console.log("Next:");
-    console.log(`  cd ${args.dir ? result.target : basename(result.target)}`);
-    for (const step of manifest.run ?? []) console.log(`  ${step}`);
-    console.log("\nREADME.md says what each profile changes in this project and how to attach your own agent and data.");
+    say(`\nCreated ${result.target} from the ${manifest.title} template with ${profiles.join(", ")}.`);
+    say(`The reviewer is ${result.fill.__HUMAN_NAME__} <${result.fill.__HUMAN_EMAIL__}> as ${result.fill.__HUMAN_URI__}; change it in chap.config.json.\n`);
+    say(nextSteps(result, { relative: !args.dir }));
     return 0;
   } finally {
     rl?.close();

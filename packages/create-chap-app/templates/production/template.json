@@ -35,8 +35,6 @@
   "run": [
     "npm install",
     "npm run keys",
-    "mkdir -p data outbox analytics",
-    "docker compose up --build",
-    "open http://127.0.0.1:8790/"
+    "docker compose up --build"
   ]
 }
