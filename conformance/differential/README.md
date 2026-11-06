@@ -31,7 +31,8 @@ For each seed, `fuzz.py`:
    and lapses every pending whisper. Each call writes only what it changed, so
    this checks that nothing was missed: a coordinator restarted on the file
    holds what the one that wrote it held, and the two files hold the same
-   audit entries.
+   audit entries. Each reference then opens the file the other wrote, and
+   must hold there what it holds on its own file.
 
 Runs are reproducible: a seed plus deterministic ids and clock fully determines
 a run, so the seed *is* the regression corpus - a failing seed reproduces its

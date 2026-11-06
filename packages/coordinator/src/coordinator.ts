@@ -261,6 +261,62 @@ function recordedForm(envelope: Envelope): Envelope {
   return { ...envelope, params };
 }
 
+/** An object with its null fields left out, as this coordinator writes it. */
+function withoutNulls(value: unknown): unknown {
+  return isObject(value) ? Object.fromEntries(Object.entries(value).filter(([, v]) => v !== null)) : value;
+}
+
+/**
+ * A workspace snapshot in this coordinator's shape, whichever coordinator
+ * wrote it. The Python coordinator writes a field it has no value for as
+ * null, a history entry's sender as `from_`, and a route decision's fields
+ * of its kind beside an `extra` object; this one leaves the field out, names
+ * the sender `from`, and keeps a route decision's fields together under its
+ * `kind`. Only the coordinator's own fields change: an input, an output or
+ * an artefact is read as it was written.
+ */
+function inThisShape(w: Record<string, unknown>): Record<string, unknown> {
+  const out = withoutNulls(w) as Record<string, unknown>;
+  const each = (name: string, f: (item: Record<string, unknown>) => Record<string, unknown>) => {
+    if (Array.isArray(out[name])) {
+      out[name] = (out[name] as unknown[]).map((x) => (isObject(x) ? f(withoutNulls(x) as Record<string, unknown>) : x));
+    }
+  };
+  const list = (item: Record<string, unknown>, field: string) => {
+    if (Array.isArray(item[field])) item[field] = (item[field] as unknown[]).map(withoutNulls);
+  };
+  for (const name of ["overrides", "whispers", "snapshots"]) each(name, (x) => x);
+  each("members", (m) => { list(m, "keys"); return m; });
+  each("tasks", (t) => {
+    if (Array.isArray(t.history)) {
+      t.history = t.history.map((h) => {
+        const entry = withoutNulls(h) as Record<string, unknown>;
+        if (entry.from === undefined && typeof entry.from_ === "string") entry.from = entry.from_;
+        delete entry.from_;
+        return entry;
+      });
+    }
+    if (isObject(t.review)) {
+      const review = withoutNulls(t.review) as Record<string, unknown>;
+      list(review, "decisions");
+      t.review = review;
+    }
+    return t;
+  });
+  each("deliberations", (d) => { list(d, "votes"); return d; });
+  each("handoffs", (h) => {
+    list(h, "tasks");
+    if (Array.isArray(h.accepted_task_ids) && h.accepted_task_ids.length === 0) delete h.accepted_task_ids;
+    return h;
+  });
+  each("route_decisions", (r) => {
+    const extra = isObject(r.extra) ? r.extra : {};
+    delete r.extra;
+    return { ...r, ...extra, kind: "route_decision" };
+  });
+  return out;
+}
+
 /**
  * Whether a task's work must be decided by a person: it carries
  * review_required, or it runs in trial on a workspace advertising modes/1.0.
@@ -862,7 +918,8 @@ export class Coordinator {
   }
 
   /** One workspace from a snapshot entry, its maps tracked. */
-  private rebuild(w: Record<string, unknown>): Workspace {
+  private rebuild(snapshot: Record<string, unknown>): Workspace {
+    const w = inThisShape(snapshot);
     const ws: Workspace = {
       id: w.id as WorkspaceId,
       created: w.created as string,

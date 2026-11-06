@@ -735,10 +735,11 @@ class Recorder:
 _LAPSE_AT = "2100-01-01T00:00:00.000Z"
 
 
-def _replay_ts(envelopes: list[dict], store: str | None = None) -> dict:
+def _replay_ts(envelopes: list[dict], store: str | None = None, cross: str | None = None) -> dict:
     payload = json.dumps({"options": {"defaultProfiles": PROFILES},
                           "workspace": "w", "envelopes": envelopes,
-                          **({"store": store, "lapse_at": _LAPSE_AT} if store else {})})
+                          **({"store": store, "lapse_at": _LAPSE_AT} if store else {}),
+                          **({"cross": cross} if cross else {})})
     proc = subprocess.run(
         ["npx", "tsx", str(_REPLAY)],
         input=payload, capture_output=True, text=True, cwd=str(_ROOT))
@@ -858,10 +859,24 @@ def check_stores(seed: int, rec: "Recorder") -> tuple[bool, str]:
         if errors or not same:
             return False, (f"seed {seed}: the Python store "
                            f"{'failed: ' + errors[0] if errors else 'lost state across a restart'}")
-        ts = _replay_ts(rec.envelopes, ts_path)
+        ts = _replay_ts(rec.envelopes, ts_path, cross=py_path)
         if ts["errors"] or not ts["restart_same"]:
             return False, (f"seed {seed}: the TypeScript store "
                            f"{'failed: ' + ts['errors'][0] if ts['errors'] else 'lost state across a restart'}")
+        # Each coordinator reads the file the other wrote as the one it wrote.
+        if ts["own"] != ts["cross"]:
+            return False, (f"seed {seed}: the TypeScript coordinator reads the Python store apart\n"
+                           f"{_state_difference(ts['own'], ts['cross'])}")
+        views = []
+        for path in (py_path, ts_path):
+            store = SqliteStore(path)
+            try:
+                views.append(project(Coordinator(CoordinatorOptions(store=store))))
+            finally:
+                store.close()
+        if views[0] != views[1]:
+            return False, (f"seed {seed}: the Python coordinator reads the TypeScript store apart\n"
+                           f"{_state_difference(*views)}")
         py_entries, ts_entries = _entries(py_path), _entries(ts_path)
         if py_entries != ts_entries:
             at = next((i for i, (a, b) in enumerate(zip(py_entries, ts_entries)) if a != b),

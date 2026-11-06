@@ -303,20 +303,47 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     def _opt(cls, d):
         return cls(**d) if d is not None else None
 
+    # The TypeScript coordinator leaves out a field it has no value for,
+    # where this one writes None, so a field with no default that is missing
+    # reads as None.
+    def _build(cls, d: dict):
+        absent = {f.name: None for f in dataclasses.fields(cls)
+                  if f.default is dataclasses.MISSING
+                  and f.default_factory is dataclasses.MISSING}
+        return cls(**{**absent, **d})
+
+    # The TypeScript coordinator names a history entry's sender ``from``, and
+    # keeps a route decision's fields of its kind at the top beside its
+    # ``kind``, where this one keeps them in ``extra``. A store either wrote
+    # reads the same here.
+    def _history_entry(h: dict) -> TaskHistoryEntry:
+        h = dict(h)
+        if "from" in h:
+            h["from_"] = h.pop("from")
+        return _build(TaskHistoryEntry, h)
+
+    route_fields = {f.name for f in dataclasses.fields(RouteDecisionArtefact)}
+
+    def _route_decision(v: dict) -> RouteDecisionArtefact:
+        v = {k: x for k, x in v.items() if k != "kind"}
+        extra = dict(v.pop("extra", None) or {})
+        extra.update({k: v.pop(k) for k in [k for k in v if k not in route_fields]})
+        return RouteDecisionArtefact(**v, extra=extra)
+
     members = {
-        k: Member(**v) for k, v in (data.get("members") or {}).items()
+        k: _build(Member, v) for k, v in (data.get("members") or {}).items()
     }
     for m in members.values():
         if isinstance(m.keys, list):
-            m.keys = [KeyRecord(**k) if isinstance(k, dict) else k for k in m.keys]
+            m.keys = [_build(KeyRecord, k) if isinstance(k, dict) else k for k in m.keys]
         elif isinstance(m.keys, dict):
-            m.keys = {k: KeyRecord(**v) if isinstance(v, dict) else v
+            m.keys = {k: _build(KeyRecord, v) if isinstance(v, dict) else v
                       for k, v in m.keys.items()}
 
     tasks = {}
     for k, v in (data.get("tasks") or {}).items():
         v = dict(v)
-        v["history"] = [TaskHistoryEntry(**h) for h in v.get("history", [])]
+        v["history"] = [_history_entry(h) for h in v.get("history", [])]
         if isinstance(v.get("review"), dict):
             review = dict(v["review"])
             # A review written before authors were recorded takes the
@@ -326,21 +353,21 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
             # and one written before acknowledgements were kept has none.
             if not isinstance(review.get("acknowledgements"), list):
                 review["acknowledgements"] = []
-            v["review"] = ReviewState(**review)
-        tasks[k] = Task(**v)
+            v["review"] = _build(ReviewState, review)
+        tasks[k] = _build(Task, v)
 
     whispers = {
-        k: WhisperPrompt(**v) for k, v in (data.get("whispers") or {}).items()
+        k: _build(WhisperPrompt, v) for k, v in (data.get("whispers") or {}).items()
     }
     deliberations = {
-        k: Deliberation(**v)
+        k: _build(Deliberation, v)
         for k, v in (data.get("deliberations") or {}).items()
     }
     handoffs = {}
     for k, v in (data.get("handoffs") or {}).items():
         v = dict(v)
-        v["tasks"] = [HandoffTask(**t) for t in v.get("tasks", [])]
-        handoffs[k] = Handoff(**v)
+        v["tasks"] = [_build(HandoffTask, t) for t in v.get("tasks", [])]
+        handoffs[k] = _build(Handoff, v)
 
     snapshots = {
         k: SnapshotArtefact.from_dict(v) if isinstance(v, dict) else v
@@ -351,11 +378,11 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     # has to come back typed. An untyped collection reads as a plain dict and
     # diverges from the TypeScript restore, which rebuilds all of them.
     overrides = {
-        k: OverrideArtefact(**v) if isinstance(v, dict) else v
+        k: _build(OverrideArtefact, v) if isinstance(v, dict) else v
         for k, v in (data.get("overrides") or {}).items()
     }
     route_decisions = {
-        k: RouteDecisionArtefact(**v) if isinstance(v, dict) else v
+        k: _route_decision(v) if isinstance(v, dict) else v
         for k, v in (data.get("route_decisions") or {}).items()
     }
 

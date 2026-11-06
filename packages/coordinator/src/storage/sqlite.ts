@@ -2,9 +2,9 @@
  * SQLite-backed store using better-sqlite3.
  *
  * Schema, shared with the Python SqliteStore. Both write these tables, and
- * the same audit entries for the same calls; the objects are each
- * coordinator's own, so each restores a file it wrote, and chap-analytics
- * reads a file from either:
+ * the same audit entries for the same calls. Each writes the objects in its
+ * own shape and restores either shape, so each restores a file the other
+ * wrote, and chap-analytics reads a file from either:
  *
  *   CREATE TABLE chap_meta (
  *     workspace  TEXT PRIMARY KEY,

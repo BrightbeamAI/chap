@@ -78,6 +78,8 @@ async function main(): Promise<void> {
     envelopes: unknown[];
     store?: string;
     lapse_at?: string;
+    /** A store the Python coordinator wrote, to project as this one reads it. */
+    cross?: string;
   };
   const options = {
     deterministicIds: true,
@@ -108,9 +110,19 @@ async function main(): Promise<void> {
   const before = JSON.stringify(sorted(JSON.parse(JSON.stringify(coord.snapshot()))));
   store.close();
   const reopened = new SqliteStore(req.store);
-  const after = JSON.stringify(sorted(JSON.parse(JSON.stringify(new Coordinator({ ...options, store: reopened }).snapshot()))));
+  const restarted = new Coordinator({ ...options, store: reopened });
+  const after = JSON.stringify(sorted(JSON.parse(JSON.stringify(restarted.snapshot()))));
+  const own = project(restarted);
   reopened.close();
-  process.stdout.write(JSON.stringify({ responses, errors, restart_same: before === after }));
+  // Each coordinator reads the other's file: projected, it holds what the
+  // file this one wrote holds.
+  let cross: unknown = null;
+  if (req.cross) {
+    const other = new SqliteStore(req.cross);
+    cross = project(new Coordinator({ ...options, store: other }));
+    other.close();
+  }
+  process.stdout.write(JSON.stringify({ responses, errors, restart_same: before === after, own, cross }));
 }
 
 main().catch((e) => {

@@ -1,0 +1,1247 @@
+{
+ "description": "One workspace, written by each coordinator from the same calls. `envelopes` are the calls, sent with deterministic ids and clock and the chain on. `typescript` and `python` are the workspace each coordinator holds after them, in the shape its store keeps: the TypeScript coordinator lists its collections and leaves out a field with no value; the Python coordinator keys its collections by id, writes such a field as null, names a history entry's sender `from_` and keeps a route decision's own fields in `extra`. Each coordinator restores the other's snapshot to the state it reached itself.",
+ "envelopes": [
+  {
+   "jsonrpc": "2.0",
+   "id": "s1",
+   "method": "workspace.create",
+   "params": {
+    "workspace": "w",
+    "from": "human:a",
+    "profiles": [
+     "core/1.0",
+     "review/1.0",
+     "routing/1.0",
+     "handoff/1.0",
+     "whisper/1.0",
+     "deliberation/1.0"
+    ]
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s2",
+   "method": "participant.join",
+   "params": {
+    "workspace": "w",
+    "from": "human:a",
+    "type": "human",
+    "role": "admin"
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s3",
+   "method": "participant.join",
+   "params": {
+    "workspace": "w",
+    "from": "human:c",
+    "type": "human"
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s4",
+   "method": "participant.join",
+   "params": {
+    "workspace": "w",
+    "from": "agent:b",
+    "type": "agent"
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s5",
+   "method": "task.create",
+   "params": {
+    "workspace": "w",
+    "from": "human:a",
+    "kind": "draft",
+    "input": {
+     "q": "?"
+    },
+    "assignee": "agent:b",
+    "review_required": true
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s6",
+   "method": "task.update",
+   "params": {
+    "workspace": "w",
+    "from": "agent:b",
+    "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+    "state": "in_progress"
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s7",
+   "method": "task.complete",
+   "params": {
+    "workspace": "w",
+    "from": "agent:b",
+    "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+    "output": {
+     "draft": 1
+    }
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s8",
+   "method": "review.acknowledge",
+   "params": {
+    "workspace": "w",
+    "from": "human:a",
+    "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N"
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s9",
+   "method": "review.depth",
+   "params": {
+    "workspace": "w",
+    "from": "human:a",
+    "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+    "artefact_routing_hints": {
+     "criticality": "low",
+     "confidence": "0.9"
+    }
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s10",
+   "method": "task.create",
+   "params": {
+    "workspace": "w",
+    "from": "human:a",
+    "kind": "triage",
+    "input": {},
+    "assignee": "agent:b"
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s11",
+   "method": "task.route",
+   "params": {
+    "workspace": "w",
+    "from": "human:a",
+    "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+    "candidates": [
+     "agent:b",
+     "human:c"
+    ]
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s12",
+   "method": "handoff.propose",
+   "params": {
+    "workspace": "w",
+    "from": "agent:b",
+    "to": "human:c",
+    "tasks": [
+     {
+      "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z"
+     }
+    ]
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s13",
+   "method": "whisper.ask",
+   "params": {
+    "workspace": "w",
+    "from": "agent:b",
+    "to": "human:a",
+    "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+    "question": "Which?",
+    "deadline_ms": 60000,
+    "default_if_lapsed": "first"
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s14",
+   "method": "deliberate.open",
+   "params": {
+    "workspace": "w",
+    "from": "human:a",
+    "to": [
+     "human:a",
+     "human:c"
+    ],
+    "question": "Ship?",
+    "rule": "any_one_approves"
+   }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s15",
+   "method": "deliberate.vote",
+   "params": {
+    "workspace": "w",
+    "from": "human:c",
+    "deliberation_id": "dlb_01HF7YAT070025712M29XGJS4K",
+    "vote": "yea"
+   }
+  }
+ ],
+ "typescript": {
+  "id": "w",
+  "created": "2023-11-14T22:13:21.000Z",
+  "state": "active",
+  "profiles": [
+   "core/1.0",
+   "review/1.0",
+   "routing/1.0",
+   "handoff/1.0",
+   "whisper/1.0",
+   "deliberation/1.0"
+  ],
+  "mode": "trial",
+  "mode_ceiling": "production",
+  "step_up_window_sec": 300,
+  "signature_policy": "all",
+  "members": [
+   {
+    "uri": "human:a",
+    "type": "human",
+    "role": "admin",
+    "joined": "2023-11-14T22:13:22.000Z",
+    "keys": [],
+    "paused": false
+   },
+   {
+    "uri": "human:c",
+    "type": "human",
+    "role": "participant",
+    "joined": "2023-11-14T22:13:23.000Z",
+    "keys": [],
+    "paused": false
+   },
+   {
+    "uri": "agent:b",
+    "type": "agent",
+    "role": "participant",
+    "joined": "2023-11-14T22:13:24.000Z",
+    "keys": [],
+    "paused": false
+   }
+  ],
+  "tasks": [
+   {
+    "id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+    "kind": "draft",
+    "state": "review_requested",
+    "assignee": "agent:b",
+    "delegator": "human:a",
+    "input": {
+     "q": "?"
+    },
+    "created_at": "2023-11-14T22:13:25.000Z",
+    "updated_at": "2023-11-14T22:13:27.000Z",
+    "mode": "trial",
+    "history": [
+     {
+      "ts": "2023-11-14T22:13:25.000Z",
+      "from": "human:a",
+      "state": "created"
+     },
+     {
+      "ts": "2023-11-14T22:13:26.000Z",
+      "from": "agent:b",
+      "state": "in_progress"
+     },
+     {
+      "ts": "2023-11-14T22:13:27.000Z",
+      "from": "agent:b",
+      "state": "review_requested",
+      "note": "review required; opened on task.complete"
+     }
+    ],
+    "paused": false,
+    "review_required": true,
+    "review": {
+     "requested_at": "2023-11-14T22:13:27.000Z",
+     "requested_to": [
+      "human:a",
+      "human:c"
+     ],
+     "rule": "any_one_approves",
+     "decisions": [],
+     "authors": [
+      "agent:b"
+     ],
+     "acknowledgements": [
+      {
+       "reviewer": "human:a",
+       "ts": "2023-11-14T22:13:28.000Z"
+      }
+     ]
+    },
+    "pending_artefact": {
+     "draft": 1
+    }
+   },
+   {
+    "id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+    "kind": "triage",
+    "state": "created",
+    "assignee": "agent:b",
+    "delegator": "human:a",
+    "input": {},
+    "created_at": "2023-11-14T22:13:30.000Z",
+    "updated_at": "2023-11-14T22:13:31.000Z",
+    "mode": "trial",
+    "history": [
+     {
+      "ts": "2023-11-14T22:13:30.000Z",
+      "from": "human:a",
+      "state": "created"
+     },
+     {
+      "ts": "2023-11-14T22:13:31.000Z",
+      "from": "service:coordinator",
+      "state": "created",
+      "note": "routed to agent:b"
+     }
+    ],
+    "paused": false
+   }
+  ],
+  "overrides": [],
+  "whispers": [
+   {
+    "id": "art_01HF7YAT06001VAK6TB3XVXT3Y",
+    "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+    "asker": "agent:b",
+    "askee": [
+     "human:a"
+    ],
+    "question": "Which?",
+    "asked_at": "2023-11-14T22:13:33.000Z",
+    "deadline_ms": 60000,
+    "default_if_lapsed": "first",
+    "urgency": "low",
+    "state": "pending"
+   }
+  ],
+  "deliberations": [
+   {
+    "id": "dlb_01HF7YAT070025712M29XGJS4K",
+    "opener": "human:a",
+    "participants": [
+     "human:a",
+     "human:c"
+    ],
+    "rule": "any_one_approves",
+    "question": "Ship?",
+    "state": "open",
+    "comments": [],
+    "votes": [
+     {
+      "ts": "2023-11-14T22:13:35.000Z",
+      "voter": "human:c",
+      "vote": "yea",
+      "veto_invoked": false
+     }
+    ],
+    "opened_at": "2023-11-14T22:13:34.000Z"
+   }
+  ],
+  "handoffs": [
+   {
+    "id": "hnd_01HF7YAT05001HE5B0KXY78V39",
+    "proposer": "agent:b",
+    "recipient": "human:c",
+    "proposed_at": "2023-11-14T22:13:32.000Z",
+    "tasks": [
+     {
+      "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+      "blockers": []
+     }
+    ],
+    "context_links": [],
+    "state": "proposed"
+   }
+  ],
+  "snapshots": [],
+  "route_decisions": [
+   {
+    "id": "art_01HF7YAT02000KRVQKEBZ99Y1A",
+    "kind": "route_decision",
+    "decision_type": "review.depth",
+    "outcome": "spot_check",
+    "produced_by": "service:coordinator",
+    "produced_at": "2023-11-14T22:13:29.000Z",
+    "task": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+    "policy_id": "default",
+    "hints_observed": {
+     "criticality": "low",
+     "confidence": "0.9"
+    },
+    "rationale": "low criticality + high confidence: 10% sample",
+    "sampling_probability": 0.1
+   },
+   {
+    "id": "art_01HF7YAT040017HQF6WQYJKW2M",
+    "kind": "route_decision",
+    "decision_type": "task.route",
+    "outcome": "agent:b",
+    "produced_by": "service:coordinator",
+    "produced_at": "2023-11-14T22:13:31.000Z",
+    "task": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+    "policy_id": "default",
+    "hints_observed": {},
+    "rationale": "default policy: first eligible candidate",
+    "alternatives_considered": [
+     {
+      "candidate": "human:c",
+      "reason_excluded": "not first eligible"
+     }
+    ]
+   }
+  ],
+  "idempotency_keys": {},
+  "audit": [
+   {
+    "seq": 0,
+    "arrived": "2023-11-14T22:13:21.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s1",
+     "method": "workspace.create",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "profiles": [
+       "core/1.0",
+       "review/1.0",
+       "routing/1.0",
+       "handoff/1.0",
+       "whisper/1.0",
+       "deliberation/1.0"
+      ]
+     }
+    },
+    "prev_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   },
+   {
+    "seq": 1,
+    "arrived": "2023-11-14T22:13:22.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s2",
+     "method": "participant.join",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "type": "human",
+      "role": "admin"
+     }
+    },
+    "prev_hash": "sha256:8ec22acf9cd0842efc1f8bdfd4dc8cd42e44244e3fcb05452f5e75397504143a"
+   },
+   {
+    "seq": 2,
+    "arrived": "2023-11-14T22:13:23.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s3",
+     "method": "participant.join",
+     "params": {
+      "workspace": "w",
+      "from": "human:c",
+      "type": "human"
+     }
+    },
+    "prev_hash": "sha256:2d15dbce7e68f1d3180be2428652c53cc03fce0d695dd8946ff27735e2354d55"
+   },
+   {
+    "seq": 3,
+    "arrived": "2023-11-14T22:13:24.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s4",
+     "method": "participant.join",
+     "params": {
+      "workspace": "w",
+      "from": "agent:b",
+      "type": "agent"
+     }
+    },
+    "prev_hash": "sha256:a101138c2f8036cca357ca8b2629790e80651430eea84dcb2745f7a4d441e3d6"
+   },
+   {
+    "seq": 4,
+    "arrived": "2023-11-14T22:13:25.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s5",
+     "method": "task.create",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "kind": "draft",
+      "input": {
+       "q": "?"
+      },
+      "assignee": "agent:b",
+      "review_required": true
+     }
+    },
+    "prev_hash": "sha256:b69f3ac5250f620609d3bf6009e172ef6e67a63a68af46144301c05ca7e1bc29"
+   },
+   {
+    "seq": 5,
+    "arrived": "2023-11-14T22:13:26.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s6",
+     "method": "task.update",
+     "params": {
+      "workspace": "w",
+      "from": "agent:b",
+      "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+      "state": "in_progress"
+     }
+    },
+    "prev_hash": "sha256:99a2a73731b22e5e8d68e51dadc38250e2173e1c9424bcf4fa57f6997c36118e"
+   },
+   {
+    "seq": 6,
+    "arrived": "2023-11-14T22:13:27.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s7",
+     "method": "task.complete",
+     "params": {
+      "workspace": "w",
+      "from": "agent:b",
+      "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+      "output": {
+       "draft": 1
+      }
+     }
+    },
+    "prev_hash": "sha256:d85170fd5a72f271cf88344378b6671849b724f1acc50a7ba6b62d90e78ac4d6"
+   },
+   {
+    "seq": 7,
+    "arrived": "2023-11-14T22:13:28.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s8",
+     "method": "review.acknowledge",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N"
+     }
+    },
+    "prev_hash": "sha256:51521f65adbf4bfc8670a43ee4c3a835825ce46305dabb4b0c5fa0c7a2af36d8"
+   },
+   {
+    "seq": 8,
+    "arrived": "2023-11-14T22:13:29.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s9",
+     "method": "review.depth",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+      "artefact_routing_hints": {
+       "criticality": "low",
+       "confidence": "0.9"
+      }
+     }
+    },
+    "prev_hash": "sha256:7dfafe5738d28002cd4d601151f9913f73c23eafe19fb2b193e43b35b3e6e276"
+   },
+   {
+    "seq": 9,
+    "arrived": "2023-11-14T22:13:30.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s10",
+     "method": "task.create",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "kind": "triage",
+      "input": {},
+      "assignee": "agent:b"
+     }
+    },
+    "prev_hash": "sha256:9f75cbe975182b8e54f4f79d29fc9614cfd54ffe7311c5e1f69ac98f987e2450"
+   },
+   {
+    "seq": 10,
+    "arrived": "2023-11-14T22:13:31.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s11",
+     "method": "task.route",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+      "candidates": [
+       "agent:b",
+       "human:c"
+      ]
+     }
+    },
+    "prev_hash": "sha256:ffa6bf60828be886708b95ad5569912049335225b341f8659bc6aeb04d8d21d8"
+   },
+   {
+    "seq": 11,
+    "arrived": "2023-11-14T22:13:32.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s12",
+     "method": "handoff.propose",
+     "params": {
+      "workspace": "w",
+      "from": "agent:b",
+      "to": "human:c",
+      "tasks": [
+       {
+        "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z"
+       }
+      ]
+     }
+    },
+    "prev_hash": "sha256:0e5940f65e30bc357b446eba163eb384c313edae93a0f64a7692e05cc9ec4c35"
+   },
+   {
+    "seq": 12,
+    "arrived": "2023-11-14T22:13:33.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s13",
+     "method": "whisper.ask",
+     "params": {
+      "workspace": "w",
+      "from": "agent:b",
+      "to": "human:a",
+      "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+      "question": "Which?",
+      "deadline_ms": 60000,
+      "default_if_lapsed": "first"
+     }
+    },
+    "prev_hash": "sha256:848ae9ebe5061949e7f8f24a1f436097d4f8b2e0a3b538a439b72182cd8e5897"
+   },
+   {
+    "seq": 13,
+    "arrived": "2023-11-14T22:13:34.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s14",
+     "method": "deliberate.open",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "to": [
+       "human:a",
+       "human:c"
+      ],
+      "question": "Ship?",
+      "rule": "any_one_approves"
+     }
+    },
+    "prev_hash": "sha256:f3d491fb249be6048de2f27f83782843a4d9145a0abfdcddacc75d73402379ae"
+   },
+   {
+    "seq": 14,
+    "arrived": "2023-11-14T22:13:35.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s15",
+     "method": "deliberate.vote",
+     "params": {
+      "workspace": "w",
+      "from": "human:c",
+      "deliberation_id": "dlb_01HF7YAT070025712M29XGJS4K",
+      "vote": "yea"
+     }
+    },
+    "prev_hash": "sha256:d71cbe8b1003aa45a79f3a6b956b2a14720530651b366d29a30f37e13270e576"
+   }
+  ],
+  "chain_head": "sha256:15ee22fd64c27ee226312b5239d06c1049b8cf25fc8120bad6e54e225ce0c7d8",
+  "chain_enabled": true
+ },
+ "python": {
+  "id": "w",
+  "created": "2023-11-14T22:13:21.000Z",
+  "state": "active",
+  "profiles": [
+   "core/1.0",
+   "review/1.0",
+   "routing/1.0",
+   "handoff/1.0",
+   "whisper/1.0",
+   "deliberation/1.0"
+  ],
+  "mode": "trial",
+  "mode_ceiling": "production",
+  "routing_policy_uri": null,
+  "step_up_window_sec": 300,
+  "min_acr": null,
+  "signature_policy": "all",
+  "members": {
+   "human:a": {
+    "uri": "human:a",
+    "type": "human",
+    "role": "admin",
+    "joined": "2023-11-14T22:13:22.000Z",
+    "display_name": null,
+    "capabilities": null,
+    "scopes": null,
+    "keys": [],
+    "paused": false,
+    "oidc_sub": null,
+    "oidc_auth_time": null,
+    "oidc_acr": null,
+    "vc_holder": null
+   },
+   "human:c": {
+    "uri": "human:c",
+    "type": "human",
+    "role": "participant",
+    "joined": "2023-11-14T22:13:23.000Z",
+    "display_name": null,
+    "capabilities": null,
+    "scopes": null,
+    "keys": [],
+    "paused": false,
+    "oidc_sub": null,
+    "oidc_auth_time": null,
+    "oidc_acr": null,
+    "vc_holder": null
+   },
+   "agent:b": {
+    "uri": "agent:b",
+    "type": "agent",
+    "role": "participant",
+    "joined": "2023-11-14T22:13:24.000Z",
+    "display_name": null,
+    "capabilities": null,
+    "scopes": null,
+    "keys": [],
+    "paused": false,
+    "oidc_sub": null,
+    "oidc_auth_time": null,
+    "oidc_acr": null,
+    "vc_holder": null
+   }
+  },
+  "tasks": {
+   "tsk_01HF7YAT010009WDVSQ5ZMMZ0N": {
+    "id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+    "kind": "draft",
+    "state": "review_requested",
+    "assignee": "agent:b",
+    "delegator": "human:a",
+    "input": {
+     "q": "?"
+    },
+    "created_at": "2023-11-14T22:13:25.000Z",
+    "updated_at": "2023-11-14T22:13:27.000Z",
+    "deadline": null,
+    "mode": "trial",
+    "routing_hints": null,
+    "review": {
+     "requested_at": "2023-11-14T22:13:27.000Z",
+     "requested_to": [
+      "human:a",
+      "human:c"
+     ],
+     "rule": "any_one_approves",
+     "deadline": null,
+     "decisions": [],
+     "authors": [
+      "agent:b"
+     ],
+     "acknowledgements": [
+      {
+       "reviewer": "human:a",
+       "ts": "2023-11-14T22:13:28.000Z"
+      }
+     ]
+    },
+    "review_required": true,
+    "output": null,
+    "confidence": null,
+    "supersedes": null,
+    "superseded_by": null,
+    "parent": null,
+    "paused": false,
+    "paused_from": null,
+    "history": [
+     {
+      "ts": "2023-11-14T22:13:25.000Z",
+      "from_": "human:a",
+      "state": "created",
+      "note": null
+     },
+     {
+      "ts": "2023-11-14T22:13:26.000Z",
+      "from_": "agent:b",
+      "state": "in_progress",
+      "note": null
+     },
+     {
+      "ts": "2023-11-14T22:13:27.000Z",
+      "from_": "agent:b",
+      "state": "review_requested",
+      "note": "review required; opened on task.complete"
+     }
+    ],
+    "pending_artefact": {
+     "draft": 1
+    }
+   },
+   "tsk_01HF7YAT03000XN9KD5HYXYX1Z": {
+    "id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+    "kind": "triage",
+    "state": "created",
+    "assignee": "agent:b",
+    "delegator": "human:a",
+    "input": {},
+    "created_at": "2023-11-14T22:13:30.000Z",
+    "updated_at": "2023-11-14T22:13:31.000Z",
+    "deadline": null,
+    "mode": "trial",
+    "routing_hints": null,
+    "review": null,
+    "review_required": null,
+    "output": null,
+    "confidence": null,
+    "supersedes": null,
+    "superseded_by": null,
+    "parent": null,
+    "paused": false,
+    "paused_from": null,
+    "history": [
+     {
+      "ts": "2023-11-14T22:13:30.000Z",
+      "from_": "human:a",
+      "state": "created",
+      "note": null
+     },
+     {
+      "ts": "2023-11-14T22:13:31.000Z",
+      "from_": "service:coordinator",
+      "state": "created",
+      "note": "routed to agent:b"
+     }
+    ],
+    "pending_artefact": null
+   }
+  },
+  "overrides": {},
+  "whispers": {
+   "art_01HF7YAT06001VAK6TB3XVXT3Y": {
+    "id": "art_01HF7YAT06001VAK6TB3XVXT3Y",
+    "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+    "asker": "agent:b",
+    "askee": [
+     "human:a"
+    ],
+    "question": "Which?",
+    "options": null,
+    "asked_at": "2023-11-14T22:13:33.000Z",
+    "deadline_ms": 60000,
+    "default_if_lapsed": "first",
+    "urgency": "low",
+    "state": "pending",
+    "answered_at": null,
+    "answered_by": null,
+    "answer_option": null,
+    "answer_text": null,
+    "comment": null,
+    "default_applied": null
+   }
+  },
+  "deliberations": {
+   "dlb_01HF7YAT070025712M29XGJS4K": {
+    "id": "dlb_01HF7YAT070025712M29XGJS4K",
+    "task_id": null,
+    "opener": "human:a",
+    "participants": [
+     "human:a",
+     "human:c"
+    ],
+    "rule": "any_one_approves",
+    "question": "Ship?",
+    "weights": null,
+    "veto": null,
+    "deadline": null,
+    "state": "open",
+    "comments": [],
+    "votes": [
+     {
+      "ts": "2023-11-14T22:13:35.000Z",
+      "voter": "human:c",
+      "vote": "yea",
+      "weight": null,
+      "comment": null,
+      "veto_invoked": false
+     }
+    ],
+    "outcome": null,
+    "opened_at": "2023-11-14T22:13:34.000Z"
+   }
+  },
+  "handoffs": {
+   "hnd_01HF7YAT05001HE5B0KXY78V39": {
+    "id": "hnd_01HF7YAT05001HE5B0KXY78V39",
+    "proposer": "agent:b",
+    "recipient": "human:c",
+    "proposed_at": "2023-11-14T22:13:32.000Z",
+    "tasks": [
+     {
+      "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+      "title": null,
+      "status_summary": null,
+      "next_action": null,
+      "blockers": []
+     }
+    ],
+    "summary": null,
+    "context_links": [],
+    "state": "proposed",
+    "resolved_at": null,
+    "accepted_by": null,
+    "accepted_task_ids": [],
+    "accept_comment": null,
+    "decline_reason": null,
+    "decline_suggested_target": null
+   }
+  },
+  "snapshots": {},
+  "route_decisions": {
+   "art_01HF7YAT02000KRVQKEBZ99Y1A": {
+    "id": "art_01HF7YAT02000KRVQKEBZ99Y1A",
+    "decision_type": "review.depth",
+    "outcome": "spot_check",
+    "produced_by": "service:coordinator",
+    "produced_at": "2023-11-14T22:13:29.000Z",
+    "task": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+    "policy_id": "default",
+    "hints_observed": {
+     "criticality": "low",
+     "confidence": "0.9"
+    },
+    "rationale": "low criticality + high confidence: 10% sample",
+    "extra": {
+     "sampling_probability": 0.1
+    }
+   },
+   "art_01HF7YAT040017HQF6WQYJKW2M": {
+    "id": "art_01HF7YAT040017HQF6WQYJKW2M",
+    "decision_type": "task.route",
+    "outcome": "agent:b",
+    "produced_by": "service:coordinator",
+    "produced_at": "2023-11-14T22:13:31.000Z",
+    "task": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+    "policy_id": "default",
+    "hints_observed": {},
+    "rationale": "default policy: first eligible candidate",
+    "extra": {
+     "alternatives_considered": [
+      {
+       "candidate": "human:c",
+       "reason_excluded": "not first eligible"
+      }
+     ]
+    }
+   }
+  },
+  "idempotency_keys": {},
+  "audit": [
+   {
+    "seq": 0,
+    "arrived": "2023-11-14T22:13:21.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s1",
+     "method": "workspace.create",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "profiles": [
+       "core/1.0",
+       "review/1.0",
+       "routing/1.0",
+       "handoff/1.0",
+       "whisper/1.0",
+       "deliberation/1.0"
+      ]
+     }
+    },
+    "prev_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+   },
+   {
+    "seq": 1,
+    "arrived": "2023-11-14T22:13:22.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s2",
+     "method": "participant.join",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "type": "human",
+      "role": "admin"
+     }
+    },
+    "prev_hash": "sha256:8ec22acf9cd0842efc1f8bdfd4dc8cd42e44244e3fcb05452f5e75397504143a"
+   },
+   {
+    "seq": 2,
+    "arrived": "2023-11-14T22:13:23.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s3",
+     "method": "participant.join",
+     "params": {
+      "workspace": "w",
+      "from": "human:c",
+      "type": "human"
+     }
+    },
+    "prev_hash": "sha256:2d15dbce7e68f1d3180be2428652c53cc03fce0d695dd8946ff27735e2354d55"
+   },
+   {
+    "seq": 3,
+    "arrived": "2023-11-14T22:13:24.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s4",
+     "method": "participant.join",
+     "params": {
+      "workspace": "w",
+      "from": "agent:b",
+      "type": "agent"
+     }
+    },
+    "prev_hash": "sha256:a101138c2f8036cca357ca8b2629790e80651430eea84dcb2745f7a4d441e3d6"
+   },
+   {
+    "seq": 4,
+    "arrived": "2023-11-14T22:13:25.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s5",
+     "method": "task.create",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "kind": "draft",
+      "input": {
+       "q": "?"
+      },
+      "assignee": "agent:b",
+      "review_required": true
+     }
+    },
+    "prev_hash": "sha256:b69f3ac5250f620609d3bf6009e172ef6e67a63a68af46144301c05ca7e1bc29"
+   },
+   {
+    "seq": 5,
+    "arrived": "2023-11-14T22:13:26.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s6",
+     "method": "task.update",
+     "params": {
+      "workspace": "w",
+      "from": "agent:b",
+      "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+      "state": "in_progress"
+     }
+    },
+    "prev_hash": "sha256:99a2a73731b22e5e8d68e51dadc38250e2173e1c9424bcf4fa57f6997c36118e"
+   },
+   {
+    "seq": 6,
+    "arrived": "2023-11-14T22:13:27.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s7",
+     "method": "task.complete",
+     "params": {
+      "workspace": "w",
+      "from": "agent:b",
+      "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+      "output": {
+       "draft": 1
+      }
+     }
+    },
+    "prev_hash": "sha256:d85170fd5a72f271cf88344378b6671849b724f1acc50a7ba6b62d90e78ac4d6"
+   },
+   {
+    "seq": 7,
+    "arrived": "2023-11-14T22:13:28.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s8",
+     "method": "review.acknowledge",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N"
+     }
+    },
+    "prev_hash": "sha256:51521f65adbf4bfc8670a43ee4c3a835825ce46305dabb4b0c5fa0c7a2af36d8"
+   },
+   {
+    "seq": 8,
+    "arrived": "2023-11-14T22:13:29.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s9",
+     "method": "review.depth",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "task_id": "tsk_01HF7YAT010009WDVSQ5ZMMZ0N",
+      "artefact_routing_hints": {
+       "criticality": "low",
+       "confidence": "0.9"
+      }
+     }
+    },
+    "prev_hash": "sha256:7dfafe5738d28002cd4d601151f9913f73c23eafe19fb2b193e43b35b3e6e276"
+   },
+   {
+    "seq": 9,
+    "arrived": "2023-11-14T22:13:30.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s10",
+     "method": "task.create",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "kind": "triage",
+      "input": {},
+      "assignee": "agent:b"
+     }
+    },
+    "prev_hash": "sha256:9f75cbe975182b8e54f4f79d29fc9614cfd54ffe7311c5e1f69ac98f987e2450"
+   },
+   {
+    "seq": 10,
+    "arrived": "2023-11-14T22:13:31.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s11",
+     "method": "task.route",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+      "candidates": [
+       "agent:b",
+       "human:c"
+      ]
+     }
+    },
+    "prev_hash": "sha256:ffa6bf60828be886708b95ad5569912049335225b341f8659bc6aeb04d8d21d8"
+   },
+   {
+    "seq": 11,
+    "arrived": "2023-11-14T22:13:32.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s12",
+     "method": "handoff.propose",
+     "params": {
+      "workspace": "w",
+      "from": "agent:b",
+      "to": "human:c",
+      "tasks": [
+       {
+        "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z"
+       }
+      ]
+     }
+    },
+    "prev_hash": "sha256:0e5940f65e30bc357b446eba163eb384c313edae93a0f64a7692e05cc9ec4c35"
+   },
+   {
+    "seq": 12,
+    "arrived": "2023-11-14T22:13:33.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s13",
+     "method": "whisper.ask",
+     "params": {
+      "workspace": "w",
+      "from": "agent:b",
+      "to": "human:a",
+      "task_id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
+      "question": "Which?",
+      "deadline_ms": 60000,
+      "default_if_lapsed": "first"
+     }
+    },
+    "prev_hash": "sha256:848ae9ebe5061949e7f8f24a1f436097d4f8b2e0a3b538a439b72182cd8e5897"
+   },
+   {
+    "seq": 13,
+    "arrived": "2023-11-14T22:13:34.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s14",
+     "method": "deliberate.open",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "to": [
+       "human:a",
+       "human:c"
+      ],
+      "question": "Ship?",
+      "rule": "any_one_approves"
+     }
+    },
+    "prev_hash": "sha256:f3d491fb249be6048de2f27f83782843a4d9145a0abfdcddacc75d73402379ae"
+   },
+   {
+    "seq": 14,
+    "arrived": "2023-11-14T22:13:35.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s15",
+     "method": "deliberate.vote",
+     "params": {
+      "workspace": "w",
+      "from": "human:c",
+      "deliberation_id": "dlb_01HF7YAT070025712M29XGJS4K",
+      "vote": "yea"
+     }
+    },
+    "prev_hash": "sha256:d71cbe8b1003aa45a79f3a6b956b2a14720530651b366d29a30f37e13270e576"
+   }
+  ],
+  "chain_head": "sha256:15ee22fd64c27ee226312b5239d06c1049b8cf25fc8120bad6e54e225ce0c7d8",
+  "chain_enabled": true
+ }
+}
