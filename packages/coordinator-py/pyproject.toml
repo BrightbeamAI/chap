@@ -32,7 +32,7 @@ dependencies = []
 [project.optional-dependencies]
 crypto = ["cryptography>=42"]
 mcp = ["mcp>=2,<3"]
-a2a = ["a2a-sdk>=1.1", "fastapi>=0.110", "uvicorn>=0.27"]
+a2a = ["a2a-sdk[http-server]>=1.1", "fastapi>=0.110", "uvicorn>=0.27"]
 dev = [
     "pytest>=7",
     "pytest-asyncio>=0.21",
