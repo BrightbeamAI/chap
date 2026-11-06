@@ -790,6 +790,19 @@ def test_a_review_and_a_question_are_told_on_the_console_and_to_the_webhook(desk
     assert f"{AGENT} asks {HUMAN} a question on draft {task}: {link}" in out
 
 
+def test_on_the_console_a_notice_cannot_rewrite_the_terminal(desk_of, capsys):
+    # The summary names what an agent sent: its task kind, here with an
+    # escape sequence that would clear the screen, and a right-to-left override.
+    port = desk_of(notify={"console": True})
+    task = call(port, "task.create", **{"from": AGENT}, kind="draft\x1b[2J‮", assignee=AGENT, input={},
+                review_required=True)["result"]["task_id"]
+    call(port, "task.complete", **{"from": AGENT}, task_id=task, output={})
+    printed: list[str] = []
+    until(lambda: printed.append(capsys.readouterr().out) or "to review" in "".join(printed))
+    [line] = [line for line in "".join(printed).splitlines() if "to review" in line]
+    assert line == f"{AGENT} asks {HUMAN} to review draft<U+001B>[2J<U+202E> {task}: http://localhost:{port}/#task={task}"
+
+
 def test_a_webhook_that_fails_is_logged_and_no_call_waits_on_it(desk_of, webhook, caplog):
     slow, slow_received = webhook(delay=2.0)
     refusing, _ = webhook(status=500)

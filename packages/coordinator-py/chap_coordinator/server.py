@@ -627,6 +627,16 @@ def public_config(config: dict) -> dict:
 
 # -- notifications --------------------------------------------------------------
 
+#: Control and bidirectional characters, which could rewrite a terminal.
+_UNPRINTABLE = re.compile("[\x00-\x1f\x7f-\x9f‎‏‪-‮⁦-⁩]")
+
+
+def _printable(text: str) -> str:
+    """Text for a console line, each control or bidirectional character
+    shown as its code point, as the Node server shows it."""
+    return _UNPRINTABLE.sub(lambda m: f"<U+{ord(m.group()):04X}>", text)
+
+
 class Notifier:
     """Tells people that a review or a question waits for them.
 
@@ -699,7 +709,8 @@ class Notifier:
         while True:
             notice = self._queue.get()
             if self.console:
-                print(f"{notice['summary']}: {notice['link']}", flush=True)
+                # The summary names what an agent sent, its kind and URIs.
+                print(f"{_printable(notice['summary'])}: {notice['link']}", flush=True)
             if self.webhook:
                 self._post(notice)
 
