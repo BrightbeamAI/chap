@@ -43,6 +43,12 @@ Architecture notes
   that has failed, in A2A's terms: rejected when the coordinator refused
   the call, failed when it could not complete it. Either way the status
   message carries the CHAP error, ``{chap_error, message, data?}``.
+- a2a-sdk holds a data part's numbers as doubles. A call's params reach
+  the coordinator with whole numbers as ints, and
+  :func:`~chap_coordinator.transports.a2a_app.make_chap_a2a_app` sends
+  them to the client as integers, as the TypeScript server does; an app
+  that serves the executor through the SDK's routes alone sends 1042 as
+  1042.0.
 - ``participant`` pins ``from``, as it does for the MCP server, so a
   connection meant for one agent cannot act in anyone else's name.
 - Authentication is intentionally out of scope at this layer.
@@ -115,6 +121,23 @@ DEFAULT_MAX_TASKS = 1000
 def _agent_skills(skill_id: str) -> bool:
     """The skills an agent's own connection offers, the MCP server's ``AGENT_MCP_TOOLS``."""
     return skill_id in AGENT_MCP_TOOLS
+
+
+def _whole_numbers(value: Any) -> Any:
+    """``value`` with each float that holds a whole number made an int.
+
+    a2a-sdk carries a data part as ``google.protobuf.Value``, which holds
+    every number as a double, so 1042 comes out of it as 1042.0. JSON does
+    not tell the two apart, and the TypeScript server sends 1042, so a whole
+    number within the range a double holds exactly, 2**53, is an int again.
+    """
+    if isinstance(value, float) and value.is_integer() and abs(value) <= 2 ** 53:
+        return int(value)
+    if isinstance(value, dict):
+        return {key: _whole_numbers(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_whole_numbers(item) for item in value]
+    return value
 
 
 # A2A skill ids reuse the MCP tool naming. The only difference is
@@ -287,13 +310,13 @@ def _extract_skill_and_params(message: Message) -> tuple[str | None, dict[str, A
     skill_id: str | None = None
     params: dict[str, Any] = {}
 
-    metadata = MessageToDict(message.metadata) if len(message.metadata.fields) else {}
+    metadata = _whole_numbers(MessageToDict(message.metadata)) if len(message.metadata.fields) else {}
     skill_id = metadata.get("skill")
 
     for part in message.parts:
         if part.WhichOneof("content") != "data":
             continue
-        blob = MessageToDict(part.data) if part.data else {}
+        blob = _whole_numbers(MessageToDict(part.data)) if part.data else {}
         if not isinstance(blob, dict):
             continue
         if skill_id is None:

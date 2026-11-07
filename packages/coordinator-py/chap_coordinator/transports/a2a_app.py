@@ -49,7 +49,7 @@ from starlette.applications import Starlette
 
 from chap_coordinator.coordinator import Coordinator
 
-from .a2a_server import ChapTaskStore, make_chap_agent_card, make_chap_agent_executor
+from .a2a_server import ChapTaskStore, _whole_numbers, make_chap_agent_card, make_chap_agent_executor
 
 __all__ = ["ChapA2aGuard", "DEFAULT_MAX_BODY_BYTES", "make_chap_a2a_app"]
 
@@ -208,6 +208,52 @@ def _nests_deeper_than(value: Any, limit: int) -> bool:
     return False
 
 
+class _WholeNumbers:
+    """ASGI middleware sending each whole number in a JSON response as an
+    integer.
+
+    a2a-sdk writes a data part's numbers as the doubles protobuf holds them
+    in, so a client read 1042 as 1042.0 and an error code as -32011.0. The
+    response is held until its last chunk, each float that holds a whole
+    number made an int, and sent with its new length. A response that is
+    not JSON passes as it is.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        start: Optional[Message] = None
+        chunks: list[bytes] = []
+
+        async def rewrite(message: Message) -> None:
+            nonlocal start
+            if message["type"] == "http.response.start" and _is_json(message.get("headers", [])):
+                start = message
+                return
+            if message["type"] != "http.response.body" or start is None:
+                await send(message)
+                return
+            chunks.append(message.get("body", b""))
+            if message.get("more_body"):
+                return
+            body = json.dumps(_whole_numbers(json.loads(b"".join(chunks))), ensure_ascii=False,
+                              allow_nan=False, separators=(",", ":")).encode("utf-8")
+            headers = [(name, value) for name, value in start.get("headers", []) if name.lower() != b"content-length"]
+            await send({**start, "headers": [*headers, (b"content-length", str(len(body)).encode())]})
+            await send({"type": "http.response.body", "body": body})
+
+        await self.app(scope, receive, rewrite)
+
+
+def _is_json(headers: Iterable[tuple[bytes, bytes]]) -> bool:
+    return any(name.lower() == b"content-type" and value.lower().startswith(b"application/json")
+               for name, value in headers)
+
+
 def _foreign_origin(origin: Optional[str], allowed: set[str], host: str) -> bool:
     """An Origin naming a host other than this server's own names; none at all
     is a client that is not a browser."""
@@ -244,7 +290,8 @@ def make_chap_a2a_app(
     and ``skill_filter`` are the executor's, and the card lists the same
     skills: the agent's, ``AGENT_MCP_TOOLS``, when ``skill_filter`` is unset.
     ``version`` is the card's, the package's when unset. Refusals are kept
-    in a :class:`ChapTaskStore`.
+    in a :class:`ChapTaskStore`, and a whole number in a response is sent
+    as an integer.
     """
     card = make_chap_agent_card(base_url=base_url, skill_filter=skill_filter,
                                 **({"version": version} if version is not None else {}))
@@ -257,4 +304,4 @@ def make_chap_a2a_app(
         *create_agent_card_routes(card),
         *create_jsonrpc_routes(handler, rpc_url="/", enable_v0_3_compat=True),
     ])
-    return ChapA2aGuard(app, allowed_hosts=allowed_hosts, max_body_bytes=max_body_bytes)
+    return ChapA2aGuard(_WholeNumbers(app), allowed_hosts=allowed_hosts, max_body_bytes=max_body_bytes)
