@@ -137,11 +137,15 @@ def test_serve_says_so_when_the_store_cannot_be_opened(tmp_path, monkeypatch, ca
 
 def test_mcp_and_a2a_take_their_own_options(capsys):
     assert main(["mcp", "--help"]) == 0
-    assert "--as URI" in capsys.readouterr().out
+    help_text = capsys.readouterr().out
+    assert "--as URI" in help_text
+    assert help_text.startswith("usage: chap-coordinator mcp "), "the usage names the command that was run"
     assert main(["mcp", "--as", "human:you@local"]) == 2
     assert "names a person" in capsys.readouterr().err
     assert main(["a2a", "--help"]) == 0
-    assert "--allowed-host NAME" in capsys.readouterr().out
+    help_text = capsys.readouterr().out
+    assert "--allowed-host NAME" in help_text
+    assert help_text.startswith("usage: chap-coordinator a2a ")
 
 
 @pytest.mark.parametrize("command, module, missing", [

@@ -73,7 +73,7 @@ def _transport(name: str, argv: list[str]) -> int:
         print(f"chap-coordinator {name} needs the {name} extra, and {missing} is not installed. "
               f'Install it with: pip install "chap-coordinator[{name}]"', file=sys.stderr)
         return 1
-    return run(argv)
+    return run(argv, prog=f"chap-coordinator {name}")
 
 
 def _serve(args: argparse.Namespace) -> int:

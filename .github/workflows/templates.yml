@@ -176,7 +176,15 @@ jobs:
           python-version: '3.12'
       - name: Install the Python coordinator on this commit
         run: python -m pip install "./packages/coordinator-py[crypto]"
+      # On a push or a pull request the generated projects link the packages
+      # built from this commit, which npm does not have until they are
+      # published; the weekly run installs the published ones.
+      - name: Build the packages on this commit
+        if: github.event_name != 'schedule'
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
       - name: Rebuild and compare
         env:
-          CHAP_EXPLORER_INSTALL: '1'
+          CHAP_EXPLORER_INSTALL: ${{ github.event_name == 'schedule' && '1' || '' }}
         run: node packages/create-chap-app/scripts/build-explorer.mjs --check

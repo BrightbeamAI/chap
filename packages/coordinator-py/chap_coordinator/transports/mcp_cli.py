@@ -82,11 +82,11 @@ def _env(name: str) -> Optional[str]:
     return value or None
 
 
-def _parser() -> argparse.ArgumentParser:
+def _parser(prog: str = "python -m chap_coordinator.transports.mcp_cli") -> argparse.ArgumentParser:
     agent_tools = "\n".join(f"  {name}" for name in sorted(AGENT_MCP_TOOLS))
     profiles = "\n".join(f"  {p}" for p in DEFAULT_PROFILES)
     parser = argparse.ArgumentParser(
-        prog="python -m chap_coordinator.transports.mcp_cli",
+        prog=prog,
         description="Serves CHAP to one MCP client on stdio, making every call as one participant.",
         epilog=f"The agent tools:\n{agent_tools}\n\nThe default profiles:\n{profiles}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -164,10 +164,10 @@ def _options(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None, prog: Optional[str] = None) -> int:
     """Run the server on stdio until the client closes it; return the exit code."""
     try:
-        args = _parser().parse_args(argv)
+        args = (_parser(prog) if prog else _parser()).parse_args(argv)
     except SystemExit as exit_:  # --help, or argparse's own usage error
         return int(exit_.code or 0)
     try:

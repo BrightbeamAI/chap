@@ -82,9 +82,9 @@ def _env(name: str) -> Optional[str]:
     return value or None
 
 
-def _parser() -> argparse.ArgumentParser:
+def _parser(prog: str = "python -m chap_coordinator.transports.a2a_cli") -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python -m chap_coordinator.transports.a2a_cli",
+        prog=prog,
         description="Serves a CHAP coordinator as an A2A agent, making every call as one participant.",
         allow_abbrev=False,
     )
@@ -110,10 +110,10 @@ def _bracketed(host: str) -> str:
     return f"[{host}]" if ":" in host else host
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None, prog: Optional[str] = None) -> int:
     """Run the server until it is stopped; return the exit code."""
     try:
-        args = _parser().parse_args(argv)
+        args = (_parser(prog) if prog else _parser()).parse_args(argv)
     except SystemExit as exit_:  # --help, or argparse's own usage error
         return int(exit_.code or 0)
 
