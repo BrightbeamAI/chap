@@ -14,10 +14,28 @@ head. A subprocess boundary is used so no serialisation layer masks or
 invents a difference. An answer of -32603 from either fails the seed: it is a
 fault in the coordinator, whatever the other answered.
 
+Each seed runs in one of five configurations, by turns:
+
+- plain: no signatures checked; a share of the calls carries a `sig` that
+  only marks them as signed.
+- signed: the workspace advertises security-signed/1.0 and every member
+  signs with a real Ed25519 key. A share of the calls is unsigned, carries a
+  signature that does not verify, names a kid the sender does not hold, or
+  is signed with another member's key, and members rotate and revoke keys
+  and are given new ones by an admin's invitation.
+- humans: the same under the signature policy "humans", where an agent's
+  unsigned call is taken.
+- oidc: signed, with a stub token verifier and a stub credential verifier in
+  both references and step-up enforced. People join with tokens that name
+  them, or another participant, and bind their key, another key or none.
+- invite: the workspace admits by invitation, so joins meet the admin's
+  invitations and the refusals of those that have none, and both references
+  hold reads to the membership floor.
+
 The action set covers the core and review lifecycle, control, handoff, whisper,
 deliberation and routing, including canonical control.snapshot artefacts and
-subsequent rollback, and participant pauses, which the calls that assign work
-then meet.
+subsequent rollback, participant pauses, which the calls that assign work
+then meet, and the admin's workspace.invite.
 
 Each envelope is recorded as the client sent it, taken before dispatch, and
 every seed also asserts that dispatch left it untouched. A coordinator records
@@ -25,11 +43,21 @@ what it received: a handler that writes into the request makes the recorded
 envelope differ from the signed one, and would otherwise be replayed into the
 other reference as though both had produced it.
 
+The state each reference holds is compared with its nulls. Both coordinators
+read a null in a field of their own records as a field left out, so the
+projections leave such a null out; a null anywhere else, in what a client sent
+or what the log holds, is compared as it is, and so is a whisper's
+default_if_lapsed, whose null is the default a lapse applies.
+
 Each seed is also replayed into both references on a SQLite file, restarted,
 its pending whispers lapsed, and restarted again. Each call writes only what
 it changed, so the check is that nothing was missed: a coordinator restarted
 on the file holds what the one that wrote it held, and the two references
-wrote the same audit entries.
+wrote the same audit entries. Then each reference replays the seed again with
+two coordinators on one file, taking the calls by turns, while the store fails
+a share of the writes and reloads, and now and then the other coordinator
+writes between a call's keep-up and its write. The two references must answer
+every call alike there too, failures included, and leave the same entries.
 
 Action selection reads the workspace as it stands: decisions go to tasks under
 review and to reviewers the review named, resumes go to paused tasks, handoffs
@@ -37,7 +65,9 @@ are resolved by the participant they were offered to, votes come from
 participants who have not voted. A share of the steps is a deliberate miss, so
 the refusals are compared as well as the successes. Overrides draw from the
 whole JSON Patch operation set against documents with arrays and nesting,
-including the `1e1` and `1_0` index tokens behind #103.
+including the `1e1` and `1_0` index tokens behind #103 and digits outside
+ASCII, which neither reference reads as a number. Reviews are opened on no
+artefact, or a null one, now and then, and amended.
 
 Another share is malformed: a call to any method with one or two of the params
 it reads missing, null or of another type, the workspace and the sender
@@ -51,6 +81,7 @@ Usage:
     python fuzz.py --seed 42            # one seed, verbose on divergence
     python fuzz.py --seeds 50 --steps 60
     python fuzz.py --seeds 40 --stats   # with per-method coverage
+    python fuzz.py --seeds 20 --config signed
 """
 from __future__ import annotations
 
@@ -62,10 +93,12 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from chap_coordinator import Coordinator, CoordinatorOptions
+from chap_coordinator.canonical import canonicalize
+from chap_coordinator.crypto import derive_private_key, jwk_thumbprint, public_jwk, sign
 from chap_coordinator.storage.sqlite import SqliteStore
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -75,6 +108,70 @@ PROFILES = ["core/1.0", "review/1.0", "control/1.0", "handoff/1.0",
             "whisper/1.0", "deliberation/1.0", "routing/1.0"]
 HUMANS = ["human:a", "human:c"]
 AGENTS = ["agent:b", "agent:d"]
+# Participants who are not members at the start: an invitation may name them,
+# and they may join. The address scopes are refused at both.
+NEWCOMERS = ["human:e", "agent:f", "service:g"]
+SCOPES = ["group:x", "workspace:y"]
+
+
+@dataclass(frozen=True)
+class Config:
+    """How the workspace is set up, and what the two references are given."""
+
+    name: str
+    #: The workspace advertises security-signed/1.0, and members sign with
+    #: real keys.
+    signed: bool = False
+    #: The workspace's signature policy.
+    policy: str = "all"
+    #: Both references hold the stub verifiers and enforce step-up, and the
+    #: workspace advertises identity-oidc/1.0.
+    oidc: bool = False
+    #: The workspace's join policy.
+    join_policy: str = "open"
+    #: Both references hold reads to the membership floor.
+    read_membership: bool = False
+
+
+CONFIGS = [
+    Config("plain"),
+    Config("signed", signed=True),
+    Config("humans", signed=True, policy="humans"),
+    Config("oidc", signed=True, oidc=True),
+    Config("invite", join_policy="invite", read_membership=True),
+]
+
+
+def stub_token_verifier(token: str) -> dict | None:
+    """The fuzzer's token verifier, the same in replay.ts: a token is
+    `stub.` and the JSON of its claims, and any other string does not
+    verify."""
+    if not isinstance(token, str) or not token.startswith("stub."):
+        return None
+    try:
+        claims = json.loads(token[len("stub."):])
+    except ValueError:
+        return None
+    return claims if isinstance(claims, dict) else None
+
+
+def stub_credential_verifier(presentation: dict) -> dict | None:
+    """The fuzzer's credential verifier, the same in replay.ts: a
+    presentation's `subject` object is what it verifies to."""
+    subject = presentation.get("subject") if isinstance(presentation, dict) else None
+    return subject if isinstance(subject, dict) else None
+
+
+def coordinator_options(config: Config) -> dict:
+    """The options both references are given, as replay.ts reads them."""
+    options: dict = dict(deterministic_ids=True, deterministic_clock=True,
+                         enable_chain=True, default_profiles=PROFILES)
+    if config.oidc:
+        options.update(verify_oidc_token=stub_token_verifier,
+                       verify_vc=stub_credential_verifier, enforce_step_up=True)
+    if config.read_membership:
+        options.update(require_read_membership=True)
+    return options
 
 
 # Every method a reference dispatches, with the params its handler reads. The
@@ -83,9 +180,10 @@ AGENTS = ["agent:b", "agent:d"]
 # compared like any other call's.
 METHOD_PARAMS: dict[str, tuple[str, ...]] = {
     "workspace.create": ("profiles", "mode", "mode_ceiling", "routing_policy_uri",
-                         "step_up_window_sec", "min_acr", "signature_policy"),
+                         "step_up_window_sec", "min_acr", "signature_policy", "join_policy"),
     "workspace.describe": (),
     "workspace.set_profiles": ("profiles",),
+    "workspace.invite": ("uri", "type", "role", "jwks", "oidc_sub"),
     "participant.join": ("type", "role", "display_name", "capabilities", "scopes", "jwks",
                          "oidc_token", "vc_presentation"),
     "participant.leave": (),
@@ -133,26 +231,41 @@ METHOD_PARAMS: dict[str, tuple[str, ...]] = {
     "audit.submit_to_scitt": ("range", "issuer"),
 }
 
-# The signature on a fuzzed call. Neither reference checks it, since the
-# workspace does not require signatures, and both compare signed calls by what
-# was signed, so one value serves every call.
+# The signature on a call in the plain configuration. Neither reference checks
+# it, since the workspace does not require signatures, and both compare signed
+# calls by what was signed, so one value serves every call.
 SIG = "ed25519:fuzz:" + "A" * 86 + "=="
+
+# Digits outside ASCII. Python's str.isdigit() and int() read them as numbers;
+# neither reference may.
+UNICODE_DIGITS = ("١", "²", "٢٣", "１２")
 
 # Values a param of the wrong type or shape takes. 2**53 lies past the
 # canonical number range, so it is refused at ingress.
 JUNK = (None, 0, 7, -1, True, False, "", "x", "human:a", [], ["x"], [1, 2], {},
         {"a": 1}, [{}], [None], {"kind": 5, "assignee": 3}, "__proto__",
-        "constructor", 2 ** 53)
+        "constructor", 2 ** 53, *UNICODE_DIGITS)
+
+
+def _type_of(uri: str) -> str:
+    """The participant type a URI's scheme names."""
+    return uri.split(":", 1)[0]
+
+
+# An auth_time far in the future: the token is fresh whenever the run happens.
+# Step-up measures a token's age on the wall clock, so a stale one would
+# answer with an age that differs between the two references' runs; its
+# refusal is left to the unit tests.
+FRESH = 4102444800
 
 
 class Recorder:
     """Drive the Python reference and record the envelopes it accepts."""
 
-    def __init__(self, seed: int, steps: int):
+    def __init__(self, seed: int, steps: int, config: Config):
         self.rnd = random.Random(seed)
-        self.coord = Coordinator(CoordinatorOptions(
-            deterministic_ids=True, deterministic_clock=True,
-            enable_chain=True, default_profiles=PROFILES))
+        self.config = config
+        self.coord = Coordinator(CoordinatorOptions(**coordinator_options(config)))
         self.envelopes: list[dict] = []
         self.dispatched: list[dict] = []
         self.responses: list[dict] = []
@@ -167,6 +280,10 @@ class Recorder:
         # The artefact last put under review for a task, so an override can
         # patch the document that is actually there.
         self.artefacts: dict[str, dict] = {}
+        # The key each participant signs with now, and how many keys it has
+        # been given, so each new key has a kid of its own.
+        self.keys: dict[str, tuple[object, dict]] = {}
+        self.issued: Counter[str] = Counter()
         self.sent: Counter[str] = Counter()
         self.ok: Counter[str] = Counter()
         self._n = 0
@@ -174,30 +291,111 @@ class Recorder:
         for _ in range(steps):
             self._step()
 
+    # -- keys and signatures -------------------------------------------------
+
+    def _key(self, uri: str) -> tuple[object, dict]:
+        """The key `uri` signs with now: its first, until it is given another."""
+        if uri not in self.keys:
+            key = derive_private_key(uri)
+            self.keys[uri] = (key, public_jwk(uri, key))
+        return self.keys[uri]
+
+    def _next_key(self, uri: str) -> tuple[object, dict]:
+        """A key `uri` has not held, with a kid of its own."""
+        self.issued[uri] += 1
+        name = f"{uri}#{self.issued[uri]}"
+        key = derive_private_key(name)
+        return key, public_jwk(name, key)
+
+    def _sign(self, env: dict) -> None:
+        """Sign a call as the configuration has it, and now and then badly."""
+        rnd = self.rnd
+        if not self.config.signed:
+            # A call is signed when it carries a `sig` string, checked or not
+            # (SPECIFICATION 10.1), so its copies meet the signed-copy rules.
+            if rnd.random() < 0.1:
+                env["sig"] = SIG
+                self.signed.append(json.loads(json.dumps(env)))
+            return
+        params = env.get("params")
+        sender = params.get("from") if isinstance(params, dict) else None
+        if not isinstance(sender, str):
+            return
+        if _type_of(sender) == "agent" and self.config.policy == "humans" and rnd.random() < 0.7:
+            return
+        if rnd.random() < 0.06:
+            # The time a key is chosen by: long before any key was given, or
+            # written in digits outside ASCII.
+            params["ts"] = rnd.choice(["2000-01-01T00:00:00.000Z",
+                                       "２０２３-11-14T22:13:21.000Z"])
+        roll = rnd.random()
+        if roll < 0.04:
+            return
+        key, jwk = self._key(sender)
+        kid = jwk["kid"]
+        if roll < 0.07:
+            key = self._key(rnd.choice([u for u in (*HUMANS, *AGENTS) if u != sender]))[0]
+        elif roll < 0.1:
+            kid = "k-unknown"
+        try:
+            sig = sign(canonicalize({k: v for k, v in env.items() if k != "sig"}), key, kid)
+        except (TypeError, ValueError):
+            return
+        if roll < 0.13:
+            head, body = sig.rsplit(":", 1)
+            sig = f"{head}:{'B' if body[0] == 'A' else 'A'}{body[1:]}"
+        elif roll < 0.15:
+            sig = rnd.choice([f"ed25519:{kid}", f"webauthn:{kid}:AAAA", f"rsa:{kid}:AAAA"])
+        env["sig"] = sig
+        self.signed.append(json.loads(json.dumps(env)))
+
+    def _token(self, uri: str, faithful: bool = False) -> str:
+        """A stub token for `uri`: one naming it and binding its key, or, now
+        and then, one naming another participant, naming none, binding another
+        key, naming its key by the nonce, or carrying no auth_time or a weaker
+        acr."""
+        jwk = self._key(uri)[1]
+        claims: dict = {"iss": "https://stub.example", "sub": "sub-" + uri, "aud": "chap",
+                        "chap_participant_uri": uri, "auth_time": FRESH, "acr": "urn:acr:mfa",
+                        "cnf": {"jwk": jwk}}
+        if faithful:
+            return "stub." + json.dumps(claims, separators=(",", ":"))
+        roll = self.rnd.random()
+        if roll < 0.05:
+            return "not-a-stub-token"
+        if roll < 0.12:
+            claims["chap_participant_uri"] = self.rnd.choice([*HUMANS, *NEWCOMERS])
+        elif roll < 0.18:
+            del claims["chap_participant_uri"]
+        elif roll < 0.24:
+            claims["cnf"] = {"jwk": self._key(self.rnd.choice(AGENTS))[1]}
+        elif roll < 0.32:
+            del claims["cnf"]
+            claims["nonce"] = jwk_thumbprint(jwk)
+        elif roll < 0.36:
+            del claims["auth_time"]
+        elif roll < 0.4:
+            claims["acr"] = "urn:acr:pwd"
+        return "stub." + json.dumps(claims, separators=(",", ":"))
+
+    def _join_params(self, uri: str, faithful: bool = False) -> dict:
+        """What `uri` joins with: its type, and its key where members sign,
+        bound by a token for a person where the workspace verifies people."""
+        params: dict = {"type": _type_of(uri)}
+        if self.config.signed:
+            params["jwks"] = {"keys": [self._key(uri)[1]]}
+            if self.config.oidc and _type_of(uri) == "human":
+                params["oidc_token"] = self._token(uri, faithful)
+        return params
+
+    # -- sending -------------------------------------------------------------
+
     def _send(self, method: str, actor: object, **params) -> dict:
         self._n += 1
         env = {"jsonrpc": "2.0", "id": f"e{self._n}", "method": method,
                "params": {"workspace": "w", "from": actor, **params}}
-        if self.rnd.random() < 0.1:
-            # A call is signed when it carries a `sig` string, checked or not
-            # (SPECIFICATION 10.1), so its copies meet the signed-copy rules.
-            env["sig"] = SIG
-            self.signed.append(json.loads(json.dumps(env)))
-        # Record what the client sent, not what dispatch left behind. A handler
-        # that writes into params would otherwise be replayed into the other
-        # reference, and the two would agree on a value only one of them had
-        # produced. Keeping the sent copy also lets the recorded envelope be
-        # compared with the dispatched one, which is the invariant below.
-        sent = json.loads(json.dumps(env))
-        resp = self.coord.dispatch(env)
-        self.dispatched.append(env)
-        self.envelopes.append(sent)
-        self.responses.append(resp)
-        self.states.append(project(self.coord))
-        self.sent[method] += 1
-        if "result" in resp:
-            self.ok[method] += 1
-        return resp
+        self._sign(env)
+        return self._send_envelope(method, env)
 
     def _send_params(self, method: str, params: object) -> dict:
         """Send params exactly as given, workspace and from included or not."""
@@ -205,10 +403,16 @@ class Recorder:
         env = {"jsonrpc": "2.0", "id": f"e{self._n}", "method": method}
         if params is not ...:
             env["params"] = params
+            self._sign(env)
         return self._send_envelope(method, env)
 
     def _send_envelope(self, method: str, env: object) -> dict:
         """Send an envelope exactly as given, whether or not it is one."""
+        # Record what the client sent, before dispatch could touch it. A handler
+        # that writes into params would otherwise be replayed into the other
+        # reference, and the two would agree on a value only one of them had
+        # produced. Keeping the sent copy also lets the recorded envelope be
+        # compared with the dispatched one, which is the invariant below.
         sent = json.loads(json.dumps(env))
         resp = self.coord.dispatch(env)
         self.dispatched.append(env)
@@ -233,11 +437,29 @@ class Recorder:
                 if sent != after]
 
     def _bootstrap(self) -> None:
-        self._send("workspace.create", "human:a", profiles=PROFILES)
-        self._send("participant.join", "human:a", type="human")
-        self._send("participant.join", "human:c", type="human")
-        for a in AGENTS:
-            self._send("participant.join", a, type="agent")
+        cfg = self.config
+        create: dict = {"profiles": [*PROFILES,
+                                     *(["security-signed/1.0"] if cfg.signed else []),
+                                     *(["identity-oidc/1.0"] if cfg.oidc else [])]}
+        if cfg.signed:
+            create["signature_policy"] = cfg.policy
+        if cfg.join_policy != "open":
+            create["join_policy"] = cfg.join_policy
+        if cfg.oidc:
+            # A minimum acr left out, given as null, which is none, or given.
+            create["step_up_window_sec"] = 300
+            min_acr = self.rnd.choice([..., None, "urn:acr:mfa"])
+            if min_acr is not ...:
+                create["min_acr"] = min_acr
+        self._send("workspace.create", "human:a", **create)
+        # The first member takes the admin role, and invites the others where
+        # the workspace admits by invitation.
+        self._send("participant.join", "human:a", role="admin",
+                   **self._join_params("human:a", faithful=True))
+        for uri in ("human:c", *AGENTS):
+            if cfg.join_policy == "invite":
+                self._send("workspace.invite", "human:a", uri=uri, type=_type_of(uri))
+            self._send("participant.join", uri, **self._join_params(uri, faithful=True))
 
     def _task(self) -> str | None:
         return self.rnd.choice(self.tasks) if self.tasks else None
@@ -275,6 +497,9 @@ class Recorder:
         members = self.coord.get_workspace("w").members
         return [u for u in (*HUMANS, *AGENTS) if u in members and members[u].paused]
 
+    def _member(self, uri: str) -> bool:
+        return uri in self.coord.get_workspace("w").members
+
     def _reviewers(self, tid: str) -> list[str]:
         """Who the open review on this task is addressed to."""
         task = self.coord.get_workspace("w").tasks.get(tid)
@@ -295,7 +520,10 @@ class Recorder:
         live = self._by_state("created", "in_progress")
         menu = ["create", "create", "update", "complete", "complete",
                 "whisper", "deliberate", "snapshot", "miss", "pause_participant",
-                "ceiling", "leave_and_rejoin", "rejoin", "malformed", "malformed", "malformed"]
+                "ceiling", "leave_and_rejoin", "rejoin", "malformed", "malformed", "malformed",
+                "invite", "newcomer"]
+        if self.config.signed:
+            menu += ["rotate", "revoke"]
         if self._paused_participants():
             menu += ["resume_participant"] * 2
         if self.signed:
@@ -303,7 +531,7 @@ class Recorder:
         if live:
             menu += ["review"] * 4
         if self._by_state("review_requested"):
-            menu += ["decide"] * 8 + ["acknowledge"] * 3
+            menu += ["decide"] * 8 + ["acknowledge"] * 3 + ["amend"]
         if self._by_state("paused"):
             menu += ["resume"] * 3
         if live:
@@ -322,13 +550,15 @@ class Recorder:
     # -- the documents under review, and the patches applied to them -------
 
     def _artefact(self) -> dict:
-        """A document with arrays and nesting, so a patch has somewhere to go."""
+        """A document with arrays and nesting, so a patch has somewhere to go,
+        and nulls in it, which both references keep as they were sent."""
         rnd = self.rnd
         return {
             "text": rnd.choice(["draft", "second pass"]),
-            "items": [{"id": i, "note": f"n{i}"} for i in range(rnd.randint(1, 3))],
+            "items": [{"id": i, "note": rnd.choice([f"n{i}", f"n{i}", None])}
+                      for i in range(rnd.randint(1, 3))],
             "meta": {"tags": rnd.sample(["tone", "fact", "legal"], rnd.randint(1, 3)),
-                     "score": rnd.randint(0, 9)},
+                     "score": rnd.randint(0, 9), "owner": None},
         }
 
     def _patch(self, doc: dict) -> list[dict]:
@@ -356,8 +586,27 @@ class Recorder:
             [{"op": "replace", "path": "/items/1e1/note", "value": "ten"}],
             [{"op": "replace", "path": "/items/1_0/note", "value": "ten"}],
             [{"op": "add", "path": "/items/01", "value": {"id": 1}}],
+            [{"op": "replace", "path": f"/items/{rnd.choice(UNICODE_DIGITS)}/note", "value": "one"}],
+            [{"op": "remove", "path": f"/items/{rnd.choice(UNICODE_DIGITS)}"}],
         ]
         return rnd.choice(choices)
+
+    def _rule(self) -> str:
+        """A review or deliberation rule, now and then with a count written in
+        digits outside ASCII."""
+        if self.rnd.random() < 0.1:
+            return "quorum:" + self.rnd.choice(UNICODE_DIGITS)
+        return self.rnd.choice(["any_one_approves", "all_approve", "quorum:2"])
+
+    def _under_review(self) -> dict:
+        """What a review is opened on: as a rule a document, now and then a
+        null artefact or none at all."""
+        roll = self.rnd.random()
+        if roll < 0.1:
+            return {"artefact": None}
+        if roll < 0.2:
+            return {}
+        return {"artefact": self._artefact()}
 
     def _step(self) -> None:  # noqa: C901 - a menu of actions
         rnd = self.rnd
@@ -406,6 +655,37 @@ class Recorder:
                     p["request_revision"] = rnd.random() < 0.5
                 self._send(kind, human, **p)
             return
+        if a == "amend":
+            # A review asked for again while it is open: by its author, which
+            # amends it, or by anyone else, on a document, a null or nothing.
+            tid = rnd.choice(self._by_state("review_requested"))
+            who = rnd.choice([self._assignee(tid), self._assignee(tid), *HUMANS])
+            self._send("review.request", who, task_id=tid, to=rnd.sample(HUMANS, rnd.randint(1, 2)),
+                       **self._under_review())
+            return
+        if a == "invite":
+            self._invite()
+            return
+        if a == "newcomer":
+            self._newcomer()
+            return
+        if a == "rotate":
+            # A member signs a new key in with the key it holds.
+            who = rnd.choice([*HUMANS, *AGENTS])
+            new = self._next_key(who)
+            old_kid = self._key(who)[1]["kid"] if rnd.random() < 0.85 else "k-unknown"
+            r = self._send("participant.rotate_key", who, old_kid=old_kid, new_jwk=new[1])
+            if "result" in r:
+                self.keys[who] = new
+            return
+        if a == "revoke":
+            # A key revoked by an admin, or by its holder; the admin's own
+            # now and then, which leaves the workspace with no admin who signs.
+            target = rnd.choice(["human:c", "human:c", *AGENTS, *AGENTS, "human:a"])
+            sender = "human:a" if rnd.random() < 0.7 else rnd.choice([target, *AGENTS])
+            self._send("participant.revoke_key", sender, target_uri=target,
+                       kid=self._key(target)[1]["kid"], reason="lost")
+            return
         if a == "acknowledge":
             # A reviewer says they have begun, at times twice in a round, and
             # now and then the author or an agent tries: taken once a round
@@ -441,8 +721,7 @@ class Recorder:
             # A member leaves and joins again at once, which also lifts a pause.
             who = rnd.choice([*HUMANS, *AGENTS])
             self._send("participant.leave", who)
-            self._send("participant.join", who,
-                       type="human" if who.startswith("human:") else "agent")
+            self._send("participant.join", who, **self._join_params(who))
             return
         if a == "rejoin":
             # A member joins again: with nothing new, with a key it does not
@@ -451,13 +730,23 @@ class Recorder:
             who = rnd.choice([*HUMANS, *AGENTS])
             kind = "human" if who.startswith("human:") else "agent"
             roll = rnd.random()
-            if roll < 0.25:
+            if roll < 0.2:
                 self._send("participant.join", who, type=kind)
-            elif roll < 0.5:
+            elif roll < 0.35:
                 self._send("participant.join", who, type=kind, jwks={"keys": [
                     {"kty": "OKP", "crv": "Ed25519", "kid": f"k{rnd.randint(0, 3)}", "x": "AAAA"}]})
-            elif roll < 0.75:
+            elif roll < 0.5:
+                self._send("participant.join", who, **self._join_params(who))
+            elif roll < 0.65:
                 self._send("participant.join", who, type="agent" if kind == "human" else "human")
+            elif roll < 0.75:
+                self._send("participant.join", who, type=kind, role="admin")
+            elif roll < 0.85 and self.config.oidc:
+                # A presentation whose subject binds the member's key, or
+                # another holder's.
+                self._send("participant.join", who, type=kind, vc_presentation={"subject": {
+                    "holder": rnd.choice([f"did:example:{who}", "did:example:x"]),
+                    "cnf_jwk": self._key(rnd.choice([who, *AGENTS]))[1]}})
             else:
                 self._send("participant.join", who, type=kind, oidc_token=f"token-{rnd.randint(0, 3)}",
                            vc_presentation={"holder": "did:example:x", "n": rnd.randint(0, 3)})
@@ -524,22 +813,27 @@ class Recorder:
             self._send("task.update", self._assignee(tid), task_id=tid,
                        state=rnd.choice(["in_progress", "in_progress", "declined"]))
         elif a == "review":
-            doc = self._artefact()
-            self.artefacts[tid] = doc
+            under = self._under_review()
             to = rnd.sample(HUMANS, rnd.randint(1, 2))
             if rnd.random() < 0.15:
                 # An agent, perhaps the assignee itself: refused where the
                 # task requires a person's review.
                 to.append(rnd.choice(AGENTS))
             r = self._send("review.request", self._assignee(tid), task_id=tid,
-                           artefact=doc, to=to,
-                           rule=rnd.choice(["any_one_approves", "all_approve", "quorum:2"]))
-            if "error" in r:
+                           to=to, rule=self._rule(), **under)
+            if "result" in r and isinstance(under.get("artefact"), dict):
+                self.artefacts[tid] = under["artefact"]
+            else:
                 self.artefacts.pop(tid, None)
         elif a == "complete":
-            doc = self._artefact()
-            self.artefacts[tid] = doc
-            self._send("task.complete", self._assignee(tid), task_id=tid, output=doc)
+            # As a rule with an output, now and then with none or a null one.
+            roll = rnd.random()
+            output = {} if roll < 0.08 else {"output": None} if roll < 0.12 else {"output": self._artefact()}
+            if isinstance(output.get("output"), dict):
+                self.artefacts[tid] = output["output"]
+            else:
+                self.artefacts.pop(tid, None)
+            self._send("task.complete", self._assignee(tid), task_id=tid, **output)
         elif a == "pause":
             self._send("control.pause", "human:a", task_id=tid, reason="hold")
         elif a == "escalate":
@@ -581,8 +875,7 @@ class Recorder:
                 self.whispers.append(wid)
         elif a == "deliberate":
             r = self._send("deliberate.open", human, to=rnd.sample(HUMANS, rnd.randint(1, 2)),
-                           rule=rnd.choice(["any_one_approves", "quorum:2"]),
-                           question=f"Q{self._n}", task_id=tid)
+                           rule=self._rule(), question=f"Q{self._n}", task_id=tid)
             did = self._result(r, "deliberation_id")
             if did:
                 self.delibs.append(did)
@@ -595,13 +888,50 @@ class Recorder:
             self._send("escalate.auto", "human:a", task_id=tid,
                        default_escalation_target=rnd.choice(HUMANS))
 
+    def _invite(self) -> None:
+        """An invitation, as a rule from the admin and now and then from a
+        member who is not one: for a newcomer, an address scope or a member,
+        with a role, keys or a token subject. Keys an invitation registers or
+        pins are the ones the participant signs with from then on."""
+        rnd = self.rnd
+        sender = "human:a" if rnd.random() < 0.8 else rnd.choice(["human:c", *AGENTS])
+        uri = rnd.choice([*NEWCOMERS, *NEWCOMERS, *SCOPES, *HUMANS, *AGENTS])
+        params: dict = {"uri": uri, "type": _type_of(uri)}
+        if rnd.random() < 0.1:
+            params["type"] = rnd.choice(["human", "agent", "service"])
+        if rnd.random() < 0.3:
+            params["role"] = rnd.choice(["admin", "admin", "reviewer"])
+        new = None
+        if rnd.random() < 0.5:
+            new = self._next_key(uri)
+            params["jwks"] = {"keys": [new[1]]}
+        if self.config.oidc and rnd.random() < 0.3:
+            params["oidc_sub"] = "sub-" + uri
+        r = self._send("workspace.invite", sender, **params)
+        if new is not None and "result" in r:
+            self.keys[uri] = new
+
+    def _newcomer(self) -> None:
+        """A participant who is not a member joins, invited or not, as the
+        configuration has members join, and now and then asking for the admin
+        role or bringing no key."""
+        rnd = self.rnd
+        uri = rnd.choice([*NEWCOMERS, *NEWCOMERS, *SCOPES])
+        params = self._join_params(uri)
+        roll = rnd.random()
+        if roll < 0.2:
+            params["role"] = "admin"
+        elif roll < 0.3:
+            params.pop("jwks", None)
+        self._send("participant.join", uri, **params)
+
     def _create(self) -> None:
         """A new task, a share of them requiring review, so the successors
         that escalate.raise and control.supersede make carry it too."""
         rnd = self.rnd
         extra = {"review_required": True} if rnd.random() < 0.25 else {}
         r = self._send("task.create", "human:a", kind=rnd.choice(["a", "b"]),
-                       input={"n": self._n}, assignee=rnd.choice(AGENTS), **extra)
+                       input={"n": self._n, "context": None}, assignee=rnd.choice(AGENTS), **extra)
         tid = self._result(r, "task_id")
         if tid:
             self.tasks.append(tid)
@@ -656,14 +986,29 @@ class Recorder:
             return rnd.sample(members, 2)
         if name in ("assignee", "target_uri", "participant_uri", "uri",
                     "suggested_target", "default_escalation_target"):
-            return rnd.choice(members)
+            return rnd.choice([*members, *NEWCOMERS])
+        if name in ("jwks",):
+            return {"keys": [self._key(rnd.choice(members))[1]]}
+        if name == "new_jwk":
+            return self._next_key(rnd.choice(members))[1]
+        if name in ("old_kid", "kid"):
+            return self._key(rnd.choice(members))[1]["kid"]
+        if name == "oidc_token":
+            return self._token(rnd.choice(members))
+        if name == "vc_presentation":
+            return {"subject": {"holder": "did:example:x", "cnf_jwk": self._key(rnd.choice(members))[1]}}
+        if name == "deadline":
+            return rnd.choice(["2030-01-01T00:00:00.000Z",
+                               "٢٠٣٠-01-01T00:00:00.000Z"])
         choices = {
-            "type": ["human", "agent"], "state": ["in_progress", "declined", "completed"],
-            "rule": ["any_one_approves", "quorum:2", "all_approve"],
+            "type": ["human", "agent", "service"], "state": ["in_progress", "declined", "completed"],
+            "rule": ["any_one_approves", "quorum:2", "all_approve", "quorum:٢"],
             "scope": ["task", "participant", "workspace"],
             "vote": ["yea", "nay", "abstain"],
             "mode": ["shadow", "trial", "production"],
             "new_ceiling": ["trial", "production"], "mode_ceiling": ["trial", "production"],
+            "signature_policy": ["all", "humans"], "join_policy": ["open", "invite"],
+            "role": ["admin", "reviewer"],
         }
         if name in choices:
             return rnd.choice(choices[name])
@@ -732,16 +1077,20 @@ class Recorder:
         return self.coord.get_workspace("w").chain_head
 
 
+
 # Past every deadline the fuzzer sets, so a store replay lapses each whisper
 # still pending, outside any call.
 _LAPSE_AT = "2100-01-01T00:00:00.000Z"
 
 
-def _replay_ts(envelopes: list[dict], store: str | None = None, cross: str | None = None) -> dict:
-    payload = json.dumps({"options": {"defaultProfiles": PROFILES},
+def _replay_ts(envelopes: list[dict], config: Config, store: str | None = None,
+               cross: str | None = None, rough: list[dict] | None = None) -> dict:
+    payload = json.dumps({"options": {"defaultProfiles": PROFILES, "stubVerifiers": config.oidc,
+                                      "readMembership": config.read_membership},
                           "workspace": "w", "envelopes": envelopes,
                           **({"store": store, "lapse_at": _LAPSE_AT} if store else {}),
-                          **({"cross": cross} if cross else {})})
+                          **({"cross": cross} if cross else {}),
+                          **({"rough": rough} if rough is not None else {})})
     proc = subprocess.run(
         ["npx", "tsx", str(_REPLAY)],
         input=payload, capture_output=True, text=True, cwd=str(_ROOT))
@@ -759,14 +1108,36 @@ def _plain(coord: Coordinator) -> str:
     return json.dumps(out, sort_keys=True, default=str)
 
 
-def _drop_null(value):
-    """A value as JSON holds it once nulls are left out, so a field one
-    coordinator leaves unset and the other sets to null compare equal."""
-    if isinstance(value, dict):
-        return {k: _drop_null(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [_drop_null(v) for v in value]
-    return value
+# The fields of the coordinators' own records whose null is a value: a
+# whisper's default_if_lapsed is the default a lapse applies.
+_KEPT_NULLS = {"whispers": ("default_if_lapsed",)}
+# The records nested in each collection's objects, by field.
+_NESTED = {"members": ("keys",), "tasks": ("history",), "deliberations": ("votes",),
+           "handoffs": ("tasks",)}
+
+
+def _own(record: dict, keep: tuple[str, ...] = ()) -> dict:
+    """A record of a coordinator's own, with the fields holding null left out
+    but those named in `keep`. Both coordinators read such a null as a field
+    left out."""
+    return {k: v for k, v in record.items() if v is not None or k in keep}
+
+
+def _shape(name: str, item: dict) -> dict:
+    """One object of a collection with its own nulls left out, and those of
+    the records nested in it. What a client sent, an input, an output, an
+    artefact or a patch, keeps its nulls, and so does the log."""
+    out = _own(item, _KEPT_NULLS.get(name, ()))
+    for field in _NESTED.get(name, ()):
+        if isinstance(out.get(field), list):
+            out[field] = [_own(x) if isinstance(x, dict) else x for x in out[field]]
+    review = out.get("review") if name == "tasks" else None
+    if isinstance(review, dict):
+        review = _own(review)
+        if isinstance(review.get("decisions"), list):
+            review["decisions"] = [_own(d) if isinstance(d, dict) else d for d in review["decisions"]]
+        out["review"] = review
+    return out
 
 
 def project(coord: Coordinator) -> dict:
@@ -781,18 +1152,20 @@ def _project_workspace(coord: Coordinator, workspace: str) -> dict | None:
 
     The coordinators hold the same state in their own types: a Python history
     entry names its sender `from_`, a route decision keeps its extra fields
-    apart, and an unset list is empty where TypeScript leaves it out. This
-    maps those differences away and keeps every other difference.
+    apart, and an unset list of tags or accepted tasks is empty where
+    TypeScript leaves it out. This maps those differences away, leaves out the
+    nulls both read as no value, and keeps every other difference.
     """
     ws = coord.workspaces.get(workspace)
     if ws is None:
         return None
     data = json.loads(json.dumps(asdict(ws), default=str))
-    out: dict = {k: data[k] for k in (
+    out: dict = _own({k: data[k] for k in (
         "id", "created", "state", "profiles", "mode", "mode_ceiling",
         "routing_policy_uri", "step_up_window_sec", "min_acr", "signature_policy",
-        "chain_head", "chain_enabled")}
-    out["members"] = sorted(data["members"].values(), key=lambda m: str(m.get("uri")))
+        "join_policy", "chain_head", "chain_enabled")})
+    out["members"] = sorted((_shape("members", m) for m in data["members"].values()),
+                            key=lambda m: str(m.get("uri")))
     tasks = []
     for t in data["tasks"].values():
         t["history"] = [{("from" if k == "from_" else k): v for k, v in h.items()}
@@ -802,39 +1175,37 @@ def _project_workspace(coord: Coordinator, workspace: str) -> dict | None:
             for d in review.get("decisions") or []:
                 if isinstance(d, dict) and not d.get("tags"):
                     d.pop("tags", None)
-        tasks.append(t)
+        tasks.append(_shape("tasks", t))
     out["tasks"] = sorted(tasks, key=lambda t: str(t.get("id")))
-    out["overrides"] = sorted(data["overrides"].values(), key=lambda o: str(o.get("id")))
-    out["whispers"] = sorted(data["whispers"].values(), key=lambda w: str(w.get("id")))
-    out["deliberations"] = sorted(data["deliberations"].values(), key=lambda d: str(d.get("id")))
+    for name in ("overrides", "whispers", "deliberations", "snapshots", "invitations"):
+        out[name] = sorted((_shape(name, x) for x in data[name].values()),
+                           key=lambda x: str(x.get("id", x.get("uri"))))
     handoffs = []
     for h in data["handoffs"].values():
         if not h.get("accepted_task_ids"):
             h.pop("accepted_task_ids", None)
-        handoffs.append(h)
+        handoffs.append(_shape("handoffs", h))
     out["handoffs"] = sorted(handoffs, key=lambda h: str(h.get("id")))
-    out["snapshots"] = sorted(data["snapshots"].values(), key=lambda s: str(s.get("id")))
     decisions = []
     for r in data["route_decisions"].values():
         extra = r.pop("extra", None) or {}
-        decisions.append({**r, **extra, "kind": "route_decision"})
+        decisions.append(_shape("route_decisions", {**r, **extra, "kind": "route_decision"}))
     out["route_decisions"] = sorted(decisions, key=lambda r: str(r.get("id")))
     out["idempotency_keys"] = data["idempotency_keys"]
     out["audit"] = [e.to_dict() for e in ws.audit]
-    return _drop_null(json.loads(json.dumps(out, default=str)))
+    return json.loads(json.dumps(out, default=str))
 
 
-def _replay_py(envelopes: list[dict], store: str) -> tuple[list[dict], list[str], bool]:
+def _replay_py(envelopes: list[dict], store: str, config: Config) -> tuple[list[dict], list[str], bool]:
     """The Python reference on a SQLite file: responses, store errors, and
     whether a restart, before the whispers lapse and after, holds the same."""
-    options = dict(deterministic_ids=True, deterministic_clock=True,
-                   enable_chain=True, default_profiles=PROFILES)
     errors: list[str] = []
 
     def open_coordinator() -> tuple[SqliteStore, Coordinator]:
         sq = SqliteStore(store)
         return sq, Coordinator(CoordinatorOptions(
-            **options, store=sq, on_store_error=lambda e, r: errors.append(str(e))))
+            **coordinator_options(config), store=sq,
+            on_store_error=lambda e, r: errors.append(str(e))))
 
     sq, coord = open_coordinator()
     responses = [coord.dispatch(json.loads(json.dumps(e))) for e in envelopes]
@@ -852,6 +1223,91 @@ def _replay_py(envelopes: list[dict], store: str) -> tuple[list[dict], list[str]
     return responses, errors, same
 
 
+class _RoughStore:
+    """A SQLite store that fails the reads and writes it is told to fail, and
+    runs a hook once before its next write: another writer's call, which
+    lands between this coordinator's keep-up and its write."""
+
+    def __init__(self, path: str):
+        self.inner = SqliteStore(path)
+        self.fail_write = self.fail_reload = self.fail_version = False
+        self.before_write = None
+
+    def load(self):
+        return self.inner.load()
+
+    def load_one(self, id: str):
+        if self.fail_reload:
+            raise OSError("the fuzzer failed this reload")
+        return self.inner.load_one(id)
+
+    def version(self, id: str):
+        if self.fail_version:
+            raise OSError("the fuzzer failed this read")
+        return self.inner.version(id)
+
+    def apply(self, change) -> None:
+        hook, self.before_write = self.before_write, None
+        if hook is not None:
+            hook()
+        if self.fail_write:
+            raise OSError("the fuzzer failed this write")
+        self.inner.apply(change)
+
+    def save(self, record) -> None:
+        self.inner.save(record)
+
+    def delete(self, id: str) -> None:
+        self.inner.delete(id)
+
+    def close(self) -> None:
+        self.inner.close()
+
+
+def _rough_schedule(seed: int, n: int) -> list[dict]:
+    """For each call: the coordinator of two that takes it, whether the store
+    fails its write, its reload or its read of the version, and whether the
+    other coordinator takes the next call between this one's keep-up and its
+    write. replay.ts follows the same schedule."""
+    rnd = random.Random(seed * 7919 + 1)
+    out = []
+    for i in range(n):
+        write = rnd.random() < 0.06
+        out.append({"writer": rnd.randrange(2), "write": write,
+                    "reload": (write and rnd.random() < 0.5) or rnd.random() < 0.02,
+                    "version": rnd.random() < 0.03,
+                    "race": not write and i + 1 < n and rnd.random() < 0.08})
+    return out
+
+
+def _rough_py(envelopes: list[dict], path: str, config: Config, schedule: list[dict]) -> list[dict]:
+    """Two Python coordinators on one file, taking the calls as the schedule
+    says while the store fails as it says. The answer to each call."""
+    stores = [_RoughStore(path), _RoughStore(path)]
+    coords = [Coordinator(CoordinatorOptions(**coordinator_options(config), store=s,
+                                             on_store_error=lambda e, r: None))
+              for s in stores]
+    responses: list = [None] * len(envelopes)
+    i = 0
+    while i < len(envelopes):
+        step, raced = schedule[i], []
+        store = stores[step["writer"]]
+        if step["race"]:
+            def other(j: int = i + 1, o: int = 1 - step["writer"]) -> None:
+                responses[j] = coords[o].dispatch(json.loads(json.dumps(envelopes[j])))
+                raced.append(j)
+            store.before_write = other
+        store.fail_write, store.fail_reload, store.fail_version = (
+            step["write"], step["reload"], step["version"])
+        responses[i] = coords[step["writer"]].dispatch(json.loads(json.dumps(envelopes[i])))
+        store.fail_write = store.fail_reload = store.fail_version = False
+        store.before_write = None
+        i += 2 if raced else 1
+    for s in stores:
+        s.close()
+    return responses
+
+
 def _entries(path: str) -> list:
     con = sqlite3.connect(path)
     try:
@@ -861,17 +1317,44 @@ def _entries(path: str) -> list:
         con.close()
 
 
+def _same_files(seed: int, py_path: str, ts_path: str, config: Config, what: str) -> tuple[bool, str]:
+    """The two files hold the same audit entries, and a Python coordinator
+    reads the same state from each."""
+    views = []
+    for path in (py_path, ts_path):
+        store = SqliteStore(path)
+        try:
+            views.append(project(Coordinator(CoordinatorOptions(
+                **coordinator_options(config), store=store))))
+        finally:
+            store.close()
+    if views[0] != views[1]:
+        return False, (f"seed {seed}: {what}: the Python coordinator reads the TypeScript store apart\n"
+                       f"{_state_difference(*views)}")
+    py_entries, ts_entries = _entries(py_path), _entries(ts_path)
+    if py_entries != ts_entries:
+        at = next((i for i, (a, b) in enumerate(zip(py_entries, ts_entries)) if a != b),
+                  min(len(py_entries), len(ts_entries)))
+        return False, (f"seed {seed}: {what}: the stores hold different audit entries from seq {at}\n"
+                       f"  python: {json.dumps(py_entries[at][1]) if at < len(py_entries) else '<none>'}\n"
+                       f"  ts:     {json.dumps(ts_entries[at][1]) if at < len(ts_entries) else '<none>'}")
+    return True, ""
+
+
 def check_stores(seed: int, rec: "Recorder") -> tuple[bool, str]:
-    """Both references on a SQLite file: nothing missed, the same entries."""
+    """Both references on a SQLite file: nothing missed, the same entries.
+    Then both again with two writers and a store that fails: the same
+    answers and the same entries."""
+    config = rec.config
     with tempfile.TemporaryDirectory() as tmp:
         py_path, ts_path = str(Path(tmp) / "py.db"), str(Path(tmp) / "ts.db")
-        responses, errors, same = _replay_py(rec.envelopes, py_path)
+        responses, errors, same = _replay_py(rec.envelopes, py_path, config)
         if responses != rec.responses:
             return False, f"seed {seed}: the Python store changed a response"
         if errors or not same:
             return False, (f"seed {seed}: the Python store "
                            f"{'failed: ' + errors[0] if errors else 'lost state across a restart'}")
-        ts = _replay_ts(rec.envelopes, ts_path, cross=py_path)
+        ts = _replay_ts(rec.envelopes, config, ts_path, cross=py_path)
         if ts["errors"] or not ts["restart_same"]:
             return False, (f"seed {seed}: the TypeScript store "
                            f"{'failed: ' + ts['errors'][0] if ts['errors'] else 'lost state across a restart'}")
@@ -879,23 +1362,33 @@ def check_stores(seed: int, rec: "Recorder") -> tuple[bool, str]:
         if ts["own"] != ts["cross"]:
             return False, (f"seed {seed}: the TypeScript coordinator reads the Python store apart\n"
                            f"{_state_difference(ts['own'], ts['cross'])}")
-        views = []
-        for path in (py_path, ts_path):
-            store = SqliteStore(path)
-            try:
-                views.append(project(Coordinator(CoordinatorOptions(store=store))))
-            finally:
-                store.close()
-        if views[0] != views[1]:
-            return False, (f"seed {seed}: the Python coordinator reads the TypeScript store apart\n"
-                           f"{_state_difference(*views)}")
-        py_entries, ts_entries = _entries(py_path), _entries(ts_path)
-        if py_entries != ts_entries:
-            at = next((i for i, (a, b) in enumerate(zip(py_entries, ts_entries)) if a != b),
-                      min(len(py_entries), len(ts_entries)))
-            return False, (f"seed {seed}: the stores hold different audit entries from seq {at}\n"
-                           f"  python: {json.dumps(py_entries[at][1]) if at < len(py_entries) else '<none>'}\n"
-                           f"  ts:     {json.dumps(ts_entries[at][1]) if at < len(ts_entries) else '<none>'}")
+        ok, msg = _same_files(seed, py_path, ts_path, config, "one writer")
+        if not ok:
+            return False, msg
+
+        schedule = _rough_schedule(seed, len(rec.envelopes))
+        rough_py, rough_ts = str(Path(tmp) / "rough-py.db"), str(Path(tmp) / "rough-ts.db")
+        py_answers = _rough_py(rec.envelopes, rough_py, config, schedule)
+        ts_answers = _replay_ts(rec.envelopes, config, rough_ts, rough=schedule)["responses"]
+        idx = _first_divergence(py_answers, ts_answers)
+        if idx is not None:
+            return False, (
+                f"seed {seed}: two writers and store faults: responses diverge at envelope {idx}\n"
+                f"  schedule: {json.dumps(schedule[idx])}\n"
+                f"  envelope: {json.dumps(rec.envelopes[idx])}\n"
+                f"  python:   {json.dumps(py_answers[idx])}\n"
+                f"  ts:       {json.dumps(ts_answers[idx])}")
+        faults = [i for i, r in enumerate(py_answers)
+                  if (r.get("error") or {}).get("code") == -32603
+                  and (r["error"].get("data") or {}).get("reason") != "store"]
+        if faults:
+            return False, (f"seed {seed}: two writers and store faults: envelope {faults[0]} was "
+                           f"answered with -32603 for no store failure\n"
+                           f"  envelope: {json.dumps(rec.envelopes[faults[0]])}\n"
+                           f"  answer:   {json.dumps(py_answers[faults[0]])}")
+        ok, msg = _same_files(seed, rough_py, rough_ts, config, "two writers and store faults")
+        if not ok:
+            return False, msg
     return True, ""
 
 
@@ -925,9 +1418,9 @@ def _first_divergence(py: list[dict], ts: list[dict]) -> int | None:
     return None
 
 
-def check_seed(seed: int, steps: int,
+def check_seed(seed: int, steps: int, config: Config,
                tally: tuple[Counter, Counter] | None = None) -> tuple[bool, str]:
-    rec = Recorder(seed, steps)
+    rec = Recorder(seed, steps, config)
     if tally is not None:
         tally[0].update(rec.sent)
         tally[1].update(rec.ok)
@@ -947,7 +1440,7 @@ def check_seed(seed: int, steps: int,
             f"  envelope: {json.dumps(rec.envelopes[i])}\n"
             "  -32603 is a fault in the coordinator: every refusal of a call has "
             "its own code.")
-    ts = _replay_ts(rec.envelopes)
+    ts = _replay_ts(rec.envelopes, config)
     ts_responses = ts["responses"]
     idx = _first_divergence(rec.responses, ts_responses)
     if idx is not None:
@@ -1002,25 +1495,34 @@ def _stats_table(sent: Counter, ok: Counter) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--seeds", type=int, default=50, help="check seeds 0..N-1")
+    p.add_argument("--first", type=int, default=0, help="the first seed of a sweep")
     p.add_argument("--seed", type=int, help="check a single seed")
     p.add_argument("--steps", type=int, default=40, help="random steps per run")
+    p.add_argument("--config", choices=[c.name for c in CONFIGS],
+                   help="run every seed in this configuration; by default the "
+                        "seeds take the configurations by turns")
     p.add_argument("--stats", action="store_true",
                    help="print sent and succeeded per method, so coverage is "
                         "visible in the log rather than assumed")
     args = p.parse_args(argv)
 
-    seeds = [args.seed] if args.seed is not None else range(args.seeds)
+    seeds = [args.seed] if args.seed is not None else range(args.first, args.first + args.seeds)
     tally: tuple[Counter, Counter] = (Counter(), Counter())
     failures = 0
+    ran: Counter[str] = Counter()
     for seed in seeds:
-        ok, msg = check_seed(seed, args.steps, tally)
+        config = next(c for c in CONFIGS if c.name == args.config) if args.config \
+            else CONFIGS[seed % len(CONFIGS)]
+        ran[config.name] += 1
+        ok, msg = check_seed(seed, args.steps, config, tally)
         if not ok:
             failures += 1
-            print(msg)
-    total = 1 if args.seed is not None else args.seeds
+            print(f"[{config.name}] {msg}")
+    total = len(seeds)
     if args.stats:
         print(_stats_table(*tally))
-    print(f"\n{total - failures}/{total} seeds agreed")
+    print(f"\n{total - failures}/{total} seeds agreed "
+          f"({', '.join(f'{name} {n}' for name, n in sorted(ran.items()))})")
     return 1 if failures else 0
 
 
