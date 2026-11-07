@@ -827,7 +827,7 @@ async function init() {
   // Reset
   $("reset-btn").addEventListener("click", async () => {
     if (!confirm("This wipes the workspace and re-drafts every ticket from scratch. Continue?")) return;
-    await fetch("/api/reset", { method: "POST" });
+    await fetch("/api/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     state.selectedTaskId = null;
     state.selectedDraft  = null;
     state.wireEntries = [];
@@ -1063,7 +1063,7 @@ async function walkthroughStart() {
       "but the wire will already be populated.)"
     );
     if (ok) {
-      await fetch("/api/reset", { method: "POST" });
+      await fetch("/api/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       state.wireEntries = [];
       state.lastChainLen = 0;
       $("wire-body").innerHTML = "";

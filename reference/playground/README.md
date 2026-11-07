@@ -174,6 +174,11 @@ Environment variables:
   image sets `0.0.0.0` because the container's published port is mapped to
   `127.0.0.1` on the host by `docker-compose.yml`. Only expose it on a trusted
   network.
+- `CHAP_ALLOWED_HOSTS`: further `host:port` names, comma-separated, for a
+  proxy in front. The playground answers under `127.0.0.1`, `localhost` and
+  `[::1]` on its port and under `CHAP_HOST`, and refuses a request under any
+  other name (421), one from a page on another origin (403) and a POST that
+  is not `application/json` (415).
 - The model variables listed under Requirements. `CHAP_NO_LLM=1` selects
   the scripted agent.
 

@@ -20,8 +20,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+from email.message import Message
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Optional
+from urllib.parse import urlsplit
 
 from chap_coordinator import Coordinator, CoordinatorOptions
 
@@ -51,14 +55,40 @@ def _parse_error(message: str) -> dict:
             "error": {"code": -32700, "message": message}}
 
 
-def make_handler(coord: Coordinator):
+def http_refusal(headers: Message, host: str, port: int) -> Optional[tuple[int, str]]:
+    """Why a POST may not reach the coordinator, as a status and a message,
+    or None. ``host`` and ``port`` are the address the server listens on.
+
+    A page whose own name resolves to this address arrives with that name as
+    its Host, so the Host must be one of this server's names (421): its
+    loopback names on its port, the address it listens on, and any in
+    CHAP_ALLOWED_HOSTS, for a proxy in front. A browser sends a cross-site
+    POST as text/plain without asking first, so a request with an Origin
+    comes from one of those names (403), and two Origin headers name no one
+    origin; and the POST carries JSON (415).
+    """
+    names = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}", f"{host}:{port}".lower()}
+    names |= {name.strip().lower() for name in os.environ.get("CHAP_ALLOWED_HOSTS", "").split(",") if name.strip()}
+    if (headers.get("Host") or "").lower() not in names:
+        return 421, "unknown host; set CHAP_ALLOWED_HOSTS to serve under another name"
+    origins = headers.get_all("Origin") or []
+    if len(origins) > 1 or (origins and urlsplit(origins[0]).netloc.lower() not in names):
+        return 403, "cross-origin requests are refused"
+    if not (headers.get("Content-Type") or "").lower().startswith("application/json"):
+        return 415, "POST /chap takes application/json"
+    return None
+
+
+def make_handler(coord: Coordinator, host: str = "127.0.0.1"):
     # The server runs under ThreadingHTTPServer; the Coordinator's dispatch
     # holds a lock, so concurrent requests are handled one at a time. No
-    # Access-Control-Allow-Origin header is sent: a page on another origin
-    # cannot read the answers, and the browser asks first before it sends a
-    # JSON call, so such a page cannot act on the coordinator either.
+    # Access-Control-Allow-Origin header is sent.
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
+            refused = http_refusal(self.headers, host, self.server.server_address[1])
+            if refused:
+                self._write(refused[0], {"error": refused[1]})
+                return
             if self.path not in ("/chap", "/"):
                 self.send_response(404)
                 self.send_header("Content-Type", "application/json")
@@ -126,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         default_profiles=profiles,
         require_signatures=args.require_signatures,
     ))
-    handler = make_handler(coord)
+    handler = make_handler(coord, args.host)
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(f"CHAP reference (Python) on http://{args.host}:{args.port}/chap")
     print(f"Profiles: {', '.join(profiles)}")

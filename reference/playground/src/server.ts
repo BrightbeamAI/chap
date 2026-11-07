@@ -41,6 +41,7 @@ import { TICKETS } from "./tickets.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT          = parseInt(process.env.PORT ?? "7777", 10);
+const HOST          = process.env.CHAP_HOST ?? "127.0.0.1";
 const WORKSPACE_ID  = "wsp_techcorp_support";
 const MAYA_URI      = "human:maya@local";
 const SAM_URI       = "human:sam@local";
@@ -204,16 +205,47 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-// No Access-Control-Allow-Origin: the playground's pages come from this
-// server, and a page on another origin can neither read its answers nor
-// send it a JSON call without the browser asking first.
+// No Access-Control-Allow-Origin header is sent.
 function jsonReply(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(body));
 }
 
+/**
+ * Why a request may not reach the playground, or undefined. A page whose
+ * own name resolves to this address arrives with that name as its Host, so
+ * the Host must be one of this server's names (421): its loopback names on
+ * its port, the address it listens on, and any in CHAP_ALLOWED_HOSTS, for
+ * a proxy in front. The playground's pages come from this server, and a
+ * browser sends a cross-site text/plain or form POST without asking first,
+ * so a request with an Origin comes from one of those names (403) and a
+ * POST carries JSON (415).
+ */
+function httpRefusal(req: IncomingMessage): { status: number; message: string } | undefined {
+  const port = req.socket.localPort;
+  const names = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`, `${HOST}:${port}`.toLowerCase()]);
+  for (const name of (process.env.CHAP_ALLOWED_HOSTS ?? "").split(",")) {
+    if (name.trim()) names.add(name.trim().toLowerCase());
+  }
+  if (!names.has((req.headers.host ?? "").toLowerCase())) {
+    return { status: 421, message: "unknown host; set CHAP_ALLOWED_HOSTS to serve under another name" };
+  }
+  const origin = req.headers.origin;
+  if (origin !== undefined) {
+    let from: string | undefined;
+    try { from = new URL(origin).host.toLowerCase(); } catch { from = undefined; }
+    if (from === undefined || !names.has(from)) return { status: 403, message: "cross-origin requests are refused" };
+  }
+  if (req.method === "POST" && !(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+    return { status: 415, message: "a POST takes application/json" };
+  }
+  return undefined;
+}
+
 const server = createServer(async (req, res) => {
+  const refused = httpRefusal(req);
+  if (refused) return jsonReply(res, refused.status, { error: refused.message });
   let url: URL;
   try {
     url = new URL(req.url ?? "/", `http://${req.headers.host}`);
@@ -316,7 +348,6 @@ const server = createServer(async (req, res) => {
   jsonReply(res, 405, { error: "method not allowed" });
 });
 
-const HOST = process.env.CHAP_HOST ?? "127.0.0.1";
 if (!["127.0.0.1", "::1", "localhost"].includes(HOST)) {
   console.warn(`WARNING: binding to ${HOST} exposes an unauthenticated playground to the network. Use only on a trusted network.`);
 }

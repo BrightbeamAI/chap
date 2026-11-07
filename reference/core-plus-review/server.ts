@@ -1120,16 +1120,47 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-// No Access-Control-Allow-Origin: a page on another origin cannot read this
-// coordinator's answers, and the browser asks first before it sends a JSON
-// call, so such a page cannot act on it either.
+// No Access-Control-Allow-Origin header is sent.
 function reply(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(body));
 }
 
+/**
+ * Why a request may not reach the coordinator, or undefined. A page whose
+ * own name resolves to this address arrives with that name as its Host, so
+ * the Host must be one of this server's names (421): its loopback names on
+ * its port, the address it listens on, and any in CHAP_ALLOWED_HOSTS, for
+ * a proxy in front. A browser sends a cross-site POST as text/plain without
+ * asking first, so a request with an Origin comes from one of those names
+ * (403) and a POST carries JSON (415).
+ */
+export function httpRefusal(req: IncomingMessage): { status: number; message: string } | undefined {
+  const port = req.socket.localPort;
+  const names = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`,
+                         `${process.env.CHAP_HOST ?? "127.0.0.1"}:${port}`.toLowerCase()]);
+  for (const name of (process.env.CHAP_ALLOWED_HOSTS ?? "").split(",")) {
+    if (name.trim()) names.add(name.trim().toLowerCase());
+  }
+  if (!names.has((req.headers.host ?? "").toLowerCase())) {
+    return { status: 421, message: "unknown host; set CHAP_ALLOWED_HOSTS to serve under another name" };
+  }
+  const origin = req.headers.origin;
+  if (origin !== undefined) {
+    let from: string | undefined;
+    try { from = new URL(origin).host.toLowerCase(); } catch { from = undefined; }
+    if (from === undefined || !names.has(from)) return { status: 403, message: "cross-origin requests are refused" };
+  }
+  if (req.method === "POST" && !(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+    return { status: 415, message: "POST /chap takes application/json" };
+  }
+  return undefined;
+}
+
 const server = createServer(async (req, res) => {
+  const refused = httpRefusal(req);
+  if (refused) return reply(res, refused.status, { error: refused.message });
   if (req.method !== "POST" || req.url !== "/chap") {
     return reply(res, 404, { error: "POST /chap" });
   }

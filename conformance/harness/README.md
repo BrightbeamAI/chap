@@ -9,7 +9,9 @@ success.
 **Core (mandatory)** covers:
 
 - Wire format: malformed JSON, non-JSON-RPC bodies, JSON that is no
-  request (`null`, a number, a list), unknown methods.
+  request (`null`, a number, a list), unknown methods, and a call that
+  is not `application/json`, comes from another origin or names another
+  host, each refused before it is read.
 - The seven Core methods: `workspace.describe`, `participant.join`,
   `participant.leave`, `task.create`, `task.update`,
   `task.complete`, `audit.read`.

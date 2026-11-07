@@ -18,6 +18,8 @@
  */
 
 import { createHash } from "node:crypto";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 
 interface Args {
   url:        string;
@@ -80,6 +82,24 @@ class HapClient {
     let body: any;
     try { body = await res.json(); } catch { body = await res.text(); }
     return { status, body };
+  }
+
+  /**
+   * The status of a POST carrying a call under the given headers. Node's
+   * fetch sends its own Host, so the request goes through node:http.
+   */
+  async status(method: string, params: Record<string, unknown>, headers: Record<string, string>): Promise<number> {
+    const body = JSON.stringify({ jsonrpc: "2.0", id: `h-${Date.now()}-${Math.random()}`, method, params });
+    const url = new URL(this.url);
+    const send = url.protocol === "https:" ? httpsRequest : httpRequest;
+    return new Promise((resolve, reject) => {
+      const req = send(url, { method: "POST", headers: { "Content-Length": String(Buffer.byteLength(body)), ...headers } }, (res) => {
+        res.resume();
+        res.on("end", () => resolve(res.statusCode ?? 0));
+      });
+      req.on("error", reject);
+      req.end(body);
+    });
   }
 }
 
@@ -165,6 +185,39 @@ async function runCoreTests(client: HapClient, ws: string): Promise<void> {
     }
     const { raw } = await client.call("workspace.describe", { workspace: ws });
     assertEq(raw?.jsonrpc, "2.0", "the server should still answer");
+  });
+
+  // A page in a browser can reach a server on the same machine or network
+  // (§14.3): a call that is not JSON, comes from another origin, or names
+  // another host is refused before it is read.
+  const joined = async (uri: string): Promise<boolean> => {
+    const { result: d } = await client.call("workspace.describe", { workspace: ws });
+    return (d?.members ?? []).some((m: any) => m.uri === uri);
+  };
+  const join = (uri: string) => ({ workspace: ws, from: uri, type: "agent" });
+  const own = new URL(client.url);
+
+  await test("Wire format", "wf-05", "A POST that is not application/json is refused with 415 and takes no effect", async () => {
+    for (const type of ["text/plain", "application/x-www-form-urlencoded"]) {
+      assertEq(await client.status("participant.join", join("agent:wf-05"), { "Content-Type": type }), 415, `a ${type} call`);
+    }
+    assert(!(await joined("agent:wf-05")), "a refused call must not join anyone");
+  });
+
+  await test("Wire format", "wf-06", "A call from another origin is refused with 403 and takes no effect; one from the server's own is answered", async () => {
+    for (const origin of ["https://elsewhere.example", "null"]) {
+      assertEq(await client.status("participant.join", join("agent:wf-06"), { "Content-Type": "application/json", Origin: origin }),
+        403, `a call from ${origin}`);
+    }
+    assert(!(await joined("agent:wf-06")), "a refused call must not join anyone");
+    assertEq(await client.status("workspace.describe", { workspace: ws }, { "Content-Type": "application/json", Origin: own.origin }),
+      200, "a call from the server's own origin");
+  });
+
+  await test("Wire format", "wf-07", "A call under another host name is refused with 421 and takes no effect", async () => {
+    assertEq(await client.status("participant.join", join("agent:wf-07"), { "Content-Type": "application/json", Host: "elsewhere.example" }),
+      421, "a call naming elsewhere.example");
+    assert(!(await joined("agent:wf-07")), "a refused call must not join anyone");
   });
 
   // -------- Core methods --------

@@ -136,7 +136,7 @@ default applied. Neither records whether the participants asked were
 notified, saw the question or chose not to answer. Delivery is left to
 the deployment, and neither reference implementation provides it
 ([SPECIFICATION.md §15.1](../SPECIFICATION.md#151-mandatory-protections),
-item 10). A person who was never told and a person who saw the question
+item 11). A person who was never told and a person who saw the question
 and let it pass therefore leave the same record. A deployment that needs
 to tell them apart has to record delivery itself.
 

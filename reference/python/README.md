@@ -66,3 +66,10 @@ python server.py --host 0.0.0.0          # listen on all interfaces
 python server.py --core-only             # advertise only core + review
 python server.py --require-signatures    # enforce security-signed/1.0
 ```
+
+The server answers under its own names only: `127.0.0.1`, `localhost` and
+`[::1]` on its port, and the `--host` it listens on. A proxy in front that
+forwards another name adds it to `CHAP_ALLOWED_HOSTS`, a comma-separated
+list of `host:port` names. A request under any other name is refused with
+421, one from a page on another origin with 403, and a POST that is not
+`application/json` with 415 (SPECIFICATION.md §14.3).

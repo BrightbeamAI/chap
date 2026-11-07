@@ -2030,9 +2030,29 @@ Two endpoints:
   field is a single envelope. Events use the `id:` field for the
   envelope's `id`.
 
+A page in a browser can reach a server on the same machine or network,
+so before it reads a call the server MUST refuse:
+
+- a request whose `Host` header is none of the server's own names, with
+  `421`. Its names are its loopback names on the port it listens on, the
+  address it listens on, and any the deployment gives it for a proxy in
+  front. A page whose own name resolves to the server's address arrives
+  with that name, and is refused.
+- a request whose `Origin` header names a host other than those, or
+  names no host, with `403`. A client that is no browser sends no
+  `Origin`.
+- a `POST /chap` whose `Content-Type` is not `application/json`, with
+  `415`. A browser sends a cross-site `text/plain` or form POST without
+  asking the server first.
+
+The answer to a refused request is no envelope, and the call is not
+recorded. The reference servers name further hosts in
+`CHAP_ALLOWED_HOSTS`, a comma-separated list of `host:port` names.
+
 The playground at [`reference/playground/`](./reference/playground/)
 serves JSON-RPC on `POST /rpc` and a demonstration stream on
-`GET /events`; it does not implement this binding.
+`GET /events`; it does not implement this binding, and makes the same
+three checks.
 
 ### 14.4 HTTP polling binding
 
@@ -2122,7 +2142,10 @@ privileged method with `-32402`.
 delivery layer of its own to do it in:
 
 9. Use TLS 1.3 or later for every production transport.
-10. Filter delivery of shadow-mode output to a `shadow_observers` list the
+10. Refuse, on the HTTP binding, a call under a host name or from an
+    origin that is not the server's own, and a `POST /chap` that is not
+    `application/json`, before the call is read (§14.3).
+11. Filter delivery of shadow-mode output to a `shadow_observers` list the
     deployment keeps, since neither reference stores one. A Coordinator
     answers the caller who asked; which participants are notified of what
     is the delivery layer's decision, and no reference implements a

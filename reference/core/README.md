@@ -34,6 +34,13 @@ The server binds `127.0.0.1` by default. Set `CHAP_HOST` (and `PORT`) to bind
 elsewhere; a non-loopback host has no authentication in front of it, so it
 warns on startup. Only expose it on a trusted network.
 
+It answers under its own names only: `127.0.0.1`, `localhost` and `[::1]` on
+its port, and `CHAP_HOST`. A proxy in front that forwards another name adds
+it to `CHAP_ALLOWED_HOSTS`, a comma-separated list of `host:port` names. A
+request under any other name is refused with 421, one from a page on another
+origin with 403, and a POST that is not `application/json` with 415
+(SPECIFICATION.md §14.3).
+
 You should see output like:
 
 ```

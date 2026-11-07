@@ -50,6 +50,7 @@ CHAP conformance.
 - [ ] Accepts CHAP envelopes over HTTP POST to a documented path (`/chap` recommended).
 - [ ] Uses TLS in production deployments.
 - [ ] Returns the corresponding response envelope in the HTTP response body.
+- [ ] Refuses, before it reads the call, a POST that is not `application/json` (`415`), a request whose `Origin` names a host the server does not answer to (`403`), and one whose `Host` is none of its names (`421`) (SPECIFICATION.md §14.3). Verified by harness vectors `wf-05`, `wf-06` and `wf-07`.
 
 ### C3 · The 7 methods
 
