@@ -36,7 +36,7 @@
 
 import { spawnSync } from "node:child_process";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { TEMPLATES_DIR, VERSION, generate, listTemplates } from "../index.mjs";
 import { byVersion, contentHash, loadReleased } from "./released.mjs";
@@ -49,8 +49,22 @@ const BY_ENTRY = new Set(["package.json", "package-lock.json", "requirements.txt
 const OWN_ENTRIES = new Set(["template", "workspace", "profiles", "humans", "agent"]);
 /** chap.config.json entries the template's own code needs, added where the project's configuration lacks them. */
 const NEEDED_ENTRIES = new Set(["operator"]);
+/**
+ * chap.config.json entries that say where and for whom this deployment
+ * runs: never compared with the template's, and never taken from it, so an
+ * upgrade keeps the port, the store, the identity provider and the rest.
+ */
+const DEPLOYMENT_ENTRIES = new Set(["port", "host", "store", "oidc", "allowed_hosts", "notify", "desk_url", "analytics", "enrolment"]);
 /** Settings a store's workspace keeps from its creation: changing one means a new store. */
 const STORE_SETTINGS = new Set(["require_signatures", "signature_policy", "chain"]);
+/** The store chap.config.json names, as the server opens it: a leading ~ is the home directory, a relative path is from the project. */
+const storePath = (root, store) => {
+  const named = typeof store === "string" && store ? store : "./data/chap.db";
+  if (named === ":memory:") return null;
+  return resolve(root, /^~(?=$|[\\/])/.test(named) ? homedir() + named.slice(1) : named);
+};
+/** Whether a path names a file, without reading it. */
+const exists = (path) => stat(path).then(() => true, () => false);
 /** A CHAP package on npm. */
 const CHAP_NPM = /^@brightbeamai\/chap-/;
 /** A requirement line's distribution name, by PEP 503, with any extras and version left out. */
@@ -171,8 +185,14 @@ async function plan({ root, scratch, config, configText, pkg, name, from, recogn
   const stampedConfig = stamped(configText, stamp);
   const ourStamped = JSON.parse(stampedConfig);
   const settings = [];
+  const deployment = [];
   for (const [key, value] of Object.entries(theirConfig)) {
     if (OWN_ENTRIES.has(key) || NEEDED_ENTRIES.has(key) || JSON.stringify(ourStamped[key]) === JSON.stringify(value)) continue;
+    if (DEPLOYMENT_ENTRIES.has(key)) {
+      const same = key === "store" && storePath(root, ourStamped.store) === storePath(root, value);
+      if (value != null && !same) deployment.push({ key, yours: ourStamped[key], template: value });
+      continue;
+    }
     settings.push({ key, yours: ourStamped[key], template: value });
   }
   const added = [...NEEDED_ENTRIES].filter((key) => theirConfig[key] !== undefined && ourStamped[key] === undefined);
@@ -187,9 +207,9 @@ async function plan({ root, scratch, config, configText, pkg, name, from, recogn
   // A store whose workspace was created under the settings adopted keeps
   // them, and holds members joined under them: it is moved aside.
   let storeMove = null;
-  if (adopted.some((s) => STORE_SETTINGS.has(s.key)) && typeof config.store === "string" && config.store && config.store !== ":memory:") {
-    const from = resolve(root, config.store);
-    if (await readOr(from)) storeMove = { from, to: `${from}.before-${VERSION}` };
+  const store = storePath(root, config.store);
+  if (adopted.some((s) => STORE_SETTINGS.has(s.key)) && store && await exists(store)) {
+    storeMove = { from: store, to: `${store}.before-${VERSION}` };
   }
   const files = { add: [], replace: [], remove: [], kept: [], keptByRule: [], differs: [] };
   for (const rel of written.filter((w) => !BY_ENTRY.has(w))) {
@@ -282,7 +302,7 @@ async function plan({ root, scratch, config, configText, pkg, name, from, recogn
     && !(await readFile(join(root, ".gitignore"), "utf8")).split("\n").some((l) => /^\/?keys\/?\**$/.test(l.trim()));
 
   return {
-    root, fresh, scratch, name, from, recognised, stamp, files, packages, scripts, settings, added, adopted, storeMove, ignoreKeys, language: manifest.language,
+    root, fresh, scratch, name, from, recognised, stamp, files, packages, scripts, settings, deployment, added, adopted, storeMove, ignoreKeys, language: manifest.language,
     devRequirements: written.includes("requirements-dev.txt"),
     nextPkg: nextPkg && JSON.stringify(nextPkg) !== JSON.stringify(pkg) ? nextPkg : null,
     nextRequirements,
@@ -318,7 +338,7 @@ export async function applyUpgrade(plan) {
   if (plan.nextConfig) await writeFile(join(root, "chap.config.json"), plan.nextConfig);
   if (plan.storeMove) {
     for (const suffix of ["", "-wal", "-shm"]) {
-      if (await readOr(plan.storeMove.from + suffix)) await rename(plan.storeMove.from + suffix, plan.storeMove.to + suffix);
+      if (await exists(plan.storeMove.from + suffix)) await rename(plan.storeMove.from + suffix, plan.storeMove.to + suffix);
     }
   }
   if (plan.ignoreKeys) {
@@ -357,9 +377,13 @@ export function describe(plan, { dryRun = false } = {}) {
   if (plan.adopted.length) {
     lines.push("", `chap.config.json ${would("takes", "to take")} the template's settings:`,
       ...plan.adopted.map((s) => `  ${s.key}: ${JSON.stringify(s.template)} (was ${s.yours === undefined ? "not set" : JSON.stringify(s.yours)})`));
-    if (plan.storeMove) lines.push(`The store ${would("was moved", "to be moved")} aside to ${plan.storeMove.to}, since its workspace keeps the settings it was created with; the server starts a new store, and chap-analytics still reads the old one.`);
+    if (plan.storeMove) lines.push(`The store ${would("was moved", "to be moved")} aside to ${plan.storeMove.to}, since its workspace keeps the settings it was created with. The server starts a new store where the old one was, and chap-analytics reads the new one; the old one keeps its log, for chap-analytics or audit.read to read by its path. Where CHAP_DB_PATH names the store, move it aside yourself.`);
   }
   if (plan.ignoreKeys) lines.push("", `.gitignore: keys/ ${would("added", "to be added")}, so the agent's private key stays out of the repository.`);
+  if (plan.deployment.length) {
+    lines.push("", "chap.config.json keeps where and for whom the project runs, which --adopt-settings never changes. The template's differ in:",
+      ...plan.deployment.map((s) => `  ${s.key}: ${JSON.stringify(s.template)} (yours: ${s.yours === undefined ? "not set" : JSON.stringify(s.yours)})`));
+  }
   if (plan.settings.length && !plan.adopted.length) {
     lines.push("", "chap.config.json keeps your settings. The template's differ in:",
       ...plan.settings.map((s) => `  ${s.key}: ${JSON.stringify(s.template)} (yours: ${s.yours === undefined ? "not set" : JSON.stringify(s.yours)})`),
@@ -376,6 +400,7 @@ export function describe(plan, { dryRun = false } = {}) {
       : plan.devRequirements ? "Next: python -m pip install -r requirements-dev.txt, which installs requirements.txt and pytest, then python -m pytest tests -q."
         : "Next: python -m pip install -r requirements.txt, then run the project's tests.";
     lines.push("", next);
+    if (plan.settings.length && !plan.adopted.length) lines.push("The tests that check the template's settings fail while chap.config.json keeps yours, as above.");
   }
   return lines.join("\n");
 }

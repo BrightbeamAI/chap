@@ -38,8 +38,12 @@ Open the desk at the address the demo prints, <http://localhost:8791/> with
 the enrolment code after `#enrol=`. The desk joins you as `__HUMAN_URI__`
 with a key it generates in the browser, and the agent's first change
 arrives as a diff. Your first join needs the code, and the desk asks for it
-where the address lacks it, so the agent cannot join under your name
-before you do:
+where the address lacks it. Where a command of the agent's started the
+gate, the code is in `data/enrolment-code`: the gate's commands print none,
+so it never lands in the agent's output. A coding agent that runs as your
+user can still read `data/` or change `chap.config.json`, so against it the
+boundary is the trust policy below, which pins your key, or an agent run as
+another user:
 
 - **Approve** it, and the agent commits it on `agent/demo` with its trailers
   and the note.

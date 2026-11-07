@@ -218,4 +218,21 @@ test("upgrade keeps a project's settings, and --adopt-settings takes the templat
   assert.deepEqual([config.require_signatures, config.chain], ["humans", true]);
   await assert.rejects(readFile(store), "the server starts a new store");
   assert.equal(await readFile(`${store}.before-${VERSION}`, "utf8"), "a store written under signatures off");
+  assert.match(adopted.text, /The server starts a new store where the old one was, and chap-analytics reads the new one/);
+});
+
+test("--adopt-settings never takes where and for whom a project runs, and finds a store chap.config.json leaves to the default", async () => {
+  const dir = await releasedProject("0.3.4", "support-desk", join(await scratch("deploy"), "my-desk"));
+  const path = join(dir, "chap.config.json");
+  const mine = JSON.parse(await readFile(path, "utf8"));
+  delete mine.store;
+  Object.assign(mine, { port: 9443, oidc: { issuer: "https://idp.example.org", client_id: "desk" }, allowed_hosts: ["chap.example.org"] });
+  await writeFile(path, JSON.stringify(mine, null, 2));
+  await mkdir(join(dir, "data"), { recursive: true });
+  await writeFile(join(dir, "data", "chap.db"), "the default store");
+  const { text } = await upgrade([dir, "--adopt-settings"]);
+  const config = JSON.parse(await readFile(path, "utf8"));
+  assert.deepEqual([config.port, config.oidc, config.allowed_hosts, config.store], [9443, mine.oidc, ["chap.example.org"], undefined]);
+  assert.match(text, /keeps where and for whom the project runs, which --adopt-settings never changes\. The template's differ in:\n {2}port: 8788 \(yours: 9443\)\n/);
+  assert.equal(await readFile(join(dir, "data", `chap.db.before-${VERSION}`), "utf8"), "the default store", "the store the server opens by default is moved aside");
 });

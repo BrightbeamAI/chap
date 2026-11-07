@@ -11,7 +11,7 @@
   ],
   "agent": { "uri": "__AGENT_URI__", "display_name": "The drafter", "role": "drafter" },
   "mcp": false,
-  "require_signatures": "humans",
+  "require_signatures": true,
   "desk_signing": "auto",
   "chain": true,
   "oidc": null

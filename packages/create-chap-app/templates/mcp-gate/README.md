@@ -20,8 +20,10 @@ npm start                       # the desk, POST /chap and /mcp on port 8792
 Open the desk at the address on the `enrol` line `npm start` prints,
 <http://localhost:8792/> with the enrolment code after `#enrol=`. Your first
 join needs the code, and the desk asks for it where the address lacks it,
-so the assistant cannot join under your name before you do. Then connect
-your MCP client to `http://127.0.0.1:8792/mcp`:
+so a program that cannot read the server's console or `data/` cannot join
+under your name before you do; an assistant connected through `/mcp` has
+no tool to join with at all. Then connect your MCP client to
+`http://127.0.0.1:8792/mcp`:
 
 - **Claude Code:** `claude mcp add --transport http chap http://127.0.0.1:8792/mcp`
 - **Cursor:** add to `.cursor/mcp.json`:

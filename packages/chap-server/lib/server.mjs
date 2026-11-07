@@ -31,6 +31,7 @@ import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Coordinator, MemoryStore } from "@brightbeamai/chap-coordinator";
 import { AGENT_MCP_TOOLS, chapMcpHttpHandler } from "@brightbeamai/chap-coordinator-mcp";
+import { deepEqual } from "../desk/chap-client.mjs";
 import { keyPathFor, publicJwkOf } from "./keys.mjs";
 import { makeNotifier, notifySettings } from "./notify.mjs";
 
@@ -83,7 +84,20 @@ export async function loadConfig(path = process.env.CHAP_CONFIG ?? "chap.config.
   config.notify = notifySettings(config.notify);
   config.desk_url = process.env.CHAP_DESK_URL || config.desk_url || null;
   config.oidc = oidcSettings(config.oidc);
+  // People who sign in at a provider reach the server from other machines,
+  // and so can anyone else. Every call is signed there, the agent's among
+  // them, or whoever reaches /chap or /mcp could act as the agent, or read
+  // the workspace as it.
+  if (config.oidc && config.signature_policy !== "all") {
+    throw new Error(`chap.config.json signs people in at ${config.oidc.issuer} with "require_signatures" ${config.signature_policy === "humans" ? '"humans", under which the agent calls unsigned' : "off"}: set "require_signatures": true, so every call, the agent's among them, is signed`);
+  }
   config.allowed_hosts = [...(config.allowed_hosts ?? []), ...envList("CHAP_ALLOWED_HOSTS")];
+  // A code a caller could guess is refused: a refused join is not recorded,
+  // and nothing limits how many a caller sends.
+  const setCode = process.env.CHAP_ENROLMENT_CODE?.trim();
+  if (setCode && codeLetters(setCode).length < 8) {
+    throw new Error("CHAP_ENROLMENT_CODE needs 8 letters or digits at least; unset it and the server makes a code of 10");
+  }
   return config;
 }
 
@@ -413,6 +427,10 @@ function decisionLog(ws) {
     if (call.method === "task.complete" || call.method === "review.request") {
       // The latest submission opens the current review round. A reviewer's
       // decision names it, so an approval cannot be counted in another round.
+      // A review.request with the artefact under review adds reviewers to the
+      // open round, and opens none.
+      const before = submissions.get(p.task_id)?.envelope?.params;
+      if (call.method === "review.request" && before && deepEqual(p.artefact, before.artefact ?? before.output)) continue;
       submissions.set(p.task_id, { seq: entry.seq, arrived: entry.arrived, envelope: call });
       continue;
     }
@@ -903,7 +921,11 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
     || path.startsWith("/analytics/") || path === "/chap" || API_PATHS.has(path) || path.startsWith("/api/tasks/") || (path === "/mcp" && !!mcp);
 
   return async (req, res, next) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
+    // A request target that is no URL, "//" among them, is answered here: a
+    // throw before the try below would reject the handler, and an unhandled
+    // rejection stops the process.
+    let url;
+    try { url = new URL(req.url ?? "/", "http://localhost"); } catch { return reply(res, 400, { error: "the request target is not a URL path" }); }
     let path = url.pathname;
     if (prefix) {
       if (path === prefix) return redirect(res, `${prefix}/${url.search}`);
@@ -1099,12 +1121,7 @@ export async function createChapServer(options = {}) {
       log(`  signing  ${SIGNING[config.signature_policy]}`);
       if (config.require_signatures) log(`           ${DESK_SIGNING[config.desk_signing ?? "browser-key"]}`);
       if (config.notify) log(`  notify   ${[config.notify.console ? "console" : null, config.notify.webhook ? `webhook ${new URL(config.notify.webhook.url).origin}` : null].filter(Boolean).join(", ") || "nothing"}, linking ${config.desk_url}`);
-      const code = enrolmentCode(config);
-      const waiting = code ? unenrolled(coord, config) : [];
-      if (waiting.length) {
-        log(`  enrol    ${code}: the code ${waiting.join(", ")} ${waiting.length === 1 ? "joins" : "join"} with the first time, or open ${base}/#enrol=${code}`);
-        await keepCode(config, code);
-      }
+      await announceEnrolment(config, coord, log, base);
       return { base };
     },
     close: () => new Promise((resolve) => server.close(resolve)),
@@ -1112,8 +1129,27 @@ export async function createChapServer(options = {}) {
 }
 
 /**
+ * Print the enrolment code, with the people still to join with it, and keep
+ * it beside the store. A gate an agent's command started prints where the
+ * code is kept, and the code stays out of the log the agent reads.
+ */
+async function announceEnrolment(config, coord, log, base = null) {
+  const code = enrolmentCode(config);
+  const waiting = code ? unenrolled(coord, config) : [];
+  if (!waiting.length) return;
+  const people = `${waiting.join(", ")} ${waiting.length === 1 ? "joins" : "join"}`;
+  const kept = !!config.store && config.store !== ":memory:";
+  if (kept && process.env.CHAP_ENROLMENT_QUIET === "1") {
+    log(`  enrol    ${people} the first time with the enrolment code in ${join(dirname(config.store), "enrolment-code")}`);
+  } else {
+    log(`  enrol    ${code}: the code ${people} with the first time, or open ${base ? `${base}/` : "the desk at its address with "}#enrol=${code}`);
+  }
+  await keepCode(config, code);
+}
+
+/**
  * Keep the enrolment code beside the store, readable by this user alone,
- * where a command of the project that opens the desk for a person finds it.
+ * where a person who did not see the console finds it.
  */
 async function keepCode(config, code) {
   if (!config.store || config.store === ":memory:") return;
@@ -1186,7 +1222,11 @@ function listenError(err, port, host) {
  * beside it.
  */
 export async function chapHandler(options = {}) {
-  return (await prepare(options)).handler;
+  const { config, coord, handler } = await prepare(options);
+  // Mounted in a server of the application's own, nothing else prints the
+  // code a person's first join needs.
+  await announceEnrolment(config, coord, options.log ?? console.log);
+  return handler;
 }
 
 /**

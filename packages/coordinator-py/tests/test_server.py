@@ -941,6 +941,24 @@ def test_no_enrolment_code_where_signatures_are_off_or_chap_config_turns_it_off(
         assert enrolment_code(load_config(write_config(tmp_path / f"p{n}", **fields))) is None, fields
     code = enrolment_code(load_config(write_config(tmp_path / "p2", require_signatures="humans")))
     assert re.fullmatch(r"[0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5}", code), code
+    # This server signs nobody in, so an oidc entry copied from a Node
+    # project does not take the code away.
+    assert enrolment_code(load_config(write_config(tmp_path / "p3", require_signatures="humans",
+                                                   oidc={"issuer": "https://idp.example.org"}))) is not None
+
+
+def test_a_code_a_caller_could_guess_is_refused_and_a_desk_mounted_in_an_app_prints_the_code(
+        tmp_path, monkeypatch, capsys):
+    from chap_coordinator.server import ChapDesk
+    monkeypatch.setenv("CHAP_ENROLMENT_CODE", "AB-12")
+    with pytest.raises(ValueError, match="CHAP_ENROLMENT_CODE needs 8 letters or digits at least"):
+        load_config(write_config(tmp_path / "short", require_signatures="humans"))
+    monkeypatch.setenv("CHAP_ENROLMENT_CODE", ENROL)
+    config = load_config(write_config(tmp_path / "mounted", require_signatures="humans", store=":memory:"))
+    ChapDesk(config, make_coordinator(config))
+    out = capsys.readouterr().out
+    assert (f"  enrol    {ENROL}: the code {HUMAN} joins with the first time, "
+            f"or open the desk at its address with #enrol={ENROL}") in out, out
 
 
 def test_the_desk_server_creates_the_workspace_under_the_configured_review_rule(desk_of):

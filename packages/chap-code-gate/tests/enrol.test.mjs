@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { loadConfig } from "@brightbeamai/chap-server";
 import { generateSigner, makeClient } from "@brightbeamai/chap-server/client";
 import { startGate, trustedMembers } from "../index.mjs";
+import { deskLink, loadGate } from "../lib/gate.mjs";
 import { AGENT, HUMAN, gateProject } from "./helpers.mjs";
 
 async function policyFor(dir, reviewer, agent) {
@@ -69,4 +70,11 @@ test("a store that holds a reviewer under another key is reported at start", asy
   } finally {
     await new Promise((r) => again.server.close(r));
   }
+});
+
+test("the links the gate's commands print, in the agent's terminal, carry no enrolment code", async () => {
+  const { dir } = await gateProject({ store: "./data/chap.db", port: 8791 });
+  const gate = await loadGate(dir, { say: () => {} });
+  assert.equal(await deskLink(gate), "http://localhost:8791/");
+  assert.equal(await deskLink(gate, "tsk_1"), "http://localhost:8791/#task=tsk_1");
 });

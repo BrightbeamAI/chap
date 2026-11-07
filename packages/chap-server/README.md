@@ -135,12 +135,19 @@ The desk takes the code from `#enrol=` in its address, and then removes it
 from the address, or asks for it when a join is refused for want of it. A
 member's later joins, and joins under any name but a configured person's,
 need no code. The server makes a new code at each start, or takes
-`CHAP_ENROLMENT_CODE`, and keeps it beside the store in `enrolment-code`,
-readable by its own user alone, where the code gate finds it for the links
-it prints. Without the code, a process that started first, an agent among
-them, could join under a person's name with a key of its own and approve
-its own work. `"enrolment": false` turns it off, for a deployment that
-authenticates joins another way.
+`CHAP_ENROLMENT_CODE`, of 8 letters or digits at least, and keeps it
+beside the store in `enrolment-code`, readable by its own user alone. A
+server started with `CHAP_ENROLMENT_QUIET=1`, as the code gate's commands
+start one, prints where the code is kept in place of the code, so the code
+stays out of a log an agent reads; `chapHandler` prints it too, for a
+desk mounted in a server of your own. Without the code, a program that
+started first could join under a person's name with a key of its own and
+approve its own work. Against a program running as the person's own user,
+a coding agent with a shell among them, the code is no boundary, since it
+reads the file and can change `chap.config.json`: pin the reviewers' keys,
+as the code gate's trust policy does, or run the agent as another user.
+`"enrolment": false` turns it off, for a deployment that authenticates
+joins another way.
 
 ## The reviewer's key
 
@@ -208,7 +215,10 @@ reviewer did not expect is one to refuse.
 
 With `oidc` set, a person joins the workspace only with an ID token from
 its issuer, for someone `chap.config.json` names, and the desk signs them
-in to get one. The desk sends the browser to the issuer with the
+in to get one. The server is then reached from other machines, so it
+starts only with `"require_signatures": true`: under `"humans"` the
+agent's calls are unsigned, and whoever reaches `/chap` or `/mcp` could act
+as the agent. The desk sends the browser to the issuer with the
 authorisation code flow and PKCE (S256), its `nonce` the RFC 7638
 thumbprint of the key it signs with. The issuer sends it back with a code,
 which the desk posts to `POST /api/oidc/token`; the server redeems it at

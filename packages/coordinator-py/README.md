@@ -140,9 +140,12 @@ Open that address, or give the desk the code when it asks. Without the
 code, a process that started first, an agent among them, could join under
 a person's name with a key of its own and approve its own work. A member's
 later joins, and joins under any name but a configured person's, need no
-code. `CHAP_ENROLMENT_CODE` sets the code, and `"enrolment": false` in the
-config turns it off, for a deployment that authenticates joins another
-way.
+code. `CHAP_ENROLMENT_CODE` sets the code, of 8 letters or digits at
+least, and `"enrolment": false` in the config turns it off, for a
+deployment that authenticates joins another way. A `ChapDesk` mounted in
+an app of your own prints the code when it is made. Against a program
+running as the person's own user, a coding agent with a shell among them,
+the code is no boundary: run the agent as another user.
 
 - `store` is read against the config file's directory, wherever the server
   starts, and a leading `~` is the home directory; `":memory:"` keeps

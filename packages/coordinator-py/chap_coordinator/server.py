@@ -84,6 +84,7 @@ from typing import Any, Awaitable, Callable, Iterable, MutableMapping, NamedTupl
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from . import __version__
+from .canonical import canonicalize
 from .coordinator import Coordinator, CoordinatorOptions
 from .storage.sqlite import SqliteStore
 from .storage.store import MemoryStore
@@ -315,7 +316,18 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
     config["notify"] = _notify(config.get("notify"))
     config.setdefault("humans", [])
     config.setdefault("agent", None)
+    _check_enrolment_code()
     return config
+
+
+def _check_enrolment_code() -> None:
+    """An enrolment code set through CHAP_ENROLMENT_CODE that a caller could
+    guess is refused: a refused join is not recorded and nothing limits
+    how many a caller sends."""
+    set_code = (os.environ.get("CHAP_ENROLMENT_CODE") or "").strip()
+    if set_code and len(_code_letters(set_code)) < 8:
+        raise ValueError("CHAP_ENROLMENT_CODE needs 8 letters or digits at least; "
+                         "unset it and the server makes a code of 10")
 
 
 def reconcile_signed_profile(config: dict) -> None:
@@ -486,6 +498,13 @@ def decision_log(ws: Any) -> dict[str, list[dict]]:
         if method in ("task.complete", "review.request"):
             # The latest submission opens the current review round. A reviewer's
             # decision names it, so an approval cannot be counted in another round.
+            # A review.request with the artefact under review adds reviewers to
+            # the open round, and opens none.
+            before = ((submissions.get(p["task_id"]) or {}).get("envelope") or {}).get("params")
+            if method == "review.request" and before and _same_json(
+                    p.get("artefact"),
+                    before["artefact"] if before.get("artefact") is not None else before.get("output")):
+                continue
             submissions[p["task_id"]] = {"seq": entry.seq, "arrived": entry.arrived, "envelope": call}
             continue
         if not method.startswith("decide."):
@@ -651,14 +670,35 @@ def enrolment_code(config: dict) -> Optional[str]:
     """
     if "_enrolment_code" not in config:
         code = None
-        if (config.get("require_signatures") and not config.get("oidc")
-                and config.get("enrolment") is not False and config.get("humans")):
+        if (config.get("require_signatures") and config.get("enrolment") is not False
+                and config.get("humans")):
             code = (os.environ.get("CHAP_ENROLMENT_CODE") or "").strip() or None
             if code is None or not _code_letters(code):
                 letters = "".join(_CODE_LETTERS[b % 32] for b in secrets.token_bytes(10))
                 code = f"{letters[:5]}-{letters[5:]}"
         config["_enrolment_code"] = code
     return config["_enrolment_code"]
+
+
+def _same_json(a: Any, b: Any) -> bool:
+    """Whether two JSON values are the same, as the Node server compares
+    them: 1 and 1.0 alike, true and 1 apart."""
+    try:
+        return canonicalize(a) == canonicalize(b)
+    except (TypeError, ValueError):
+        return False
+
+
+def announce_enrolment(config: dict, coord: Coordinator, base: Optional[str] = None) -> None:
+    """Print the enrolment code, with the people still to join with it."""
+    code = enrolment_code(config)
+    waiting = unenrolled(coord, config) if code else []
+    if not waiting:
+        return
+    joins = "joins" if len(waiting) == 1 else "join"
+    where = f"{base}/" if base else "the desk at its address with "
+    print(f"  enrol    {code}: the code {', '.join(waiting)} {joins} with the first time, "
+          f"or open {where}#enrol={code}", flush=True)
 
 
 def _code_letters(code: Any) -> str:
@@ -903,11 +943,15 @@ class ChapDesk:
     under ``lock``.
     """
 
-    def __init__(self, config: dict, coord: Coordinator) -> None:
+    def __init__(self, config: dict, coord: Coordinator, announce: bool = True) -> None:
         self.config = config
         self.coord = coord
         self.lock = threading.Lock()
         self.desk = read_desk()
+        # Mounted in an app of its own, nothing else prints the code a
+        # person's first join needs; serve() prints it with the address.
+        if announce:
+            announce_enrolment(config, coord)
         #: Tells people of what waits for them, where ``notify`` is set.
         self.notifier: Optional[Notifier] = None
         if config.get("notify"):
@@ -1269,7 +1313,7 @@ def make_server(config: dict, coord: Coordinator) -> ChapServer:
     """Bind the standard library server on the configured host and port.
     Port 0 picks a port free on both loopback addresses; read it from
     ``server.server_port``, and the desk's address from ``server.desk_url``."""
-    desk = ChapDesk(config, coord)
+    desk = ChapDesk(config, coord, announce=False)
     address = (config["host"], int(config["port"]))
     attempts = 5
     while True:
@@ -1316,12 +1360,7 @@ def serve(config: dict) -> int:
     print(f"  signing  {POLICY_WORDS[config.get('signature_policy')]}")
     if config.get("require_signatures"):
         print(f"           {DESK_SIGNING[config.get('desk_signing') or 'browser-key']}")
-    code = enrolment_code(config)
-    waiting = unenrolled(coord, config) if code else []
-    if waiting:
-        joins = "joins" if len(waiting) == 1 else "join"
-        print(f"  enrol    {code}: the code {', '.join(waiting)} {joins} with the first time, "
-              f"or open {base}/#enrol={code}")
+    announce_enrolment(config, coord, base)
     sys.stdout.flush()
     try:
         server.serve_forever()

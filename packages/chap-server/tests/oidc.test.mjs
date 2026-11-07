@@ -37,12 +37,13 @@ async function authorize(params) {
 const tokenRequest = (form) => fetch(`${issuer.issuer}/token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(form) });
 
 async function oidcGate(extra = {}) {
-  const { dir } = await project({ require_signatures: "humans", oidc: { issuer: issuer.issuer, client_id: DEV_AUDIENCE }, ...extra });
+  const { dir } = await project({ require_signatures: true, oidc: { issuer: issuer.issuer, client_id: DEV_AUDIENCE }, ...extra });
   const lines = [];
   const chap = await createChapServer({ configPath: join(dir, "chap.config.json"), log: (l) => lines.push(l) });
   const { base } = await chap.listen({ port: 0, host: "127.0.0.1", log: (l) => lines.push(l) });
-  const agent = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: AGENT });
-  await agent.call("participant.join", { type: "agent", role: "drafter" });
+  const signer = await generateSigner(AGENT);
+  const agent = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: AGENT, signer });
+  await agent.call("participant.join", { type: "agent", role: "drafter", jwks: { keys: [signer.publicJwk] } });
   return { chap, base, agent, lines };
 }
 
@@ -105,12 +106,18 @@ test("a token joins a person only as someone chap.config.json names: by chap_par
   assert.match(people(issuer.mintToken({ sub: "777", uri: "human:ada@example.org" })).reason, /the token is for subject 777 and human:ada@example\.org signs in as subject 248289761001/);
 });
 
-test("the configuration names the issuer and the client id, and refuses an issuer with no client", async () => {
-  const withClient = await loadConfig((await project({ oidc: { issuer: "https://idp.example.org", client_id: "desk" } })).configPath);
+test("the configuration names the issuer and the client id, and refuses an issuer with no client, or calls left unsigned", async () => {
+  const signed = { require_signatures: true };
+  const withClient = await loadConfig((await project({ ...signed, oidc: { issuer: "https://idp.example.org", client_id: "desk" } })).configPath);
   assert.deepEqual(withClient.oidc, { issuer: "https://idp.example.org", client_id: "desk" });
-  const older = await loadConfig((await project({ oidc: { issuer: "https://idp.example.org", audience: "chap-prod" } })).configPath);
+  const older = await loadConfig((await project({ ...signed, oidc: { issuer: "https://idp.example.org", audience: "chap-prod" } })).configPath);
   assert.equal(older.oidc.client_id, "chap-prod", "audience, the name before 0.3.5, is read as the client id");
-  await assert.rejects(loadConfig((await project({ oidc: { issuer: "https://idp.example.org" } })).configPath), /The OIDC issuer https:\/\/idp\.example\.org is set and no client id is: set OIDC_CLIENT_ID/);
+  await assert.rejects(loadConfig((await project({ ...signed, oidc: { issuer: "https://idp.example.org" } })).configPath), /The OIDC issuer https:\/\/idp\.example\.org is set and no client id is: set OIDC_CLIENT_ID/);
+  // Where people sign in from other machines, an unsigned agent is anyone who reaches the server.
+  for (const require_signatures of ["humans", false]) {
+    await assert.rejects(loadConfig((await project({ require_signatures, oidc: { issuer: "https://idp.example.org", client_id: "desk" } })).configPath),
+      /signs people in at https:\/\/idp\.example\.org with "require_signatures" .*: set "require_signatures": true/, String(require_signatures));
+  }
 });
 
 test("the server redeems a sign-in's code for the desk, holds the token to the nonce, and says who signed in when a token will not do", async () => {
@@ -248,7 +255,7 @@ test("where people sign in, the read API answers a person signed in or a member'
     // does, on a server where the agent joined with its key.
     const keyed = await import("../desk/chap-client.mjs");
     const agentSigner = await generateSigner(AGENT);
-    const { dir } = await project({ require_signatures: "humans", oidc: { issuer: issuer.issuer, client_id: DEV_AUDIENCE } });
+    const { dir } = await project({ require_signatures: true, oidc: { issuer: issuer.issuer, client_id: DEV_AUDIENCE } });
     const second = await createChapServer({ configPath: join(dir, "chap.config.json"), log: () => {} });
     const { base: other } = await second.listen({ port: 0, host: "127.0.0.1", log: () => {} });
     try {

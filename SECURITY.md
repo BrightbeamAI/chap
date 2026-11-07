@@ -73,13 +73,19 @@ and A2A adapters leave authentication to the transport, and the servers under
 
 The desk servers, `@brightbeamai/chap-server` and `chap_coordinator.server`,
 supply part of this for the projects `create-chap-app` generates
-**(0.3.5)**. They check `Host` and `Origin`, take JSON only, and admit only
-the members `chap.config.json` names. Where signatures are required and
-nobody signs in at an identity provider, a person's first join needs the
-enrolment code the server prints at start, so a process that cannot read the
-server's console cannot take a person's name before they open the desk.
-Where people sign in at an identity provider, the Node server's read API
-answers a person signed in at the desk, or a member whose key signs the read.
+**(0.3.5)**. They check `Host` and `Origin`, take JSON only, and admit to
+their workspace only the members `chap.config.json` names. Where signatures
+are required and nobody signs in at an identity provider, a person's first
+join needs the enrolment code the server prints at start, so a program that
+cannot read the server's console or the project's `data/` cannot take a
+person's name before they open the desk. Against a program running as the
+person's own user, a coding agent with a shell among them, the code is no
+boundary, since such a program reads `data/` and can change
+`chap.config.json`: pin the reviewers' keys, as the code gate's trust
+policy does, or run the agent as another user. Where people sign in at an
+identity provider, the Node server starts only where every call is signed,
+the agent's among them, and its read API answers a person signed in at the
+desk, or a member whose key signs the read.
 
 Each protection in the coordinator is off until it is configured:
 
@@ -101,7 +107,7 @@ any workspace's log.
 |---|---|---|
 | A call made in another member's name | Signature verification against the member's registered keys. An MCP server built with `participant` makes every call as that member **(0.3.4)**. | Needs `requireSignatures`, and control over who joins under which name (section 4) |
 | A captured call sent again | A signed copy of an accepted call is refused with `-32075` **(0.3.5)**, and a signed copy of a recorded refusal is answered with that refusal **(0.3.0)**. A repeated `task.create` idempotency key returns the first task. Each entry carries the `seq` and `arrived` the coordinator assigns. | An unsigned copy of an accepted call is evaluated again ([Envelope id replay](#envelope-id-replay)) |
-| A review settled by whoever made the work | The authors of the work, the members who held it before among them, cannot decide its review; a review a task requires is decided by people, opens only when the work is completed, and is not ended by its authors without a decision; a workspace's `review_rule` sets how many approvals it needs **(0.3.5)** | Needs signatures, so that `from` names its caller |
+| A review settled by whoever made the work | The authors of the work, the members who held it before among them, cannot decide its review; a review a task requires is decided by people, opens only when the work is completed, and is not ended by its authors until a reviewer rejects the work; a workspace's `review_rule` sets how many approvals it needs **(0.3.5)** | Needs signatures, so that `from` names its caller |
 | A join under another's name or role | A join with keys the member does not hold is refused; the `admin` role is granted by an admin; under `join_policy: "invite"` only invited participants join; with a token verifier a person joins with a token that names them and binds their key; a desk server asks for its enrolment code at a person's first join **(0.3.5)** | Under the open join policy without a verifier or a desk server, a first join can claim any name nobody holds yet (section 4) |
 | An entry altered after it was written | The hash chain, checked by `audit.verify_chain` | Needs the chain switched on, and a head kept where the writer cannot change it |
 | Entries removed and the chain re-linked | Nothing inside the log. A SCITT receipt, or an earlier head held elsewhere, shows it. | Needs `audit-scitt/1.0` with a submitter, or another anchor |
@@ -499,22 +505,25 @@ membership itself is a claim, because the caller writes the `from`.
 revoking another member's key. The role is granted, never claimed
 **(0.3.5)**: a join names `admin` only as the workspace's first member, or
 under an admin's invitation that names it, and is otherwise refused with
-`-32011`. Only a `human` or a `service` holds it. Where a token verifier is
-configured, an invitation does not register a person's keys: they join with
-a token that binds their key (`-32602`) **(0.3.5)**. `control.*` needs
+`-32011`. Only a `human` or a `service` holds it. Where a token or
+credential verifier is configured, an invitation names no keys for a
+person, a member or not: their keys arrive with the token or presentation
+they join with (`-32602`) **(0.3.5)**. `control.*` needs
 membership only, and `control.rollback` can restore members' roles from a
 snapshot. No method-role policy is enforced (SPECIFICATION.md §6.4), and the
 `required_scope` that each method declares in the catalogue is not enforced
 either. A review decision also needs the caller to be a reviewer the review
 was addressed to, and a review addressed to a `workspace:` or `group:` scope
 accepts any member. From 0.3.5 the authors of the work cannot decide its
-review: its assignee, the member that completed it, and the members the
-task was routed, handed, escalated or superseded from. A review a task
-requires is decided by people only. On such a task the review opens on
+review: its assignee, the member that completed it, and the members who
+held the task before it was routed, handed, escalated or superseded, by
+moving it on themselves or acting on it. A review a task requires is
+decided by people only. On such a task the review opens on
 `task.complete` from the assignee, under the workspace's `review_rule`, and
 `review.request` only adds reviewers to it once it is open (`-32011`
-otherwise). While it is open, its authors cannot cancel or supersede the
-task, or cancel it after a pause; another member can.
+before). From then until a reviewer rejects the round, its authors cannot
+cancel or supersede the task, or cancel it after a pause, even once they
+take the work back; another member can.
 
 **Privileged methods and step-up.** The coordinators treat these methods as
 privileged: `control.pause`, `control.resume`, `control.cancel`,

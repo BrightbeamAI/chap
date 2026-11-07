@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createChapServer, enrolmentCode, loadConfig } from "../index.mjs";
+import { chapHandler, createChapServer, enrolmentCode, loadConfig } from "../index.mjs";
 import { generateSigner, makeClient } from "../desk/chap-client.mjs";
 import { openDesk } from "./desk-harness.mjs";
 import { AGENT, HUMAN, project } from "./helpers.mjs";
@@ -72,6 +72,49 @@ test("the server keeps the code beside a store on disk, readable by this user al
     assert.equal((await readFile(kept, "utf8")).trim(), CODE);
     const { stat } = await import("node:fs/promises");
     assert.equal((await stat(kept)).mode & 0o077, 0, "no one else reads it");
+  } finally {
+    await chap.close();
+  }
+});
+
+test("a server an agent's command started keeps the code out of its log; one mounted in an app prints it", async () => {
+  const { dir } = await project({ require_signatures: "humans", store: "./data/chap.db" });
+  process.env.CHAP_ENROLMENT_QUIET = "1";
+  const quiet = [];
+  const chap = await createChapServer({ configPath: join(dir, "chap.config.json"), log: () => {} });
+  try {
+    await chap.listen({ port: 0, host: "127.0.0.1", log: (l) => quiet.push(l) });
+  } finally {
+    delete process.env.CHAP_ENROLMENT_QUIET;
+    await chap.close();
+  }
+  const line = quiet.find((l) => l.startsWith("  enrol"));
+  assert.equal(line, `  enrol    ${HUMAN} joins the first time with the enrolment code in ${join(dir, "data", "enrolment-code")}`);
+  assert.ok(!quiet.join("\n").includes(CODE), "the code is not in the log");
+  const mounted = [];
+  await chapHandler({ configPath: (await project({ require_signatures: "humans" })).configPath, log: (l) => mounted.push(l) });
+  assert.ok(mounted.includes(`  enrol    ${CODE}: the code ${HUMAN} joins with the first time, or open the desk at its address with #enrol=${CODE}`), mounted.join("\n"));
+});
+
+test("a code a caller could guess is refused, and a request target that is no path does not stop the server", async () => {
+  const { configPath } = await project({ require_signatures: "humans" });
+  process.env.CHAP_ENROLMENT_CODE = "AB-12";
+  try {
+    await assert.rejects(loadConfig(configPath), /CHAP_ENROLMENT_CODE needs 8 letters or digits at least/);
+  } finally {
+    process.env.CHAP_ENROLMENT_CODE = CODE;
+  }
+  const { chap, base } = await signedGate();
+  try {
+    const { request } = await import("node:http");
+    const status = await new Promise((resolve, reject) => {
+      const url = new URL(base);
+      const req = request({ host: url.hostname, port: url.port, path: "//", method: "GET", headers: { host: url.host } }, (res) => { res.resume(); resolve(res.statusCode); });
+      req.on("error", reject);
+      req.end();
+    });
+    assert.equal(status, 400);
+    assert.equal((await fetch(`${base}/api/health`)).status, 200, "the server still answers");
   } finally {
     await chap.close();
   }

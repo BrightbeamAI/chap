@@ -24,9 +24,10 @@ Open the desk at the address on the `enrol` line `npm start` prints,
 <http://localhost:8790/> with the enrolment code after `#enrol=`. The desk
 joins you with a key it generates in the browser and lists the drafts
 waiting for you. Your first join needs the code, and the desk asks for it
-where the address lacks it, so the agent cannot join under your name
-before you do; once people sign in at an identity provider (below), the
-sign-in does that job and the server prints no code. Approve one as written,
+where the address lacks it, so a program that cannot read the server's
+console or `data/` cannot join under your name before you do; once people
+sign in at an identity provider (below), the sign-in does that job and the
+server prints no code. Approve one as written,
 edit it and override, or reject it. The agent sees the decision and writes
 the approved message to `outbox/<task_id>.json`. Reject with "ask for a
 revision" ticked and the agent drafts again with your note and submits the
@@ -260,12 +261,13 @@ chap-analytics`; `--watch 300` keeps the pages current.
   becomes their signing key (`-32403`, `-32404`).
 - `security-signed/1.0`: a call that carries a signature is checked against
   the sender's registered key, and refused when it does not verify
-  (`-32070`). `"require_signatures": "humans"` in `chap.config.json`, the
-  default here, has every call from a person signed, so nobody decides as
-  the reviewer without the desk's key, and leaves an agent member's call
-  unsigned where it chooses; the agent here signs every call all the same.
-  `true` has every call after the join signed; `false` none. A coordinator
-  from before 0.3.5 has no such policy and treats "humans" as `true`.
+  (`-32070`). `"require_signatures": true` in `chap.config.json`, the
+  default here, has every call after the join signed, the agent's among
+  them, so nobody decides as the reviewer without the desk's key, and
+  nobody acts as the agent without its key. Once people sign in at an
+  identity provider the server refuses to start with anything less, since
+  it is then reached from other machines: under `"humans"`, which leaves an
+  agent's calls unsigned, whoever reaches `/chap` could act as the agent.
 
 The chain is on through the coordinator's option, so `audit.verify_chain`
 checks it and `workspace.describe` publishes its head, without

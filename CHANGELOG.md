@@ -43,7 +43,7 @@ one and what to send in its place.
   people.** On a task that requires review, the review opens only on
   `task.complete`, from the assignee, under the workspace's
   `review_rule`; `review.request` only adds people to a review already
-  open, and anything else is refused with `-32011`, whoever sends it.
+  open, and before it opens is refused with `-32011`, whoever sends it.
   Only `type: "human"` members decide it, and a reviewer set the
   coordinator picks holds only people.
 - **The authors of the work do not decide its review.** The assignee and
@@ -53,16 +53,21 @@ one and what to send in its place.
   addressed. The authors go with the work: a new round keeps the earlier
   rounds' authors, a task `escalate.raise` or `control.supersede` makes
   carries the authors of the task it replaces as `prior_authors`, and a
-  task `task.route` or `handoff.accept` moves keeps the member it leaves
-  there. A reviewer's decision that completed a task is not taken for a
-  completion of the work.
-- **A review once opened is decided.** Only an author takes the work back
+  task `task.route` or `handoff.accept` moves keeps there the member it
+  leaves, where that member held the work: it moved the task on itself, or
+  acted on it. A member a task passed through without acting on it stays a
+  reviewer, so nobody can leave a person out of a review by routing the
+  work through them. A reviewer's decision that completed a task, or a
+  route of a completed task, is not taken for a completion of the work.
+- **Its authors do not end a review.** Only an author takes the work back
   to revise it; a task under review is not declined before a reviewer
-  rejects it; `escalate.raise` hands the review on with the work; and
-  while a required review is open its authors cannot end it with
-  `control.cancel`, `control.supersede`, or a pause and then
-  `task.update` to cancelled. A task that has held a review completes
-  only through a decision: completing it again opens a new round.
+  rejects it; `escalate.raise` hands the review on with the work; and from
+  the moment a required review opens until a reviewer rejects the round,
+  its authors cannot end the task with `control.cancel`,
+  `control.supersede`, or a pause and then `task.update` to cancelled,
+  under review or after taking the work back. A task that has held a
+  review completes only through a decision: completing it again opens a
+  new round.
 - **A workspace sets its review rule.** `workspace.create` takes
   `review_rule` (`any_one_approves`, `all_approve` or `quorum:<n>`), so a
   deployment can ask for more than one approval and no author can ask
@@ -81,9 +86,10 @@ one and what to send in its place.
   accepted from the workspace's first member, or from a participant an
   admin's invitation names as admin, and is otherwise refused with
   `-32011`. `workspace.invite` is built, and `join_policy: "invite"`
-  admits only invited participants and the first member. Where a token
-  verifier is configured, an invitation does not register a person's
-  keys: they join again with a token that binds a new one.
+  admits only invited participants and the first member. Where a token or
+  credential verifier is configured, an invitation names no keys for a
+  person, a member or not: their keys arrive with the token or
+  presentation they join with.
 - **Joins.** A join under a member's name with keys the member does not
   hold is refused with `-32011`; a new key arrives through
   `participant.rotate_key`, under a `kid` of its own. Where signatures are
@@ -97,13 +103,20 @@ one and what to send in its place.
 - **The first join of a person needs the server's code.** Where signatures
   are required and nobody signs in at an identity provider, a desk server,
   Node or Python, refuses the first join of a person `chap.config.json`
-  names without the enrolment code it prints at start, so a process that
-  does not see the server's console cannot take a person's name before
-  they open the desk. The desk takes the code from the link the server
-  prints, or asks for it; `"enrolment": false` turns it off.
-- **Reads where people sign in.** Where people sign in at an identity
-  provider, the Node desk server's read API and analytics pages answer a
-  person signed in at the desk, or a member whose key signs the read.
+  names without the enrolment code it prints at start, so a program that
+  cannot read the server's console or the project's `data/` cannot take a
+  person's name before they open the desk. The desk takes the code from
+  the link the server prints, or asks for it; `"enrolment": false` turns
+  it off. The code gate's commands, which an agent runs, print no code.
+  Against a program running as the person's own user, a coding agent with
+  a shell among them, the code is no boundary: the code gate's trust
+  policy, which pins the reviewers' keys, is.
+- **Where people sign in.** Where people sign in at an identity provider,
+  the Node desk server starts only where every call is signed, the
+  agent's among them, since it is then reached from other machines; its
+  read API and analytics pages answer a person signed in at the desk, or
+  a member whose key signs the read. The production template signs every
+  call.
 - **Signatures have one spelling.** An Ed25519 signature in anything other
   than canonical standard base64 is refused.
 - **A pause holds.** A paused participant can neither lift its own pause
@@ -112,15 +125,16 @@ one and what to send in its place.
   holds. `__proto__`, `constructor` and `prototype` are refused as
   idempotency keys. A `-32603` answer carries no exception text; the
   TypeScript coordinator passes the error to `onInternalError`. Both
-  coordinators keep `auth_time` in whole seconds.
+  coordinators keep `auth_time` in whole seconds, and none past 2^53.
 - **The servers.** The reference servers and the desk servers check
   `Host` and `Origin`, take JSON only, and send no
-  `Access-Control-Allow-Origin`. A desk server admits only the members
-  `chap.config.json` names. The desk sends a strict
+  `Access-Control-Allow-Origin`. A desk server admits to its workspace
+  only the members `chap.config.json` names. The desk sends a strict
   Content-Security-Policy and refuses framing, runs analytics in a
   sandbox, keeps a reviewer's key where no script can read it, and marks
   invisible characters and characters outside ASCII in names and changed
-  lines. A server error answers with no exception text.
+  lines. A server error answers with no exception text, and a request
+  target that is no URL path answers 400.
 - **The code gate's hooks.** The hooks read the gate's address and the
   signature rule from `chap.config.json` alone, fail closed, and chain to
   the repository's own hooks. A gate joins the trust policy's reviewers
@@ -181,7 +195,8 @@ one and what to send in its place.
   non-root user.
 - **Defaults in a new project.** The store is the project's own, the
   evidence chain is on, and `require_signatures` takes `"humans"`, under
-  which the agent works unsigned and every person signs.
+  which the agent works unsigned and every person signs; the production
+  template keeps `true`, under which the agent signs too.
 - **Ports.** The `mcp-gate` template and the Python desk server listen on
   8792, clear of a port some editors use for their own sign-in.
 - **The store.** A coordinator reads what another process wrote before it
@@ -214,10 +229,11 @@ with. Calls 0.3.4 accepted that 0.3.5 refuses, and what to do instead:
 - **Ending a review with no decision.** `task.update` back to
   `in_progress` from anyone but an author; `task.update` to `declined`
   before a reviewer rejects the work, or to `completed` on a task that
-  holds a review; and, from an author while a required review is open,
-  `control.cancel`, `control.supersede`, and `task.update` from paused to
-  cancelled. A task that has held a review and is completed again opens a
-  new round; it no longer completes.
+  holds a review; and, from an author of a required review until a
+  reviewer rejects the round, `control.cancel`, `control.supersede`, and
+  `task.update` from paused to cancelled, the work taken back or not. A
+  task that has held a review and is completed again opens a new round; it
+  no longer completes.
 - **Roles and profiles.** `role: "admin"` at join from anyone other than
   the first member or an invited admin: invite admins with
   `workspace.invite`. `workspace.set_profiles` that drops
@@ -236,8 +252,8 @@ with. Calls 0.3.4 accepted that 0.3.5 refuses, and what to do instead:
   member holds.
 - **Pauses.** A paused participant's `control.resume` of its own pause,
   and its `participant.leave`.
-- **Invitations.** `workspace.invite` registering keys for a person where
-  a token verifier is configured.
+- **Invitations.** `workspace.invite` naming keys for a person where a
+  token or credential verifier is configured.
 - **Transports.** The MCP and A2A commands act as `agent:assistant`, with
   the agent's tools or skills, unless `--as`, `--tools all` or
   `--skills all` says otherwise, and the libraries refuse a person as the

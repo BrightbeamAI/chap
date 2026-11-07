@@ -6,7 +6,7 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { access, mkdir, open, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, join } from "node:path";
 import { canonicalize, contentHash, deepEqual, makeClient, signedRead, signerFromJwk } from "@brightbeamai/chap-server/client";
 import { keyPathFor, readKeyFile, sshKeyFiles } from "@brightbeamai/chap-server/keys";
 import { modelName } from "@brightbeamai/chap-server/providers";
@@ -137,7 +137,9 @@ export async function ensureGate(gate, { log = () => {}, timeoutMs = 20000 } = {
   const logPath = join(dataDir, "gate.log");
   const out = await open(logPath, "a");
   const url = new URL(gate.base);
-  const env = { ...process.env, PORT: url.port || "80", CHAP_HOST: url.hostname.replace(/^\[|\]$/g, ""), ...(gate.configPath ? { CHAP_CONFIG: gate.configPath } : {}) };
+  // Started by an agent's command, the gate prints no enrolment code into a
+  // log the agent reads: the code stays in enrolment-code beside the store.
+  const env = { ...process.env, PORT: url.port || "80", CHAP_HOST: url.hostname.replace(/^\[|\]$/g, ""), CHAP_ENROLMENT_QUIET: "1", ...(gate.configPath ? { CHAP_CONFIG: gate.configPath } : {}) };
   const child = spawn(process.execPath, [join(gate.dir, "server.mjs")], { cwd: gate.dir, detached: true, stdio: ["ignore", out.fd, out.fd], env });
   child.unref();
   await out.close();
@@ -186,21 +188,13 @@ export function deskUrl(gate) {
 export const reviewUrl = (gate, taskId) => `${deskUrl(gate)}#task=${encodeURIComponent(taskId)}`;
 
 /**
- * The enrolment code the gate kept beside its store when it started, which
- * a person's first join from the desk needs; null where there is none.
+ * The desk's address, or one review's, for the links the gate's commands
+ * print. The commands run in the agent's terminal, so the links carry no
+ * enrolment code: a person's first join takes it from the console of the
+ * gate they started, or from enrolment-code beside the store.
  */
-export async function keptEnrolment(gate) {
-  const store = gate.config.store;
-  if (typeof store !== "string" || !store || store === ":memory:") return null;
-  const dir = isAbsolute(store) ? dirname(store) : join(gate.dir, dirname(store));
-  try { return (await readFile(join(dir, "enrolment-code"), "utf8")).trim() || null; } catch { return null; }
-}
-
-/** The desk's address, with the enrolment code where the gate kept one, as the link a person first opens. */
 export async function deskLink(gate, taskId = null) {
-  const code = await keptEnrolment(gate);
-  const parts = [taskId ? `task=${encodeURIComponent(taskId)}` : null, code ? `enrol=${encodeURIComponent(code)}` : null].filter(Boolean);
-  return `${deskUrl(gate)}${parts.length ? `#${parts.join("&")}` : ""}`;
+  return taskId ? reviewUrl(gate, taskId) : deskUrl(gate);
 }
 
 /**
