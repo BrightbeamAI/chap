@@ -162,6 +162,7 @@ DECISIONS = Table(
         _c("request_revision", "boolean", "envelopes", "On a rejection, whether the task was sent back rather than declined."),
         _c("abstain_category", "string", "envelopes", "On an abstention, the stated category."),
         _c("digest_bound", "boolean", "derived", "Whether the decision carried an artefact digest, binding it to exact content."),
+        _c("via", "string", "envelopes", "How the decision reached the log, where its call says: bridge-record for a decision made in an interface outside CHAP and recorded in the person's name by a framework bridge, whose time on the log measures no review. Null for a decision the person sent from their own client, such as a desk."),
         _c("artefact", "object", "replay", "The artefact the decision was made on: the one under review in its pass, as the agent submitted it."),
         _c("task_kind", "string", "derived", "Denormalised from tasks, so a reviewer analysis reads it here directly."),
         _c("assignee", "string", "derived", "Denormalised: who produced the work being judged."),

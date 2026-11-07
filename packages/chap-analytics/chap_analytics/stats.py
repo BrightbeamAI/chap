@@ -442,6 +442,17 @@ def _chain_end(f: Frames) -> pd.Timestamp | None:
     return ts.max() if not ts.empty else None
 
 
+#: The ``via`` of a decision a framework bridge recorded in a person's name,
+#: made in an interface outside CHAP. Its time on the log measures no review.
+RECORDED = "bridge-record"
+
+
+def _timed(lt: pd.DataFrame) -> pd.DataFrame:
+    """The passes of :func:`latency` whose times measure a review: all but
+    those a recorded decision settled."""
+    return lt[lt["via"] != RECORDED]
+
+
 def _acknowledgements(f: Frames) -> dict[str, list[pd.Timestamp]]:
     """The times of every review.acknowledge on the chain, by task."""
     ev = f.events
@@ -481,6 +492,11 @@ def latency(f: Frames) -> pd.DataFrame:
     ``time_to_open_s``, from the request to that opening, and
     ``time_to_decide_s``, from the opening to the first decision.
 
+    ``via`` is the first decision's: ``bridge-record`` where a framework
+    bridge recorded it from a decision made outside CHAP, so the pass's time
+    measures no review. :func:`latency_by`, :func:`survival` and the latency
+    brief leave those passes out.
+
     Open passes are found from the last ``review.request`` or ``task.complete``
     envelope on a task that is still awaiting a decision.
     """
@@ -489,8 +505,10 @@ def latency(f: Frames) -> pd.DataFrame:
     acks = _acknowledgements(f)
     rows: list[dict] = []
     if not d.empty:
-        first = (d.sort_values("ts").groupby(["task_id", "review_index"], as_index=False)
+        ordered = d.sort_values("ts")
+        first = (ordered.groupby(["task_id", "review_index"], as_index=False)
                  .first()[["task_id", "review_index", "requested_at", "ts", "latency_s", "reviewer", "task_kind", "assignee"]])
+        via = ordered.drop_duplicates(["task_id", "review_index"]).set_index(["task_id", "review_index"])["via"]
         for r in first.itertuples(index=False):
             seen = _first_acknowledgement(acks, r.task_id, r.requested_at, r.ts)
             rows.append({"task_id": r.task_id, "review_index": r.review_index,
@@ -498,7 +516,8 @@ def latency(f: Frames) -> pd.DataFrame:
                          "duration_s": r.latency_s, "event": True,
                          "reviewer": r.reviewer, "task_kind": r.task_kind, "assignee": r.assignee,
                          "acknowledged_at": seen, "time_to_open_s": _seconds(seen, r.requested_at),
-                         "time_to_decide_s": _seconds(r.ts, seen)})
+                         "time_to_decide_s": _seconds(r.ts, seen),
+                         "via": via.get((r.task_id, r.review_index))})
     open_tasks = f.tasks[(f.tasks["outcome"] == "open") & f.tasks["was_reviewed"].fillna(False)]
     if not open_tasks.empty and end is not None:
         ev = f.events[f.events["method"].isin(("review.request", "task.complete"))]
@@ -517,10 +536,11 @@ def latency(f: Frames) -> pd.DataFrame:
                          "decided_at": pd.NaT, "duration_s": (end - req).total_seconds(),
                          "event": False, "reviewer": None, "task_kind": t.kind,
                          "assignee": t.assignee, "acknowledged_at": seen,
-                         "time_to_open_s": _seconds(seen, req), "time_to_decide_s": float("nan")})
+                         "time_to_open_s": _seconds(seen, req), "time_to_decide_s": float("nan"),
+                         "via": None})
     cols = ["task_id", "review_index", "requested_at", "decided_at", "duration_s", "event",
             "reviewer", "task_kind", "assignee", "acknowledged_at", "time_to_open_s",
-            "time_to_decide_s"]
+            "time_to_decide_s", "via"]
     out = pd.DataFrame(rows, columns=cols)
     return out.sort_values(["requested_at", "task_id"]).reset_index(drop=True)
 
@@ -533,9 +553,10 @@ def survival(f: Frames, by: str | None = None) -> pd.DataFrame:
     a workspace with a long tail of waiting work shows it. ``survival`` at a
     time is the share of reviews still undecided after that long; ``low`` and
     ``high`` are Greenwood 95% bounds. Group with ``by`` on ``reviewer``,
-    ``task_kind`` or ``assignee``.
+    ``task_kind`` or ``assignee``. A pass a recorded decision settled is left
+    out: its time measures no review.
     """
-    lt = latency(f)
+    lt = _timed(latency(f))
     groups = [by] if by else []
     cols = groups + ["time_s", "at_risk", "events", "censored", "survival", "low", "high"]
     if lt.empty:
@@ -567,9 +588,10 @@ def survival(f: Frames, by: str | None = None) -> pd.DataFrame:
 def latency_by(f: Frames, by: str = "reviewer", *, minimum: int = 5) -> pd.DataFrame:
     """
     Time to first decision per group, on decided passes: count, median, 90th
-    percentile and mean, in seconds, with the number of passes still open.
+    percentile and mean, in seconds, with the number of passes still open. A
+    pass a recorded decision settled is left out: its time measures no review.
     """
-    lt = latency(f)
+    lt = _timed(latency(f))
     cols = [by, "n", "open", "median_s", "p90_s", "mean_s", "sufficient"]
     if lt.empty:
         return _with_minimum(pd.DataFrame(columns=cols), minimum)

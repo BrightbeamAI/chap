@@ -96,7 +96,7 @@ reversed the agent's decision, or a rejection.
 | Which part of the prompt to fix | Where do the corrections land in the artefact? | Patch path frequency by task kind | Heatmap of `top_path` (the first segment of the corrected path) against kind, with the rationales behind each cell one click away |
 | Retune the routing thresholds | Does the agent's reported confidence track its outcomes? | Reliability curve, expected calibration error, Brier score | Reliability diagram with per-bin counts |
 | Promote an agent from trial to production | Is the substantive correction rate below the bar, given how many tasks have been seen? | Beta posterior probability that the true rate is under the threshold; Wald's sequential test | Posterior density against the threshold; the sequential test between its bounds |
-| Add reviewers, or reroute | Where do decisions wait, and for whom? | Time to decision as a Kaplan-Meier curve with open reviews censored; latency by reviewer; the open queue; where reviewers acknowledge opening a review, time to open and time to decide | Survival curve; median and 90th percentile per reviewer |
+| Add reviewers, or reroute | Where do decisions wait, and for whom? | Time to decision as a Kaplan-Meier curve with open reviews censored; latency by reviewer; the open queue; where reviewers acknowledge opening a review, time to open and time to decide; decisions a framework bridge recorded from outside CHAP counted apart, and decisions too quick to have been read pointed out | Survival curve; median and 90th percentile per reviewer |
 | Rewrite an ambiguous policy | Do reviewers agree with each other on the same artefact? | Fleiss' kappa across multi-reviewer passes; pairwise Cohen's kappa; abstentions by category | Agreement matrix |
 | Clarify the task inputs | How often do agents have to ask, and does anyone answer in time? | Whispers (an agent's deadline-bound question to a person) per task, the share that lapsed unanswered, response time | Lapse rate by asker |
 | Cover the shift | Are handoffs accepted, and how fast? | Acceptance rate, response time, declines by recipient | Acceptance by recipient |
@@ -311,9 +311,14 @@ which rows are censored. It knows when a decision settled a review under
 each review rule (`any_one_approves`, `all_approve`, `quorum:N`). It keeps
 review passes apart, so a task sent back for revision is measured from each
 pass's own opening and `outcome` reads from the decision that settled the
-last pass. It reconstructs the corrected artefact from the patch with the
-coordinator's own RFC 6902 semantics. It counts the tasks the server mints
-on escalation and supersession, with what they inherit from the original.
+last pass. It tells a decision a person sent from their own client, such as
+a desk, from one a framework bridge recorded in their name, made in an
+interface outside CHAP: `decisions.via` is `bridge-record` for those, and
+the time-to-decision measures leave them out, since their time on the log
+measures no review. It reconstructs the corrected artefact from the patch
+with the coordinator's own RFC 6902 semantics. It counts the tasks the
+server mints on escalation and supersession, with what they inherit from
+the original.
 And it says how sure it is: `id_certain` and `assignee_certain` mark the
 rows where the chain admits more than one reading, so the population to
 draw conclusions from is a filter away.

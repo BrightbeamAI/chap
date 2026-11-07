@@ -748,6 +748,7 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
                 "request_revision": bool(p.get("request_revision")) if kind == "reject" else None,
                 "abstain_category": p.get("category") if kind == "abstain" else None,
                 "digest_bound": p.get("approved_artefact_digest") is not None,
+                "via": p.get("via") if isinstance(p.get("via"), str) else None,
                 "is_final": False,
             }
             r.decisions.append(d)
@@ -1658,6 +1659,7 @@ def frames(chain: Chain) -> Frames:
                     "request_revision": d["request_revision"],
                     "abstain_category": d["abstain_category"],
                     "digest_bound": d["digest_bound"],
+                    "via": d["via"],
                     "artefact": r.artefact,
                     "task_kind": t.kind, "assignee": t.assignee,
                 })

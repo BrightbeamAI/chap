@@ -167,19 +167,43 @@ def calibration(f: Frames) -> Brief:
 def latency(f: Frames) -> Brief:
     """How long reviews wait for a first decision, and how many are still
     waiting. Where reviewers acknowledge opening a review, the wait splits
-    into the time before a reviewer opened it and the time they took then."""
-    lt = _stats.latency(f)
+    into the time before a reviewer opened it and the time they took then.
+
+    A pass a framework bridge recorded, from a decision made outside CHAP,
+    is counted and left out of the times, which it does not measure; a
+    decision within a second of its request is pointed out, being too soon
+    for anyone to have read the work."""
+    passes = _stats.latency(f)
     q = _stats.open_queue(f)
     by = _stats.latency_by(f, by="reviewer")
-    if lt.empty:
+    if passes.empty:
         return Brief("latency", "How long decisions take", "No reviews opened yet.",
-                     "No review pass is on this chain.", "Nothing waiting.", False, lt)
+                     "No review pass is on this chain.", "Nothing waiting.", False, passes)
+    recorded = passes[passes["via"] == _stats.RECORDED]
+    lt = passes[passes["via"] != _stats.RECORDED]
     decided = lt[lt["event"]]
+    if len(recorded) == 1:
+        elsewhere = ("1 review pass was settled by a decision made outside CHAP and recorded by a framework "
+                     "bridge; its time on the log measures no review, and is left out.")
+    else:
+        elsewhere = (f"{len(recorded)} review passes were settled by decisions made outside CHAP and recorded "
+                     "by a framework bridge; their times on the log measure no review, and are left out.")
+    if decided.empty and q.empty:
+        return Brief("latency", "How long decisions take",
+                     "Every decision here was made outside CHAP, so none times a review.",
+                     elsewhere, "Nothing waiting.", False, by)
     med = decided["duration_s"].median() if not decided.empty else float("nan")
     p90 = decided["duration_s"].quantile(0.9) if not decided.empty else float("nan")
     head = (f"Half of the reviews were decided within {_hours(med)}, nine in ten within {_hours(p90)}; "
             f"{len(q)} still waiting.")
     parts = [f"{len(decided)} review passes reached a decision."]
+    if not recorded.empty:
+        parts.append(elsewhere)
+    instant = int((decided["duration_s"] < 1).sum())
+    if instant:
+        parts.append(f"{_n(instant, 'decision')} came within a second of {'its' if instant == 1 else 'their'} "
+                     "request, too soon for anyone to have read the work: check how "
+                     f"{'it was' if instant == 1 else 'they were'} made.")
     seen = decided.dropna(subset=["time_to_open_s"])
     med_open = seen["time_to_open_s"].median() if not seen.empty else float("nan")
     med_decide = seen["time_to_decide_s"].median() if not seen.empty else float("nan")
@@ -203,8 +227,8 @@ def latency(f: Frames) -> Brief:
     elif len(seen) >= 5 and med_open > 4 * med_decide:
         decision = ("Most of the wait comes before a reviewer opens the work: tell reviewers when a "
                     "review arrives.")
-    elif pd.notna(p90) and pd.notna(med) and p90 > 4 * med:
-        decision = "The long tail is a few stuck items rather than general load: chase the oldest open reviews."
+    elif not q.empty and pd.notna(p90) and pd.notna(med) and p90 > 4 * med:
+        decision = "A few stuck items make the long tail, and the general load keeps up: chase the oldest open reviews."
     else:
         decision = "Decisions are keeping up with the work."
     return Brief("latency", "How long decisions take", head, " ".join(parts), decision,
