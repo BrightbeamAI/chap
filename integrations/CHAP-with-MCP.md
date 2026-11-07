@@ -352,16 +352,18 @@ participant's connection is pinned to that participant:
   and refuses a call that names anyone else. The tools then list `from` as
   optional, with the participant's URI in its description.
 - `AGENT_MCP_TOOLS` is the tool set an agent's connection offers: task
-  create, update and complete, `whisper.ask`, the three decisions,
+  create, update and complete, `whisper.ask`, the three decisions and
+  `review.acknowledge`, for work the agent is asked to review,
   `workspace.describe`, `audit.read` and `audit.verify_chain`. It leaves
   out the tools that choose who reviews the agent's work or pass its review
   on, such as `review.request`, whose `to` could name the agent itself.
   `task.update` stays: it can take a task under review back to
-  `in_progress`, which withdraws the draft. The next completion opens a
-  new review where the task has `review_required`, and completes the task
-  where it does not, so set `review_required` on any task the agent must
-  not finish alone. Pass the set as `toolFilter` (`tool_filter=`); a tool
-  the filter excludes is refused when called by name.
+  `in_progress`, which withdraws the draft, and the next completion opens
+  the review again, so a task that holds a review completes only through a
+  decision. A task with no review open completes when the agent completes
+  it, so set `review_required` on any task the agent must not finish
+  alone. Pass the set as `toolFilter` (`tool_filter=`); a tool the filter
+  excludes is refused when called by name.
 
 The commands are pinned by default: they act as `agent:assistant@local`
 (`--as` or `CHAP_PARTICIPANT` names another), offer the agent's tools

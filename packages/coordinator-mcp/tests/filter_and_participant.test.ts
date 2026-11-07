@@ -13,7 +13,7 @@ import { Coordinator } from "@brightbeamai/chap-coordinator";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import { chapMcpHttpHandler, makeChapMcpServer, type ChapMcpOptions } from "../src/index.js";
+import { AGENT_MCP_TOOLS, chapMcpHttpHandler, makeChapMcpServer, type ChapMcpOptions } from "../src/index.js";
 
 async function connect(options: ChapMcpOptions) {
   const coord = new Coordinator({ deterministicIds: true, defaultProfiles: ["core/1.0", "review/1.0"] });
@@ -78,6 +78,23 @@ test("with participant, the tools list from as optional and say whose name it ca
   assert.ok(!schema.required.includes("from"));
   assert.ok(schema.required.includes("task_id"));
   assert.match(schema.properties.from.description, /acts as agent:b/);
+  await close();
+});
+
+test("an agent asked to review acknowledges and decides through its own connection", async () => {
+  const { coord, call, close } = await connect({ participant: "agent:b", toolFilter: (name) => AGENT_MCP_TOOLS.has(name) });
+  coord.dispatch({ jsonrpc: "2.0", id: "c", method: "participant.join", params: { workspace: "w", from: "agent:c", type: "agent" } } as never);
+  const made = coord.dispatch({ jsonrpc: "2.0", id: "t", method: "task.create",
+                                params: { workspace: "w", from: "agent:c", kind: "k", input: {}, assignee: "agent:c" } } as never);
+  const taskId = (made.result as { task_id: string }).task_id;
+  coord.dispatch({ jsonrpc: "2.0", id: "r", method: "review.request",
+                   params: { workspace: "w", from: "agent:c", task_id: taskId, to: ["agent:b"], artefact: { v: 1 } } } as never);
+
+  const acknowledged = await call("chap.review.acknowledge", { task_id: taskId });
+  assert.equal(acknowledged.isError, false, acknowledged.text);
+  assert.equal(JSON.parse(acknowledged.text).acknowledged, true);
+  const approved = await call("chap.decide.approve", { task_id: taskId });
+  assert.equal(approved.isError, false, approved.text);
   await close();
 });
 

@@ -112,18 +112,19 @@ callers and checks the `from` they send.
 
 `AGENT_MCP_TOOLS` is the agent's set: `chap.task.create`, `chap.task.update`,
 `chap.task.complete`, `chap.whisper.ask`, `chap.decide.approve`,
-`chap.decide.reject`, `chap.decide.override`, `chap.workspace.describe`,
-`chap.audit.read` and `chap.audit.verify_chain`. The decision tools stay for
-work the agent is asked to review; on its own work the coordinator refuses
-them with `-32011` and records the attempt. It leaves out the tools that
-choose who reviews the agent's work or pass its review on:
-`chap.review.request`, whose `to` can name the agent itself,
-`chap.escalate.raise`, which ends the open review, and every workspace,
-membership and control method. `chap.task.update` stays, so the agent can
-take a task under review back to `in_progress`, which withdraws its draft.
-Its next completion opens a new review where the task has
-`review_required`, and completes the task where it does not, so set
-`review_required` on any task the agent must not finish alone.
+`chap.decide.reject`, `chap.decide.override`, `chap.review.acknowledge`,
+`chap.workspace.describe`, `chap.audit.read` and `chap.audit.verify_chain`.
+The decision tools and `chap.review.acknowledge` stay for work the agent is
+asked to review; on its own work the coordinator refuses them with `-32011`
+and records the attempt. It leaves out the tools that choose who reviews the
+agent's work or pass its review on: `chap.review.request`, whose `to` can
+name the agent itself, `chap.escalate.raise`, which passes the open review
+on to a successor task, and every workspace, membership and control method.
+`chap.task.update` stays, so the agent can take a task under review back to
+`in_progress`, which withdraws its draft; its next completion opens the
+review again, so a task that holds a review completes only through a
+decision. A task with no review open completes when the agent completes it,
+so set `review_required` on any task the agent must not finish alone.
 
 A runnable reference server is at
 [`reference/mcp-server-ts/`](../../reference/mcp-server-ts/).

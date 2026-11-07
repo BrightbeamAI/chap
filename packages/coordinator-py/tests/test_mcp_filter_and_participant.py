@@ -14,7 +14,7 @@ import pytest
 from mcp.client.client import Client
 
 from chap_coordinator.coordinator import Coordinator, CoordinatorOptions
-from chap_coordinator.transports.mcp_server import make_chap_mcp_server
+from chap_coordinator.transports.mcp_server import AGENT_MCP_TOOLS, make_chap_mcp_server
 
 
 def _coord() -> Coordinator:
@@ -88,6 +88,25 @@ async def test_with_participant_the_tools_list_from_as_optional_and_say_whose_na
         assert "from" not in update.input_schema["required"]
         assert "task_id" in update.input_schema["required"]
         assert "acts as agent:b" in update.input_schema["properties"]["from"]["description"]
+
+
+@pytest.mark.asyncio
+async def test_an_agent_asked_to_review_acknowledges_and_decides_through_its_own_connection():
+    coord = _coord()
+    coord.dispatch({"jsonrpc": "2.0", "id": "c", "method": "participant.join",
+                    "params": {"workspace": "w", "from": "agent:c", "type": "agent"}})
+    made = coord.dispatch({"jsonrpc": "2.0", "id": "t", "method": "task.create", "params": {
+        "workspace": "w", "from": "agent:c", "kind": "k", "input": {}, "assignee": "agent:c"}})
+    task_id = made["result"]["task_id"]
+    coord.dispatch({"jsonrpc": "2.0", "id": "r", "method": "review.request", "params": {
+        "workspace": "w", "from": "agent:c", "task_id": task_id, "to": ["agent:b"], "artefact": {"v": 1}}})
+    server = make_chap_mcp_server(coord, participant="agent:b", tool_filter=lambda name: name in AGENT_MCP_TOOLS)
+    async with Client(server) as client:
+        acknowledged = await client.call_tool("chap.review.acknowledge", {"workspace": "w", "task_id": task_id})
+        assert not acknowledged.is_error, _text(acknowledged)
+        assert json.loads(_text(acknowledged))["acknowledged"] is True
+        approved = await client.call_tool("chap.decide.approve", {"workspace": "w", "task_id": task_id})
+        assert not approved.is_error, _text(approved)
 
 
 def test_a_person_cannot_be_the_participant():
