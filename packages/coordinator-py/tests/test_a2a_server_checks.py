@@ -153,6 +153,49 @@ async def test_a_body_nesting_deeper_than_32_levels_is_refused_with_400_as_json_
                 "code": -32600, "message": "Invalid Request: the body nests deeper than 32 levels"}}
 
 
+async def _send_cut_short(app, body: bytes, *, cut_short: bool) -> list:
+    """POST ``body`` straight to the ASGI app. Cut short, the client declares
+    500 bytes more than it sends, and goes away before they arrive."""
+    declared = len(body) + (500 if cut_short else 0)
+    incoming = [{"type": "http.request", "body": body, "more_body": cut_short}]
+    if cut_short:
+        incoming.append({"type": "http.disconnect"})
+
+    async def receive():
+        return incoming.pop(0) if incoming else {"type": "http.disconnect"}
+
+    sent: list = []
+
+    async def send(message):
+        sent.append(message)
+
+    await app({"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "POST", "scheme": "http",
+               "path": "/", "raw_path": b"/", "root_path": "", "query_string": b"",
+               "server": ("127.0.0.1", 9090), "client": ("127.0.0.1", 50000),
+               "headers": [(b"host", b"127.0.0.1:9090"), (b"content-type", b"application/json"),
+                           (b"a2a-version", b"1.0"), (b"content-length", str(declared).encode())]},
+              receive, send)
+    return sent
+
+
+@pytest.mark.asyncio
+async def test_a_call_whose_body_was_cut_short_is_never_run():
+    coord = Coordinator()
+    app = make_chap_a2a_app(coord, base_url=f"{BASE}/", skill_filter=lambda _name: True)
+
+    def create(workspace: str) -> bytes:
+        return json.dumps({"jsonrpc": "2.0", "id": 1, "method": "SendMessage", "params": {"message": {
+            "messageId": workspace, "role": "ROLE_USER", "parts": [{"mediaType": "application/json", "data": {
+                "skill": "chap.workspace.create", "params": {"workspace": workspace}}}]}}}).encode()
+
+    assert await _send_cut_short(app, create("cut"), cut_short=True) == []
+    assert coord.get_workspace("cut") is None
+    # The same call sent in full runs.
+    answered = await _send_cut_short(app, create("whole"), cut_short=False)
+    assert answered[0]["status"] == 200
+    assert coord.get_workspace("whole") is not None
+
+
 @pytest.mark.asyncio
 async def test_a_body_that_is_not_json_is_a_parse_error():
     async with _client(make_chap_a2a_app(_coord(), base_url=f"{BASE}/")) as client:

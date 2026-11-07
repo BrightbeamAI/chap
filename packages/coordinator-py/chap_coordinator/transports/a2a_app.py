@@ -78,6 +78,10 @@ class _BodyTooLarge(Exception):
     pass
 
 
+class _ClientGone(Exception):
+    """The client went away before its body arrived."""
+
+
 class ChapA2aGuard:
     """ASGI middleware making the checks above before ``app`` sees a request.
 
@@ -127,6 +131,10 @@ class ChapA2aGuard:
             # carry another request: it closes after the answer.
             await _refuse(send, 413, {"error": f"the request body is over {self.max_body_bytes} bytes"}, close=True)
             return
+        except _ClientGone:
+            # No one is left to answer, and a call the client never finished
+            # sending does not run.
+            return
         try:
             too_deep = _nests_deeper_than(json.loads(body), _MAX_BODY_DEPTH)
         except RecursionError:
@@ -159,7 +167,7 @@ class ChapA2aGuard:
         while True:
             message = await receive()
             if message["type"] != "http.request":
-                break
+                raise _ClientGone
             chunk = message.get("body", b"")
             size += len(chunk)
             if size > self.max_body_bytes:
