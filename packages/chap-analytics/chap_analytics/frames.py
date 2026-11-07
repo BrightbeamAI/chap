@@ -708,10 +708,20 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
 
         elif method == "review.acknowledge" and tid:
             # review/1.0: a reviewer has opened the review in front of them.
-            # A coordinator takes one per reviewer per pass; the first is kept
-            # wherever a log holds more.
-            r = task(tid).review
-            if r is not None and isinstance(actor, str) and ts is not None:
+            # A coordinator takes one only while a review is open, so one
+            # after a completion that would have completed the task before
+            # 0.3.5 shows that the completion opened a new pass, as a
+            # decision does. One the replay finds no open pass for belongs to
+            # none, and is left out. A coordinator takes one per reviewer per
+            # pass; the first is kept wherever a log holds more.
+            t = task(tid)
+            if t.held_round is not None:
+                opened, to, rule, artefact = t.held_round
+                t.open_review(opened, to, rule, artefact)
+                t.held_round = None
+                t.state, t.settled_at = "review_requested", None
+            r = t.review
+            if r is not None and t.state == "review_requested" and isinstance(actor, str) and ts is not None:
                 r.acknowledged.setdefault(actor, ts)
 
         elif method in ("decide.approve", "decide.reject", "decide.override",
