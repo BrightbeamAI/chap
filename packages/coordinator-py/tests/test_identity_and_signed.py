@@ -207,14 +207,16 @@ def test_rotate_key_must_be_signed_with_the_old_key():
     _, pub3 = _gen_keypair()
     jwk3 = {"kty": "OKP", "crv": "Ed25519", "kid": "k3", "x": _b64url_nopad(pub3)}
 
-    def rotate(sk, kid):
+    def rotate(sk, kid, old_kid="k1"):
         env = {"jsonrpc": "2.0", "id": "r", "method": "participant.rotate_key",
                "params": {"workspace": "w", "from": "human:alice",
-                          "old_kid": "k1", "new_jwk": jwk3}}
+                          "old_kid": old_kid, "new_jwk": jwk3}}
         return c.dispatch(_sign_envelope(sk, env, kid))
 
     signed_with_wrong_key = rotate(sk2, "k2")
     assert signed_with_wrong_key["error"]["code"] == -32073
+    # A null old_kid names no key, and the handler refuses it.
+    assert rotate(sk2, "k2", None)["error"] == {"code": -32602, "message": "old_kid must be a string"}
 
     signed_with_old_key = rotate(sk1, "k1")
     assert signed_with_old_key["result"]["rotated"] is True

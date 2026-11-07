@@ -126,12 +126,15 @@ test("participant.rotate_key must be signed with the old key", () => {
               jwks: { keys: [k1.jwk, k2.jwk] },
               profiles: ["core/1.0", "security-signed/1.0"] }});
 
-  const rotate = (sk: KeyObject, kid: string) =>
+  const rotate = (sk: KeyObject, kid: string, oldKid: string | null = k1.jwk.kid as string) =>
     c.dispatch(signed({ jsonrpc: "2.0", id: "r", method: "participant.rotate_key",
       params: { workspace: "w", from: "human:alice",
-                old_kid: k1.jwk.kid, new_jwk: k3.jwk }}, sk, kid));
+                old_kid: oldKid, new_jwk: k3.jwk }}, sk, kid));
 
   assert.equal((rotate(k2.sk, k2.jwk.kid).error as { code: number }).code, -32073);
+  // A null old_kid names no key, and the handler refuses it.
+  assert.deepEqual(rotate(k2.sk, k2.jwk.kid, null).error,
+    { code: -32602, message: "old_kid must be a string" });
   assert.ok((rotate(k1.sk, k1.jwk.kid).result as { rotated: boolean }).rotated);
 });
 

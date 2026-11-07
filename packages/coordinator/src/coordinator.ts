@@ -1466,9 +1466,11 @@ export class Coordinator {
       const sigErr = this.verifySignature(envelope);
       if (sigErr) return reply(envelope, { error: sigErr });
       if (method === "participant.rotate_key") {
+        // A null old_kid names no key, as a null param gives no value, and
+        // the handler refuses it.
         const signingKid = (envelope.sig as string).split(":")[1];
-        const oldKid = params.old_kid as string | undefined;
-        if (oldKid !== undefined && signingKid !== oldKid) {
+        const oldKid = params.old_kid as string | null | undefined;
+        if (oldKid != null && signingKid !== oldKid) {
           return reply(envelope, { error: rpcError(E.SIG_ROTATION_KEY_MISMATCH,
             "Rotation must be signed with the old key") });
         }
