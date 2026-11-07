@@ -131,6 +131,26 @@ test("a body under the limit reaches the routes parsed, above the SDK's own 100 
   assert.ok(coord.getWorkspace("large"));
 });
 
+/** A SendMessage whose call's params carry `x`, nested `depth` arrays deep: the body nests 7 + depth levels. */
+const nested = (depth: number) => `{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"m-${depth}",` +
+  `"role":"ROLE_USER","parts":[{"data":{"skill":"chap.workspace.describe","params":{"workspace":"w","x":` +
+  `${"[".repeat(depth)}${"]".repeat(depth)}}},"mediaType":"application/json"}]}}}`;
+
+test("a body nesting deeper than 32 levels is refused with 400 as JSON, and one at 32 is served", async () => {
+  const headers = { ...JSON_TYPE, "A2A-Version": "1.0" };
+  const atLimit = await send("/", { headers, body: nested(25) });
+  assert.equal(atLimit.status, 200, atLimit.text);
+  assert.ok(!atLimit.text.includes("nests deeper"), atLimit.text);
+
+  for (const depth of [26, 100_000]) {
+    const r = await send("/", { headers, body: nested(depth) });
+    assert.equal(r.status, 400, `depth ${depth}`);
+    assert.match(String(r.headers["content-type"]), /^application\/json/);
+    assert.deepEqual(JSON.parse(r.text), { jsonrpc: "2.0", id: null,
+      error: { code: -32600, message: "Invalid Request: the body nests deeper than 32 levels" } });
+  }
+});
+
 test("a body that is not JSON is a parse error", async () => {
   const r = await send("/", { headers: JSON_TYPE, body: "{not json" });
   assert.equal(r.status, 400);

@@ -17,8 +17,10 @@ servers' checks, as ``chapA2aGuard`` does for the TypeScript adapter:
 - an Origin naming another site is refused with 403; a client that is not a
   browser sends no Origin, and is let through;
 - a POST must be ``application/json`` (415);
-- a body over the limit is refused with 413 before more of it is read, and
-  one that is not JSON is a parse error (400);
+- a body over the limit is refused with 413 before more of it is read, one
+  that is not JSON is a parse error (400), and one that nests deeper than
+  32 levels is refused with 400, before any parser deeper in runs out of
+  stack;
 - an exception reaches the client as a short JSON body, and its detail goes
   to the log.
 
@@ -62,6 +64,14 @@ ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 #: The largest body read: the coordinator's 1 MiB envelope limit, and room
 #: for the A2A message around it. The same as the TypeScript guard's.
 DEFAULT_MAX_BODY_BYTES = 1_048_576 + 65_536
+
+#: The deepest a body may nest its arrays and objects. An A2A message holds a
+#: call's params six levels down, so this leaves them 26, more than any CHAP
+#: call uses, and keeps every body within what a2a-sdk's protobuf parser
+#: takes, about 50 levels; deeper still, json.loads runs out of recursion.
+#: The TypeScript guard takes the same limit, so the two servers refuse the
+#: same bodies.
+_MAX_BODY_DEPTH = 32
 
 
 class _BodyTooLarge(Exception):
@@ -118,9 +128,15 @@ class ChapA2aGuard:
             await _refuse(send, 413, {"error": f"the request body is over {self.max_body_bytes} bytes"}, close=True)
             return
         try:
-            json.loads(body)
+            too_deep = _nests_deeper_than(json.loads(body), _MAX_BODY_DEPTH)
+        except RecursionError:
+            too_deep = True
         except ValueError:
             await _refuse(send, 400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+            return
+        if too_deep:
+            await _refuse(send, 400, {"jsonrpc": "2.0", "id": None, "error": {
+                "code": -32600, "message": f"Invalid Request: the body nests deeper than {_MAX_BODY_DEPTH} levels"}})
             return
 
         replayed = False
@@ -168,6 +184,20 @@ class ChapA2aGuard:
             logger.exception("A2A request failed")
             if not started:
                 await _refuse(send, 500, {"error": "internal error"})
+
+
+def _nests_deeper_than(value: Any, limit: int) -> bool:
+    """Whether a parsed body nests its arrays and objects more than ``limit``
+    deep, walked without recursion."""
+    pending: list[tuple[Any, int]] = [(value, 1)]
+    while pending:
+        item, depth = pending.pop()
+        if not isinstance(item, (dict, list)):
+            continue
+        if depth > limit:
+            return True
+        pending.extend((child, depth + 1) for child in (item.values() if isinstance(item, dict) else item))
+    return False
 
 
 def _foreign_origin(origin: Optional[str], allowed: set[str], host: str) -> bool:

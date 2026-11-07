@@ -14,7 +14,9 @@
  * - a POST must be application/json (415), which a page cannot send to
  *   another origin without a preflight it would fail;
  * - a body over the limit is refused with 413 before more of it is read,
- *   and every refusal is a short JSON body.
+ *   one that is not JSON with 400, and one that nests deeper than 32
+ *   levels with 400, before any parser deeper in runs out of stack; every
+ *   refusal is a short JSON body.
  *
  * The body is read and parsed here, so the routes after it find it parsed.
  */
@@ -23,6 +25,16 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 /** The largest body read: the coordinator's 1 MiB envelope limit, and room for the A2A message around it. */
 const DEFAULT_MAX_BODY_BYTES = 1_048_576 + 65_536;
+
+/**
+ * The deepest a body may nest its arrays and objects. An A2A message holds
+ * a call's params six levels down, so this leaves them 26, more than any
+ * CHAP call uses, and keeps every body within what both SDKs' parsers take:
+ * a2a-sdk's for Python stops at about 50 levels, and the TypeScript SDK's
+ * runs out of stack some thousands deep. The Python guard takes the same
+ * limit, so the two servers refuse the same bodies.
+ */
+const MAX_BODY_DEPTH = 32;
 
 export interface ChapA2aGuardOptions {
   /**
@@ -68,6 +80,10 @@ export function chapA2aGuard(options: ChapA2aGuardOptions = {}) {
         } catch {
           return refuse(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
         }
+        if (nestsDeeperThan(req.body, MAX_BODY_DEPTH)) {
+          return refuse(res, 400, { jsonrpc: "2.0", id: null,
+            error: { code: -32600, message: `Invalid Request: the body nests deeper than ${MAX_BODY_DEPTH} levels` } });
+        }
         next();
       },
       (err) => {
@@ -89,6 +105,18 @@ function foreignOrigin(origin: string | undefined, allowed: Set<string>, host: s
   let originHost: string;
   try { originHost = new URL(origin).host.toLowerCase(); } catch { return true; }
   return !(allowed.has(originHost) || originHost === host);
+}
+
+/** Whether a parsed body nests its arrays and objects more than `limit` deep, walked without recursion. */
+function nestsDeeperThan(value: unknown, limit: number): boolean {
+  const pending: Array<[unknown, number]> = [[value, 1]];
+  while (pending.length > 0) {
+    const [item, depth] = pending.pop()!;
+    if (item === null || typeof item !== "object") continue;
+    if (depth > limit) return true;
+    for (const child of Array.isArray(item) ? item : Object.values(item)) pending.push([child, depth + 1]);
+  }
+  return false;
 }
 
 class BodyTooLarge extends Error {}

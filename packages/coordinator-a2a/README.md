@@ -77,7 +77,10 @@ checks, as Connect-style middleware for Express:
 - a POST must be `application/json` (415), which a page cannot send across
   origins without a preflight;
 - a body over `maxBodyBytes`, 1,114,112 bytes by default, is refused with
-  413 before the rest is read, and one that is not JSON with 400.
+  413 before the rest is read, one that is not JSON with 400, and one that
+  nests deeper than 32 levels with 400, before a parser deeper in runs out
+  of stack. A message holds the call's params six levels down, which leaves
+  them 26, more than any CHAP call uses.
 
 Every refusal is a short JSON body. The guard reads and parses the body, so
 the SDK's JSON-RPC route finds it parsed and its own 100 kB parser never

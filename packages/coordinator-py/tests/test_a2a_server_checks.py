@@ -130,6 +130,29 @@ async def test_a_body_over_the_limit_is_refused_before_it_is_read():
     assert coord.get_workspace("big") is None
 
 
+def _nested(depth: int) -> bytes:
+    """A SendMessage whose call's params carry ``x``, nested ``depth`` arrays deep: the body nests 7 + depth levels."""
+    return ('{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"m-%d",'
+            '"role":"ROLE_USER","parts":[{"data":{"skill":"chap.workspace.describe","params":{"workspace":"w","x":'
+            '%s%s}},"mediaType":"application/json"}]}}}' % (depth, "[" * depth, "]" * depth)).encode()
+
+
+@pytest.mark.asyncio
+async def test_a_body_nesting_deeper_than_32_levels_is_refused_with_400_as_json_and_one_at_32_is_served():
+    headers = {"content-type": "application/json", "A2A-Version": "1.0"}
+    async with _client(make_chap_a2a_app(_coord(), base_url=f"{BASE}/")) as client:
+        at_limit = await client.post("/", headers=headers, content=_nested(25))
+        assert at_limit.status_code == 200, at_limit.text
+        assert "nests deeper" not in at_limit.text
+        # 100,000 levels is past json.loads' own recursion limit.
+        for depth in (26, 100_000):
+            r = await client.post("/", headers=headers, content=_nested(depth))
+            assert r.status_code == 400, depth
+            assert r.headers["content-type"] == "application/json"
+            assert r.json() == {"jsonrpc": "2.0", "id": None, "error": {
+                "code": -32600, "message": "Invalid Request: the body nests deeper than 32 levels"}}
+
+
 @pytest.mark.asyncio
 async def test_a_body_that_is_not_json_is_a_parse_error():
     async with _client(make_chap_a2a_app(_coord(), base_url=f"{BASE}/")) as client:
