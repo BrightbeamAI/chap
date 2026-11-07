@@ -26,17 +26,17 @@
           "description": "Forward every call to a running CHAP server's JSON-RPC endpoint, such as a create-chap-app desk server's, where a person decides on the assistant's work. Without it the server runs its own coordinator.",
           "format": "string",
           "isRequired": false,
-          "placeholder": "http://127.0.0.1:8787/chap"
+          "placeholder": "http://127.0.0.1:8792/chap"
         }
       ],
       "environmentVariables": [
         {
           "name": "CHAP_PARTICIPANT",
-          "description": "The participant every call is made as. Defaults to agent:assistant@local. A call naming anyone else is refused, and so is a human: URI here, since a person decides in a desk.",
+          "description": "The participant every call is made as. Defaults to agent:assistant, the agent a create-chap-app mcp-gate project joins. A call naming anyone else is refused, and so is a human: URI here, since a person decides in a desk.",
           "format": "string",
           "isRequired": false,
           "isSecret": false,
-          "placeholder": "agent:assistant@local"
+          "placeholder": "agent:assistant"
         },
         {
           "name": "CHAP_DB_PATH",

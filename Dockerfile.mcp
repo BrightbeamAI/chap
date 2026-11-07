@@ -46,6 +46,13 @@ COPY packages/coordinator-mcp packages/coordinator-mcp/
 RUN npm run build --workspace=@brightbeamai/chap-coordinator \
     && npm run build --workspace=@brightbeamai/chap-coordinator-mcp
 
+# The build tools, tsup, TypeScript and tsx among them, are not needed to
+# run the server: drop the devDependencies before the runtime stage copies
+# node_modules. better-sqlite3 stays, as the coordinator's optional store.
+RUN npm prune --omit=dev \
+      --workspace=@brightbeamai/chap-coordinator \
+      --workspace=@brightbeamai/chap-coordinator-mcp
+
 FROM node:24-bookworm-slim
 
 # The release the image serves: the version of the source it is built from.
@@ -60,8 +67,9 @@ COPY --from=build /chap/packages/coordinator-mcp/package.json packages/coordinat
 COPY --from=build /chap/packages/coordinator-mcp/dist         packages/coordinator-mcp/dist/
 
 # The participant every call is made as, as --as does. Unset means
-# agent:assistant@local; a human: URI is refused, since a person decides in a
-# desk. Reach a desk server with --url, and the person decides there.
+# agent:assistant, the agent a create-chap-app mcp-gate project joins; a
+# human: URI is refused, since a person decides in a desk. Reach a desk
+# server with --url, and the person decides there.
 ENV CHAP_PARTICIPANT=""
 
 # Persist workspaces by mounting a volume and setting CHAP_DB_PATH to a file
