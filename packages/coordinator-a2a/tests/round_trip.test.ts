@@ -3,8 +3,10 @@
  *
  * A 1.0 client finds the JSON-RPC interface on the card and round-trips,
  * and a 0.3 client, sending message/send with kind-tagged parts and no
- * A2A-Version header, is answered through the SDK's compatibility layer. A
- * refused call reaches either client as a task the agent rejected.
+ * A2A-Version header, is answered through the SDK's compatibility layer:
+ * the SDK's own 0.3 transport round-trips, and the raw requests pin the 0.3
+ * wire shapes. A refused call reaches either client as a task the agent
+ * rejected.
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -15,6 +17,7 @@ import { AGENT_CARD_PATH, Role, TaskState, type Message, type Task } from "@a2a-
 import { DefaultRequestHandler } from "@a2a-js/sdk/server";
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from "@a2a-js/sdk/server/express";
 import { ClientFactory, type Client } from "@a2a-js/sdk/client";
+import { LegacyJsonRpcTransport } from "@a2a-js/sdk/compat/v0_3/client";
 
 import { Coordinator } from "@brightbeamai/chap-coordinator";
 
@@ -46,7 +49,7 @@ function message(skill: string, params: Record<string, unknown>): Message {
   };
 }
 
-async function send(client: Client, skill: string, params: Record<string, unknown>): Promise<Record<string, any>> {
+async function send(client: Pick<Client, "sendMessage">, skill: string, params: Record<string, unknown>): Promise<Record<string, any>> {
   const reply = await client.sendMessage({ tenant: "", message: message(skill, params), configuration: undefined, metadata: undefined });
   const part = (reply as Message).parts[0];
   assert.equal(part.content?.$case, "data", JSON.stringify(reply));
@@ -94,6 +97,23 @@ test("a v0.3 client is still answered: the card and message/send in v0.3 shapes"
   assert.equal(body.result.role, "agent");
   assert.equal(body.result.parts[0].kind, "data");
   assert.equal(body.result.parts[0].data.workspace, "w03");
+});
+
+test("the SDK's 0.3 JSON-RPC transport drives a workspace and reads a refusal as a rejected task", async () => {
+  const client = new LegacyJsonRpcTransport({ endpoint: `${base}/` });
+  assert.equal((await send(client, "chap.workspace.create", { workspace: "w3", from: "human:a" })).workspace, "w3");
+  await send(client, "chap.participant.join", { workspace: "w3", from: "human:a", type: "human" });
+  await send(client, "chap.participant.join", { workspace: "w3", from: "agent:b", type: "agent" });
+  const made = await send(client, "chap.task.create", { workspace: "w3", from: "agent:b", kind: "k", input: {}, assignee: "agent:b", review_required: true });
+  const done = await send(client, "chap.task.complete", { workspace: "w3", from: "agent:b", task_id: made.task_id, output: { body: "draft" } });
+  assert.equal(done.state, "review_requested");
+  const approved = await send(client, "chap.decide.approve", { workspace: "w3", from: "human:a", task_id: made.task_id });
+  assert.equal(approved.state, "completed");
+
+  const refused = await client.sendMessage({ tenant: "", configuration: undefined, metadata: undefined,
+    message: message("chap.workspace.describe", { workspace: "missing" }) }) as Task;
+  assert.equal(refused.status?.state, TaskState.TASK_STATE_REJECTED, JSON.stringify(refused));
+  assert.equal((refused.status!.message!.parts[0].content as { value: Record<string, any> }).value.chap_error, -32602);
 });
 
 test("a refused call reaches a 1.0 client as a rejected task", async () => {
