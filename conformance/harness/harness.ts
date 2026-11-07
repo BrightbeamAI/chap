@@ -346,6 +346,26 @@ async function runCoreTests(client: HapClient, ws: string): Promise<void> {
     assert(!d.members.some((m: any) => m.uri === "human:mallory@example.org" || m.uri === "bot:mallory"),
       "a refused join adds no member");
   });
+
+  await test("Core methods", "cm-14", "the admin role is granted, never claimed", async () => {
+    // cm-01 made alice the workspace's first member, the one participant who
+    // could have named the role at a join.
+    const join = (from: string, type: string, role: string) => client.call("participant.join", {
+      workspace: ws, from, to: "service:coordinator@example.org", ts: new Date().toISOString(), type, role,
+    });
+    const { error: claimed } = await join("human:mallory@example.org", "human", "admin");
+    assertEq(claimed?.code, -32011, "a later joiner naming the admin role");
+    assertEq(claimed?.message, "The admin role is granted by an admin", "the refusal says who grants the role");
+    const { error: agent } = await join("agent:admin-bot", "agent", "admin");
+    assertEq(agent?.code, -32602, "an agent naming the admin role");
+    const { result: again } = await join("human:alice@example.org", "human", "admin");
+    assertEq(again?.joined, true, "a member joining again is answered as joined");
+    const { result: d } = await client.call("workspace.describe", { workspace: ws });
+    const alice = d.members.find((m: any) => m.uri === "human:alice@example.org");
+    assertEq(alice?.role, "reviewer", "a member joining again keeps its role");
+    assert(!d.members.some((m: any) => m.uri === "human:mallory@example.org" || m.uri === "agent:admin-bot"),
+      "a refused join adds no member");
+  });
 }
 
 // ============================================================

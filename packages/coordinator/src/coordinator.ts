@@ -245,6 +245,19 @@ const RESERVED_KEYS = ["__proto__", "constructor", "prototype"];
 /** The participant types SPECIFICATION 5.1 names, each the scheme of its URIs. */
 const PARTICIPANT_TYPES = ["human", "agent", "service", "group", "workspace"];
 
+/** The types that may hold the admin role (SPECIFICATION 6.3). */
+const ADMIN_TYPES = ["human", "service"];
+
+/**
+ * Whether nobody has joined the workspace yet: it holds no member and its log
+ * holds no accepted participant.join. A workspace whose members have all left
+ * has had its first member.
+ */
+function awaitsFirstMember(ws: Workspace): boolean {
+  if (ws.members.size > 0) return false;
+  return !ws.audit.some((e) => e.outcome == null && entryCall(e)?.method === "participant.join");
+}
+
 /** The keys of a join's `jwks` a signature can name: objects with a non-empty string kid. */
 function signingKeys(jwks: unknown): Array<Record<string, unknown> & { kid: string }> {
   const keys = isObject(jwks) && Array.isArray(jwks.keys) ? jwks.keys : [];
@@ -1835,6 +1848,9 @@ export class Coordinator {
       ["oidc_token", "string"], ["vc_presentation", "object"],
     ]);
     if (bad) return bad;
+    if (p.role === "admin" && !ADMIN_TYPES.includes(type)) {
+      return { error: rpcError(E.PARAMS, "The admin role is held by a human or a service") };
+    }
     // A join may make its workspace. It is judged by the workspace it would
     // make, which is registered only once the join passes, so a refused join
     // leaves nothing behind.
@@ -1849,6 +1865,13 @@ export class Coordinator {
     const now = this.now();
     const existing = ws.members.get(uri);
     let tokenVerified = false;
+
+    // SPECIFICATION 6.3: the admin role is granted, never claimed. The first
+    // participant to join may take it. Taken by anyone who asked, it would let
+    // an agent drop the workspace's identity profile or revoke a person's key.
+    if (!existing && p.role === "admin" && !awaitsFirstMember(ws)) {
+      return { error: rpcError(E.NOT_AUTHORISED, "The admin role is granted by an admin") };
+    }
 
     // identity-oidc/1.0 and identity-vc/1.0: where a verifier is configured
     // and the workspace advertises its profile, a person joins with the

@@ -32,13 +32,12 @@ control, deliberation, handoff and whisper method, and from 0.3.0 for
 `participant.join`, `audit.submit_to_scitt` and the reads are exempt by
 design. See SPECIFICATION.md S6.3.1.
 
-**Admin (role).** [normative] A workspace role. Both coordinators require it
-for `workspace.set_profiles` and for revoking another member's key. The
+**Admin (role).** [normative] A workspace role, held by a `human` or a
+`service`. Both coordinators require it for `workspace.set_profiles` and for
+revoking another member's key. It is granted, never claimed: only the
+workspace's first member may name it at `participant.join`. The
 specification also gives it inviting and evicting Participants and changing
-the mode, through methods not yet built. Neither coordinator controls
-admission yet: `participant.join` admits any caller in the role it asks for.
-Until milestone 0.6, authenticate joins and enforce role policy in front of
-the coordinator.
+the mode, through methods not yet built. See SPECIFICATION.md S6.3.
 
 **Anchor.** An external publication of an evidence-chain head, for example
 to a transparency log, so that tampering can be shown outside the

@@ -448,6 +448,19 @@ _RESERVED_KEYS = ("__proto__", "constructor", "prototype")
 #: The participant types SPECIFICATION 5.1 names, each the scheme of its URIs.
 _PARTICIPANT_TYPES = ("human", "agent", "service", "group", "workspace")
 
+#: The types that may hold the admin role (SPECIFICATION 6.3).
+_ADMIN_TYPES = ("human", "service")
+
+
+def _awaits_first_member(ws: Workspace) -> bool:
+    """Whether nobody has joined the workspace yet: it holds no member and its
+    log holds no accepted participant.join. A workspace whose members have all
+    left has had its first member."""
+    if ws.members:
+        return False
+    return not any(e.outcome is None and (entry_call(e) or {}).get("method") == "participant.join"
+                   for e in ws.audit)
+
 
 def _signing_keys(jwks: Any) -> list[dict]:
     """The keys of a join's ``jwks`` a signature can name: objects with a
@@ -1683,6 +1696,8 @@ class Coordinator:
         ])
         if bad:
             return bad
+        if p.get("role") == "admin" and kind not in _ADMIN_TYPES:
+            return {"error": rpc_error(E.PARAMS, "The admin role is held by a human or a service")}
         # A join may make its workspace. It is judged by the workspace it
         # would make, which is registered only once the join passes, so a
         # refused join leaves nothing behind.
@@ -1697,6 +1712,13 @@ class Coordinator:
         now = self.now_iso()
         existing = ws.members.get(uri)
         token_verified = False
+
+        # SPECIFICATION 6.3: the admin role is granted, never claimed. The
+        # first participant to join may take it. Taken by anyone who asked, it
+        # would let an agent drop the workspace's identity profile or revoke a
+        # person's key.
+        if existing is None and p.get("role") == "admin" and not _awaits_first_member(ws):
+            return {"error": rpc_error(E.NOT_AUTHORISED, "The admin role is granted by an admin")}
 
         # identity-oidc/1.0 and identity-vc/1.0: where a verifier is
         # configured and the workspace advertises its profile, a person joins

@@ -230,16 +230,17 @@ def test_participant_revoke_key():
     coord.dispatch({"jsonrpc": "2.0", "id": "1",
                     "method": "workspace.create",
                     "params": {"workspace": "wsp_rv"}})
-    coord.dispatch({"jsonrpc": "2.0", "id": "2",
-                    "method": "participant.join",
-                    "params": {"workspace": "wsp_rv",
-                               "from": "human:alice@x", "type": "human",
-                               "role": "r", "jwks": {"keys": [jwk]}}})
+    # The first member takes the admin role (SPECIFICATION 6.3).
     coord.dispatch({"jsonrpc": "2.0", "id": "2a",
                     "method": "participant.join",
                     "params": {"workspace": "wsp_rv",
                                "from": "human:admin@x", "type": "human",
                                "role": "admin"}})
+    coord.dispatch({"jsonrpc": "2.0", "id": "2",
+                    "method": "participant.join",
+                    "params": {"workspace": "wsp_rv",
+                               "from": "human:alice@x", "type": "human",
+                               "role": "r", "jwks": {"keys": [jwk]}}})
     r = coord.dispatch({"jsonrpc": "2.0", "id": "3",
                         "method": "participant.revoke_key",
                         "params": {"workspace": "wsp_rv",

@@ -42,11 +42,12 @@ def test_set_profiles_requires_admin():
     c = Coordinator(CoordinatorOptions())
     c.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
                 "params": {"workspace": "w"}})
-    c.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
-                "params": {"workspace": "w", "from": "human:alice", "type": "human"}})
+    # The first member takes the admin role (SPECIFICATION 6.3).
     c.dispatch({"jsonrpc": "2.0", "id": "3", "method": "participant.join",
                 "params": {"workspace": "w", "from": "human:admin", "type": "human",
                            "role": "admin"}})
+    c.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
+                "params": {"workspace": "w", "from": "human:alice", "type": "human"}})
 
     def set_profiles(sender):
         return c.dispatch({"jsonrpc": "2.0", "id": "s", "method": "workspace.set_profiles",

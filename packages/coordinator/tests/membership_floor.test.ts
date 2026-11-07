@@ -37,10 +37,11 @@ test("task.update requires membership", () => {
 test("set_profiles requires the admin role", () => {
   const c = new Coordinator({});
   c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create", params: { workspace: "w" }});
-  c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",
-    params: { workspace: "w", from: "human:alice", type: "human" }});
+  // The first member takes the admin role (SPECIFICATION 6.3).
   c.dispatch({ jsonrpc: "2.0", id: "3", method: "participant.join",
     params: { workspace: "w", from: "human:admin", type: "human", role: "admin" }});
+  c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",
+    params: { workspace: "w", from: "human:alice", type: "human" }});
   const setProfiles = (from: string) => c.dispatch({ jsonrpc: "2.0", id: "s",
     method: "workspace.set_profiles", params: { workspace: "w", from, profiles: ["core/1.0", "review/1.0"] }});
   assert.equal(setProfiles("human:alice").error?.code, -32011);

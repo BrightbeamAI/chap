@@ -149,7 +149,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "role": {
                 "type": "string",
-                "description": "Operator-defined role, e.g. 'reviewer' or 'drafter'. One value is read by the coordinator: 'admin' permits revoking another member's key.",
+                "description": "Operator-defined role, e.g. 'reviewer' or 'drafter'. One value is read by the coordinator: 'admin', which changes the profiles and revokes another member's key. It is granted, never claimed: only the workspace's first member may name it at a join, and any other join naming it is refused with -32011. Only a human or a service holds it.",
             },
             "display_name": {
                 "type": "string",

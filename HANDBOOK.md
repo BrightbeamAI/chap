@@ -402,11 +402,11 @@ role_permissions:
   operator:   [control.*, workspace.*, participant.leave]
 ```
 
-Neither coordinator controls admission yet: `participant.join` admits
-any caller in the role it asks for, and the only role checks are the
-admin role on `workspace.set_profiles` and on revoking another member's
-key. Until milestone 0.6, authenticate joins and enforce role policy in
-front of the coordinator.
+`participant.join` admits a caller in the role it asks for, except the
+`admin` role, which only the workspace's first member may name. The only
+role checks are the admin role on `workspace.set_profiles` and on revoking
+another member's key. Until milestone 0.6, authenticate joins and enforce
+role policy in front of the coordinator.
 
 ### 7.5 What the Coordinator enforces before your policy runs
 

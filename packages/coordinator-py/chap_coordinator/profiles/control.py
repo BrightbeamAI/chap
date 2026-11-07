@@ -258,9 +258,14 @@ def register_control(coord: "Coordinator") -> None:
             snap_uris = {m["uri"]: m for m in snap.content["state"]["members"]}
             for uri, snap_m in snap_uris.items():
                 if uri in ws.members:
-                    ws.members[uri].role = snap_m.get("role",
-                                                     ws.members[uri].role)
-                    ws.members[uri].scopes = copy.deepcopy(snap_m.get("scopes"))
+                    member = ws.members[uri]
+                    # The admin role is granted by an admin (SPECIFICATION
+                    # 6.3), and a rollback, which any member may call, neither
+                    # grants nor removes it.
+                    role = snap_m.get("role", member.role)
+                    if role != "admin" and member.role != "admin":
+                        member.role = role
+                    member.scopes = copy.deepcopy(snap_m.get("scopes"))
             restored.append("members")
 
         return {"result": {

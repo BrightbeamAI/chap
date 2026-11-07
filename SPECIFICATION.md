@@ -548,10 +548,9 @@ evidence chain.
 
 ### 6.1 Lifecycle
 
-A workspace is created with `workspace.create`. The creator becomes
-the initial admin. This is specified and not yet built: neither
-reference makes the creator a member, so the creator joins with
-`participant.join` like anyone else.
+A workspace is created with `workspace.create`, which makes no member: the
+creator joins with `participant.join` like anyone else. The first
+participant to join may take the `admin` role (§6.3).
 
 A workspace starts `active`. `control.pause` with `scope: "workspace"`
 moves it to `paused`, and `control.resume` with the same scope moves it
@@ -614,6 +613,19 @@ Roles are workspace-local strings. The protocol defines two
 
 All other role names are deployment-defined. The workspace's
 `policy_uri` describes which roles may invoke which methods.
+
+The admin role is granted, never claimed. The admin calls,
+`workspace.set_profiles` and revoking another member's key among them,
+govern what the workspace guarantees, so a role any joiner could name would
+hand those guarantees to whoever asked. A Coordinator MUST accept
+`role: "admin"` at `participant.join` only from the workspace's first
+member, the first participant to join it, and otherwise refuse it with
+`-32011`, "The admin role is granted by an admin". A workspace whose members
+have all left has had its first member. A join that asks for the role with a
+`type` other than `human` or `service` MUST be refused with `-32602`. A
+member joining again keeps its role, whatever role the join names (§6.3.2),
+and `control.rollback`, which any member may call, neither grants the role
+nor takes it away ([`profiles/control.md`](./profiles/control.md) §3).
 
 The `coordinator` role is specified and not yet built: neither
 reference assigns it, and the Coordinator is not a member (§2).

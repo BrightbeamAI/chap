@@ -155,7 +155,7 @@ export const SCHEMAS: Record<string, JsonSchema> = {
         enum: ["human", "agent", "service", "group", "workspace"],
         description: "The kind of participant, which the scheme of from must name: 'agent:' for an agent, and so on. Any other join is refused with -32602. Only members of type 'human' are eligible for the review that chap.task.complete opens on a task marked review_required, and a completion with no eligible human is refused with -32011.",
       },
-      role:      { type: "string", description: "Operator-defined role, e.g. 'reviewer' or 'drafter'. One value is read by the coordinator: 'admin' permits revoking another member's key." },
+      role:      { type: "string", description: "Operator-defined role, e.g. 'reviewer' or 'drafter'. One value is read by the coordinator: 'admin', which changes the profiles and revokes another member's key. It is granted, never claimed: only the workspace's first member may name it at a join, and any other join naming it is refused with -32011. Only a human or a service holds it." },
       display_name: { type: "string", description: "Human-readable name for interfaces. Not used in authorisation." },
     },
     required: ["workspace", "from", "type"],

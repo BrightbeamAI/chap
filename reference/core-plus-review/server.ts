@@ -145,6 +145,8 @@ interface Workspace {
   overrides: Map<ArtefactId, OverrideArtefact>;
   audit:     AuditEntry[];
   profiles:  string[];
+  /** Whether anyone has joined: only the first member may take the admin role (SPECIFICATION 6.3). */
+  joined:    boolean;
   /** Signed calls on the log by what their senders signed, with the seq each took, for SPECIFICATION 10.1. */
   signed:    { refused: Map<string, { seq: number; code: number }>; accepted: Map<string, number> };
 }
@@ -287,6 +289,7 @@ function ensureWorkspace(id: string): Workspace {
       overrides: new Map(),
       audit:     [],
       profiles:  ["core/1.0", "review/1.0"],
+      joined:    false,
       signed:    { refused: new Map(), accepted: new Map() },
     };
     workspaces.set(id, ws);
@@ -452,8 +455,19 @@ const handlers: Record<string, Handler> = {
     if (typeof p.from !== "string" || !p.from.startsWith(`${type}:`)) {
       return { error: err(E.PARAMS, `from must start with "${type}:" for type ${type}`) };
     }
+    // SPECIFICATION 6.3: the admin role is granted, never claimed. Only a
+    // person or a service holds it, and only the first member may name it.
+    if (p.role === "admin" && type !== "human" && type !== "service") {
+      return { error: err(E.PARAMS, "The admin role is held by a human or a service") };
+    }
     const ws = ensureWorkspace(p.workspace as string);
     const uri  = p.from as string;
+    // A member joining again keeps what it joined with (SPECIFICATION 6.3.2).
+    if (ws.members.has(uri)) return { result: { joined: true, as: uri } };
+    if (p.role === "admin" && ws.joined) {
+      return { error: err(E.NOT_AUTHORISED, "The admin role is granted by an admin") };
+    }
+    ws.joined = true;
     ws.members.set(uri, {
       uri,
       type:         p.type as Member["type"],

@@ -79,7 +79,7 @@ Each `include` slice has exactly this projection in `content.state`:
 
 | Slice | Captured fields | Rollback behavior |
 |-------|-----------------|-------------------|
-| `members` | `members`: list of `uri`, `type`, `role`, and optional non-empty `scopes`. | Restore role and scopes for members still present; do not recreate departed members. |
+| `members` | `members`: list of `uri`, `type`, `role`, and optional non-empty `scopes`. | Restore role and scopes for members still present; do not recreate departed members. The `admin` role is neither granted nor taken away: an admin grants it (SPECIFICATION §6.3). |
 | `mode_ceiling` | `mode_ceiling`: the workspace value. | Restore the captured ceiling. |
 | `open_tasks` | `open_tasks`: list of `id`, `kind`, `state`, and `assignee` for tasks not in `completed`, `declined`, `cancelled`, or `superseded`. | Informational only; tasks are not restored. |
 | `policy` | `routing_policy_uri`, when present and non-empty. | Informational only. |

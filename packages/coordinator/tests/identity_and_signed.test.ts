@@ -140,11 +140,12 @@ test("participant.revoke_key marks the key revoked", () => {
   const k = genKeypair();
   c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create",
     params: { workspace: "wsp_rv" }});
+  // The first member takes the admin role (SPECIFICATION 6.3).
+  c.dispatch({ jsonrpc: "2.0", id: "2a", method: "participant.join",
+    params: { workspace: "wsp_rv", from: "human:admin", type: "human", role: "admin" }});
   c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",
     params: { workspace: "wsp_rv", from: "human:alice", type: "human", role: "owner",
               jwks: { keys: [k.jwk] }}});
-  c.dispatch({ jsonrpc: "2.0", id: "2a", method: "participant.join",
-    params: { workspace: "wsp_rv", from: "human:admin", type: "human", role: "admin" }});
   const r = c.dispatch({ jsonrpc: "2.0", id: "3", method: "participant.revoke_key",
     params: { workspace: "wsp_rv", from: "human:admin",
               target_uri: "human:alice", kid: k.jwk.kid, reason: "test" }});

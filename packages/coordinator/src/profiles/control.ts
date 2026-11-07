@@ -202,7 +202,10 @@ export function registerControl(coord: Coordinator): void {
       for (const [uri, snapM] of snapByUri) {
         if (ws.members.has(uri)) {
           const cur = ws.members.get(uri)!;
-          cur.role = (snapM.role as string) ?? cur.role;
+          // The admin role is granted by an admin (SPECIFICATION 6.3), and a
+          // rollback, which any member may call, neither grants nor removes it.
+          const role = (snapM.role as string) ?? cur.role;
+          if (role !== "admin" && cur.role !== "admin") cur.role = role;
           cur.scopes = Array.isArray(snapM.scopes) ? [...snapM.scopes as string[]] : undefined;
         }
       }
