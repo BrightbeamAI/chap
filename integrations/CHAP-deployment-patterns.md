@@ -250,7 +250,7 @@ Use case: one team, one workspace, on-premises or a single cloud account.
 
 - Transport: WebSocket.
 - Storage: Postgres for hot, object store for cold.
-- Identity: OIDC against the org's IdP; service accounts via OAuth 2.0 client credentials.
+- Identity: people sign in at the org's IdP through the desk (`identity-oidc/1.0`), and the ID token binds the key they sign with; agents and services sign with keys of their own, registered when they join.
 - Backup: daily Postgres snapshot + continuous WAL shipping; weekly cold-archive export to object store.
 - DR target: RPO ≤ 1 minute, RTO ≤ 5 minutes.
 
@@ -323,7 +323,7 @@ Use case: a regulated organisation (financial services, healthcare) running CHAP
 
 - Transport: WebSocket on the internal VLAN; mTLS terminated at the load balancer.
 - Storage: Postgres + WAL + WORM cold tier.
-- Identity: SPIFFE for services, internal OIDC for humans.
+- Identity: the internal OIDC IdP for people, through the desk; for services, keys provisioned from the mesh's workload identity (SPIFFE) and registered when they join.
 - Compliance: daily checkpoint hash exported to immutable media; quarterly auditor read access via `audit.read` with a scoped account.
 
 ---
@@ -361,7 +361,7 @@ Three classes of key, three management strategies:
 
 | Class                | Lifetime         | Custody             | Rotation                         |
 |----------------------|------------------|---------------------|----------------------------------|
-| Human ephemeral      | One session      | Client device       | Each login.                      |
+| Person               | Until rotated or revoked | The desk: a passkey, or a key kept in the browser | `participant.rotate_key`; a lost key is revoked and an admin's `workspace.invite` registers a new one. |
 | Agent / service      | Days-weeks       | Workload identity   | Scheduled; `participant.rotate_key`. |
 | Coordinator          | Months           | HSM or KMS          | Quarterly; admin operation.      |
 
@@ -431,8 +431,8 @@ A minimum operational runbook for a CHAP deployment covers:
 | Storage (cold)         | Object store with signed exports.                       |
 | Transport (interactive) | WebSocket; HTTP+SSE fallback.                          |
 | Transport (server flows) | Kafka or NATS for high volume.                        |
-| Identity (human)        | OIDC with `cnf.jwk` binding.                           |
-| Identity (service)      | SPIFFE preferred; mTLS / OAuth client creds otherwise. |
+| Identity (human)        | OIDC sign-in at the desk, the authorisation code flow with PKCE; the token binds the key by `cnf.jwk` or by a nonce that is the key's thumbprint, and names the URI by `chap_participant_uri` or an invitation's `oidc_sub`. |
+| Identity (service)      | Keys of their own, registered at the join; provisioned from workload identity (SPIFFE, mTLS) where a mesh has one. |
 | Coordinator key custody | HSM or KMS.                                            |
 
 Start simple, a single coordinator pair with Postgres is sufficient
