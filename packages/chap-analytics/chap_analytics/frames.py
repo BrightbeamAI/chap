@@ -791,11 +791,12 @@ def _replay(chain: Chain) -> _Index:  # noqa: C901 - one pass, one branch per me
             spec = p.get("new_task") if isinstance(p.get("new_task"), dict) else {}
             # The successor inherits the original's kind where the spec names
             # none, and its mode where the spec names none. It requires review
-            # when the original did, and otherwise under the rule task.create
+            # when the original did, or, from chap-coordinator 0.3.5, when the
+            # original held a review, and otherwise under the rule task.create
             # applies to its mode. The coordinator reads no review_required
             # from the spec.
             mode = spec.get("mode") or (old.mode if old else None)
-            keeps_review = bool(old is not None and old.review_required)
+            keeps_review = bool(old is not None and (old.review_required or old.reviews))
             inherited = ({"mode"} if not spec.get("mode") else set()) \
                 | ({"kind"} if not spec.get("kind") else set()) \
                 | ({"review_required"} if keeps_review else set())
