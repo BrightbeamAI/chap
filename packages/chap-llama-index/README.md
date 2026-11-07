@@ -21,7 +21,7 @@ and why.
 pip install chap-llama-index
 ```
 
-Depends on `chap-coordinator>=0.3.4`. Install the extra to run a live
+Depends on `chap-coordinator>=0.3.5`. Install the extra to run a live
 workflow; `request_response` needs it to build the event it returns:
 
 ```bash
@@ -252,7 +252,7 @@ against an in-process desk and a desk server where people sign.
 
 ## Compatibility
 
-- `chap-coordinator` 0.3.4 and later
+- `chap-coordinator` 0.3.5 and later
 - `llama-index-workflows` 1.x and 2.x (optional; tested with
   llama-index-workflows 1.0.0 and 2.26.1)
 - Python 3.10, 3.11, 3.12, 3.13

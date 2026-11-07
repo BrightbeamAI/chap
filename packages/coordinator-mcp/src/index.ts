@@ -14,7 +14,7 @@
  *   import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
  *
  *   const coord = new Coordinator({ ... });
- *   const server = makeChapMcpServer(coord, { name: "chap", version: "0.3.4" });
+ *   const server = makeChapMcpServer(coord, { name: "chap", version: "0.3.5" });
  *   await server.connect(new StdioServerTransport());
  *
  * Usage (HTTP): chapMcpHttpHandler(coord, options) answers a Node `http`
@@ -124,7 +124,7 @@ export interface ChapDispatcher {
 export interface ChapMcpOptions {
   /** Server name advertised to MCP clients. Default: "chap". */
   name?: string;
-  /** Server version. Default: "0.3.4". */
+  /** Server version. Default: "0.3.5". */
   version?: string;
   /**
    * Restrict the CHAP methods this server offers. Default: all of them. A
@@ -187,7 +187,7 @@ export function makeChapMcpServer(coord: ChapDispatcher, options: ChapMcpOptions
   refusePerson(options.participant);
   const serverInfo = {
     name:    options.name    ?? "chap",
-    version: options.version ?? "0.3.4",
+    version: options.version ?? "0.3.5",
   };
 
   const server = new Server(

@@ -17,7 +17,7 @@ log, so the chain records what changed and why.
 pip install chap-pydantic-ai
 ```
 
-Depends on `chap-coordinator>=0.3.4`. Install the extra to run a live
+Depends on `chap-coordinator>=0.3.5`. Install the extra to run a live
 agent; `request_results` needs Pydantic AI 1.41 or later to build the
 results it returns:
 
@@ -257,7 +257,7 @@ server where people sign.
 
 ## Compatibility
 
-- `chap-coordinator` 0.3.4 and later
+- `chap-coordinator` 0.3.5 and later
 - `pydantic-ai` 1.41 and later (optional; tested with pydantic-ai-slim
   1.41.0 and pydantic-ai 2.54.0)
 - Python 3.10, 3.11, 3.12, 3.13

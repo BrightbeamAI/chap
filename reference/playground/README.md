@@ -38,7 +38,7 @@ wire format is the same one a production CHAP deployment would use.
 
 ## Requirements
 
-- **Node 20 or later.**
+- **Node 22 or later.**
 - A model is optional. With nothing configured, a scripted agent drafts
   every ticket, so the playground runs on a fresh machine. To draft with a
   model, set one of these before `npm start`:

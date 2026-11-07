@@ -45,7 +45,7 @@ MODES = {
 
 
 def node() -> str | None:
-    """Node 20 or later, where the desk's client has Ed25519 in WebCrypto; None without it."""
+    """Node 22 or later, where the desk's client has Ed25519 in WebCrypto; None without it."""
     found = shutil.which("node")
     if found is None:
         return None
@@ -331,7 +331,7 @@ def test_the_desk_is_served(desk):
     assert refused.value.code == 404
 
 
-@pytest.mark.skipif(NODE is None, reason="the desk's client runs in Node 20 or later, which is not installed")
+@pytest.mark.skipif(NODE is None, reason="the desk's client runs in Node 22 or later, which is not installed")
 def test_the_desks_own_client_signs_the_persons_decision(tmp_path):
     """As shipped, the agent calls unsigned, and the person's decision is
     signed in the desk, with the desk's own client and a key it made."""

@@ -67,7 +67,7 @@ as `io.github.BrightbeamAI/chap`.
 npm install @brightbeamai/chap-coordinator-mcp
 ```
 
-Node 20+ required. Runtime dependencies: `@brightbeamai/chap-coordinator`,
+Node 22+ required. Runtime dependencies: `@brightbeamai/chap-coordinator`,
 `@modelcontextprotocol/sdk` and `zod`. The binary is `chap-mcp-server`.
 
 ## Quick start
@@ -103,7 +103,7 @@ transport (stdio, Streamable HTTP, etc.).
 | `envelopeIdFactory` | The id of each envelope a tool call sends. |
 
 Without `participant` or `toolFilter`,
-`makeChapMcpServer(coord, { name: "chap", version: "0.3.4" })` serves every
+`makeChapMcpServer(coord, { name: "chap", version: "0.3.5" })` serves every
 tool and each call names its own `from`. That suits a connection that stands
 for no one member, such as a service of your own that authenticates its
 callers and checks the `from` they send.

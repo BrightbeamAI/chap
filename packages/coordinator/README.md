@@ -13,7 +13,7 @@ surface, so the two interoperate on the same JSON-RPC 2.0 wire.
 npm install @brightbeamai/chap-coordinator
 ```
 
-Node 20+ required. No required runtime dependencies; uses Node's built-in
+Node 22+ required. No required runtime dependencies; uses Node's built-in
 `crypto` for Ed25519 and JCS. `SqliteStore` uses `better-sqlite3`, an
 optional dependency, where it is installed, and Node's built-in
 `node:sqlite` (Node 22.13 and later) where it is not.

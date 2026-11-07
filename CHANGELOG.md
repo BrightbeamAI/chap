@@ -21,6 +21,162 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
 
 ---
 
+## 0.3.5: who decides, who joins, and CHAP you can run
+
+The protocol packages move together to 0.3.5, and two packages join them:
+`@brightbeamai/chap-server`, the desk server, and
+`@brightbeamai/chap-code-gate`, the code gate, both taken out of the
+generated projects so an upgrade reaches them. `chap-analytics` 0.2.6, on
+its own track, reads what 0.3.5 records.
+
+Most of the coordinator changes close ways a review could be settled by
+someone other than an independent person, or a member could join under a
+name or a role nobody gave it. They are security fixes, so they ship as a
+patch release on the supported 0.3 line, as SECURITY.md sets out. Several
+refuse calls 0.3.4 accepted; "Upgrading" below lists each one and what to
+send in its place.
+
+### Security
+
+- **The authors of the work do not decide its review.** The assignee and
+  the member that completed the work are recorded as the review's
+  `authors`, and a `decide.*`, `abstain.declare` or `review.acknowledge`
+  from one of them is refused with `-32011`, however the review is
+  addressed. On a task that requires review, only people decide: an agent
+  or a service named as reviewer is refused, and the reviewer set a
+  coordinator picks holds only `type: "human"` members.
+- **A review once opened is decided.** On a task that requires review, an
+  author cannot open the review with `review.request`, pick its reviewers
+  or rule, or address it to `group:` or `workspace:`; `task.complete`
+  opens it, from the assignee only. Only an author may take the work back
+  to revise it, a task under review cannot be declined before a reviewer
+  rejects it, and `escalate.raise` hands the review on with the work.
+- **A workspace sets its review rule.** `workspace.create` takes
+  `review_rule` (`any_one_approves`, `all_approve` or `quorum:<n>`), and
+  every review `task.complete` opens takes it, so a deployment can ask for
+  more than one approval and no author can ask for fewer.
+- **A signed request takes effect once.** A signed call identical to one
+  already accepted is refused with `-32075` and `data.accepted_at_seq`, so
+  an accepted envelope copied from the log cannot be sent again, a
+  reviewer's reject replayed against a resubmitted artefact for instance.
+- **Who signs.** A workspace's `signature_policy` is `"all"`, the default,
+  or `"humans"`: under `"humans"` an agent member may call unsigned, and
+  people and services sign. A workspace that advertises `security-signed`,
+  `identity-oidc` or `identity-vc` cannot drop it with
+  `workspace.set_profiles`.
+- **The admin role is granted.** `role: "admin"` at `participant.join` is
+  accepted from the workspace's first member, or from a participant an
+  admin's invitation names as admin, and is otherwise refused with
+  `-32011`. `workspace.invite` is built, and `join_policy: "invite"`
+  admits only invited participants and the first member.
+- **Joins.** A join under a member's name with keys the member does not
+  hold is refused with `-32011`; a new key arrives through
+  `participant.rotate_key`. Where signatures are required, a join with no
+  key is refused with `-32602`. A URI's scheme must match its `type`, and
+  `group:` and `workspace:` addresses cannot join. Where a token verifier
+  is configured, a person joins with a token for them (`-32403` without
+  one), and the token binds the joining key through its nonce or `cnf`
+  claim (`-32404` otherwise). A credential sent at join is recorded as its
+  SHA-256 digest, and never on the chain.
+- **Signatures have one spelling.** An Ed25519 signature in anything other
+  than canonical base64 is refused, and `webauthn:` tags are verified,
+  against the origins the coordinator is configured with.
+- **Smaller fixes.** `handoff.accept` takes only tasks the proposer still
+  holds. `__proto__`, `constructor` and `prototype` are refused as
+  idempotency keys. A `-32603` answer carries no exception text; the
+  TypeScript coordinator passes the error to `onInternalError`.
+- **The servers.** The reference servers and the desk servers check
+  `Host` and `Origin`, take JSON only, and send no
+  `Access-Control-Allow-Origin`. A desk server admits only the members
+  `chap.config.json` names. The desk sends a strict
+  Content-Security-Policy, refuses framing, runs analytics in a sandbox,
+  keeps a reviewer's key where no script can read it, and marks invisible
+  characters and characters outside ASCII in names and changed lines.
+- **The code gate's hooks.** The hooks read the gate's address and the
+  signature rule from `chap.config.json` alone, fail closed, and chain to
+  the repository's own hooks. A gate joins the trust policy's reviewers
+  with their pinned keys at start, so nobody can take their names first.
+- **MCP and A2A act as an agent.** The MCP and A2A commands act as
+  `agent:assistant` by default, with `--as` to name another agent, and the
+  libraries refuse a person as the participant they act as. The MCP
+  commands offer the agent's tools, and the A2A executors the agent's
+  skills, unless told to offer every one.
+
+### Added
+
+- **`@brightbeamai/chap-server`.** The desk server for Node http, Express
+  or Fastify, mounted at any prefix: the desk, `/chap`, `/mcp` and the read
+  API. The desk signs with a passkey where the browser has one, records
+  `review.acknowledge` when a reviewer opens a review, and notifies people
+  through a webhook or the console when a review or a question waits.
+  Production projects sign people in with OIDC, with PKCE, and bind the
+  token to the desk's key.
+- **`@brightbeamai/chap-code-gate`.** The code gate's commands, hooks and
+  verifier as a package, with `chap-code-gate` on the path.
+- **The Python package runs CHAP.** `chap-coordinator serve` runs the desk
+  server, `chap-coordinator mcp` the MCP server over stdio, and
+  `chap-coordinator a2a` the A2A server. `chap_coordinator.client` has
+  `HttpCoordinator`, `Participant` and `Signer`, and
+  `chap_coordinator.server` the desk server as an ASGI app.
+- **`review.acknowledge`.** A reviewer says they have opened a review, so
+  the time a review waits unopened is told apart from the time it is read.
+- **`create-chap-app upgrade` and `add`.** `upgrade` brings a generated
+  project forward, the copies a project made of the server and the gate
+  included. `add` puts CHAP into a project that exists. Each project is
+  stamped with its template and release.
+- **MCP 2026-07-28.** `chapMcpHttpHandler` serves MCP over HTTP, answering
+  2026-07-28 beside the handshake versions. `chap-mcp-server --url`
+  forwards to a desk.
+- **A2A 1.0.** `@brightbeamai/chap-coordinator-a2a` runs on `@a2a-js/sdk`
+  1.3 and keeps answering 0.3 clients. A call the coordinator refuses ends
+  the task as failed. The Python `a2a` extra installs `a2a-sdk` with its
+  HTTP server.
+- **The framework bridges wait for a person.** Each bridge opens the
+  review and waits for the decision made in the desk, through
+  `chap_coordinator.bridge`. `chap-langgraph` opens the review in one node
+  and decides in the next, `chap-ag2` supports AG2 0.x and approves AG2
+  1.x tool calls, and `chap-google-adk` runs the reviewer's edit. A
+  decision a bridge records from another interface carries
+  `via: "bridge-record"`.
+
+### Changed
+
+- **Node.js 22 or later.** Node 20 reached its end of life on 30 April
+  2026. CI tests Node 22, 24 and 26, and the images run Node 24 as a
+  non-root user.
+- **Defaults in a new project.** The store is the project's own, the
+  evidence chain is on, and `require_signatures` takes `"humans"`, under
+  which the agent works unsigned and every person signs.
+- **Ports.** The `mcp-gate` template and the Python desk server listen on
+  8792, clear of a port some editors use for their own sign-in.
+- **The store.** A coordinator reads what another process wrote before it
+  answers, and a write that fails or meets a newer one is answered with
+  `-32603` and `data.reason: "store"`; the call took no effect, and the
+  caller may send it again. The TypeScript coordinator opens SQLite through
+  `node:sqlite` where `better-sqlite3` is not installed.
+
+### Upgrading
+
+Upgrade every coordinator, then every generated project with
+`npx create-chap-app@latest upgrade` and the project's directory. Calls
+0.3.4 accepted that are now refused:
+
+- An author's `review.request` on a task that requires review. Call
+  `task.complete`, and set the rule with `review_rule` at
+  `workspace.create`. A code gate configured with `quorum:<n>` or
+  `all_approve` refuses to propose on a store created under a weaker rule;
+  start it on a new store.
+- A decision from an agent or a service on a review that is required, and
+  a decision from an author.
+- `role: "admin"` at join from anyone other than the first member or an
+  invited admin. Invite admins with `workspace.invite`.
+- A join with keys other than the member's, a keyless join where
+  signatures are required, and a person's join with no token where a
+  verifier is configured.
+- An unsigned call from a person or a service under `"humans"`, a signed
+  call sent twice, and a signature in non-canonical base64.
+- An A2A or MCP library set to act as a person.
+
 ## 0.3.4: review rounds, patch size and the MCP gate
 
 The protocol packages move together to 0.3.4. Four of the fixes close ways a

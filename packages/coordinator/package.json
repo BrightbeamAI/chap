@@ -1,6 +1,6 @@
 {
   "name": "@brightbeamai/chap-coordinator",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Collaborative Human-Agent Protocol (CHAP): reference TypeScript implementation. Coordinator with Core + every shipped profile, plus pluggable storage and typed method facade.",
   "license": "Apache-2.0",
   "author": "Brightbeam AI <oss@brightbeam.com>",
@@ -29,7 +29,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "files": [
     "dist",

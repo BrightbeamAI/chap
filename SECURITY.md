@@ -82,22 +82,24 @@ Each protection in the coordinator is off until it is configured:
 | Identity verification at join | `verifyOidcToken`, `verifyVc` | None |
 
 With every option at its default, anyone who can reach the coordinator can
-join any workspace in any role, act in any member's name and read any
-workspace's log.
+join any workspace in any role but `admin`, act in any member's name and read
+any workspace's log.
 
 ### Threats and what answers them
 
 | Threat | What answers it | Conditions and gaps |
 |---|---|---|
 | A call made in another member's name | Signature verification against the member's registered keys. An MCP server built with `participant` makes every call as that member **(0.3.4)**. | Needs `requireSignatures`, and control over who joins under which name (section 4) |
-| A captured call sent again | A signed copy of a recorded refusal is answered with that refusal **(0.3.0)**. A repeated `task.create` idempotency key returns the first task. Each entry carries the `seq` and `arrived` the coordinator assigns. | Any other copy of an accepted call is evaluated again ([Envelope id replay](#envelope-id-replay)) |
+| A captured call sent again | A signed copy of an accepted call is refused with `-32075` **(0.3.5)**, and a signed copy of a recorded refusal is answered with that refusal **(0.3.0)**. A repeated `task.create` idempotency key returns the first task. Each entry carries the `seq` and `arrived` the coordinator assigns. | An unsigned copy of an accepted call is evaluated again ([Envelope id replay](#envelope-id-replay)) |
+| A review settled by whoever made the work | The authors of the work cannot decide its review; a review a task requires is decided by people; an author cannot open, address or end that review around a decision; a workspace's `review_rule` sets how many approvals it needs **(0.3.5)** | Needs signatures, so that `from` names its caller |
+| A join under another's name or role | A join with keys the member does not hold is refused; the `admin` role is granted by an admin; under `join_policy: "invite"` only invited participants join; with a token verifier a person joins with a token that names them and binds their key **(0.3.5)** | Under the open join policy without a verifier, a first join can claim any name nobody holds yet (section 4) |
 | An entry altered after it was written | The hash chain, checked by `audit.verify_chain` | Needs the chain switched on, and a head kept where the writer cannot change it |
 | Entries removed and the chain re-linked | Nothing inside the log. A SCITT receipt, or an earlier head held elsewhere, shows it. | Needs `audit-scitt/1.0` with a submitter, or another anchor |
 | A stolen signing key | Revocation by the key's owner or an admin, effective at once | Needs a revocation in each workspace that holds the key |
 | A privileged call from a stale session | Step-up: a recent OIDC `auth_time` for privileged methods | Needs `enforceStepUp` and a token verifier. Applies to humans and OIDC-bound members only. |
-| A method the workspace does not offer | The profile gate **(0.3.0)** | Follows the advertised profiles, which an admin can change |
+| A method the workspace does not offer | The profile gate **(0.3.0)** | Follows the advertised profiles, which an admin can change, apart from `security-signed` and the identity profiles, which stay once advertised **(0.3.5)** |
 | Shadow output reaching production | Nothing in the coordinator | Needs the deployment's delivery layer |
-| An artefact that claims authority | Authority comes from the method and the caller's membership, role and review assignment. Artefact content grants nothing. | Roles are chosen by the joiner (section 6) |
+| An artefact that claims authority | Authority comes from the method and the caller's membership, role and review assignment. Artefact content grants nothing. | Roles other than `admin` are chosen by the joiner (section 6) |
 | Oversized or deeply nested requests | A size limit, 1 MiB by default, and a nesting limit of 64 levels **(0.3.0)** | Needs rate limits at the transport |
 | A patch that grows an artefact | A `decide.override` patch may carry 1,000 operations. After each, the artefact may hold 100,000 values and as much string and key text as `max_envelope_bytes` allows, and nest 64 levels. The patch's copies, and its moves to a deeper place or onto the whole artefact, may carry three times the value and size limits between them **(0.3.4)** | Needs rate limits at the transport |
 
@@ -134,9 +136,13 @@ in a request is checked against the caller.
 
 - Every request except `workspace.create` and `participant.join` must carry a
   top-level `sig`, reads included. A request whose signature or key does not
-  check out is refused with `-32070`, `-32071` or `-32072`.
+  check out is refused with `-32070`, `-32071` or `-32072`. Under a
+  workspace's `signature_policy` of `"humans"`, a member of type `agent` may
+  call unsigned, and people and services sign **(0.3.5)**.
 - `sig` has the form `ed25519:<kid>:<signature>`: an Ed25519 signature
-  (RFC 8032) in base64, made with the sender's key named by `<kid>`.
+  (RFC 8032) in canonical standard base64 **(0.3.5)**, made with the
+  sender's key named by `<kid>`. A `webauthn:` tag carries a passkey's
+  assertion, verified against the origins its key lists **(0.3.5)**.
 - The signature covers the JCS canonical form (RFC 8785) of the whole request
   with its top-level `sig` removed, so `jsonrpc`, `id`, `method` and `params`
   are all signed.
@@ -163,7 +169,9 @@ onto the whole artefact, would carry more than three times the value limit
 or that size between them.
 
 **What is not checked.** Neither coordinator checks that a request `id` is new
-or that `ts` is in order. [Envelope id replay](#envelope-id-replay) and
+or that `ts` is in order. A signed copy of a call already accepted is refused
+with `-32075` **(0.3.5)**, so a signed call takes effect once; an unsigned
+call can be sent again. [Envelope id replay](#envelope-id-replay) and
 [Sender-declared timestamps](#sender-declared-timestamps) explain what that
 leaves open and what a deployment can add.
 
@@ -184,7 +192,14 @@ are first registered at `participant.join`:
   confirms a key, keys listed in the join's `jwks` are ignored.
 - Otherwise the coordinator registers the keys listed in `jwks` as given. The
   join is not signed, so nothing shows that the caller holds those keys or
-  owns the name. This is trust on first use.
+  owns the name. This is trust on first use. Where signatures are required,
+  a join with no key is refused with `-32602` **(0.3.5)**.
+- Where a token verifier is configured, a person joins with a token
+  (`-32403` without one) whose `chap_participant_uri`, or an admin's
+  invitation, names them, and a token that carries `cnf.jwk` or a nonce
+  binds the join's keys to that key (`-32404` otherwise) **(0.3.5)**. A
+  token or presentation sent at join is kept as its SHA-256 digest
+  **(0.3.5)**.
 - A token binds only to the participant it belongs to **(0.3.0)**. A token whose
   `chap_participant_uri` names another participant is refused with `-32404`.
   A later join under an existing member's name keeps the member's role, and
@@ -194,7 +209,8 @@ are first registered at `participant.join`:
   on a later join only from the member's recorded holder, and is otherwise
   refused with `-32411`. An accepted later join adds the key the verifier
   confirms and refreshes the member's `auth_time` and `acr`. A later join
-  with no token or presentation changes nothing about the member.
+  with no token or presentation changes nothing about the member, and one
+  with keys the member does not hold is refused with `-32011` **(0.3.5)**.
 
 **Rotation.** `participant.rotate_key` names the old key (`old_kid`) and the
 new one (`new_jwk`). With signatures required it must be signed with the old
@@ -211,10 +227,9 @@ another workspace stays valid there.
 sender's `ts` is used only to look the key up: the key named by `kid` must
 have been registered at or before `ts`. A backdated `ts` cannot bring back a
 rotated or revoked key, and a sender whose clock runs behind the
-coordinator's can be refused just after its key is registered. The two
-coordinators differ in two details: TypeScript accepts a signature in
-URL-safe base64 where Python refuses it, and Python falls back to a top-level
-`ts` when choosing a key. Milestone 0.4 settles one rule for both.
+coordinator's can be refused just after its key is registered. Both
+coordinators take a signature only in canonical standard base64, and choose
+the key by the `ts` in `params` **(0.3.5)**.
 
 **The coordinator's own key.** The coordinator holds no key. It signs no
 entry, no checkpoint and no SCITT statement.
@@ -314,6 +329,11 @@ to a store the coordinator's operator does not control, is what shows that an
 entry existed independent of the coordinator.
 
 ### Envelope id replay
+
+A signed request takes effect once **(0.3.5)**: a signed copy of a call the
+log holds as accepted is refused with `-32075`, with `data.accepted_at_seq`
+naming the entry, and is not recorded. The rest of this section is about
+unsigned calls.
 
 Neither coordinator checks that a request `id` is new, and
 `audit.verify_chain` does not look for repeats. Anyone who reads the log can
@@ -464,16 +484,21 @@ membership itself is a claim, because the caller writes the `from`.
 
 **Roles.** A role is the string a participant names when it joins, or
 `participant` if it names none. The coordinators check one role, `admin`:
-`workspace.set_profiles` needs it, and so does revoking another member's
-key. `workspace.create` does not make its caller a member, so the first
-admin is whoever joins as one. Because a joiner names its own role,
-`admin` protects nothing until joins are controlled. `control.*` needs
+`workspace.set_profiles` and `workspace.invite` need it, and so does
+revoking another member's key. The role is granted, never claimed
+**(0.3.5)**: a join names `admin` only as the workspace's first member, or
+under an admin's invitation that names it, and is otherwise refused with
+`-32011`. Only a `human` or a `service` holds it. `control.*` needs
 membership only, and `control.rollback` can restore members' roles from a
 snapshot. No method-role policy is enforced (SPECIFICATION.md §6.4), and the
 `required_scope` that each method declares in the catalogue is not enforced
 either. A review decision also needs the caller to be a reviewer the review
 was addressed to, and a review addressed to a `workspace:` or `group:` scope
-accepts any member.
+accepts any member. From 0.3.5 the authors of the work, its assignee and the
+member that completed it, cannot decide its review, and a review a task
+requires is decided by people only. On such a task an author cannot open
+the review with `review.request` or address it to a scope; `task.complete`
+from the assignee opens it under the workspace's `review_rule`.
 
 **Privileged methods and step-up.** The coordinators treat these methods as
 privileged: `control.pause`, `control.resume`, `control.cancel`,
@@ -513,11 +538,10 @@ coordinator that requires signatures adds `security-signed/1.0` to the
 profiles, and one with a token verifier adds `identity-oidc/1.0`. Advertising
 either without the matching enforcement is refused with `-32602`. Advertising a
 profile never turns its enforcement on. Afterwards an admin can change the
-advertised list at any time with `workspace.set_profiles`, and that call is
-not held to the same rule: it can remove `security-signed/1.0` while
-signatures stay required, or add it while they are off. So the descriptor
-shows what a workspace advertises now, which can differ from what the
-coordinator enforces.
+advertised list with `workspace.set_profiles`, under the same rule
+**(0.3.5)**: advertising `security-signed/1.0` or an identity profile without
+its enforcement is refused with `-32602`, and once advertised neither can be
+removed (`-32011`).
 
 **Modes.** A task's mode is a parameter of `task.create`. `task.create` and
 `control.supersede` refuse a mode above the workspace's `mode_ceiling` with
@@ -599,23 +623,26 @@ example 0.3.1. The advisory is published after the fixed release.
 These are gaps in the current design and code, stated as they stand.
 [ROADMAP.md](./ROADMAP.md) tracks each one with the milestone that closes it.
 
-- **Anyone can join.** `participant.join` admits any caller, in any role it
-  names, `admin` included, and joining a workspace that does not exist creates
-  it. A first join can claim any name nobody holds yet (section 4). Until
-  milestone 0.6 defines admission, authenticate joins at the transport and
-  bind each `from` to its caller.
+- **Anyone can join an open workspace.** Under the default
+  `join_policy: "open"`, `participant.join` admits any caller, in any role it
+  names but `admin`, and joining a workspace that does not exist creates it.
+  A first join can claim any name nobody holds yet (section 4).
+  `join_policy: "invite"`, or a token verifier, admits only the participants
+  an admin or the identity provider names **(0.3.5)**. Otherwise
+  authenticate joins at the transport and bind each `from` to its caller.
 - **Without required signatures, anyone can act in any member's name.** A
   refusal entry then names a sender it cannot prove, because the `from` it
   records is the caller's claim.
-- **Authority is coarse.** Roles are chosen by the joiner, `admin` guards
-  only `workspace.set_profiles` and revoking another member's key, and the
-  declared scopes are not enforced (section 6).
+- **Authority is coarse.** Roles other than `admin` are chosen by the
+  joiner, `admin` guards only `workspace.set_profiles`, `workspace.invite`
+  and revoking another member's key, and the declared scopes are not
+  enforced (section 6).
 - **Reads are open by default, and the log is stored in the clear.**
   `workspace.describe` and `audit.read` answer any caller unless read
   membership or signatures are required, and since anyone can join, neither
-  stops a determined reader. The log keeps every request as sent, so identity
-  tokens and credentials presented at join can be read by anyone who can read
-  the log. CHAP does not encrypt log content. Hold sensitive content in a
+  stops a determined reader. The log keeps every request as sent, apart from
+  the identity tokens and presentations sent at join, which it keeps as their
+  digests **(0.3.5)**. CHAP does not encrypt log content. Hold sensitive content in a
   separate store with its own access control, and put its URI and hash in the
   artefact (SPECIFICATION.md §15.3). Encrypted log content is planned as a
   Draft profile after 1.0.
@@ -623,11 +650,10 @@ These are gaps in the current design and code, stated as they stand.
   on, and `seq`, `arrived` and the workspace state sit outside the hash. Where
   it is on, it shows that the entries agree with a head. It does not show that
   the log is complete, and it needs a single writer for each workspace.
-- **Accepted calls can be replayed** where the method allows it. A copy of an
-  accepted call is evaluated again, and only `task.create` takes an
-  idempotency key.
-- **A call can be answered and never stored.** Both coordinators answer a call
-  whether or not its write to storage succeeds.
+- **Unsigned accepted calls can be replayed** where the method allows it. An
+  unsigned copy of an accepted call is evaluated again, and only
+  `task.create` takes an idempotency key. A signed copy is refused
+  **(0.3.5)**.
 - **Checkpoints, redaction and export are not built.** `audit.checkpoint`,
   `audit.redact` and `audit.export` are specified only, and the coordinator
   holds no key to sign a checkpoint. Once redaction is built, a redacted
@@ -642,8 +668,9 @@ These are gaps in the current design and code, stated as they stand.
 - **Testing covers part of the protocol.** The conformance harness covers Core
   and the review profile. It runs against a server built on the Python
   coordinator and against a standalone TypeScript server, and has yet to run
-  against the TypeScript coordinator package. The differential fuzzer leaves
-  out signed calls, modes and the SCITT profile.
+  against the TypeScript coordinator package. The differential fuzzer covers
+  signed calls, identity, invitations, two writers and store faults
+  **(0.3.5)**, and leaves out the SCITT profile.
 - **One team wrote both coordinators, and no outside security review has
   taken place.** The external review runs in milestone 0.7, and milestone
   1.0-rc closes its findings.

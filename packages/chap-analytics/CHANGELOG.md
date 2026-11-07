@@ -4,6 +4,51 @@
 so a protocol release moves the coordinator packages together and leaves this
 one where it is until the tables or the analyses change.
 
+## 0.2.6
+
+Reads the logs of `chap-coordinator` 0.3.5.
+
+### Added
+
+- **Time to open and time to decide.** Coordinators from 0.3.5 record
+  `review.acknowledge` when a reviewer opens a review. The decisions table
+  gains `acknowledged_at`, `time_to_open_s` and `time_to_decide_s`, and
+  `stats.latency` splits each pass's wait the same way, open passes
+  included; `open_queue` says which waiting reviews were opened. The
+  latency brief reports both medians, counts the waiting reviews nobody
+  has opened, and says to tell reviewers when a review arrives where most
+  of the wait comes before anyone opens the work. A log without
+  acknowledgements reads as before.
+- **Decisions a bridge recorded.** A framework bridge records a decision a
+  person made outside CHAP, and from 0.3.5 the call carries
+  `via: "bridge-record"`. The decisions table and each pass in
+  `stats.latency` carry `via`; `latency_by`, `survival` and the latency
+  brief leave out passes a recorded decision settled, and the brief counts
+  them. It also points out decisions made within a second of their request,
+  which a bridge from before 0.3.5 records unmarked.
+- **The artefact each decision was made on.** The decisions table gains
+  `artefact`.
+
+### Fixed
+
+- **A completion after a review.** From 0.3.5 a task that has held a review
+  completes only through a decision, and completing it again opens a new
+  pass. The replay read such a completion as the end of the task, so the
+  decision that followed landed in the earlier pass. It now holds the
+  completion and opens a pass when a decision or an acknowledgement on the
+  task follows, or when the state shows the task under review; a log from
+  before 0.3.5 reads as before.
+- **The successor of an escalated task.** From 0.3.5 `escalate.raise`
+  hands a review on with the work: the successor requires review when the
+  original held one. The replay now reads it so.
+- **Approved evaluation cases.** `export.evaluation_cases(include_approved=True)`
+  gave approved tasks an empty `agent_output` and `corrected_output`. Both
+  now hold the artefact the settling decision approved.
+- **One reviewer.** The concentration brief said reviewing was spread across
+  people when one reviewer decided everything on a small sample, and wrote
+  "1 reviewers". One reviewer is now named as the only one, and a high
+  share on too few decisions says the sample is too small to tell.
+
 ## 0.2.5
 
 Reads the review rounds of `chap-coordinator` 0.3.4.

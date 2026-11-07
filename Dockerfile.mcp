@@ -56,7 +56,7 @@ RUN npm prune --omit=dev \
 FROM node:24-bookworm-slim
 
 # The release the image serves: the version of the source it is built from.
-ARG CHAP_MCP_VERSION=0.3.4
+ARG CHAP_MCP_VERSION=0.3.5
 LABEL org.opencontainers.image.version="${CHAP_MCP_VERSION}"
 
 WORKDIR /chap

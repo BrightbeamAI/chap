@@ -139,7 +139,7 @@ await coord.start();
 const card = makeChapAgentCard({
   baseUrl,
   name: "CHAP Coordinator",
-  version: "0.3.4",
+  version: "0.3.5",
   skillFilter,
 });
 

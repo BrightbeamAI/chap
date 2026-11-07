@@ -83,7 +83,7 @@ export function makeChapAgentCard(options: ChapAgentCardOptions): AgentCard {
     description: options.description ?? DEFAULT_DESCRIPTION,
     supportedInterfaces: options.legacyCompat === false ? [jsonRpc("1.0")] : [jsonRpc("1.0"), jsonRpc("0.3")],
     provider:    undefined,
-    version:     options.version     ?? "0.3.4",
+    version:     options.version     ?? "0.3.5",
     capabilities: {
       streaming: false,
       pushNotifications: false,

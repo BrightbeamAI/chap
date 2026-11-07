@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A CHAP review gate in front of an MCP client",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node server.mjs",
@@ -14,7 +14,7 @@
     "analytics": "python3 analytics.py"
   },
   "dependencies": {
-    "@brightbeamai/chap-server": "^0.3.4"
+    "@brightbeamai/chap-server": "^0.3.5"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1"

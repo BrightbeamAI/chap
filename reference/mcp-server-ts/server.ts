@@ -50,7 +50,7 @@ const coord = new Coordinator({ defaultProfiles: PROFILES });
 
 const server = makeChapMcpServer(coord, {
   name:    "chap",
-  version: "0.3.4",
+  version: "0.3.5",
   participant,
 });
 

@@ -21,7 +21,7 @@ review node: wait_for_decision     the decision, read back from the task
 pip install chap-langgraph
 ```
 
-Depends on `chap-coordinator>=0.3.4`. The bridge imports neither LangGraph
+Depends on `chap-coordinator>=0.3.5`. The bridge imports neither LangGraph
 nor LangChain: it takes dict-shaped state and returns LangGraph-shaped
 values. Install the extra to run the example and the graph tests:
 
@@ -283,7 +283,7 @@ sent back for another, which is approved, then the chain, verified.
 
 ## Compatibility
 
-- `chap-coordinator` 0.3.4 and later
+- `chap-coordinator` 0.3.5 and later
 - `langgraph` 1.x (optional; tested with langgraph 1.0.0 and 1.2.20, and
   langchain-core 1.7.6)
 - Python 3.10, 3.11, 3.12, 3.13

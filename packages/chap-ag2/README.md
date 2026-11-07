@@ -14,7 +14,7 @@ hash-linked entry on the workspace's audit log.
 pip install chap-ag2
 ```
 
-Depends on `chap-coordinator>=0.3.4`. AG2 is optional: the bridge reads
+Depends on `chap-coordinator>=0.3.5`. AG2 is optional: the bridge reads
 messages and replies as plain values. Install the extra to run a live
 conversation:
 
@@ -296,7 +296,7 @@ a scripted model, each with a person deciding at a desk.
 
 ## Compatibility
 
-- `chap-coordinator` 0.3.4 and later
+- `chap-coordinator` 0.3.5 and later
 - `ag2` 0.9 to 0.x for `request_reply` and `record_turn`, through
   `get_human_input` (optional; tested with ag2 0.9 and 0.14.0)
 - `ag2` 1.2 and later 1.x for `tool_approval` (tested with ag2 1.2.0 and

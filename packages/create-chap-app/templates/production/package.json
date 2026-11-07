@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A CHAP coordinator with the production profile set: signed calls, OIDC at join, the chain on, SQLite on a volume",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node server.mjs",
@@ -17,6 +17,6 @@
     "analytics": "python3 analytics.py"
   },
   "dependencies": {
-    "@brightbeamai/chap-server": "^0.3.4"
+    "@brightbeamai/chap-server": "^0.3.5"
   }
 }

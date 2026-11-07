@@ -156,7 +156,7 @@ def make_chap_agent_card(
         "can discover and drive the work in its workspaces: tasks, reviews "
         "and the audit log."
     ),
-    version: str = "0.3.4",
+    version: str = "0.3.5",
     skill_filter: Callable[[str], bool] | None = None,
     legacy_compat: bool = True,
 ) -> AgentCard:

@@ -17,7 +17,7 @@ clients as well. CHAP 0.3.
 npm install @brightbeamai/chap-coordinator-a2a @brightbeamai/chap-coordinator @a2a-js/sdk express
 ```
 
-Node 20+ required. The adapter's peer dependencies are `@a2a-js/sdk` 1.3
+Node 22+ required. The adapter's peer dependencies are `@a2a-js/sdk` 1.3
 or later, `@brightbeamai/chap-coordinator`, and
 `@brightbeamai/chap-coordinator-mcp` for the shared schemas; npm 7 and
 later installs the last itself. `express` is the SDK's peer dependency for

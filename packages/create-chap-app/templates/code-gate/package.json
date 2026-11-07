@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A CHAP code gate: every change a coding agent makes is reviewed as a diff, signed, and committed only once approved, with the evidence beside the commit",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "demo": "node demo.mjs",
@@ -26,7 +26,7 @@
     "push-notes": "node push-notes.mjs"
   },
   "dependencies": {
-    "@brightbeamai/chap-code-gate": "^0.3.4",
-    "@brightbeamai/chap-server": "^0.3.4"
+    "@brightbeamai/chap-code-gate": "^0.3.5",
+    "@brightbeamai/chap-server": "^0.3.5"
   }
 }

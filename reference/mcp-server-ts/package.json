@@ -1,6 +1,6 @@
 {
   "name": "@brightbeamai/mcp-server-ts",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Reference MCP server that wraps a CHAP Coordinator. Run via stdio for Claude Desktop, Cursor, or any MCP client.",
   "license": "Apache-2.0",
   "type": "module",
@@ -19,6 +19,6 @@
     "typescript": "^5.3.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

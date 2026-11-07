@@ -77,7 +77,7 @@ def main() -> int:
     # Unset, the card and the executor offer the agent's skills.
     skill_filter = (lambda _name: True) if args.skills == "all" else None
     app = make_chap_a2a_app(coord, base_url=base_url, participant=participant, skill_filter=skill_filter,
-                            allowed_hosts=allowed_hosts, version="0.3.4")
+                            allowed_hosts=allowed_hosts, version="0.3.5")
 
     skill_set = "every CHAP skill" if args.skills == "all" else "the agent skills"
     print(f"CHAP A2A reference server starting on {base_url}, acting as {participant} with {skill_set}",

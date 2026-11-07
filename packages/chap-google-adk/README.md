@@ -18,7 +18,7 @@ changed and why.
 pip install chap-google-adk
 ```
 
-Depends on `chap-coordinator>=0.3.4`. Install the extra to run a live
+Depends on `chap-coordinator>=0.3.5`. Install the extra to run a live
 agent; `request_confirmation` needs it to build the confirmation it
 returns:
 
@@ -279,7 +279,7 @@ in-process desk and a desk server where people sign.
 
 ## Compatibility
 
-- `chap-coordinator` 0.3.4 and later
+- `chap-coordinator` 0.3.5 and later
 - `google-adk` 1.29 and later (optional; tested with google-adk 1.29.0 and
   2.11.0)
 - Python 3.10, 3.11, 3.12, 3.13

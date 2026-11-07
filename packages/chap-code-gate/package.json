@@ -1,6 +1,6 @@
 {
   "name": "@brightbeamai/chap-code-gate",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "The CHAP code gate: every change a coding agent makes is proposed as a patch, reviewed as a diff, signed by a person and committed only once approved, with the evidence beside the commit, git hooks, and a verifier for CI.",
   "license": "Apache-2.0",
   "author": "Brightbeam AI <oss@brightbeam.com>",
@@ -23,7 +23,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "bin": {
     "chap-code-gate": "bin/chap-code-gate.mjs"
@@ -45,7 +45,7 @@
     "prepublishOnly": "npm test"
   },
   "dependencies": {
-    "@brightbeamai/chap-server": "^0.3.4"
+    "@brightbeamai/chap-server": "^0.3.5"
   },
   "publishConfig": {
     "access": "public"

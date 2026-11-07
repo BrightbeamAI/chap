@@ -40,7 +40,7 @@ import type { Store } from "@brightbeamai/chap-coordinator";
 import { makeChapMcpServer, AGENT_MCP_TOOLS, type ChapDispatcher } from "./index.js";
 import { remoteDispatcher } from "./remote.js";
 
-const VERSION = "0.3.4";
+const VERSION = "0.3.5";
 
 /**
  * Chaining is on by default because it costs almost nothing and the

@@ -2,7 +2,7 @@
 
 A reference implementation of [CHAP Core](../../core/SPEC.md) plus the
 [`review` profile](../../profiles/review.md), in approximately 500
-lines of TypeScript. No external dependencies at runtime; Node 20+
+lines of TypeScript. No external dependencies at runtime; Node 22+
 built-ins only.
 
 This is the implementation that demonstrates CHAP's killer feature:
@@ -17,7 +17,7 @@ in the audit log, queryable for free.**
 | `patch.test.ts`           | JSON Patch safety: unsafe pointer segments are refused.               |
 | `review_required.test.ts` | review/1.0 3.1: completion opens a review when one is required.       |
 | `package.json`            | npm scripts.                                                          |
-| `tsconfig.json`           | Strict TS, ES2022, Node 20+.                                          |
+| `tsconfig.json`           | Strict TS, ES2022, Node 22+.                                          |
 
 ---
 

@@ -56,7 +56,7 @@ PROFILES = [
 
 async def serve(participant: str) -> None:
     coord = Coordinator(CoordinatorOptions(default_profiles=PROFILES))
-    server = make_chap_mcp_server(coord, name="chap", version="0.3.4", participant=participant)
+    server = make_chap_mcp_server(coord, name="chap", version="0.3.5", participant=participant)
 
     # Log to stderr; stdout is reserved for the MCP protocol stream.
     print(f"CHAP MCP reference server starting on stdio, acting as {participant}.", file=sys.stderr)

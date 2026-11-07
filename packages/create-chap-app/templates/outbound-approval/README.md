@@ -47,7 +47,7 @@ python -m pytest tests -q
 ```
 
 One test runs the desk's own client in Node, as the browser runs it, and
-is skipped where Node 20 or later is not installed.
+is skipped where Node 22 or later is not installed.
 
 ## Attach your own agent and data
 
@@ -152,7 +152,7 @@ reads a CHAP chain into documented tables. It reads the store under `data/`
 and writes the package's interactive report, the evaluation cases (each
 corrected draft with the agent's version and yours) and a refinement page
 with the corrections ranked to `analytics/`, which the desk links from
-Insights. Run `pip install "chap-analytics>=0.2.5"` first; `--watch 300` keeps the
+Insights. Run `pip install "chap-analytics>=0.2.6"` first; `--watch 300` keeps the
 pages current. A correction that recurs is a rule for the agent's prompt in
 `agent.py`.
 
