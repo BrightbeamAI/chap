@@ -58,4 +58,4 @@ export {
   makeChapAgentExecutor,
   dispatchA2aMessage,
 } from "./executor.js";
-export type { ChapAgentExecutorOptions, DispatchA2aMessageOptions } from "./executor.js";
+export type { ChapAgentExecutorOptions, DispatchA2aMessageOptions, LegacyA2aMessage, LegacyA2aPart } from "./executor.js";

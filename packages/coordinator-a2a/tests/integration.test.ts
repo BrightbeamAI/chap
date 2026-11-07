@@ -169,6 +169,26 @@ test("dispatch CHAP error returns intact", () => {
   assert.equal(resp.error?.code, -32602);
 });
 
+test("dispatchA2aMessage takes the envelope id as its third argument, as in 0.3", () => {
+  const resp = dispatchA2aMessage(makeCoord(), buildMessage("chap.workspace.create", { workspace: "wsp_id" }), "env-7");
+  assert.equal(resp.id, "env-7");
+  assert.equal((resp.result as { workspace: string }).workspace, "wsp_id");
+  assert.equal(dispatchA2aMessage(makeCoord(), buildMessage("chap.workspace.create", { workspace: "wsp_n" }), 7).id, 7);
+});
+
+test("dispatchA2aMessage reads a message in the 0.3 SDK's shape", () => {
+  const coord = makeCoord();
+  const legacy = { kind: "message", messageId: "m1", role: "user",
+                   parts: [{ kind: "text", text: "create it" },
+                           { kind: "data", data: { skill: "chap.workspace.create", params: { workspace: "wsp_v03" } } }] };
+  const resp = dispatchA2aMessage(coord, legacy, { envelopeId: "e1" });
+  assert.equal(resp.error, undefined, JSON.stringify(resp.error));
+  assert.equal((resp.result as { workspace: string }).workspace, "wsp_v03");
+
+  const named = { metadata: { skill: "chap.workspace.describe" }, parts: [{ kind: "data", data: { workspace: "wsp_v03" } }] };
+  assert.equal((dispatchA2aMessage(coord, named).result as { id: string }).id, "wsp_v03");
+});
+
 // ============================================================
 // ChapAgentExecutor (async path through the SDK interface)
 // ============================================================

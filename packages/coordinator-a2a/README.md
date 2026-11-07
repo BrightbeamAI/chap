@@ -13,13 +13,14 @@ clients as well. CHAP 0.3.
 ## Install
 
 ```bash
-npm install @brightbeamai/chap-coordinator-a2a @a2a-js/sdk express
+npm install @brightbeamai/chap-coordinator-a2a @brightbeamai/chap-coordinator @a2a-js/sdk express
 ```
 
-Node 20+ required. `@a2a-js/sdk` 1.3 or later is a peer dependency, and
-`express` is the SDK's peer dependency for its Express handlers. The
-adapter's own dependencies are `@brightbeamai/chap-coordinator` and
-`@brightbeamai/chap-coordinator-mcp`, for the shared schemas.
+Node 20+ required. The adapter's peer dependencies are `@a2a-js/sdk` 1.3
+or later, `@brightbeamai/chap-coordinator`, and
+`@brightbeamai/chap-coordinator-mcp` for the shared schemas; npm 7 and
+later installs the last itself. `express` is the SDK's peer dependency for
+its Express handlers.
 
 ## Quick start
 
@@ -102,7 +103,7 @@ By default the card lists, and the executor runs, the agent's skills: the
 `AGENT_MCP_TOOLS` set from `@brightbeamai/chap-coordinator-mcp`, which
 covers an agent's own work and leaves out workspace, membership and
 control methods and the choice of who reviews. Pass `skillFilter: () =>
-true` to both for all 40 methods.
+true` to both for every method.
 
 A message carries the CHAP params in a data part, a part whose
 `content` is JSON data with media type `application/json`, the type the
@@ -164,6 +165,29 @@ URL, and the SDK translates in both directions; a 1.0 client sends
 `A2A-Version: 1.0` and calls `SendMessage`. The executor sees only 1.0
 types. The Python counterpart serves the same two versions.
 
+## Upgrading from 0.3.4
+
+0.3.4 was built on `@a2a-js/sdk` 0.3. 0.3.5 is built on the 1.x SDK, A2A
+1.0, and keeps the 0.3.4 calls working:
+
+- **The SDK.** The peer dependency is `@a2a-js/sdk` `^1.3`, where it was
+  `^0.3.13`: install `@a2a-js/sdk@^1.3` with the adapter.
+- **Your server.** The 1.x SDK has no `A2AExpressApp`. Mount its
+  `agentCardHandler` and `jsonRpcHandler` as the quick start does, with
+  `legacyCompat: { enabled: true }`, so a client still on A2A 0.3 is
+  answered at the same URL, and give the request handler a `ChapTaskStore`.
+- **The skills.** The card and the executor offer the agent's skills unless
+  `skillFilter` names others; 0.3.4 offered every method. Pass
+  `skillFilter: () => true` to both to keep that.
+- **Refusals** are tasks, `TASK_STATE_REJECTED` or `TASK_STATE_FAILED`, with
+  the CHAP error in the status message; 0.3.4 answered with a message
+  carrying `chap_error`. A 0.3 client sees the states `rejected` and
+  `failed`.
+- **`dispatchA2aMessage`** takes options, `{ envelopeId, skillFilter,
+  participant }`. `dispatchA2aMessage(coord, message, envelopeId)` works as
+  it did, and so does a message in the 0.3 SDK's shape, its parts tagged by
+  `kind`.
+
 ## Architecture
 
 - **One Coordinator, one A2A agent.** Multi-workspace handled
@@ -186,8 +210,10 @@ part, dispatch via metadata, error surfacing, the full
 workflow including override, and the deliberation flow.
 `round_trip.test.ts` serves the adapter with the SDK's server and drives
 it with the SDK's 1.0 client, and with a 0.3 client's requests;
-`participant_and_refusals.test.ts` and `guard.test.ts` cover the participant
-pin, refusals as rejected tasks, and the guard's checks.
+`participant_and_refusals.test.ts`, `skill_filter.test.ts`,
+`task_store.test.ts` and `guard.test.ts` cover the participant pin,
+refusals as rejected tasks, the skill set, the task store and the guard's
+checks.
 
 ## See also
 

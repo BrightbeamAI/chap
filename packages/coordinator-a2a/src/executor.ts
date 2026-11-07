@@ -160,6 +160,21 @@ export function makeChapAgentExecutor(
 //   Direct-dispatch helper (testing + embedded use)
 // ============================================================
 
+/**
+ * A message in the shape @a2a-js/sdk 0.3 gave it, which dispatchA2aMessage
+ * also reads: each part tagged by `kind`, and a data part's JSON in `data`.
+ */
+export interface LegacyA2aMessage {
+  metadata?: Record<string, unknown>;
+  parts: ReadonlyArray<LegacyA2aPart>;
+}
+
+/** A part in the 0.3 SDK's shape. */
+export interface LegacyA2aPart {
+  kind: string;
+  data?: unknown;
+}
+
 export interface DispatchA2aMessageOptions {
   /** The id of the CHAP envelope. Default: "a2a-call". */
   envelopeId?: string | number;
@@ -176,12 +191,16 @@ export interface DispatchA2aMessageOptions {
  * Translate an A2A Message into a CHAP envelope and dispatch it
  * directly. Useful for tests and for embedding the adapter inside a
  * larger A2A server.
+ *
+ * It reads a 1.x message, and a message in the 0.3 SDK's shape. The third
+ * argument is the options, or, as in 0.3, the envelope id alone.
  */
 export function dispatchA2aMessage(
   coord: Coordinator,
-  message: Message,
-  options: DispatchA2aMessageOptions = {},
+  message: Message | LegacyA2aMessage,
+  options: DispatchA2aMessageOptions | string | number = {},
 ): Envelope {
+  if (typeof options !== "object") options = { envelopeId: options };
   refusePerson(options.participant);
   const id = options.envelopeId ?? "a2a-call";
   const { skillId, params } = extractSkillAndParams(message);
@@ -263,7 +282,7 @@ function coerceToRecord(value: unknown): Record<string, unknown> {
  * skill hint), then falls back to the first data part's value.
  */
 function extractSkillAndParams(
-  message: Message,
+  message: Message | LegacyA2aMessage,
 ): { skillId: string | null; params: Record<string, unknown> | null } {
   let skillId: string | null = null;
   let params: Record<string, unknown> | null = null;
@@ -272,22 +291,38 @@ function extractSkillAndParams(
   if (typeof md.skill === "string") skillId = md.skill;
 
   for (const part of message.parts ?? []) {
-    if (part.content?.$case !== "data") continue;
-    const blob = part.content.value;
-    if (blob === null || typeof blob !== "object" || Array.isArray(blob)) break;
+    const data = dataOf(part);
+    if (data === undefined) continue;
+    const blob = data.value;
+    if (!isRecord(blob)) break;
     if (skillId === null && typeof blob.skill === "string") {
       skillId = blob.skill;
     }
-    const blobParams = blob.params;
-    if (blobParams && typeof blobParams === "object" && !Array.isArray(blobParams)) {
-      params = blobParams as Record<string, unknown>;
+    if (isRecord(blob.params)) {
+      params = blob.params;
     } else {
       // Treat the whole data blob as the params, minus the skill key.
-      const { skill: _skill, ...rest } = blob as Record<string, unknown>;
+      const { skill: _skill, ...rest } = blob;
       params = rest;
     }
     break;
   }
 
   return { skillId, params };
+}
+
+/**
+ * The JSON a data part carries: `content` of case "data" in the 1.x shape,
+ * `data` on a part of `kind` "data" in the 0.3 one. Undefined for any other
+ * part.
+ */
+function dataOf(part: Part | LegacyA2aPart): { value: unknown } | undefined {
+  const content = (part as Part).content;
+  if (content !== undefined) return content.$case === "data" ? { value: content.value } : undefined;
+  const legacy = part as LegacyA2aPart;
+  return legacy.kind === "data" ? { value: legacy.data } : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
