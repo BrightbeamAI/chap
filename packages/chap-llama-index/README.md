@@ -7,8 +7,11 @@ waits for their decision, made at a CHAP desk, and answers the workflow
 with what they decided. Every step is a hash-linked entry on the
 workspace's audit log.
 
-The proposed output on the `InputRequiredEvent` is the artefact under
-review; the `HumanResponseEvent` the bridge returns carries the decision.
+The proposed output on the `InputRequiredEvent`, its `proposed` field or
+else all of its fields, is the artefact under review; an event that
+proposes nothing raises `ValueError`, since nobody can approve what they
+were not shown. The `HumanResponseEvent` the bridge returns carries the
+decision.
 An edit is an RFC 6902 patch on the log, so the chain records what changed
 and why.
 
@@ -229,6 +232,11 @@ with the `audit-scitt/1.0` profile.
 - The bridge joins the agent when it is made. Where nobody signs, the
   reviewer joins when the first review opens; where people sign, the
   bridge joins no person.
+- The bridge checks its parties when it is made, and raises `ValueError`
+  when the agent is not an `agent:` or `service:` URI, when the reviewer
+  is not a person (a `human:` URI), when a `Participant` given as the
+  coordinator calls as someone other than the agent, and when the
+  workspace exists without `core/1.0` and `review/1.0`.
 - A refusal raises `chap_coordinator.client.ChapError`, exported here as
   `ChapError`; `ChapBridgeError` names the same class. Its message reads
   `<method>: <message> (<code>)`.

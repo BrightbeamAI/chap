@@ -255,6 +255,13 @@ a SCITT transparency service with the `audit-scitt/1.0` profile.
   `task.create` then `task.complete`, so the review is addressed to every
   person in the workspace. Where nobody signs, the reviewer joins when the
   first review opens.
+- The bridge checks its parties when it is made, and raises `ValueError`
+  when the agent is not an `agent:` or `service:` URI, when the reviewer
+  is not a person (a `human:` URI), when a `Participant` given as the
+  coordinator calls as someone other than the agent, and when the
+  workspace exists without `core/1.0` and `review/1.0`. An empty draft
+  raises `ValueError` too, since nobody can approve what they were not
+  shown.
 - `create_task`, `complete_with_review`, `approve`, `reject` and `override`
   are gone. They recorded a decision in a person's name bound to nothing
   they were shown; `apply_decision` records one from your interface, bound

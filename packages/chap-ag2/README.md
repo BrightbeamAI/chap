@@ -275,6 +275,11 @@ with the `audit-scitt/1.0` profile.
 - The bridge joins the agent when it is made. Where nobody signs, the
   reviewer joins when the first review opens; where people sign, the
   bridge joins no person.
+- The bridge checks its parties when it is made, and raises `ValueError`
+  when the agent is not an `agent:` or `service:` URI, when the reviewer
+  is not a person (a `human:` URI), when a `Participant` given as the
+  coordinator calls as someone other than the agent, and when the
+  workspace exists without `core/1.0` and `review/1.0`.
 - A refusal raises `chap_coordinator.client.ChapError`, exported here as
   `ChapError`; `ChapBridgeError` names the same class. `ReviewRejected` is
   a `RuntimeError`, with an `outcome`.
