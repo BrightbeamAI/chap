@@ -40,6 +40,17 @@ test("a re-join with only other keys is refused, and the member is unchanged", (
   assert.deepEqual(m.keys.map((k: any) => k.kid), ["alice-1"]);
 });
 
+test("a re-join with the member's kid on other key material is a re-join with another key", () => {
+  // The kid alone named the key, so the name's holder was answered as joined
+  // in the member's name with a key it does not hold.
+  const { c, s } = ready();
+  const r = s("participant.join", { workspace: "w", from: "human:alice", type: "human",
+    jwks: { keys: [{ kid: "alice-1", x: "OTHER" }] } });
+  assert.equal(r.error.code, -32011);
+  assert.deepEqual(r.error.data, { kids: ["alice-1"] });
+  assert.deepEqual((c.workspaces.get("w") as any).members.get("human:alice").keys.map((k: any) => k.jwk.x), ["A"]);
+});
+
 test("a re-join with a registered key, or with none, keeps role, scopes and keys", () => {
   const { c, s } = ready();
   for (const jwks of [{ keys: [{ kid: "alice-1", x: "A" }, { kid: "attacker", x: "E" }] }, undefined]) {
@@ -88,8 +99,8 @@ test("a new member joining with jwks still registers keys", () => {
 const key = (kid: string) => ({ kty: "OKP", crv: "Ed25519", kid, x: kid.toUpperCase() });
 
 const TOKENS: Record<string, Record<string, unknown>> = {
-  "alice-1": { sub: "alice", auth_time: 111, cnf: { jwk: key("alice-k1") } },
-  "alice-2": { sub: "alice", auth_time: 222, cnf: { jwk: key("alice-k2") } },
+  "alice-1": { sub: "alice", auth_time: 111, chap_participant_uri: "human:alice", cnf: { jwk: key("alice-k1") } },
+  "alice-2": { sub: "alice", auth_time: 222, chap_participant_uri: "human:alice", cnf: { jwk: key("alice-k2") } },
   "mallory": { sub: "mallory", auth_time: 333, cnf: { jwk: key("mallory-k") } },
   "mallory-naming-alice": { sub: "mallory", auth_time: 333,
     chap_participant_uri: "human:alice", cnf: { jwk: key("mallory-k") } },
@@ -241,8 +252,8 @@ test("the four refusals carry their messages", () => {
 
 test("a good token with another holder's presentation changes nothing", () => {
   const tokens: Record<string, Record<string, unknown>> = {
-    alice: { sub: "alice", auth_time: 5, cnf: { jwk: key("alice-k1") } },
-    "alice-later": { sub: "alice", auth_time: 6, cnf: { jwk: key("alice-k2") } },
+    alice: { sub: "alice", auth_time: 5, chap_participant_uri: "human:alice", cnf: { jwk: key("alice-k1") } },
+    "alice-later": { sub: "alice", auth_time: 6, chap_participant_uri: "human:alice", cnf: { jwk: key("alice-k2") } },
   };
   const c = new Coordinator({ deterministicIds: true,
     verifyOidcToken: (t: string) => (tokens[t] as any) ?? null,
@@ -260,7 +271,8 @@ test("a good token with another holder's presentation changes nothing", () => {
 
 test("a token with no string subject cannot re-join a bound member", () => {
   const tokens: Record<string, Record<string, unknown>> = {
-    alice: { sub: "alice", auth_time: 1 }, "no-sub": { auth_time: 2 }, "number-sub": { sub: 7, auth_time: 2 },
+    alice: { sub: "alice", auth_time: 1, chap_participant_uri: "human:alice" }, "no-sub": { auth_time: 2 },
+    "number-sub": { sub: 7, auth_time: 2 },
   };
   const c = new Coordinator({ deterministicIds: true, verifyOidcToken: (t: string) => (tokens[t] as any) ?? null });
   const join = (token: string): any =>
@@ -297,7 +309,8 @@ test("an empty holder falls back to the id and binds nothing else", () => {
 test("a re-join token without acr clears the old acr", () => {
   const fresh = Math.floor(Date.now() / 1000);
   const tokens: Record<string, Record<string, unknown>> = {
-    strong: { sub: "alice", auth_time: fresh, acr: "mfa" }, plain: { sub: "alice", auth_time: fresh },
+    strong: { sub: "alice", auth_time: fresh, acr: "mfa", chap_participant_uri: "human:alice" },
+    plain: { sub: "alice", auth_time: fresh },
   };
   const c = new Coordinator({ enforceStepUp: true, verifyOidcToken: (t: string) => (tokens[t] as any) ?? null });
   c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create", params: { workspace: "w", min_acr: "mfa" } } as never);

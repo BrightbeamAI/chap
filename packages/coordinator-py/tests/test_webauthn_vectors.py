@@ -80,9 +80,13 @@ def test_a_key_without_a_webauthn_relying_party_or_of_another_curve_is_not_a_web
     assert not is_webauthn_key({**jwk, "x": jwk["x"] + "="})
 
 
-def test_a_key_that_lists_no_origins_takes_an_assertion_from_any():
-    # Sign afresh with the vector's private key, for a key that names no origins.
-    jwk = {**VECTORS["jwk"], "kid": "any-origin", "webauthn": {"rp_id": "example.org"}}
+@pytest.mark.parametrize("webauthn", [{"rp_id": "example.org"},
+                                      {"rp_id": "example.org", "origins": []}])
+def test_a_key_that_lists_no_origin_signs_nothing(webauthn):
+    # Sign afresh with the vector's private key, for a key that names no
+    # origin: whoever registers such a key would otherwise decide that any
+    # origin may sign for it.
+    jwk = {**VECTORS["jwk"], "kid": "any-origin", "webauthn": webauthn}
     key = ec.derive_private_key(int(VECTORS["private_scalar_hex"], 16), ec.SECP256R1())
     c = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
     c.dispatch(dict(VECTORS["setup"][0]))
@@ -99,7 +103,7 @@ def test_a_key_that_lists_no_origins_takes_an_assertion_from_any():
     signature = key.sign(auth + hashlib.sha256(client_data).digest(), ec.ECDSA(hashes.SHA256()))
     sig = "webauthn:any-origin:" + ".".join(_b64u(b) for b in (auth, client_data, signature))
     r = c.dispatch({**request, "sig": sig})
-    assert "error" not in r, r
+    assert r["error"] == {"code": -32070, "message": "WebAuthn key lists no origin"}
 
 
 def test_a_tag_with_more_than_three_parts_is_malformed():

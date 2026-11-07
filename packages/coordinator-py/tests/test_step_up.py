@@ -42,17 +42,20 @@ def test_step_up_enforces_min_acr():
     fresh = int(time.time())
 
     def verify(token):
-        return {"sub": "u", "auth_time": fresh, "acr": token}
+        # A token "<who>:<acr>" names human:<who> and carries that acr.
+        who, acr = token.split(":")
+        return {"sub": who, "chap_participant_uri": f"human:{who}", "auth_time": fresh,
+                "acr": acr}
 
     c = Coordinator(CoordinatorOptions(enforce_step_up=True, verify_oidc_token=verify))
     c.dispatch({"jsonrpc": "2.0", "id": "1", "method": "workspace.create",
                 "params": {"workspace": "w", "min_acr": "mfa"}})
     c.dispatch({"jsonrpc": "2.0", "id": "2", "method": "participant.join",
                 "params": {"workspace": "w", "from": "human:alice", "type": "human",
-                           "oidc_token": "pwd"}})
+                           "oidc_token": "alice:pwd"}})
     c.dispatch({"jsonrpc": "2.0", "id": "3", "method": "participant.join",
                 "params": {"workspace": "w", "from": "human:bob", "type": "human",
-                           "oidc_token": "mfa"}})
+                           "oidc_token": "bob:mfa"}})
 
     below = _privileged(c, "human:alice")
     assert below["error"]["code"] == -32402
@@ -80,7 +83,7 @@ def test_min_acr_not_bypassed_by_downgraded_rejoin():
     fresh = int(time.time())
 
     def verify(token):
-        return {"sub": "u", "auth_time": fresh,
+        return {"sub": "u", "chap_participant_uri": "human:alice", "auth_time": fresh,
                 "acr": "mfa" if token == "strong" else "pwd"}
 
     c = Coordinator(CoordinatorOptions(enforce_step_up=True, verify_oidc_token=verify))

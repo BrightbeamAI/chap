@@ -23,7 +23,8 @@
 import { canonicalize, contentHash, sha256Hex, ZERO_HASH } from "./canonical.js";
 import { ALWAYS_AVAILABLE, OWNING_PROFILE, PROFILE_VERSIONS } from "./catalogue.js";
 import {
-  isWebAuthnKey, jwkThumbprint, parseWebAuthnAssertion, publicKeyFromJwk, verifyEnvelope, webAuthnFailure,
+  isEd25519Key, isWebAuthnKey, jwkThumbprint, parseWebAuthnAssertion, publicKeyFromJwk, verifyEnvelope,
+  webAuthnFailure,
 } from "./crypto.js";
 import { IdFactory } from "./ids.js";
 import { E, isValidEnvelope, rpcError } from "./jsonrpc.js";
@@ -305,10 +306,32 @@ function inForce(key: KeyRecord, now: string): boolean {
     && !(key.valid_until !== undefined && now >= key.valid_until);
 }
 
-/** Whether two JWKs are the same key: the same kid and the same RFC 7638 thumbprint. */
+/**
+ * Whether two JWKs are the same key: the same kid and the same RFC 7638
+ * thumbprint, or, for a key with no thumbprint, the same JSON throughout.
+ */
 function sameKey(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  const thumbprint = jwkThumbprint(a);
-  return a.kid === b.kid && thumbprint !== undefined && thumbprint === jwkThumbprint(b);
+  const material = (k: Record<string, unknown>) => jwkThumbprint(k) ?? canonicalize(k).toString("utf-8");
+  return a.kid === b.kid && material(a) === material(b);
+}
+
+/**
+ * The keys a credential binds for a join: its confirmation key, named by its
+ * kid or else by its RFC 7638 thumbprint, or, where it carries none, the
+ * join's keys whose thumbprint its nonce is (SPECIFICATION 5.4). Every key
+ * the join carries must be a bound one: null where one is not. Undefined
+ * where the credential binds no key.
+ */
+function credentialKeys(cnf: unknown, nonce: unknown, joinKeys: Array<Record<string, unknown> & { kid: string }>):
+    Array<Record<string, unknown> & { kid: string }> | null | undefined {
+  if (isObject(cnf)) {
+    const kid = typeof cnf.kid === "string" && cnf.kid !== "" ? cnf.kid : jwkThumbprint(cnf);
+    if (kid === undefined) return null;
+    const key = { ...cnf, kid };
+    return joinKeys.every((j) => sameKey(key, j)) ? [key] : null;
+  }
+  if (typeof nonce === "string") return joinKeys.every((j) => jwkThumbprint(j) === nonce) ? joinKeys : null;
+  return undefined;
 }
 
 /** An invitation, read without recording it as changed. */
@@ -1648,7 +1671,9 @@ export class Coordinator {
       return failure === null ? null : rpcError(E.SIG_VERIFY_FAILED, failure);
     }
 
-    // Verify
+    // An ed25519: tag names an Ed25519 key, and a webauthn: tag a WebAuthn
+    // key, so neither key is read as the other kind.
+    if (!isEd25519Key(key.jwk)) return rpcError(E.SIG_VERIFY_FAILED, `Key ${kid} is not an Ed25519 key`);
     try {
       const stripped: Envelope = JSON.parse(JSON.stringify(envelope));
       delete stripped.sig;
@@ -2016,6 +2041,8 @@ export class Coordinator {
     const now = this.now();
     const existing = ws.members.get(uri);
     let tokenVerified = false;
+    let holderVerified = false;
+    let credentialBound = false;
 
     // SPECIFICATION 6.3: a newcomer joins in the role an admin's invitation
     // names, else in the role it asks for. The admin role is granted, never
@@ -2108,26 +2135,28 @@ export class Coordinator {
         } else if (boundUri !== uri) {
           return { error: rpcError(E.OIDC_CNF_MISMATCH, "OIDC token does not name this member") };
         }
+      } else if (type === "human" && boundUri !== uri && invitation?.oidc_sub === undefined) {
+        // A provider vouches for its user, and only the token, or an admin's
+        // invitation naming the token's subject, says which participant that
+        // user is. Otherwise any user of the provider takes any free name.
+        return { error: rpcError(E.OIDC_CNF_MISMATCH, "OIDC token does not name this participant") };
       }
       member.oidc_sub = sub;
       tokenVerified = true;
       const at = claims.auth_time;
       if (typeof at === "number") member.oidc_auth_time = at;
       member.oidc_acr = typeof claims.acr === "string" ? claims.acr : undefined;
-      const cnf = claims.cnf as Record<string, unknown> | undefined;
-      const cnfJwk = cnf?.jwk as Record<string, unknown> | undefined;
-      if (cnfJwk && typeof cnfJwk.kid === "string" && cnfJwk.kid) {
-        member.keys.push({ jwk: cnfJwk as unknown as KeyRecord["jwk"], kid: cnfJwk.kid as string, valid_from: now });
-      } else if (cnfJwk == null && typeof claims.nonce === "string") {
-        // A token with no cnf.jwk binds the one key of the join whose RFC 7638
-        // thumbprint is its nonce. A client that cannot have the key put in
-        // the token puts the key's thumbprint in the nonce it asks the
-        // identity provider for, so the token attests the key all the same.
-        const nonce = claims.nonce;
-        const bound = signingKeys(p.jwks).filter((j) => jwkThumbprint(j) === nonce);
-        if (bound.length === 1) {
-          member.keys.push({ jwk: bound[0] as unknown as KeyRecord["jwk"], kid: bound[0].kid, valid_from: now });
-        }
+      // The token binds the key in its cnf.jwk or, with none, the key whose
+      // thumbprint is its nonce: a client that cannot have the key put in the
+      // token puts its thumbprint in the nonce it asks the identity provider
+      // for. A join that brings another key is refused, so a token taken
+      // from its holder admits no key of the taker's.
+      const cnf = isObject(claims.cnf) ? claims.cnf.jwk : undefined;
+      const bound = credentialKeys(cnf, cnf == null ? claims.nonce : undefined, signingKeys(p.jwks));
+      if (bound === null) return { error: rpcError(E.OIDC_CNF_MISMATCH, "The join's keys are not the key the token binds") };
+      if (bound !== undefined) {
+        credentialBound = true;
+        for (const j of bound) member.keys.push({ jwk: j as unknown as KeyRecord["jwk"], kid: j.kid, valid_from: now });
       }
     }
     // identity-vc/1.0
@@ -2142,10 +2171,26 @@ export class Coordinator {
         return { error: rpcError(E.VC_HOLDER_BINDING_INVALID, "Presentation holder does not match the member") };
       }
       member.vc_holder = holder;
-      const vpJwk = subject.cnf_jwk as Record<string, unknown> | undefined;
-      if (vpJwk && typeof vpJwk.kid === "string" && vpJwk.kid) {
-        member.keys.push({ jwk: vpJwk as unknown as KeyRecord["jwk"], kid: vpJwk.kid as string, valid_from: now });
+      holderVerified = true;
+      const bound = credentialKeys(subject.cnf_jwk, undefined, signingKeys(p.jwks));
+      if (bound === null) {
+        return { error: rpcError(E.VC_HOLDER_BINDING_INVALID, "The join's keys are not the key the presentation binds") };
       }
+      if (bound !== undefined) {
+        credentialBound = true;
+        for (const j of bound) member.keys.push({ jwk: j as unknown as KeyRecord["jwk"], kid: j.kid, valid_from: now });
+      }
+    }
+
+    // A person a credential verifies signs with a key the credential binds,
+    // or one an invitation pins: keys the join asserts on its own are not
+    // the person's on anyone's word.
+    if (!existing && type === "human" && (tokenVerified || holderVerified) && !credentialBound
+        && !invitation?.jwks && signingKeys(p.jwks).length > 0) {
+      return { error: tokenVerified
+        ? rpcError(E.OIDC_CNF_MISMATCH, "The token binds no key: a person it verifies signs with a key it binds")
+        : rpcError(E.VC_HOLDER_BINDING_INVALID,
+          "The presentation binds no key: a person it verifies signs with a key it binds") };
     }
 
     // An invitation that pins keys names the keys the member signs with: the
@@ -2181,11 +2226,12 @@ export class Coordinator {
       // name is held by other keys, and answering it as joined would leave
       // its sender holding a key nothing here accepts.
       if (attested.length === 0) {
-        const kids = [...new Set(signingKeys(p.jwks).map((j) => j.kid))];
-        if (kids.length > 0 && !kids.some((kid) => existing.keys.some((k) => k.kid === kid))) {
+        const keys = signingKeys(p.jwks);
+        const held = keys.some((j) => existing.keys.some((k) => sameKey(k.jwk as unknown as Record<string, unknown>, j)));
+        if (keys.length > 0 && !held) {
           return { error: rpcError(E.NOT_AUTHORISED,
             `${uri} is already a member, with other keys; a new key arrives through participant.rotate_key`,
-            { kids }) };
+            { kids: [...new Set(keys.map((j) => j.kid))] }) };
         }
       }
       if (member.oidc_sub !== undefined) existing.oidc_sub = member.oidc_sub;

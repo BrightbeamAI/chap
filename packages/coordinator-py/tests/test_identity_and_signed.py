@@ -287,6 +287,7 @@ def test_oidc_token_binds_cnf_jwk():
         if token == "valid-token":
             return {
                 "sub": "user-123",
+                "chap_participant_uri": "human:alice@x",
                 "auth_time": 1747476000,
                 "cnf": {"jwk": {"kty": "OKP", "crv": "Ed25519",
                                 "kid": "oidc-key", "x": "AA"}},

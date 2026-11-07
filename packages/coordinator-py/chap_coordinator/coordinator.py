@@ -39,8 +39,8 @@ from .audit import (
 )
 from .canonical import ZERO_HASH, canonicalize, content_hash, sha256_hex
 from .crypto import (
-    CRYPTOGRAPHY_MISSING, is_webauthn_key, jwk_thumbprint, parse_webauthn_assertion,
-    webauthn_failure,
+    CRYPTOGRAPHY_MISSING, is_ed25519_key, is_webauthn_key, jwk_thumbprint,
+    parse_webauthn_assertion, strict_base64, webauthn_failure,
 )
 from .ids import IdFactory
 from .tracked import Scope, TrackedDict
@@ -528,9 +528,28 @@ def _in_force(key: KeyRecord, now: str) -> bool:
 
 def _same_key(a: dict, b: dict) -> bool:
     """Whether two JWKs are the same key: the same kid and the same RFC 7638
-    thumbprint."""
-    thumbprint = jwk_thumbprint(a)
-    return a.get("kid") == b.get("kid") and thumbprint is not None and thumbprint == jwk_thumbprint(b)
+    thumbprint, or, for a key with no thumbprint, the same JSON throughout."""
+    def material(k: dict) -> str:
+        thumbprint = jwk_thumbprint(k)
+        return thumbprint if thumbprint is not None else canonicalize(k).decode("utf-8")
+    return a.get("kid") == b.get("kid") and material(a) == material(b)
+
+
+def _credential_keys(cnf: Any, nonce: Any, join_keys: list[dict]) -> list[dict] | None | bool:
+    """The keys a credential binds for a join: its confirmation key, named by
+    its kid or else by its RFC 7638 thumbprint, or, where it carries none, the
+    join's keys whose thumbprint its nonce is (SPECIFICATION 5.4). Every key
+    the join carries must be a bound one: None where one is not. False where
+    the credential binds no key."""
+    if isinstance(cnf, dict):
+        kid = cnf.get("kid") if isinstance(cnf.get("kid"), str) and cnf["kid"] else jwk_thumbprint(cnf)
+        if kid is None:
+            return None
+        key = {**cnf, "kid": kid}
+        return [key] if all(_same_key(key, j) for j in join_keys) else None
+    if isinstance(nonce, str):
+        return join_keys if all(jwk_thumbprint(j) == nonce for j in join_keys) else None
+    return False
 
 
 def _raw_invitation(ws: Workspace, uri: str) -> "Invitation | None":
@@ -1521,19 +1540,26 @@ class Coordinator:
             failure = webauthn_failure(canonical, assertion, key.jwk)
             return None if failure is None else rpc_error(E.SIG_VERIFY_FAILED, failure)
 
+        # An ed25519: tag names an Ed25519 key, and a webauthn: tag a
+        # WebAuthn key, so neither key is read as the other kind.
+        if not is_ed25519_key(key.jwk):
+            return rpc_error(E.SIG_VERIFY_FAILED, f"Key {kid} is not an Ed25519 key")
         try:
             from cryptography.hazmat.primitives.asymmetric.ed25519 import (
                 Ed25519PublicKey,
             )
         except ImportError:
             return rpc_error(E.SIG_VERIFY_FAILED, CRYPTOGRAPHY_MISSING)
+        signature = strict_base64(sig_b64)
+        if signature is None:
+            return rpc_error(E.SIG_VERIFY_FAILED, "Signature failed verification")
         try:
             import base64
             raw_x = key.jwk.get("x", "")
             pad = "=" * (-len(raw_x) % 4)
             pub_bytes = base64.urlsafe_b64decode(raw_x + pad)
             pub = Ed25519PublicKey.from_public_bytes(pub_bytes)
-            pub.verify(base64.b64decode(sig_b64), canonical)
+            pub.verify(signature, canonical)
             return None
         except Exception:
             return rpc_error(E.SIG_VERIFY_FAILED, "Signature failed verification")
@@ -1871,6 +1897,8 @@ class Coordinator:
         now = self.now_iso()
         existing = ws.members.get(uri)
         token_verified = False
+        holder_verified = False
+        credential_bound = False
 
         # SPECIFICATION 6.3: a newcomer joins in the role an admin's
         # invitation names, else in the role it asks for. The admin role is
@@ -1970,6 +1998,14 @@ class Coordinator:
                 elif bound_uri != uri:
                     return {"error": rpc_error(E.OIDC_CNF_MISMATCH,
                                                "OIDC token does not name this member")}
+            elif kind == "human" and bound_uri != uri and (
+                    invitation is None or invitation.oidc_sub is None):
+                # A provider vouches for its user, and only the token, or an
+                # admin's invitation naming the token's subject, says which
+                # participant that user is. Otherwise any user of the provider
+                # takes any free name.
+                return {"error": rpc_error(E.OIDC_CNF_MISMATCH,
+                                           "OIDC token does not name this participant")}
             member.oidc_sub = sub
             token_verified = True
             at = claims.get("auth_time")
@@ -1977,23 +2013,22 @@ class Coordinator:
                 member.oidc_auth_time = int(at)
             acr = claims.get("acr")
             member.oidc_acr = acr if isinstance(acr, str) else None
-            # Pin the cnf.jwk if present (RFC 7800)
-            cnf = claims.get("cnf") or {}
+            # The token binds the key in its cnf.jwk or, with none, the key
+            # whose thumbprint is its nonce: a client that cannot have the key
+            # put in the token puts its thumbprint in the nonce it asks the
+            # identity provider for. A join that brings another key is
+            # refused, so a token taken from its holder admits no key of the
+            # taker's.
+            cnf = claims.get("cnf")
             cnf_jwk = cnf.get("jwk") if isinstance(cnf, dict) else None
-            if isinstance(cnf_jwk, dict) and isinstance(cnf_jwk.get("kid"), str) and cnf_jwk["kid"]:
-                member.keys.append(KeyRecord(
-                    jwk=cnf_jwk, kid=cnf_jwk["kid"], valid_from=now,
-                ))
-            elif cnf_jwk is None and isinstance(claims.get("nonce"), str):
-                # A token with no cnf.jwk binds the one key of the join whose
-                # RFC 7638 thumbprint is its nonce. A client that cannot have
-                # the key put in the token puts the key's thumbprint in the
-                # nonce it asks the identity provider for, so the token
-                # attests the key all the same.
-                bound = [j for j in _signing_keys(p.get("jwks"))
-                         if jwk_thumbprint(j) == claims["nonce"]]
-                if len(bound) == 1:
-                    member.keys.append(KeyRecord(jwk=bound[0], kid=bound[0]["kid"], valid_from=now))
+            bound = _credential_keys(cnf_jwk, claims.get("nonce") if cnf_jwk is None else None,
+                                     _signing_keys(p.get("jwks")))
+            if bound is None:
+                return {"error": rpc_error(E.OIDC_CNF_MISMATCH,
+                                           "The join's keys are not the key the token binds")}
+            if bound is not False:
+                credential_bound = True
+                member.keys.extend(KeyRecord(jwk=j, kid=j["kid"], valid_from=now) for j in bound)
 
         # identity-vc/1.0 binding
         if self.options.verify_vc and isinstance(p.get("vc_presentation"), dict):
@@ -2010,12 +2045,28 @@ class Coordinator:
                 return {"error": rpc_error(E.VC_HOLDER_BINDING_INVALID,
                                            "Presentation holder does not match the member")}
             member.vc_holder = holder
-            # If the VP carried a proof-of-possession jwk, pin it
-            vp_jwk = subject.get("cnf_jwk")
-            if isinstance(vp_jwk, dict) and isinstance(vp_jwk.get("kid"), str) and vp_jwk["kid"]:
-                member.keys.append(KeyRecord(
-                    jwk=vp_jwk, kid=vp_jwk["kid"], valid_from=now,
-                ))
+            holder_verified = True
+            bound = _credential_keys(subject.get("cnf_jwk"), None, _signing_keys(p.get("jwks")))
+            if bound is None:
+                return {"error": rpc_error(E.VC_HOLDER_BINDING_INVALID,
+                                           "The join's keys are not the key the presentation binds")}
+            if bound is not False:
+                credential_bound = True
+                member.keys.extend(KeyRecord(jwk=j, kid=j["kid"], valid_from=now) for j in bound)
+
+        # A person a credential verifies signs with a key the credential
+        # binds, or one an invitation pins: keys the join asserts on its own
+        # are not the person's on anyone's word.
+        if (existing is None and kind == "human" and (token_verified or holder_verified)
+                and not credential_bound and not (invitation is not None and invitation.jwks)
+                and _signing_keys(p.get("jwks"))):
+            if token_verified:
+                return {"error": rpc_error(
+                    E.OIDC_CNF_MISMATCH,
+                    "The token binds no key: a person it verifies signs with a key it binds")}
+            return {"error": rpc_error(
+                E.VC_HOLDER_BINDING_INVALID,
+                "The presentation binds no key: a person it verifies signs with a key it binds")}
 
         # An invitation that pins keys names the keys the member signs with:
         # the join's own keys, and a key an identity profile binds, are among
@@ -2047,13 +2098,14 @@ class Coordinator:
             # joined would leave its sender holding a key nothing here
             # accepts.
             if not attested:
-                kids = list(dict.fromkeys(j["kid"] for j in _signing_keys(p.get("jwks"))))
-                if kids and not any(k.kid == kid for kid in kids for k in existing.keys):
+                keys = _signing_keys(p.get("jwks"))
+                held = any(_same_key(k.jwk, j) for j in keys for k in existing.keys)
+                if keys and not held:
                     return {"error": rpc_error(
                         E.NOT_AUTHORISED,
                         f"{uri} is already a member, with other keys; a new key arrives "
                         "through participant.rotate_key",
-                        data={"kids": kids})}
+                        data={"kids": list(dict.fromkeys(j["kid"] for j in keys))})}
             for f in ("oidc_sub", "oidc_auth_time", "oidc_acr", "vc_holder"):
                 v = getattr(member, f)
                 if v is not None:

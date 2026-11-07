@@ -66,8 +66,8 @@ test("a credential of the wrong type is refused", () => {
 // ------------------------------------------------------- identity required of people
 
 const TOKENS: Record<string, Record<string, unknown>> = {
-  alice: { sub: "alice", cnf: { jwk: key("alice-k1") } },
-  bob: { sub: "bob" },
+  alice: { sub: "alice", chap_participant_uri: "human:alice", cnf: { jwk: key("alice-k1") } },
+  bob: { sub: "bob", chap_participant_uri: "human:bob" },
 };
 const PRESENTATIONS: Record<string, Record<string, unknown>> = {
   carol: { holder: "did:example:carol", cnf_jwk: key("carol-vp") },
@@ -156,43 +156,68 @@ test("a signed join with a token takes effect once", () => {
 
 // --------------------------------------------------------------- the nonce binding
 
-test("the key whose thumbprint is the token's nonce is bound, and the join's other keys are not", () => {
+const MISMATCH = { code: -32404, message: "The join's keys are not the key the token binds" };
+
+test("the key whose thumbprint is the token's nonce is bound, and a join bringing another key is refused", () => {
   assert.equal(jwkThumbprint(RFC8037_KEY), "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k");
   const tokens: Record<string, Record<string, unknown>> = {
-    okp: { sub: "erin", nonce: jwkThumbprint(key("erin-1")) },
-    ec: { sub: "fay", nonce: jwkThumbprint(ecKey("fay-1")) },
+    okp: { sub: "erin", chap_participant_uri: "human:erin", nonce: jwkThumbprint(key("erin-1")) },
+    ec: { sub: "fay", chap_participant_uri: "human:fay", nonce: jwkThumbprint(ecKey("fay-1")) },
   };
   const { c, join } = coordinator({ verifyOidcToken: (t: string) => (tokens[t] as never) ?? null });
-  join("human:erin", "human", { oidc_token: "okp", jwks: { keys: [key("erin-2"), key("erin-1")] } });
+  assert.deepEqual(join("human:erin", "human", { oidc_token: "okp", jwks: { keys: [key("erin-2"), key("erin-1")] } })
+    .error, MISMATCH);
+  join("human:erin", "human", { oidc_token: "okp", jwks: { keys: [key("erin-1")] } });
   assert.deepEqual(keysOf(c, "human:erin"), ["erin-1"]);
-  join("human:fay", "human", { oidc_token: "ec", jwks: { keys: [key("fay-2"), ecKey("fay-1")] } });
+  join("human:fay", "human", { oidc_token: "ec", jwks: { keys: [ecKey("fay-1")] } });
   assert.deepEqual(keysOf(c, "human:fay"), ["fay-1"]);
 });
 
-test("a nonce that names no key, or two, binds none, and a cnf.jwk comes first", () => {
-  const twice = jwkThumbprint(key("g-1"));
+test("a nonce or cnf.jwk the join's keys are not is refused, a cnf.jwk comes first, and one with no kid takes its thumbprint", () => {
+  const { kid: _kid, ...unnamed } = key("k-cnf");
   const tokens: Record<string, Record<string, unknown>> = {
-    none: { sub: "g", nonce: "not-a-thumbprint" },
-    two: { sub: "h", nonce: twice },
-    cnf: { sub: "i", nonce: jwkThumbprint(key("i-1")), cnf: { jwk: key("i-cnf") } },
+    none: { sub: "g", chap_participant_uri: "human:g", nonce: "not-a-thumbprint" },
+    cnf: { sub: "i", chap_participant_uri: "human:i", nonce: jwkThumbprint(key("i-1")), cnf: { jwk: key("i-cnf") } },
+    unnamed: { sub: "k", chap_participant_uri: "human:k", cnf: { jwk: unnamed } },
   };
   const { c, join } = coordinator({ verifyOidcToken: (t: string) => (tokens[t] as never) ?? null });
-  join("human:g", "human", { oidc_token: "none", jwks: { keys: [key("g-1"), key("g-2")] } });
-  assert.deepEqual(keysOf(c, "human:g"), ["g-1", "g-2"]);
-  join("human:h", "human", { oidc_token: "two", jwks: { keys: [key("h-1", "G-1"), key("h-2", "G-1")] } });
-  assert.deepEqual(keysOf(c, "human:h"), ["h-1", "h-2"]);
-  join("human:i", "human", { oidc_token: "cnf", jwks: { keys: [key("i-1")] } });
+  assert.deepEqual(join("human:g", "human", { oidc_token: "none", jwks: { keys: [key("g-1")] } }).error, MISMATCH);
+  assert.deepEqual(join("human:i", "human", { oidc_token: "cnf", jwks: { keys: [key("i-1")] } }).error, MISMATCH);
+  join("human:i", "human", { oidc_token: "cnf" });
   assert.deepEqual(keysOf(c, "human:i"), ["i-cnf"]);
+  const thumbprint = jwkThumbprint(unnamed)!;
+  assert.deepEqual(join("human:k", "human", { oidc_token: "unnamed", jwks: { keys: [key("k-cnf")] } }).error, MISMATCH);
+  assert.equal(join("human:k", "human", { oidc_token: "unnamed",
+    jwks: { keys: [{ ...unnamed, kid: thumbprint }] } }).error, undefined);
+  assert.deepEqual(keysOf(c, "human:k"), [thumbprint]);
+});
+
+test("a person a token verifies has no self-asserted key, and the token names the person", () => {
+  const tokens: Record<string, Record<string, unknown>> = {
+    named: { sub: "m", chap_participant_uri: "human:m" },
+    anyone: { sub: "mallory" },
+  };
+  const { c, join } = coordinator({ verifyOidcToken: (t: string) => (tokens[t] as never) ?? null });
+  assert.deepEqual(join("human:m", "human", { oidc_token: "named", jwks: { keys: [key("m-1")] } }).error,
+    { code: -32404, message: "The token binds no key: a person it verifies signs with a key it binds" });
+  // Any user of the provider could otherwise take any free name.
+  assert.deepEqual(join("human:ceo", "human", { oidc_token: "anyone" }).error,
+    { code: -32404, message: "OIDC token does not name this participant" });
+  assert.equal(c.workspaces.has("w"), false);
+  assert.equal(join("human:m", "human", { oidc_token: "named" }).error, undefined);
+  assert.deepEqual(keysOf(c, "human:m"), []);
 });
 
 test("a member joining again with a key its token binds adds it", () => {
   const tokens: Record<string, Record<string, unknown>> = {
-    first: { sub: "jo", cnf: { jwk: key("jo-1") } },
+    first: { sub: "jo", chap_participant_uri: "human:jo", cnf: { jwk: key("jo-1") } },
     second: { sub: "jo", nonce: jwkThumbprint(key("jo-2")) },
   };
   const { c, join } = coordinator({ verifyOidcToken: (t: string) => (tokens[t] as never) ?? null });
   join("human:jo", "human", { oidc_token: "first" });
-  const r = join("human:jo", "human", { oidc_token: "second", jwks: { keys: [key("jo-2"), key("jo-3")] } });
+  assert.deepEqual(join("human:jo", "human", { oidc_token: "second", jwks: { keys: [key("jo-2"), key("jo-3")] } })
+    .error, MISMATCH);
+  const r = join("human:jo", "human", { oidc_token: "second", jwks: { keys: [key("jo-2")] } });
   assert.equal(r.error, undefined);
   assert.deepEqual(keysOf(c, "human:jo"), ["jo-1", "jo-2"]);
 });

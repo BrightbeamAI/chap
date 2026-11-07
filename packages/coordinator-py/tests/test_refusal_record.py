@@ -23,7 +23,7 @@ from chap_coordinator.catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
 from chap_coordinator.coordinator import PRIVILEGED_METHODS
 from chap_coordinator.audit import entry_record, link_hash
 from chap_coordinator.canonical import ZERO_HASH, canonicalize
-from chap_coordinator.crypto import derive_private_key, public_jwk, sign, verify
+from chap_coordinator.crypto import derive_private_key, jwk_thumbprint, public_jwk, sign, verify
 from chap_coordinator.storage.store import MemoryStore
 
 CHAINED = ["core/1.0", "review/1.0", "control/1.0", "audit-scitt/1.0"]
@@ -371,11 +371,12 @@ def test_a_scitt_submitter_receives_what_the_link_hashes_for_a_refusal():
 def test_a_refused_join_is_not_recorded_even_from_a_members_uri():
     # participant.join is exempt from signature checks, so its refusal proves
     # nothing about who sent it.
+    jwk = public_jwk("human:a", derive_private_key("human:a"))
+    good = {"sub": "a", "chap_participant_uri": "human:a", "nonce": jwk_thumbprint(jwk)}
     coord = Coordinator(CoordinatorOptions(
         require_signatures=True, deterministic_ids=True, deterministic_clock=True,
-        verify_oidc_token=lambda token: {"sub": "a"} if token == "good" else None,
+        verify_oidc_token=lambda token: good if token == "good" else None,
         default_profiles=["core/1.0", "review/1.0"]))
-    jwk = public_jwk("human:a", derive_private_key("human:a"))
     coord.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
                     "params": {"workspace": "w", "from": "human:a", "type": "human",
                                "oidc_token": "good", "jwks": {"keys": [jwk]}}})

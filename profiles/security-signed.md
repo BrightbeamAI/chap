@@ -106,6 +106,14 @@ valid for that participant at that timestamp. This makes historical
 verification work after key rotation. A tag of more than three parts is
 refused with `-32070`, "Malformed signature tag".
 
+The signature is standard base64 (RFC 4648 §4), padded, and nothing else:
+no URL-safe alphabet, no missing padding, no whitespace and nothing after
+the padding, and no stray bits in the last character. A signature in any
+other spelling is refused with `-32070`, "Signature failed verification",
+so one signature has one spelling and every Coordinator reads it alike. An
+`ed25519:` tag naming a key that is not an Ed25519 JWK (`kty` `"OKP"`, `crv`
+`"Ed25519"`) is refused with "Key `<kid>` is not an Ed25519 key".
+
 ### WebAuthn signatures
 
 A person whose key is held by a browser's authenticator signs through
@@ -125,30 +133,48 @@ Each part is unpadded base64url. The key, registered at
   "webauthn": { "rp_id": "example.org", "origins": ["https://desk.example.org"] } }
 ```
 
-`rp_id` is required; `origins`, where present, lists the origins an
-assertion may come from. A client MAY set a key's `kid` to its RFC 7638
-thumbprint, as the reference desk does for every key it makes. The
-Coordinator verifies an assertion as a WebAuthn relying party does, and
-refuses one that fails with `-32070` and the message given:
+`rp_id` names the relying party, and `origins` the origins an assertion
+may come from; a key MUST list at least one. A client MAY set a key's
+`kid` to its RFC 7638 thumbprint, as the reference desk does for every key
+it makes. The Coordinator makes these checks of the relying party's
+assertion procedure (WebAuthn Level 3 §7.2), in this order, and refuses an
+assertion that fails one with `-32070` and the message given:
 
-1. `clientDataJSON` is a JSON object ("WebAuthn clientDataJSON is not a
-   JSON object") whose `type` is `"webauthn.get"` ("WebAuthn
-   clientDataJSON type is not webauthn.get").
-2. Its `challenge` is the base64url SHA-256 of the canonical bytes an
+1. The key lists at least one origin ("WebAuthn key lists no origin").
+   Whoever registers a key cannot leave the origin unchecked, so a page on
+   any other origin, another port of `localhost` included, cannot sign.
+2. `clientDataJSON` nests no deeper than 64 levels ("WebAuthn
+   clientDataJSON nests deeper than 64 levels") and is a JSON object
+   ("WebAuthn clientDataJSON is not a JSON object") whose `type` is
+   `"webauthn.get"` ("WebAuthn clientDataJSON type is not webauthn.get").
+3. Its `challenge` is the base64url SHA-256 of the canonical bytes an
    `ed25519:` signature would sign ("WebAuthn challenge is not the digest
    of this request"). This binds the assertion to the request.
-3. Its `origin` is one of the key's `origins`, when it lists any
-   ("WebAuthn origin is not one the key allows").
-4. `authenticatorData` holds at least 37 bytes ("WebAuthn
+4. Its `origin` is one of the key's `origins` ("WebAuthn origin is not one
+   the key allows"), and it carries no `crossOrigin: true` and no
+   `topOrigin` ("WebAuthn assertion was made in a cross-origin frame"): an
+   assertion made in a frame another origin embeds is not the key holder's
+   page acting.
+5. `authenticatorData` holds at least 37 bytes ("WebAuthn
    authenticatorData is too short"), and its first 32 are the SHA-256 of
    the key's `rp_id` ("WebAuthn rpIdHash does not match the key's
    rp_id").
-5. Its flags set both UP (`0x01`) and UV (`0x04`), so a person was present
+6. Its flags set both UP (`0x01`) and UV (`0x04`), so a person was present
    and verified ("WebAuthn assertion lacks user presence or
-   verification").
-6. The ES256 signature, DER-encoded, verifies over `authenticatorData`
+   verification"); BS (`0x10`) only with BE (`0x08`) ("WebAuthn assertion
+   is backed up but not backup eligible"); and not AT (`0x40`), since an
+   assertion carries no attested credential data ("WebAuthn assertion
+   carries attested credential data").
+7. `authenticatorData` ends after its 37 bytes where ED (`0x80`) is clear,
+   and runs on past them where ED is set ("WebAuthn authenticatorData does
+   not end where its flags say").
+8. The ES256 signature, DER-encoded, verifies over `authenticatorData`
    followed by the SHA-256 of `clientDataJSON` ("Signature failed
    verification").
+
+The Coordinator keeps no signature counter, and reads no extension data
+beyond its presence: a deployment that needs either checks it in front of
+the Coordinator.
 
 A `webauthn:` tag naming a key that is not such a JWK is refused with
 "Key `<kid>` is not a WebAuthn key", and a tag whose assertion is not three

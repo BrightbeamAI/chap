@@ -178,7 +178,7 @@ test("OIDC token binding pins cnf.jwk", () => {
     deterministicIds: true, deterministicClock: true,
     verifyOidcToken: (t) => {
       if (t === "good") return {
-        sub: "user-123", auth_time: 1747476000,
+        sub: "user-123", chap_participant_uri: "human:alice", auth_time: 1747476000,
         cnf: { jwk: { kty: "OKP", crv: "Ed25519", kid: "oidc-key", x: "AA" }},
       };
       return null;

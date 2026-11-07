@@ -18,7 +18,7 @@ import { Coordinator, PRIVILEGED_METHODS } from "../src/coordinator.ts";
 import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "../src/catalogue.ts";
 import { canonicalize, ZERO_HASH } from "../src/canonical.ts";
 import { entryRecord, linkHash } from "../src/audit.ts";
-import { deriveKeypair, publicKeyFromJwk, signEnvelope, verifyEnvelope } from "../src/crypto.ts";
+import { deriveKeypair, jwkThumbprint, publicKeyFromJwk, signEnvelope, verifyEnvelope } from "../src/crypto.ts";
 
 const CHAINED = ["core/1.0", "review/1.0", "control/1.0", "audit-scitt/1.0"];
 
@@ -337,10 +337,11 @@ test("a SCITT submitter receives what the link hashes for a refusal", () => {
 test("a refused join is not recorded, even from a member's URI", () => {
   // participant.join is exempt from signature checks, so its refusal proves
   // nothing about who sent it.
-  const c = new Coordinator({ requireSignatures: true, deterministicIds: true, deterministicClock: true,
-                              verifyOidcToken: (t: string) => (t === "good" ? { sub: "a" } : null),
-                              defaultProfiles: ["core/1.0", "review/1.0"] } as never);
   const { jwk } = deriveKeypair("human:a");
+  const good = { sub: "a", chap_participant_uri: "human:a", nonce: jwkThumbprint(jwk) };
+  const c = new Coordinator({ requireSignatures: true, deterministicIds: true, deterministicClock: true,
+                              verifyOidcToken: (t: string) => (t === "good" ? good : null),
+                              defaultProfiles: ["core/1.0", "review/1.0"] } as never);
   c.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
     params: { workspace: "w", from: "human:a", type: "human", oidc_token: "good", jwks: { keys: [jwk] } } } as never);
   const ws = c.workspaces.get("w") as any;

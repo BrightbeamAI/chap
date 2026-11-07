@@ -31,14 +31,17 @@ test("step-up exempts a non-OIDC agent", () => {
 
 test("step-up enforces min_acr", () => {
   const fresh = Math.floor(Date.now() / 1000);
-  const c = new Coordinator({ enforceStepUp: true,
-    verifyOidcToken: (t: string) => ({ sub: "u", auth_time: fresh, acr: t }) });
+  // A token "<who>:<acr>" names human:<who> and carries that acr.
+  const c = new Coordinator({ enforceStepUp: true, verifyOidcToken: (t: string) => {
+    const [who, acr] = t.split(":");
+    return { sub: who, chap_participant_uri: `human:${who}`, auth_time: fresh, acr };
+  } });
   c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create",
     params: { workspace: "w", min_acr: "mfa" }});
   c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",
-    params: { workspace: "w", from: "human:alice", type: "human", oidc_token: "pwd" }});
+    params: { workspace: "w", from: "human:alice", type: "human", oidc_token: "alice:pwd" }});
   c.dispatch({ jsonrpc: "2.0", id: "3", method: "participant.join",
-    params: { workspace: "w", from: "human:bob", type: "human", oidc_token: "mfa" }});
+    params: { workspace: "w", from: "human:bob", type: "human", oidc_token: "bob:mfa" }});
   assert.equal(privileged(c, "human:alice").error?.code, -32402);
   assert.notEqual(privileged(c, "human:bob").error?.code, -32402);
 });
@@ -59,7 +62,8 @@ test("a min_acr given as null sets no minimum", () => {
 test("min_acr is not bypassed by a downgraded re-join", () => {
   const fresh = Math.floor(Date.now() / 1000);
   const c = new Coordinator({ enforceStepUp: true,
-    verifyOidcToken: (t: string) => ({ sub: "u", auth_time: fresh, acr: t === "strong" ? "mfa" : "pwd" }) });
+    verifyOidcToken: (t: string) => ({ sub: "u", chap_participant_uri: "human:alice", auth_time: fresh,
+                                       acr: t === "strong" ? "mfa" : "pwd" }) });
   c.dispatch({ jsonrpc: "2.0", id: "1", method: "workspace.create",
     params: { workspace: "w", min_acr: "mfa" }});
   c.dispatch({ jsonrpc: "2.0", id: "2", method: "participant.join",

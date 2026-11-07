@@ -78,7 +78,9 @@ def test_a_credential_of_the_wrong_type_is_refused():
 
 # --------------------------------------------------- identity required of people
 
-TOKENS = {"alice": {"sub": "alice", "cnf": {"jwk": _key("alice-k1")}}, "bob": {"sub": "bob"}}
+TOKENS = {"alice": {"sub": "alice", "chap_participant_uri": "human:alice",
+                    "cnf": {"jwk": _key("alice-k1")}},
+          "bob": {"sub": "bob", "chap_participant_uri": "human:bob"}}
 PRESENTATIONS = {"carol": {"holder": "did:example:carol", "cnf_jwk": _key("carol-vp")}}
 
 
@@ -178,37 +180,68 @@ def test_a_signed_join_with_a_token_takes_effect_once():
 
 # ----------------------------------------------------------- the nonce binding
 
-def test_the_key_whose_thumbprint_is_the_nonce_is_bound_and_the_joins_other_keys_are_not():
+MISMATCH = {"code": -32404, "message": "The join's keys are not the key the token binds"}
+
+
+def test_the_key_whose_thumbprint_is_the_nonce_is_bound_and_a_join_bringing_another_key_is_refused():
     assert jwk_thumbprint(RFC8037_KEY) == "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k"
-    tokens = {"okp": {"sub": "erin", "nonce": jwk_thumbprint(_key("erin-1"))},
-              "ec": {"sub": "fay", "nonce": jwk_thumbprint(_ec_key("fay-1"))}}
+    tokens = {"okp": {"sub": "erin", "chap_participant_uri": "human:erin",
+                      "nonce": jwk_thumbprint(_key("erin-1"))},
+              "ec": {"sub": "fay", "chap_participant_uri": "human:fay",
+                     "nonce": jwk_thumbprint(_ec_key("fay-1"))}}
     c, join = _coordinator(verify_oidc_token=tokens.get)
-    join("human:erin", "human", oidc_token="okp", jwks={"keys": [_key("erin-2"), _key("erin-1")]})
+    assert join("human:erin", "human", oidc_token="okp",
+                jwks={"keys": [_key("erin-2"), _key("erin-1")]})["error"] == MISMATCH
+    join("human:erin", "human", oidc_token="okp", jwks={"keys": [_key("erin-1")]})
     assert _keys_of(c, "human:erin") == ["erin-1"]
-    join("human:fay", "human", oidc_token="ec", jwks={"keys": [_key("fay-2"), _ec_key("fay-1")]})
+    join("human:fay", "human", oidc_token="ec", jwks={"keys": [_ec_key("fay-1")]})
     assert _keys_of(c, "human:fay") == ["fay-1"]
 
 
-def test_a_nonce_that_names_no_key_or_two_binds_none_and_a_cnf_jwk_comes_first():
-    tokens = {"none": {"sub": "g", "nonce": "not-a-thumbprint"},
-              "two": {"sub": "h", "nonce": jwk_thumbprint(_key("g-1"))},
-              "cnf": {"sub": "i", "nonce": jwk_thumbprint(_key("i-1")),
-                      "cnf": {"jwk": _key("i-cnf")}}}
+def test_a_nonce_or_cnf_jwk_the_joins_keys_are_not_is_refused_and_one_with_no_kid_takes_its_thumbprint():
+    unnamed = {k: v for k, v in _key("k-cnf").items() if k != "kid"}
+    tokens = {"none": {"sub": "g", "chap_participant_uri": "human:g", "nonce": "not-a-thumbprint"},
+              "cnf": {"sub": "i", "chap_participant_uri": "human:i",
+                      "nonce": jwk_thumbprint(_key("i-1")), "cnf": {"jwk": _key("i-cnf")}},
+              "unnamed": {"sub": "k", "chap_participant_uri": "human:k", "cnf": {"jwk": unnamed}}}
     c, join = _coordinator(verify_oidc_token=tokens.get)
-    join("human:g", "human", oidc_token="none", jwks={"keys": [_key("g-1"), _key("g-2")]})
-    assert _keys_of(c, "human:g") == ["g-1", "g-2"]
-    join("human:h", "human", oidc_token="two",
-         jwks={"keys": [_key("h-1", "G-1"), _key("h-2", "G-1")]})
-    assert _keys_of(c, "human:h") == ["h-1", "h-2"]
-    join("human:i", "human", oidc_token="cnf", jwks={"keys": [_key("i-1")]})
+    assert join("human:g", "human", oidc_token="none",
+                jwks={"keys": [_key("g-1")]})["error"] == MISMATCH
+    assert join("human:i", "human", oidc_token="cnf",
+                jwks={"keys": [_key("i-1")]})["error"] == MISMATCH
+    join("human:i", "human", oidc_token="cnf")
     assert _keys_of(c, "human:i") == ["i-cnf"]
+    thumbprint = jwk_thumbprint(unnamed)
+    assert join("human:k", "human", oidc_token="unnamed",
+                jwks={"keys": [_key("k-cnf")]})["error"] == MISMATCH
+    assert "error" not in join("human:k", "human", oidc_token="unnamed",
+                               jwks={"keys": [{**unnamed, "kid": thumbprint}]})
+    assert _keys_of(c, "human:k") == [thumbprint]
+
+
+def test_a_person_a_token_verifies_has_no_self_asserted_key_and_the_token_names_the_person():
+    tokens = {"named": {"sub": "m", "chap_participant_uri": "human:m"},
+              "anyone": {"sub": "mallory"}}
+    c, join = _coordinator(verify_oidc_token=tokens.get)
+    assert join("human:m", "human", oidc_token="named", jwks={"keys": [_key("m-1")]})["error"] == {
+        "code": -32404,
+        "message": "The token binds no key: a person it verifies signs with a key it binds"}
+    # Any user of the provider could otherwise take any free name.
+    assert join("human:ceo", "human", oidc_token="anyone")["error"] == {
+        "code": -32404, "message": "OIDC token does not name this participant"}
+    assert "w" not in c.workspaces
+    assert "error" not in join("human:m", "human", oidc_token="named")
+    assert _keys_of(c, "human:m") == []
 
 
 def test_a_member_joining_again_with_a_key_its_token_binds_adds_it():
-    tokens = {"first": {"sub": "jo", "cnf": {"jwk": _key("jo-1")}},
+    tokens = {"first": {"sub": "jo", "chap_participant_uri": "human:jo",
+                        "cnf": {"jwk": _key("jo-1")}},
               "second": {"sub": "jo", "nonce": jwk_thumbprint(_key("jo-2"))}}
     c, join = _coordinator(verify_oidc_token=tokens.get)
     join("human:jo", "human", oidc_token="first")
-    r = join("human:jo", "human", oidc_token="second", jwks={"keys": [_key("jo-2"), _key("jo-3")]})
+    assert join("human:jo", "human", oidc_token="second",
+                jwks={"keys": [_key("jo-2"), _key("jo-3")]})["error"] == MISMATCH
+    r = join("human:jo", "human", oidc_token="second", jwks={"keys": [_key("jo-2")]})
     assert "error" not in r
     assert _keys_of(c, "human:jo") == ["jo-1", "jo-2"]

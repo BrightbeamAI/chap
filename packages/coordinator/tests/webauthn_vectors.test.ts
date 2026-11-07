@@ -65,9 +65,13 @@ test("a key without a WebAuthn relying party, or of another curve, is not a WebA
   assert.equal(isWebAuthnKey({ ...VECTORS.jwk, x: VECTORS.jwk.x + "=" }), false);
 });
 
-test("a key that lists no origins takes an assertion from any", () => {
-  // Sign afresh with the vector's private key, for a key that names no origins.
-  const jwk = { ...VECTORS.jwk, kid: "any-origin", webauthn: { rp_id: "example.org" } };
+for (const [named, webauthn] of [["no origins", { rp_id: "example.org" }],
+                                 ["an empty list of origins", { rp_id: "example.org", origins: [] }]] as const) {
+test(`a key that lists ${named} signs nothing`, () => {
+  // Sign afresh with the vector's private key, for a key that names no origin:
+  // whoever registers such a key would otherwise decide that any origin may
+  // sign for it.
+  const jwk = { ...VECTORS.jwk, kid: "any-origin", webauthn };
   const d = Buffer.from(VECTORS.private_scalar_hex, "hex").toString("base64url");
   const privateKey = createPrivateKey({ key: { ...jwk, d }, format: "jwk" });
   const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
@@ -87,8 +91,9 @@ test("a key that lists no origins takes an assertion from any", () => {
                          { key: privateKey, dsaEncoding: "der" });
   const sig = `webauthn:any-origin:${[authenticatorData, clientDataJSON, signature].map((b) => b.toString("base64url")).join(".")}`;
   const r = c.dispatch({ ...request, sig }) as any;
-  assert.equal(r.error, undefined, JSON.stringify(r.error));
+  assert.deepEqual(r.error, { code: -32070, message: "WebAuthn key lists no origin" });
 });
+}
 
 test("a tag with more than three parts is malformed", () => {
   const c = ready();

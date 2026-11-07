@@ -112,9 +112,10 @@ def test_re_encoding_the_signature_does_not_make_a_new_request():
 
     variant = {**late, "sig": _reencoded(late["sig"])}
     assert variant["sig"] != late["sig"]
-    # The variant verifies, so only the rule stands between it and the decision.
+    # A signature has one spelling, so the variant does not verify; and the
+    # rule answers it before any signature is looked at.
     unsigned = {k: v for k, v in variant.items() if k != "sig"}
-    assert verify(canonicalize(unsigned), variant["sig"], w.keys["human:a"].public_key())
+    assert not verify(canonicalize(unsigned), variant["sig"], w.keys["human:a"].public_key())
     assert w.copy(variant)["error"]["data"] == {"refused_at_seq": at}
     assert w.ws.tasks[tid].state == "review_requested"
 

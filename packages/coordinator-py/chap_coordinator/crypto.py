@@ -27,6 +27,17 @@ def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 
 
+def strict_base64(s: str) -> bytes | None:
+    """The bytes a standard base64 string encodes, or None where it is not
+    the one canonical encoding of them: standard alphabet, padded, and
+    nothing else, so a signature has one spelling in every language."""
+    try:
+        data = base64.b64decode(s, validate=True)
+    except ValueError:
+        return None
+    return data if _b64(data) == s else None
+
+
 def _b64url_nopad(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
@@ -120,6 +131,13 @@ def parse_webauthn_assertion(part: str) -> WebAuthnAssertion | None:
     return WebAuthnAssertion(*(_b64url_decode(p) for p in pieces))
 
 
+def is_ed25519_key(jwk: Any) -> bool:
+    """Whether a JWK is an Ed25519 public key: OKP on Ed25519 with a 32-byte
+    x."""
+    return (isinstance(jwk, dict) and jwk.get("kty") == "OKP" and jwk.get("crv") == "Ed25519"
+            and isinstance(jwk.get("x"), str) and _COORDINATE.fullmatch(jwk["x"]) is not None)
+
+
 def is_webauthn_key(jwk: Any) -> bool:
     """Whether a JWK is a WebAuthn key: a P-256 key for ES256 with a
     ``webauthn`` member naming its ``rp_id``, and, where it limits them, its
@@ -142,20 +160,65 @@ def _no_constant(name: str) -> Any:
     raise ValueError(name)
 
 
+#: How deeply a client data object may nest, as an envelope may (64 levels).
+_MAX_CLIENT_DATA_NESTING = 64
+
+
+def _json_depth(text: str) -> int:
+    """How deeply JSON text nests, read from its brackets outside strings, so
+    a text too deep for one language's parser is refused the same way by
+    both."""
+    depth = deepest = 0
+    in_string = escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "{[":
+            depth += 1
+            deepest = max(deepest, depth)
+        elif ch in "}]":
+            depth -= 1
+    return deepest
+
+
+# The authenticator data's flags: user present, user verified, backup
+# eligible, backed up, attested credential data and extension data.
+_UP, _UV, _BE, _BS, _AT, _ED = 0x01, 0x04, 0x08, 0x10, 0x40, 0x80
+
+
 def webauthn_failure(canonical: bytes, assertion: WebAuthnAssertion, jwk: dict) -> str | None:
     """Why a WebAuthn assertion does not sign a request, or None when it does.
 
     ``canonical`` is the JCS form of the request without its ``sig``, and
     ``jwk`` a key :func:`is_webauthn_key` accepts. The checks are the relying
-    party's in the WebAuthn assertion procedure: the client data says it is
-    an assertion, over this request, from an origin the key allows; the
+    party's in the WebAuthn assertion procedure: the key names the origins it
+    signs for; the client data says it is an assertion, over this request,
+    from one of those origins, made in no other origin's frame; the
     authenticator data is for the key's relying party, with the user present
-    and verified; and the ES256 signature covers the authenticator data and
-    the hash of the client data.
+    and verified, its backup flags consistent, and nothing after its counter
+    but the extensions its flags announce; and the ES256 signature covers the
+    authenticator data and the hash of the client data.
     """
+    w = jwk["webauthn"]
+    origins = w.get("origins")
+    if not isinstance(origins, list) or not origins:
+        return "WebAuthn key lists no origin"
     try:
-        client = json.loads(assertion.client_data_json.decode("utf-8"), parse_constant=_no_constant)
-    except (ValueError, RecursionError):
+        text = assertion.client_data_json.decode("utf-8")
+    except ValueError:
+        text = None
+    if text is not None and _json_depth(text) > _MAX_CLIENT_DATA_NESTING:
+        return f"WebAuthn clientDataJSON nests deeper than {_MAX_CLIENT_DATA_NESTING} levels"
+    try:
+        client = None if text is None else json.loads(text, parse_constant=_no_constant)
+    except ValueError:
         client = None
     if not isinstance(client, dict):
         return "WebAuthn clientDataJSON is not a JSON object"
@@ -163,18 +226,26 @@ def webauthn_failure(canonical: bytes, assertion: WebAuthnAssertion, jwk: dict) 
         return "WebAuthn clientDataJSON type is not webauthn.get"
     if client.get("challenge") != _b64url_nopad(hashlib.sha256(canonical).digest()):
         return "WebAuthn challenge is not the digest of this request"
-    w = jwk["webauthn"]
-    origins = w.get("origins") or []
-    if origins and client.get("origin") not in origins:
+    if client.get("origin") not in origins:
         return "WebAuthn origin is not one the key allows"
+    if client.get("crossOrigin") is True or "topOrigin" in client:
+        return "WebAuthn assertion was made in a cross-origin frame"
     auth = assertion.authenticator_data
     if len(auth) < 37:
         return "WebAuthn authenticatorData is too short"
     if auth[:32] != hashlib.sha256(w["rp_id"].encode("utf-8")).digest():
         return "WebAuthn rpIdHash does not match the key's rp_id"
-    # UP, user present, is bit 0 and UV, user verified, bit 2.
-    if auth[32] & 0x05 != 0x05:
+    flags = auth[32]
+    if flags & (_UP | _UV) != _UP | _UV:
         return "WebAuthn assertion lacks user presence or verification"
+    if flags & _BS and not flags & _BE:
+        return "WebAuthn assertion is backed up but not backup eligible"
+    # An assertion carries no attested credential data, and extension data
+    # only where its flag says so.
+    if flags & _AT:
+        return "WebAuthn assertion carries attested credential data"
+    if (len(auth) == 37) if flags & _ED else (len(auth) != 37):
+        return "WebAuthn authenticatorData does not end where its flags say"
     try:
         from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives import hashes
@@ -206,8 +277,11 @@ def verify(canonical_bytes: bytes, sig: str, public_key: Any) -> bool:
     # Allow the optional ed25519:<kid>:<sig> form
     if raw.count(":") >= 1:
         raw = raw.split(":")[-1]
+    signature = strict_base64(raw)
+    if signature is None:
+        return False
     try:
-        public_key.verify(base64.b64decode(raw), canonical_bytes)
+        public_key.verify(signature, canonical_bytes)
         return True
     except Exception:
         return False

@@ -58,16 +58,24 @@ The deployment's verifier (`verifyOidcToken` or `verify_oidc_token`)
 checks signature, expiry and audience and returns the claims; a
 rejected token refuses the join with `-32403`. The Coordinator keeps
 `sub`, `auth_time` and `acr`, and pins `cnf.jwk` as the participant's
-key when it carries a `kid`, ignoring self-asserted `jwks`.
+key, under its `kid` or, where it has none, its RFC 7638 thumbprint.
 
 An identity provider that cannot put the key in `cnf.jwk` can still
 attest it through the nonce. The client asks for the token with `nonce`
 set to the key's RFC 7638 thumbprint (SHA-256 over `{crv, kty, x}` for an
 OKP key, or `{crv, kty, x, y}` for an EC key, base64url without padding),
 and joins with the key in `jwks`. Where the verified claims carry no
-`cnf.jwk` and the nonce is the thumbprint of exactly one key with a `kid`
-in the join's `jwks`, the Coordinator pins that key, and ignores the
-join's other keys.
+`cnf.jwk` and a nonce, the Coordinator pins the join's key whose
+thumbprint the nonce is.
+
+A token that carries `cnf.jwk` or a nonce names the one key its holder
+signs with. Every key in the join's `jwks` MUST be that key, the same `kid`
+and thumbprint, and a join bringing any other is refused with `-32404`,
+"The join's keys are not the key the token binds". A token that names no
+key admits no key of the join's own: a new person's join that carries
+`jwks` with such a token is refused with `-32404`, unless an invitation
+pins those keys (SPECIFICATION.md §6.3.3). A token taken from its holder
+therefore admits no key of the taker's.
 
 Where a verifier is configured and the workspace advertises this profile,
 a join of type `human` MUST carry an `oidc_token`, and is refused with
@@ -83,6 +91,12 @@ A token binds only to the participant it belongs to:
 
 - Where the token carries `chap_participant_uri`, it MUST equal the
   join's `from`.
+- A new member of type `human` is named by the token: its
+  `chap_participant_uri` is the join's `from`, or an admin's invitation for
+  that URI names the token's `sub` as `oidc_sub` (SPECIFICATION.md
+  §6.3.3). A provider vouches for its user, and only the token or an
+  invitation says which participant that user is: without this any user
+  of the provider would take any name not yet taken.
 - A join under the name of an existing member is accepted with a token
   only when the token's `sub` is the member's recorded subject. For a
   member with no recorded subject, the token's `chap_participant_uri`

@@ -359,6 +359,282 @@
         "code": -32070,
         "message": "Key 7462aca275c321ba is not a WebAuthn key"
       }
+    },
+    {
+      "name": "cross-origin-frame",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjp0cnVlfQ.MEYCIQCfY7Vsi3FEtj1EpCsV6ZIdF434vHcPGKL9nvP2vjFwXAIhAP-Mp3oUo3a1GbG2W8hFOaWEEPAu57D0T4L57eN8S8gw"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn assertion was made in a cross-origin frame"
+      }
+    },
+    {
+      "name": "top-origin-named",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZSwidG9wT3JpZ2luIjoiaHR0cHM6Ly9lbHNld2hlcmUuZXhhbXBsZSJ9.MEYCIQDHsKgcjG_lNwnENh2B58iihPAv6FhJxJx_IdS6AnCczAIhAJQZKpj3Pq_CuLUT-Gj8-_hkU05H_Teaq4_nv5h72L1q"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn assertion was made in a cross-origin frame"
+      }
+    },
+    {
+      "name": "attested-credential-data",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LVFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEYCIQD1OQCUje2K2io9Q6ksJnGizVdIuj2zWYGot5LVXNJM9QIhALUr9WNlVmdAiIqRiuhhtmQ8NPc4qucxhz17jbvyCs04"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn assertion carries attested credential data"
+      }
+    },
+    {
+      "name": "extension-flag-without-data",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LWFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEQCIC2XawbHd4AmOI6ctClemxt3rpXIR44CJhXAT8o8OtlkAiACsIgZaUrCWSBphKKLonC6oaj5WO4fHvxsPITP2h1FqQ"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn authenticatorData does not end where its flags say"
+      }
+    },
+    {
+      "name": "data-after-the-counter",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQA.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEUCIQCFzmB5kozYiMzO967kvj_cU--tjN1cmmPL8eSoUQnFcQIgJVO2A6EnD3ApjwnPytftA6BXHrZbmeSMB21H4fYSX_c"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn authenticatorData does not end where its flags say"
+      }
+    },
+    {
+      "name": "backed-up-not-eligible",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUVAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZX0.MEQCIAlu0tWBtB5wGbI3fgPHKzG6AiPHADpm911j3tjjTLr8AiBA2MbQvWqPT-793BxUiDe9aOxLkpJ_A1HBvh1v3PzTqQ"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn assertion is backed up but not backup eligible"
+      }
+    },
+    {
+      "name": "client-data-nested-too-deep",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "webauthn:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:v6vDdDKViwYzYNOtZGHJxHNa5_jt1GWSpeDwFFKy5LUFAAAAAQ.eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRVVaREw5M1RMd0dWUE1wUlZSdnFFdEpkRVdhclZSSUpVNHhvWDJsRmdYQSIsIm9yaWdpbiI6Imh0dHBzOi8vZGVzay5leGFtcGxlLm9yZyIsImNyb3NzT3JpZ2luIjpmYWxzZSwibmVzdGVkIjpbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tbXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXX0.MEUCIQD12K_4AxKf7SRCQW2BvInzbZoCe2edWeb8y71B6NSC-QIgKvvNcZnAorf0QyTqTHbiXfJ-_lglhPCoWI8wr5hryMQ"
+      },
+      "error": {
+        "code": -32070,
+        "message": "WebAuthn clientDataJSON nests deeper than 64 levels"
+      }
+    },
+    {
+      "name": "ed25519-tag-naming-a-webauthn-key",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-1",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:alice@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "ed25519:-LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      },
+      "error": {
+        "code": -32070,
+        "message": "Key -LdUidQD8kFF7ZtXCIeH_nSbH1gCzBDCGTwjM9uDwu8 is not an Ed25519 key"
+      }
+    },
+    {
+      "name": "ed25519-signature-base64url",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-2",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:bob@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "ed25519:7462aca275c321ba:Vb9essUnX5Qrt0NkiRcn9_VfYMNP_sAi8qi-JcaqvPqLd7xY3ERU_OPcXH9TJh1GVIIich2Mc_F6SCKUIeN2CQ=="
+      },
+      "error": {
+        "code": -32070,
+        "message": "Signature failed verification"
+      }
+    },
+    {
+      "name": "ed25519-signature-unpadded",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-2",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:bob@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "ed25519:7462aca275c321ba:Vb9essUnX5Qrt0NkiRcn9/VfYMNP/sAi8qi+JcaqvPqLd7xY3ERU/OPcXH9TJh1GVIIich2Mc/F6SCKUIeN2CQ"
+      },
+      "error": {
+        "code": -32070,
+        "message": "Signature failed verification"
+      }
+    },
+    {
+      "name": "ed25519-signature-with-whitespace",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-2",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:bob@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "ed25519:7462aca275c321ba:Vb9essUnX5Qrt0NkiRcn9/VfYMNP/sAi8qi+Jcaq vPqLd7xY3ERU/OPcXH9TJh1GVIIich2Mc/F6SCKUIeN2CQ=="
+      },
+      "error": {
+        "code": -32070,
+        "message": "Signature failed verification"
+      }
+    },
+    {
+      "name": "ed25519-signature-with-data-after-padding",
+      "envelope": {
+        "jsonrpc": "2.0",
+        "id": "wa-2",
+        "method": "task.create",
+        "params": {
+          "workspace": "wsp_webauthn",
+          "from": "human:bob@example.org",
+          "ts": "2026-11-06T12:00:00.000Z",
+          "kind": "review",
+          "input": {
+            "q": "?"
+          },
+          "assignee": "human:alice@example.org"
+        },
+        "sig": "ed25519:7462aca275c321ba:Vb9essUnX5Qrt0NkiRcn9/VfYMNP/sAi8qi+JcaqvPqLd7xY3ERU/OPcXH9TJh1GVIIich2Mc/F6SCKUIeN2CQ==AAAA"
+      },
+      "error": {
+        "code": -32070,
+        "message": "Signature failed verification"
+      }
     }
   ]
 }

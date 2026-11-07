@@ -100,18 +100,35 @@ export function signEnvelope(canonical: Buffer, privateKey: KeyObject, kid: stri
   return `ed25519:${kid}:${sig.toString("base64")}`;
 }
 
+/**
+ * The bytes a standard base64 string encodes, or undefined where it is not
+ * the one canonical encoding of them: standard alphabet, padded, and nothing
+ * else, so a signature has one spelling in every language.
+ */
+export function strictBase64(s: string): Buffer | undefined {
+  const bytes = Buffer.from(s, "base64");
+  return bytes.toString("base64") === s ? bytes : undefined;
+}
+
 /** Verify a CHAP sig string against canonical bytes and a public key. */
 export function verifyEnvelope(canonical: Buffer, sigTag: string, publicKey: KeyObject): boolean {
   if (!sigTag.startsWith("ed25519:")) return false;
   const parts = sigTag.split(":");
   if (parts.length < 2) return false;
-  const sigB64 = parts[parts.length - 1];
+  const sig = strictBase64(parts[parts.length - 1]);
+  if (sig === undefined) return false;
   try {
-    const sig = Buffer.from(sigB64, "base64");
     return nodeVerify(null, canonical, publicKey, sig);
   } catch {
     return false;
   }
+}
+
+/** Whether a JWK is an Ed25519 public key: OKP on Ed25519 with a 32-byte x. */
+export function isEd25519Key(jwk: unknown): boolean {
+  if (jwk === null || typeof jwk !== "object" || Array.isArray(jwk)) return false;
+  const key = jwk as Record<string, unknown>;
+  return key.kty === "OKP" && key.crv === "Ed25519" && typeof key.x === "string" && COORDINATE.test(key.x);
 }
 
 /** Parse a JWK x (base64url) into a Node public KeyObject. */
@@ -178,20 +195,60 @@ export function isWebAuthnKey(jwk: unknown): boolean {
 
 const UTF8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
+/** How deeply a client data object may nest, as an envelope may (64 levels). */
+const MAX_CLIENT_DATA_NESTING = 64;
+
+/**
+ * How deeply JSON text nests, read from its brackets outside strings, so a
+ * text too deep for one language's parser is refused the same way by both.
+ */
+function jsonDepth(text: string): number {
+  let depth = 0;
+  let deepest = 0;
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+    } else if (ch === "{" || ch === "[") {
+      deepest = Math.max(deepest, ++depth);
+    } else if (ch === "}" || ch === "]") {
+      depth--;
+    }
+  }
+  return deepest;
+}
+
+// The authenticator data's flags: user present, user verified, backup
+// eligible, backed up, attested credential data and extension data.
+const UP = 0x01, UV = 0x04, BE = 0x08, BS = 0x10, AT = 0x40, ED = 0x80;
+
 /**
  * Why a WebAuthn assertion does not sign a request, or null when it does.
  * `canonical` is the JCS form of the request without its `sig`, and `jwk`
  * a key isWebAuthnKey accepts. The checks are the relying party's in the
- * WebAuthn assertion procedure: the client data says it is an assertion,
- * over this request, from an origin the key allows; the authenticator data
- * is for the key's relying party, with the user present and verified; and
- * the ES256 signature covers the authenticator data and the hash of the
- * client data.
+ * WebAuthn assertion procedure: the key names the origins it signs for; the
+ * client data says it is an assertion, over this request, from one of those
+ * origins, made in no other origin's frame; the authenticator data is for
+ * the key's relying party, with the user present and verified, its backup
+ * flags consistent, and nothing after its counter but the extensions its
+ * flags announce; and the ES256 signature covers the authenticator data and
+ * the hash of the client data.
  */
 export function webAuthnFailure(canonical: Buffer, assertion: WebAuthnAssertion,
                                 jwk: Record<string, unknown>): string | null {
+  const w = jwk.webauthn as { rp_id: string; origins?: string[] };
+  if (!Array.isArray(w.origins) || w.origins.length === 0) return "WebAuthn key lists no origin";
+  let text: string | undefined;
+  try { text = UTF8.decode(assertion.clientDataJSON); } catch { text = undefined; }
+  if (text !== undefined && jsonDepth(text) > MAX_CLIENT_DATA_NESTING) {
+    return `WebAuthn clientDataJSON nests deeper than ${MAX_CLIENT_DATA_NESTING} levels`;
+  }
   let client: unknown;
-  try { client = JSON.parse(UTF8.decode(assertion.clientDataJSON)); } catch { client = undefined; }
+  try { client = text === undefined ? undefined : JSON.parse(text); } catch { client = undefined; }
   if (client === null || typeof client !== "object" || Array.isArray(client)) {
     return "WebAuthn clientDataJSON is not a JSON object";
   }
@@ -200,17 +257,24 @@ export function webAuthnFailure(canonical: Buffer, assertion: WebAuthnAssertion,
   if (data.challenge !== b64urlNoPad(createHash("sha256").update(canonical).digest())) {
     return "WebAuthn challenge is not the digest of this request";
   }
-  const w = jwk.webauthn as { rp_id: string; origins?: string[] };
-  if (w.origins !== undefined && w.origins.length > 0 && !w.origins.includes(data.origin as string)) {
-    return "WebAuthn origin is not one the key allows";
+  if (!w.origins.includes(data.origin as string)) return "WebAuthn origin is not one the key allows";
+  if (data.crossOrigin === true || data.topOrigin !== undefined) {
+    return "WebAuthn assertion was made in a cross-origin frame";
   }
   const auth = assertion.authenticatorData;
   if (auth.length < 37) return "WebAuthn authenticatorData is too short";
   if (!auth.subarray(0, 32).equals(createHash("sha256").update(w.rp_id, "utf-8").digest())) {
     return "WebAuthn rpIdHash does not match the key's rp_id";
   }
-  // UP, user present, is bit 0 and UV, user verified, bit 2.
-  if ((auth[32] & 0x05) !== 0x05) return "WebAuthn assertion lacks user presence or verification";
+  const flags = auth[32];
+  if ((flags & (UP | UV)) !== (UP | UV)) return "WebAuthn assertion lacks user presence or verification";
+  if ((flags & BS) && !(flags & BE)) return "WebAuthn assertion is backed up but not backup eligible";
+  // An assertion carries no attested credential data, and extension data
+  // only where its flag says so.
+  if (flags & AT) return "WebAuthn assertion carries attested credential data";
+  if ((flags & ED) ? auth.length === 37 : auth.length !== 37) {
+    return "WebAuthn authenticatorData does not end where its flags say";
+  }
   try {
     const key = createPublicKey({ key: { kty: "EC", crv: "P-256", x: jwk.x as string, y: jwk.y as string },
                                   format: "jwk" });

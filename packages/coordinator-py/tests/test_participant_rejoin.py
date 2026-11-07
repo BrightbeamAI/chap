@@ -45,6 +45,17 @@ def test_rejoin_with_only_other_keys_is_refused_and_the_member_is_unchanged():
     assert [k.kid for k in m.keys] == ["alice-1"]
 
 
+def test_a_rejoin_with_the_members_kid_on_other_key_material_is_a_rejoin_with_another_key():
+    # The kid alone named the key, so the name's holder was answered as joined
+    # in the member's name with a key it does not hold.
+    c, s = _ready()
+    r = s("participant.join", workspace="w", **{"from": "human:alice"}, type="human",
+          jwks={"keys": [{"kid": "alice-1", "x": "OTHER"}]})
+    assert r["error"]["code"] == -32011
+    assert r["error"]["data"] == {"kids": ["alice-1"]}
+    assert [k.jwk["x"] for k in c.get_workspace("w").members["human:alice"].keys] == ["A"]
+
+
 def test_rejoin_with_a_registered_key_or_with_none_keeps_role_scopes_and_keys():
     c, s = _ready()
     for jwks in ({"keys": [{"kid": "alice-1", "x": "A"}, {"kid": "attacker", "x": "E"}]}, None):
@@ -97,8 +108,10 @@ def _key(kid):
 
 
 TOKENS = {
-    "alice-1": {"sub": "alice", "auth_time": 111, "cnf": {"jwk": _key("alice-k1")}},
-    "alice-2": {"sub": "alice", "auth_time": 222, "cnf": {"jwk": _key("alice-k2")}},
+    "alice-1": {"sub": "alice", "auth_time": 111, "chap_participant_uri": "human:alice",
+                "cnf": {"jwk": _key("alice-k1")}},
+    "alice-2": {"sub": "alice", "auth_time": 222, "chap_participant_uri": "human:alice",
+                "cnf": {"jwk": _key("alice-k2")}},
     "mallory": {"sub": "mallory", "auth_time": 333, "cnf": {"jwk": _key("mallory-k")}},
     "mallory-naming-alice": {"sub": "mallory", "auth_time": 333,
                              "chap_participant_uri": "human:alice",
@@ -265,8 +278,10 @@ def test_the_four_refusals_carry_their_messages():
 
 
 def test_a_good_token_with_another_holders_presentation_changes_nothing():
-    tokens = {"alice": {"sub": "alice", "auth_time": 5, "cnf": {"jwk": _key("alice-k1")}},
-              "alice-later": {"sub": "alice", "auth_time": 6, "cnf": {"jwk": _key("alice-k2")}}}
+    tokens = {"alice": {"sub": "alice", "auth_time": 5, "chap_participant_uri": "human:alice",
+                        "cnf": {"jwk": _key("alice-k1")}},
+              "alice-later": {"sub": "alice", "auth_time": 6, "chap_participant_uri": "human:alice",
+                              "cnf": {"jwk": _key("alice-k2")}}}
     c = Coordinator(CoordinatorOptions(
         deterministic_ids=True,
         verify_oidc_token=lambda t: tokens.get(t),
@@ -286,7 +301,7 @@ def test_a_good_token_with_another_holders_presentation_changes_nothing():
 
 
 def test_a_token_with_no_string_subject_cannot_rejoin_a_bound_member():
-    tokens = {"alice": {"sub": "alice", "auth_time": 1},
+    tokens = {"alice": {"sub": "alice", "auth_time": 1, "chap_participant_uri": "human:alice"},
               "no-sub": {"auth_time": 2}, "number-sub": {"sub": 7, "auth_time": 2}}
     c = Coordinator(CoordinatorOptions(deterministic_ids=True,
                                        verify_oidc_token=lambda t: tokens.get(t)))
@@ -332,7 +347,8 @@ def test_an_empty_holder_falls_back_to_the_id_and_binds_nothing_else():
 def test_a_rejoin_token_without_acr_clears_the_old_acr():
     import time
     fresh = int(time.time())
-    tokens = {"strong": {"sub": "alice", "auth_time": fresh, "acr": "mfa"},
+    tokens = {"strong": {"sub": "alice", "auth_time": fresh, "acr": "mfa",
+                         "chap_participant_uri": "human:alice"},
               "plain": {"sub": "alice", "auth_time": fresh}}
     c = Coordinator(CoordinatorOptions(enforce_step_up=True,
                                        verify_oidc_token=lambda t: tokens.get(t)))

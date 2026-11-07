@@ -415,10 +415,14 @@ Signing procedure:
 1. Construct the envelope as a JSON object.
 2. Set `evidence.prev_hash` to the SHA-256 of the previous evidence
    entry in this workspace (see §10).
-3. Remove `evidence.sig` from the object (or set to `null`).
+3. Remove `evidence.sig` from the object. A `sig` set to `null` is a field
+   like any other, and its canonical bytes are not the ones a verifier
+   checks.
 4. Canonicalise per JCS.
 5. Sign the canonical bytes with the Participant's Ed25519 private key.
-6. Set `evidence.sig` to `ed25519:<base64-encoded-signature>`.
+6. Set `evidence.sig` to `ed25519:<base64-encoded-signature>`, in standard
+   padded base64 and no other spelling
+   ([`profiles/security-signed.md`](./profiles/security-signed.md) §3).
 
 Verification reverses the procedure. The verifier MUST look up the
 public key for the claimed `from` Participant *as of the message's
@@ -439,7 +443,7 @@ lists, refusing a failure with `-32070`.
 Public keys are represented as JWKs ([RFC 7517]) with `kty: "OKP"`,
 `crv: "Ed25519"`, or, for a WebAuthn key, `kty: "EC"`, `crv: "P-256"`,
 `alg: "ES256"` and a `webauthn` member naming the relying party's `rp_id`
-and, optionally, the `origins` it accepts (§5.2). They are advertised
+and the `origins` it accepts, at least one (§5.2). They are advertised
 either:
 
 - In the workspace's participant descriptor (`participant.describe` result), or
@@ -465,7 +469,8 @@ OIDC ID token. The binding follows DPoP ([RFC 9449]) in spirit:
    whose value is the public key.
 3. On a `participant.join` carrying the ID token as `oidc_token`, the
    Coordinator verifies it and pins the `cnf.jwk` as a signing key for
-   this human Participant. The key has no expiry: it stays valid until
+   this human Participant, under its `kid` or, where it has none, its
+   RFC 7638 thumbprint. The key has no expiry: it stays valid until
    rotated or revoked (§5.7). A token binds only to the participant it
    belongs to: one whose `chap_participant_uri` names another
    participant is refused with `-32404`, and a later join under an
@@ -482,9 +487,25 @@ A client whose identity provider cannot put its key in `cnf.jwk` asks
 for the token with the key's RFC 7638 ([RFC 7638]) thumbprint as its
 `nonce`: SHA-256 over `{crv, kty, x}` for an OKP key or
 `{crv, kty, x, y}` for an EC key, base64url without padding. Where the
-verified token carries no `cnf.jwk` and its `nonce` is the thumbprint of
-exactly one key in the join's `jwks`, the Coordinator binds that key as it
-would a `cnf.jwk`, and ignores the join's other keys.
+verified token carries no `cnf.jwk` and a `nonce`, the Coordinator binds
+the join's key whose thumbprint the nonce is, as it would a `cnf.jwk`.
+
+A token that carries a `cnf.jwk` or a `nonce` names the key its holder
+signs with, so every key in the join's `jwks` MUST be that key, the same
+`kid` and thumbprint, and a join bringing any other is refused with
+`-32404`, "The join's keys are not the key the token binds". A token
+taken from its holder then admits no key of the taker's. A person a token
+verifies never has keys of its own registered on the join's word: a new
+member's join of type `human` whose token binds no key, and which carries
+`jwks` its invitation does not pin (§6.3.3), is refused with `-32404`.
+
+The token also names the person. A provider vouches for its user, and only
+the token, or an admin's invitation naming the token's subject, says which
+participant that user is. So a new member's join of type `human` with a
+token whose `chap_participant_uri` is not its URI, and for which no
+invitation names the token's `sub` as `oidc_sub`, MUST be refused with
+`-32404`, "OIDC token does not name this participant". Without this any
+user of the provider would join under any name not yet taken.
 
 Where a Coordinator has a token verifier and the workspace advertises
 `identity-oidc/1.0`, a `participant.join` of type `human` MUST carry an
@@ -721,7 +742,9 @@ keys; a new key arrives through participant.rotate_key", with
 its sender holding a key the Coordinator does not accept, and where the
 sender is someone else, it is told the name is taken. A join with a key
 the member holds, or with no `jwks`, is answered as joined and changes
-nothing else.
+nothing else. The member holds a key when it holds one with the same
+`kid` and the same RFC 7638 thumbprint: a `kid` on other key material is
+another key.
 
 #### 6.3.3 Invitations and the join policy
 

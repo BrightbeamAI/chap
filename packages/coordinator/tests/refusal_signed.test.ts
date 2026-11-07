@@ -93,10 +93,11 @@ test("re-encoding the signature does not make a new request", () => {
 
   const variant = { ...late, sig: reencoded(late.sig as string) };
   assert.notEqual(variant.sig, late.sig);
-  // The variant verifies, so only the rule stands between it and the decision.
+  // A signature has one spelling, so the variant does not verify; and the
+  // rule answers it before any signature is looked at.
   const { sig: _s, ...unsigned } = variant;
-  assert.ok(verifyEnvelope(canonicalize(unsigned as never), variant.sig,
-                           publicKeyFromJwk(keys.get("human:a")!.jwk as never)));
+  assert.ok(!verifyEnvelope(canonicalize(unsigned as never), variant.sig,
+                            publicKeyFromJwk(keys.get("human:a")!.jwk as never)));
   assert.deepEqual(copy(variant).error.data, { refused_at_seq: at });
   assert.equal(ws.tasks.get(id).state, "review_requested");
 });

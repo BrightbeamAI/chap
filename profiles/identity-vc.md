@@ -117,7 +117,15 @@ presentation never reaches the chain.
 The presentation's `proof` binds the holder to the CHAP signing key
 (`verificationMethod` identifies it). The deployment's verifier
 resolves the DID and returns the key as `cnf_jwk`, which the
-Coordinator pins. The challenge and domain prevent replay.
+Coordinator pins, under its `kid` or, where it has none, its RFC 7638
+thumbprint. The challenge and domain prevent replay.
+
+Every key in the join's `jwks` MUST be the key `cnf_jwk` names, the same
+`kid` and thumbprint, and a join bringing any other is refused with
+`-32411`, "The join's keys are not the key the presentation binds". A
+presentation that binds no key admits no key of the join's own: a new
+person's join that carries `jwks` with such a presentation is refused with
+`-32411`, unless an invitation pins those keys (SPECIFICATION.md §6.3.3).
 
 A join under the name of an existing member is accepted with a
 presentation only when the presentation's holder is the member's
@@ -139,7 +147,10 @@ human:did:example:alice      # DID-bound (VC)
 
 The deployment's verifier resolves the DID and returns the key as
 `cnf_jwk`, which the Coordinator pins. The Coordinator does not compare
-`vc_holder` with the participant URI.
+`vc_holder` with the participant URI, so a deployment that needs a
+person's URI tied to the holder admits people by invitation
+(`join_policy: "invite"`, SPECIFICATION.md §6.3.3), or has its verifier
+check the URI it is given out of band.
 
 ---
 
