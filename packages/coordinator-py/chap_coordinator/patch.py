@@ -15,9 +15,10 @@ exactly the same patches.
 """
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
+
+from .jsonrpc import json_text
 
 # Rejected in every JSON Pointer segment. In a JavaScript runtime these
 # enable prototype pollution; CHAP refuses them in both references so a
@@ -37,7 +38,7 @@ def _quoted(value: Any) -> str:
     Python's repr and JavaScript's JSON.stringify quote differently, which made
     the same refusal read two ways across the two references.
     """
-    return json.dumps(value)
+    return json_text(value)
 
 
 def _json_type(value: Any) -> str:

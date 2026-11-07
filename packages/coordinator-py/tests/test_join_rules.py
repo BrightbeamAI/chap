@@ -141,10 +141,12 @@ def test_a_profile_id_names_a_catalogued_profile_at_its_major_version():
     r.call("workspace.create", "human:a", profiles=["core/1.0", "review/1.0"])
     r.call("participant.join", "human:a", type="human", role="admin")
 
+    # The id as JSON.stringify writes it, so the message reads as the
+    # TypeScript reference's does.
     def unknown(profile_id):
         return {"code": -32602,
-                "message": f"Unknown profile {json.dumps(profile_id)}: a profile id is "
-                           "<name>/<major>.<minor> for a profile the catalogue lists"}
+                "message": f"Unknown profile {json.dumps(profile_id, ensure_ascii=False)}: a profile "
+                           "id is <name>/<major>.<minor> for a profile the catalogue lists"}
 
     for profile_id in ("security-signed/0.0-off", "security-signed/2.0", "security-signed",
                        "x-acme/1.0", "review/١.0", "review/01.0", "Review/1.0"):

@@ -8,6 +8,8 @@ profiles/*.md for the authoritative definitions.
 """
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 
@@ -88,6 +90,24 @@ class E:
     ROUTING_DEPTH_NOT_APPLICABLE = -32514
     ROUTING_POLICY_UNREACHABLE = -32515
     ROUTING_ESC_TARGET_UNAVAILABLE = -32516
+
+
+def json_text(value: Any) -> str:
+    """A JSON value as JavaScript's JSON.stringify writes it, for a message
+    that quotes what a call sent: no spaces, characters outside ASCII as they
+    are, an unpaired surrogate escaped, and an integral number with no
+    fraction. The TypeScript reference quotes with JSON.stringify, so the same
+    refusal reads the same in both."""
+    if isinstance(value, str):
+        return re.sub("[\ud800-\udfff]", lambda m: f"\\u{ord(m.group()):04x}",
+                      json.dumps(value, ensure_ascii=False))
+    if isinstance(value, float) and value.is_integer() and abs(value) < 1e21:
+        return str(int(value))
+    if isinstance(value, dict):
+        return "{" + ",".join(f"{json_text(str(k))}:{json_text(v)}" for k, v in value.items()) + "}"
+    if isinstance(value, (list, tuple)):
+        return "[" + ",".join(json_text(v) for v in value) + "]"
+    return json.dumps(value)
 
 
 def rpc_error(code: int, message: str, data: Any = None) -> dict:

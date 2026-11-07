@@ -26,6 +26,13 @@ CASES: list[tuple[str, dict, list[dict]]] = [
      [{"op": "replace", "path": "/items/1e1", "value": 1}]),
     ("array index with a separator", {"items": [1, 2]},
      [{"op": "replace", "path": "/items/1_0", "value": 1}]),
+    # Python's json.dumps escaped what JSON.stringify writes as it is.
+    ("array index in digits outside ASCII", {"items": [1, 2]},
+     [{"op": "replace", "path": "/items/١", "value": 1}]),
+    ("array index with an unpaired surrogate", {"items": [1, 2]},
+     [{"op": "replace", "path": "/items/\ud800", "value": 1}]),
+    ("an operation named by an object", {"a": 1},
+     [{"op": {"name": "add", "at": [1.0]}, "path": "/a"}]),
     ("add into a string", {"a": "str"},
      [{"op": "add", "path": "/a/b", "value": 1}]),
     ("add into a number", {"a": {"b": 3}},

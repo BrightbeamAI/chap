@@ -25,7 +25,6 @@ from __future__ import annotations
 import copy
 import dataclasses
 import datetime as _dt
-import json
 import logging
 import re
 import sys
@@ -46,7 +45,7 @@ from .ids import IdFactory
 from .storage.store import StoreChange, StoreConflictError, WorkspaceRecord
 from .tracked import Scope, TrackedDict
 from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE, PROFILE_VERSIONS
-from .jsonrpc import E, is_valid_envelope, make_response, rpc_error
+from .jsonrpc import E, is_valid_envelope, json_text, make_response, rpc_error
 from .params import lookup, params_error
 from .patch import PatchError, apply_json_patch
 from .types import (
@@ -501,7 +500,7 @@ def _profiles_error(profiles: list[str]) -> dict | None:
     if unknown is None:
         return None
     return {"error": rpc_error(
-        E.PARAMS, f"Unknown profile {json.dumps(unknown)}: a profile id is "
+        E.PARAMS, f"Unknown profile {json_text(unknown)}: a profile id is "
         "<name>/<major>.<minor> for a profile the catalogue lists")}
 
 
@@ -2618,7 +2617,7 @@ class Coordinator:
         if not _review_rule_supported(rule):
             return {"error": rpc_error(
                 E.PARAMS,
-                f"Unsupported review rule {json.dumps(rule, ensure_ascii=False)}: "
+                f"Unsupported review rule {json_text(rule)}: "
                 "review/1.0 supports "
                 "any_one_approves, all_approve, quorum:<n>")}
 
