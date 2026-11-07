@@ -92,9 +92,16 @@ const port = Number(values.port ?? 9090);
 if (!Number.isInteger(port) || port < 1 || port > 65535) usageError(`--port takes a port number; ${values.port} is not one`);
 const host = values.host ?? (process.env.CHAP_HOST?.trim() || "127.0.0.1");
 
-const participant = values.as ?? (process.env.CHAP_PARTICIPANT?.trim() || "agent:orchestrator@local");
+const fromEnv = process.env.CHAP_PARTICIPANT?.trim();
+const [participant, participantFrom] = values.as !== undefined ? [values.as, "--as"]
+  : fromEnv ? [fromEnv, "CHAP_PARTICIPANT"] : ["agent:orchestrator@local", "--as"];
+// A participant URI: a scheme, a colon, then printable characters with no quote, backslash or space.
+if (!/^[a-z][a-z0-9+.-]*:[\x21\x23-\x5b\x5d-\x7e]+$/.test(participant)) {
+  usageError(`${participantFrom} ${participant} is not a participant URI. Use the form agent:name@example.org.`);
+}
 if (participant.startsWith("human:")) {
-  usageError(`${participant} names a person. This server acts for an agent, and a person decides in a desk.`);
+  usageError(`${participantFrom} ${participant} names a person. This server acts for an agent, and a person ` +
+    "decides in a desk; give the agent's own URI, such as agent:orchestrator@local.");
 }
 
 const skills = values.skills ?? "agent";

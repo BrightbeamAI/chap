@@ -164,6 +164,28 @@ test("dispatch unknown skill returns -32601", () => {
   assert.equal(resp.error?.code, -32601);
 });
 
+test("the first data part decides, and one holding no object gives no call", () => {
+  const coord = makeCoord();
+  const msg = buildMessage("chap.workspace.create", { workspace: "wsp_second" });
+  msg.parts = [
+    { content: { $case: "text", value: "first" }, metadata: undefined, filename: "", mediaType: "text/plain" },
+    { content: { $case: "data", value: [1, 2] }, metadata: undefined, filename: "", mediaType: "application/json" },
+    ...msg.parts,
+  ];
+  const resp = dispatchA2aMessage(coord, msg);
+  assert.equal(resp.error?.code, -32601);
+  assert.match(String(resp.error?.message), /^Unknown CHAP skill: \(missing\)\. /);
+  assert.equal(coord.getWorkspace("wsp_second"), undefined);
+});
+
+test("a skill id that is not a string counts as none", () => {
+  const msg = buildMessage("chap.workspace.describe", { workspace: "wsp_x" }, { skill: 5 });
+  msg.parts[0].content = { $case: "data", value: { skill: 7, params: { workspace: "wsp_x" } } };
+  const resp = dispatchA2aMessage(makeCoord(), msg);
+  assert.equal(resp.error?.code, -32601);
+  assert.match(String(resp.error?.message), /^Unknown CHAP skill: \(missing\)\. /);
+});
+
 test("dispatch CHAP error returns intact", () => {
   const resp = dispatchA2aMessage(makeCoord(), buildMessage("chap.workspace.describe", { workspace: "missing" }));
   assert.equal(resp.error?.code, -32602);

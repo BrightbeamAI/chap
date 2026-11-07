@@ -233,7 +233,7 @@ def dispatch_a2a_message(
     _refuse_person(participant)
     counter = envelope_id_factory or _default_id_factory()
     skill_id, params = _extract_skill_and_params(message)
-    method = method_for_tool(skill_id) if isinstance(skill_id, str) else None
+    method = method_for_tool(skill_id) if skill_id is not None else None
 
     if method is None:
         return {
@@ -242,7 +242,7 @@ def dispatch_a2a_message(
             "error": {
                 "code": -32601,
                 "message": (
-                    f"Unknown CHAP skill: {skill_id!r}. "
+                    f"Unknown CHAP skill: {skill_id if skill_id is not None else '(missing)'}. "
                     "Expected an A2A skill id of the form 'chap.<method>'."
                 ),
             },
@@ -297,7 +297,7 @@ def _default_id_factory() -> Callable[[], str]:
 def _extract_skill_and_params(message: Message) -> tuple[str | None, dict[str, Any]]:
     """Pull the CHAP skill id and params dict out of an A2A Message.
 
-    Discovery order for the skill id:
+    Discovery order for the skill id, which counts only as a string:
       1. ``message.metadata["skill"]`` (set by the A2A SDK when the
          client invokes a named skill).
       2. ``part.data["skill"]`` on the first DataPart.
@@ -306,21 +306,25 @@ def _extract_skill_and_params(message: Message) -> tuple[str | None, dict[str, A
       1. ``part.data["params"]`` on the first DataPart.
       2. ``part.data`` itself (treating the entire data blob as
          params, minus the ``skill`` key).
+
+    A first DataPart that holds no JSON object gives neither. The
+    TypeScript executor reads a message the same way.
     """
     skill_id: str | None = None
     params: dict[str, Any] = {}
 
     metadata = _whole_numbers(MessageToDict(message.metadata)) if len(message.metadata.fields) else {}
-    skill_id = metadata.get("skill")
+    if isinstance(metadata.get("skill"), str):
+        skill_id = metadata["skill"]
 
     for part in message.parts:
         if part.WhichOneof("content") != "data":
             continue
         blob = _whole_numbers(MessageToDict(part.data)) if part.data else {}
         if not isinstance(blob, dict):
-            continue
-        if skill_id is None:
-            skill_id = blob.get("skill")
+            break
+        if skill_id is None and isinstance(blob.get("skill"), str):
+            skill_id = blob["skill"]
         if "params" in blob and isinstance(blob["params"], dict):
             params = blob["params"]
         else:

@@ -21,6 +21,9 @@ Usage::
 
     python reference/a2a-server-py/server.py [--host 127.0.0.1] [--port 9090] [--skills agent|all]
 
+``--host`` falls back to CHAP_HOST, then 127.0.0.1. The card names the
+address the server listens on, localhost for a loopback or wildcard one.
+
 The coordinator runs in memory in this process. State is lost when the
 process exits.
 
@@ -46,7 +49,7 @@ PROFILES = [
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="CHAP A2A reference server")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default=(os.environ.get("CHAP_HOST") or "").strip() or "127.0.0.1")
     parser.add_argument("--port", type=int, default=9090)
     parser.add_argument("--skills", choices=("agent", "all"), default="agent",
                         help="agent, the default: the skills an agent's own work needs; all: every CHAP method")
@@ -64,10 +67,12 @@ def main() -> int:
     # Names a client may reach it by besides its loopback names: those in
     # CHAP_ALLOWED_HOSTS, and the address it listens on.
     allowed_hosts = [h.strip() for h in (os.environ.get("CHAP_ALLOWED_HOSTS") or "").split(",") if h.strip()]
-    if args.host not in ("127.0.0.1", "::1", "localhost", "0.0.0.0", "::"):
-        allowed_hosts.append(f"[{args.host}]:{args.port}" if ":" in args.host else f"{args.host}:{args.port}")
-
-    base_url = f"http://localhost:{args.port}/"
+    own_name = f"[{args.host}]" if ":" in args.host else args.host
+    if args.host in ("127.0.0.1", "::1", "localhost", "0.0.0.0", "::"):
+        base_url = f"http://localhost:{args.port}/"
+    else:
+        allowed_hosts.append(f"{own_name}:{args.port}")
+        base_url = f"http://{own_name}:{args.port}/"
     coord = Coordinator(CoordinatorOptions(default_profiles=PROFILES))
     # Unset, the card and the executor offer the agent's skills.
     skill_filter = (lambda _name: True) if args.skills == "all" else None

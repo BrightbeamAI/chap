@@ -123,12 +123,15 @@ async def test_a_coordinators_internal_error_is_a_failed_task_without_its_detail
 
 
 @pytest.mark.asyncio
-async def test_a_skill_id_that_is_not_a_string_is_an_unknown_skill():
-    task, error = _refusal(await _run(_coord(), _message("chap.workspace.describe", {"workspace": "w"},
-                                                         metadata={"skill": 5})))
-    assert task.status.state == TaskState.TASK_STATE_REJECTED
-    assert error["chap_error"] == -32601
-    assert "AttributeError" not in error["message"]
+async def test_a_skill_id_that_is_not_a_string_counts_as_none():
+    for message in (_message(5, {"workspace": "w"}), _message(None, {"workspace": "w"}, metadata={"skill": 5})):
+        task, error = _refusal(await _run(_coord(), message))
+        assert task.status.state == TaskState.TASK_STATE_REJECTED
+        assert error["chap_error"] == -32601
+        assert error["message"].startswith("Unknown CHAP skill: (missing). ")
+    # Beside a string in the data part, a skill in the metadata that is not one is passed over.
+    answered = await _run(_coord(), _message("chap.workspace.describe", {"workspace": "w"}, metadata={"skill": 5}))
+    assert isinstance(answered, Message)
 
 
 @pytest.mark.asyncio

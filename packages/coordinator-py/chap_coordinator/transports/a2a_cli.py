@@ -20,7 +20,7 @@ request from another origin (403), takes JSON only (415) and caps the body
 Options, with the environment variable that stands in for each (an empty
 one counts as unset):
 
-``--host <address>``
+``--host <address>`` (``CHAP_HOST``)
     The address to listen on, 127.0.0.1 by default.
 ``--port <number>``
     The port, 9090 by default.
@@ -88,7 +88,8 @@ def _parser() -> argparse.ArgumentParser:
         description="Serves a CHAP coordinator as an A2A agent, making every call as one participant.",
         allow_abbrev=False,
     )
-    parser.add_argument("--host", default="127.0.0.1", help="the address to listen on (default 127.0.0.1)")
+    parser.add_argument("--host", default=_env("CHAP_HOST") or "127.0.0.1",
+                        help="the address to listen on (CHAP_HOST, default 127.0.0.1)")
     parser.add_argument("--port", type=int, default=9090, help="the port (default 9090)")
     parser.add_argument("--as", dest="participant", metavar="URI",
                         help=f"the participant every call is made as (CHAP_PARTICIPANT, default "

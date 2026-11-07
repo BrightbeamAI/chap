@@ -6,7 +6,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "tsx server.ts"
+    "start": "tsx server.ts",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@brightbeamai/chap-coordinator": "file:../../packages/coordinator",

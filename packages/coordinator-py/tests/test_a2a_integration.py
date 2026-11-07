@@ -175,6 +175,18 @@ def test_dispatch_unknown_skill_returns_method_not_found() -> None:
     assert resp["error"]["code"] == -32601
 
 
+def test_the_first_data_part_decides_and_one_holding_no_object_gives_no_call() -> None:
+    listed, called = Value(), Value()
+    ParseDict([1, 2], listed)
+    ParseDict({"skill": "chap.workspace.create", "params": {"workspace": "wsp_second"}}, called)
+    msg = Message(message_id="m", role=Role.ROLE_USER, parts=[Part(text="first"), Part(data=listed), Part(data=called)])
+    coord = _make_coord()
+    resp = dispatch_a2a_message(coord, msg)
+    assert resp["error"]["code"] == -32601
+    assert resp["error"]["message"].startswith("Unknown CHAP skill: (missing). ")
+    assert "wsp_second" not in coord.workspaces
+
+
 def test_dispatch_chap_error_returns_intact() -> None:
     coord = _make_coord()
     msg = _build_message("chap.workspace.describe", {"workspace": "missing"})
