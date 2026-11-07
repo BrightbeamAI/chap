@@ -11,7 +11,7 @@ shape. It comes in two tiers: a zero-dependency
 [`scenario.py`](./01-solo-dev-overrides/scenario.py) that shows the CHAP
 mechanics, and a [`system/`](./01-solo-dev-overrides/system/)
 implementation that wires the same story into a real agent framework
-(Pydantic AI) to prove CHAP works inside a genuine human-in-the-loop
+(Pydantic AI) to show CHAP working inside a real human-in-the-loop
 system. Contribute at whichever tier fits your ambition.
 shape.
 
@@ -78,7 +78,7 @@ wanted`, not beginner work.
    `README.md` that recaps the story, lists the CHAP methods used, and says
    how to run it.
 3. **Keep it on core.** Implement the domain narrative on CHAP core (plus
-   whatever profiles the story genuinely needs). A framework-specific
+   whatever profiles the story needs). A framework-specific
    version of the same story belongs in that adapter's own `examples/`,
    not as a separate scenario here.
 4. **Add your row** to the catalog above.
@@ -87,7 +87,7 @@ wanted`, not beginner work.
 
 A scenario's `scenario.py` shows the CHAP mechanics with no dependencies.
 A **system implementation** goes further: it wires the same story into a
-real agent framework and proves CHAP works inside a genuine
+real agent framework and shows CHAP working inside a real
 human-in-the-loop system. These are the "completed examples" that show
 CHAP in production shape, and they are especially welcome.
 
@@ -147,7 +147,7 @@ Every scenario:
 
 ### A note on the regulated scenarios
 
-The gentle ones (1, 2, 3) are genuine good first issues. The regulated
+The gentle ones (1, 2, 3) were good first issues. The regulated
 ones (10, 11, 12) compose several profiles: identity, signing, SCITT
 anchoring, deliberation, handoff. They are `help wanted`, not beginner
 work, and a first pass may stage the profiles (a core version first, the

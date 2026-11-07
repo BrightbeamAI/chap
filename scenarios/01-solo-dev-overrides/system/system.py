@@ -8,10 +8,10 @@ prove CHAP slots into a real system's human-in-the-loop path.
 
 What is real here:
   - A real Pydantic AI `Agent` with an approval-gated tool. The framework
-    genuinely runs the agent, pauses at the tool call for human approval,
+    runs the agent, pauses at the tool call for human approval,
     and resumes with the decision. This is Pydantic AI's own deferred-tool
     mechanism, unchanged.
-  - CHAP genuinely mediates. Each approval, edit, or denial is translated
+  - CHAP mediates. Each approval, edit, or denial is translated
     by the `chap-pydantic-ai` bridge into a real `decide.approve` /
     `decide.override` / `decide.reject` on a hash-linked audit chain in the
     reference coordinator.
@@ -24,7 +24,7 @@ What is stubbed, so this runs offline with no API key:
     approval prompt; here a fixed script decides, so the run is reproducible.
 
 Run it:
-    pip install chap-pydantic-ai "pydantic-ai-slim>=1.0"
+    pip install chap-pydantic-ai "pydantic-ai-slim>=1.19"
     python3 system.py
 
 Prints the same payoff as the core scenario, but every decision below was
@@ -50,7 +50,7 @@ except ModuleNotFoundError:
     except ModuleNotFoundError:
         sys.exit(
             "This system example needs the CHAP bridge for Pydantic AI:\n"
-            "    pip install chap-pydantic-ai \"pydantic-ai-slim>=1.0\"\n"
+            "    pip install chap-pydantic-ai \"pydantic-ai-slim>=1.19\"\n"
             "(The zero-dependency core version is ../scenario.py.)"
         )
 
@@ -63,7 +63,7 @@ try:
 except ModuleNotFoundError:
     sys.exit(
         "This system example needs Pydantic AI:\n"
-        "    pip install chap-pydantic-ai \"pydantic-ai-slim>=1.0\"\n"
+        "    pip install chap-pydantic-ai \"pydantic-ai-slim>=1.19\"\n"
         "(The zero-dependency core version is ../scenario.py.)"
     )
 

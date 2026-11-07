@@ -1,15 +1,15 @@
 # Scenario 1 as a working system
 
 This is scenario 1 wired into a **real agent framework** ([Pydantic
-AI](https://ai.pydantic.dev)), to show CHAP mediating a genuine
-human-in-the-loop approval flow rather than a staged one. It is the
-"completed system example" companion to the zero-dependency
-[`../scenario.py`](../scenario.py).
+AI](https://ai.pydantic.dev)), to show CHAP mediating a real
+human-in-the-loop approval flow. It is the "completed system example"
+companion to the zero-dependency [`../scenario.py`](../scenario.py), which
+stages the same story.
 
 ## Run it
 
 ```bash
-pip install chap-pydantic-ai "pydantic-ai-slim>=1.0"
+pip install chap-pydantic-ai "pydantic-ai-slim>=1.19"
 python3 system.py
 ```
 
@@ -26,15 +26,16 @@ This is the important part, and the boundary is deliberate.
 **Real:**
 
 - **The agent framework loop.** A real Pydantic AI `Agent` with a tool
-  marked `requires_approval=True`. The framework genuinely runs the agent,
+  marked `requires_approval=True`. The framework runs the agent,
   suspends at the tool call, and resumes once the decision is supplied.
   This is Pydantic AI's own deferred-tool mechanism, used unchanged, the
   same way you would use it in production.
 - **CHAP.** Each approval, edit, or denial is translated by the
   [`chap-pydantic-ai`](../../../packages/chap-pydantic-ai/) bridge into a
   real `decide.approve` / `decide.override` / `decide.reject` on a
-  hash-linked audit chain in the reference coordinator. Nothing about the
-  recording is faked.
+  hash-linked audit chain in the reference coordinator, recorded in the
+  developer's name and marked `via: "bridge-record"`, as a decision made
+  outside CHAP. Nothing about the recording is faked.
 
 **Stubbed, so the demo is reproducible and runs offline:**
 
@@ -45,7 +46,7 @@ This is the important part, and the boundary is deliberate.
   prompt; here a fixed `DECISIONS` table decides, keyed by PR, so every run
   is identical and CI can check it.
 
-The claim this makes, then, is honest and specific: **CHAP slots into a
+The claim this makes, then, is specific: **CHAP slots into a
 real agent framework's native approval path.** The only difference between
 this and a live system is the model behind the agent and the human behind
 the decision, and neither of those touches the CHAP integration.
