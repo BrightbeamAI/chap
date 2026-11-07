@@ -18,7 +18,8 @@
  *   await server.connect(new StdioServerTransport());
  *
  * Usage (HTTP): chapMcpHttpHandler(coord, options) answers a Node `http`
- * request on an MCP endpoint, in both protocol eras.
+ * request on an MCP endpoint, in both protocol eras, and refuses a request
+ * under a foreign Host or from a foreign Origin.
  *
  * Architecture notes:
  *
@@ -63,7 +64,7 @@ import { SCHEMAS, TOOL_NAMES, methodForTool, coerceToolArgs, type JsonSchema } f
 import { TOOL_DESCRIPTIONS, TOOL_ANNOTATIONS } from "./tools.js";
 import { classifyEnvelope, ProtocolError, SUPPORTED_PROTOCOL_VERSIONS, type ProtocolEra } from "./envelope.js";
 import { ChapEndpointError } from "./remote.js";
-import { DEFAULT_MAX_BODY_BYTES, mcpHttpHandler } from "./http.js";
+import { DEFAULT_MAX_BODY_BYTES, DEFAULT_TIMEOUT_MS, mcpHttpHandler } from "./http.js";
 
 export { SCHEMAS, TOOL_NAMES, schemaFor, methodForTool, coerceToolArgs } from "./schemas.js";
 export { TOOL_DESCRIPTIONS, TOOL_ANNOTATIONS, AGENT_MCP_TOOLS } from "./tools.js";
@@ -393,6 +394,32 @@ export interface ChapMcpHttpOptions extends ChapMcpOptions {
    * 64 KiB for the MCP request around it.
    */
   maxBodyBytes?: number;
+  /**
+   * Names the server also answers to, each as a Host header carries it:
+   * `mcp.internal:8792`, or a bare name behind a proxy on the default port.
+   * Its loopback names on the port it was reached on, 127.0.0.1, localhost
+   * and [::1], are always allowed. A request under any other name is refused
+   * with 421, so a page that rebinds its own name to the server's address
+   * gets nothing.
+   */
+  allowedHosts?: string[];
+  /**
+   * Origins a browser page may call from, each as an Origin header carries
+   * it, such as `http://localhost:6274`. A page served under one of the
+   * server's own names is always allowed, and a client that is not a
+   * browser sends no Origin. A request from any other origin is refused with
+   * 403. The handler sends no CORS headers: a page on another origin needs
+   * them from the server the handler is mounted in, as Express's cors
+   * middleware sends them.
+   */
+  allowedOrigins?: string[];
+  /**
+   * How long a request waits for the server's answer, in milliseconds. One
+   * with no answer by then is answered with an internal error, -32603: with
+   * HTTP 500, or on the event stream where a handshake-era answer has begun.
+   * Default 45,000.
+   */
+  timeoutMs?: number;
 }
 
 /** Answers one HTTP request on the MCP endpoint. Pass `parsedBody` when the server has read and parsed the body already. */
@@ -408,13 +435,35 @@ export type ChapMcpHttpHandler = (req: IncomingMessage, res: ServerResponse, par
  * makeChapMcpServer, so `participant` and `toolFilter` hold over HTTP as on
  * stdio.
  *
- * It checks neither Host nor Origin: mount it behind the checks the server
- * applies to every request.
+ * It answers only under the server's own names, refuses a browser request
+ * from another origin, and takes POST only; `allowedHosts` and
+ * `allowedOrigins` add names and origins. A request with no answer within
+ * `timeoutMs` is answered with an internal error.
  *
  *   const mcp = chapMcpHttpHandler(coord, { participant: "agent:assistant", toolFilter: (n) => AGENT_MCP_TOOLS.has(n) });
  *   createServer((req, res) => (req.url === "/mcp" ? mcp(req, res) : notFound(res)));
  */
 export function chapMcpHttpHandler(coord: ChapDispatcher, options: ChapMcpHttpOptions = {}): ChapMcpHttpHandler {
-  const { maxBodyBytes = DEFAULT_MAX_BODY_BYTES, ...serverOptions } = options;
-  return mcpHttpHandler(() => makeChapMcpServer(coord, serverOptions), maxBodyBytes);
+  const {
+    maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    allowedHosts = [],
+    allowedOrigins = [],
+    ...serverOptions
+  } = options;
+  return mcpHttpHandler({
+    makeServer: () => makeChapMcpServer(coord, serverOptions),
+    maxBodyBytes,
+    timeoutMs,
+    allowedHosts: allowedHosts.map((host) => host.toLowerCase()),
+    allowedOrigins: allowedOrigins.map((origin) => {
+      let parsed: string | undefined;
+      try { parsed = new URL(origin).origin; } catch { parsed = undefined; }
+      // A URL with no host, such as "localhost:6274", has the opaque origin "null".
+      if (parsed === undefined || parsed === "null") {
+        throw new TypeError(`allowedOrigins takes origins such as http://localhost:6274; ${JSON.stringify(origin)} is not one`);
+      }
+      return parsed;
+    }),
+  });
 }

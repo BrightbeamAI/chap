@@ -140,7 +140,10 @@ function chapMcpHttpHandler(
 ): (req: IncomingMessage, res: ServerResponse, parsedBody?: unknown) => Promise<void>;
 
 interface ChapMcpHttpOptions extends ChapMcpOptions {
-  maxBodyBytes?: number;   // default 1,114,112: 1 MiB, and 64 KiB of MCP around it
+  maxBodyBytes?: number;      // default 1,114,112: 1 MiB, and 64 KiB of MCP around it
+  allowedHosts?: string[];    // Host values served besides the loopback names, such as "mcp.internal:8792"
+  allowedOrigins?: string[];  // origins a browser page may call from, such as "http://localhost:6274"
+  timeoutMs?: number;         // default 45,000
 }
 ```
 
@@ -158,26 +161,34 @@ const mcp = chapMcpHttpHandler(coord, {
   toolFilter: (name) => AGENT_MCP_TOOLS.has(name),
 });
 createServer((req, res) => {
-  // Refuse a foreign Host and Origin here, before any route.
   if (new URL(req.url ?? "/", "http://localhost").pathname === "/mcp") return mcp(req, res);
   res.writeHead(404).end();
-}).listen(8787, "127.0.0.1");
+}).listen(8792, "127.0.0.1");
 ```
+
+The handler answers under the server's own names only, as the MCP
+specification requires against DNS rebinding: a `Host` other than
+127.0.0.1, localhost or [::1] on the port the request came in on is refused
+with 421, and a browser's request from another origin with 403. Name the
+host a proxy passes in `allowedHosts`, and the origin of a page that calls
+the server, such as the MCP Inspector's, in `allowedOrigins`; such a page
+also needs the CORS headers, which the server the handler is mounted in
+sends. Anything but POST is refused with 405, in both eras.
 
 A request with no `MCP-Protocol-Version` header, or a handshake-era version
 (2025-11-25 and earlier), goes to the SDK's Streamable HTTP transport, with
-a server and a transport for each request and no session. Any other version
-takes the 2026-07-28 binding: one POST carrying one JSON-RPC request,
-answered with one JSON object. Its headers are checked against its body, and
-an error carries that binding's status: 400 for a malformed request, a
-mismatched header (`-32020`) or an unsupported version (`-32022`), 404 for a
-method it does not serve, 405 for anything but POST. The SDK's transport
-alone refuses every 2026-07-28 request with 400.
+a server and a transport for each request and no session. A batch is
+refused with 400, as every revision since 2025-06-18 refuses one, and so is
+a body whose envelope declares a protocol version the header does not name
+(`-32020`). Any other version takes the 2026-07-28 binding: one POST
+carrying one JSON-RPC request, answered with one JSON object. Its headers
+are checked against its body, and an error carries that binding's status:
+400 for a malformed request, a mismatched header (`-32020`) or an
+unsupported version (`-32022`), 404 for a method it does not serve. The
+SDK's transport alone refuses every 2026-07-28 request with 400.
 
-The handler checks neither `Host` nor `Origin`. Mount it behind the checks
-your server applies to every request, as the create-chap-app servers do: a
-foreign `Host` refused with 421 against DNS rebinding, and a foreign
-`Origin` with 403.
+A request with no answer within `timeoutMs` is answered with an internal
+error, `-32603`, and one whose client has gone stops waiting at once.
 
 ## What an unsigned local server trusts
 
