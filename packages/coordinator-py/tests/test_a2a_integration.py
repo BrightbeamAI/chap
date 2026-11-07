@@ -94,8 +94,8 @@ async def _run(executor: ChapAgentExecutor, message: Message,
 # AgentCard
 # ============================================================
 
-def test_agent_card_lists_every_method() -> None:
-    card = make_chap_agent_card(base_url="http://localhost:9000")
+def test_agent_card_lists_every_method_when_asked_to() -> None:
+    card = make_chap_agent_card(base_url="http://localhost:9000", skill_filter=lambda _name: True)
     assert len(card.skills) == len(TOOL_NAMES)
     skill_ids = {s.id for s in card.skills}
     assert "chap.workspace.create" in skill_ids
@@ -190,7 +190,7 @@ def test_dispatch_chap_error_returns_intact() -> None:
 @pytest.mark.asyncio
 async def test_executor_publishes_success_as_data_message() -> None:
     coord = _make_coord()
-    executor = make_chap_agent_executor(coord)
+    executor = make_chap_agent_executor(coord, skill_filter=lambda _name: True)
     msg = _build_message("chap.workspace.create", {"workspace": "wsp_x"})
     events = await _run(executor, msg)
 
@@ -202,7 +202,7 @@ async def test_executor_publishes_success_as_data_message() -> None:
 @pytest.mark.asyncio
 async def test_executor_publishes_a_refusal_as_a_rejected_task() -> None:
     coord = _make_coord()
-    executor = make_chap_agent_executor(coord)
+    executor = make_chap_agent_executor(coord, skill_filter=lambda _name: True)
     msg = _build_message("chap.workspace.describe", {"workspace": "nope"})
     events = await _run(executor, msg)
 
@@ -215,7 +215,7 @@ async def test_executor_publishes_a_refusal_as_a_rejected_task() -> None:
 @pytest.mark.asyncio
 async def test_executor_full_workflow() -> None:
     coord = _make_coord()
-    executor = make_chap_agent_executor(coord)
+    executor = make_chap_agent_executor(coord, skill_filter=lambda _name: True)
 
     # workspace.create
     msg = _build_message("chap.workspace.create", {"workspace": "wsp_flow"})
@@ -292,7 +292,7 @@ async def test_executor_full_workflow() -> None:
 @pytest.mark.asyncio
 async def test_executor_deliberation_flow() -> None:
     coord = _make_coord()
-    executor = make_chap_agent_executor(coord)
+    executor = make_chap_agent_executor(coord, skill_filter=lambda _name: True)
 
     msg = _build_message("chap.workspace.create", {"workspace": "wsp_d"})
     await _run(executor, msg)

@@ -9,15 +9,17 @@ delegate work to it via ``SendMessage``, or ``message/send`` at 0.3.
 
 An example of embedding the package's app: every call is made as the
 participant CHAP_PARTICIPANT names, ``agent:orchestrator@local`` when it is
-unset, and the app answers only under its own names (421; CHAP_ALLOWED_HOSTS
-adds names, comma separated), refuses a browser request from another origin
-(403), takes JSON only (415) and caps the body (413).
-``python -m chap_coordinator.transports.a2a_cli`` serves the same app with
-every option, ``--as``, ``--db`` and ``--allowed-host`` among them.
+unset, with the agent's skills, the ``AGENT_MCP_TOOLS`` set, unless
+``--skills all`` offers every CHAP method. The app answers only under its
+own names (421; CHAP_ALLOWED_HOSTS adds names, comma separated), refuses a
+browser request from another origin (403), takes JSON only (415) and caps
+the body (413). ``python -m chap_coordinator.transports.a2a_cli`` serves the
+same app with every option, ``--as``, ``--db`` and ``--allowed-host`` among
+them.
 
 Usage::
 
-    python reference/a2a-server-py/server.py [--host 127.0.0.1] [--port 9090]
+    python reference/a2a-server-py/server.py [--host 127.0.0.1] [--port 9090] [--skills agent|all]
 
 The coordinator runs in memory in this process. State is lost when the
 process exits.
@@ -46,6 +48,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="CHAP A2A reference server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9090)
+    parser.add_argument("--skills", choices=("agent", "all"), default="agent",
+                        help="agent, the default: the skills an agent's own work needs; all: every CHAP method")
     args = parser.parse_args()
 
     participant = (os.environ.get("CHAP_PARTICIPANT") or "").strip() or "agent:orchestrator@local"
@@ -65,10 +69,14 @@ def main() -> int:
 
     base_url = f"http://localhost:{args.port}/"
     coord = Coordinator(CoordinatorOptions(default_profiles=PROFILES))
-    app = make_chap_a2a_app(coord, base_url=base_url, participant=participant,
+    # Unset, the card and the executor offer the agent's skills.
+    skill_filter = (lambda _name: True) if args.skills == "all" else None
+    app = make_chap_a2a_app(coord, base_url=base_url, participant=participant, skill_filter=skill_filter,
                             allowed_hosts=allowed_hosts, version="0.3.4")
 
-    print(f"CHAP A2A reference server starting on {base_url}, acting as {participant}", file=sys.stderr)
+    skill_set = "every CHAP skill" if args.skills == "all" else "the agent skills"
+    print(f"CHAP A2A reference server starting on {base_url}, acting as {participant} with {skill_set}",
+          file=sys.stderr)
     print(f"Agent Card: {base_url}.well-known/agent-card.json", file=sys.stderr)
     print(f"Profiles enabled: {', '.join(PROFILES)}.", file=sys.stderr)
 

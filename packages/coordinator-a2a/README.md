@@ -93,9 +93,13 @@ names its callers.
 
 ## What gets exposed
 
-All 39 CHAP methods become A2A skills named `chap.<method>`,
-matching the MCP transport's tool naming so callers fluent in one
-are fluent in the other.
+The skills are CHAP methods, named `chap.<method>`, matching the MCP
+transport's tool naming so callers fluent in one are fluent in the other.
+By default the card lists, and the executor runs, the agent's skills: the
+`AGENT_MCP_TOOLS` set from `@brightbeamai/chap-coordinator-mcp`, which
+covers an agent's own work and leaves out workspace, membership and
+control methods and the choice of who reviews. Pass `skillFilter: () =>
+true` to both for all 40 methods.
 
 A message carries the CHAP params in a data part, a part whose
 `content` is JSON data with media type `application/json`, the type the
@@ -131,21 +135,21 @@ server is one participant's connection, such as an orchestrator's, so the
 connection cannot act in anyone else's name, a person's included. Without
 it, each call names its own `from`.
 
-`skillFilter` restricts the skills: pass the same filter to
-`makeChapAgentCard`, which lists the skills, and to the executor, which runs
-them and refuses an excluded one with `-32601`.
+`skillFilter` names the skills: pass the same filter to `makeChapAgentCard`,
+which lists the skills, and to the executor, which runs them and refuses an
+excluded one with `-32601`. Unset, both take the agent's skills, so a
+connection made for an orchestrator cannot pause the workspace, change its
+members or profiles, or revoke a person's key. A server that also sets up
+workspaces opts in to every method:
 
 ```typescript
-const onlyTheAgentsSkills = (id: string) => AGENT_MCP_TOOLS.has(id);
-const card = makeChapAgentCard({ baseUrl: "http://127.0.0.1:9090/", skillFilter: onlyTheAgentsSkills });
+const everySkill = () => true;
+const card = makeChapAgentCard({ baseUrl: "http://127.0.0.1:9090/", skillFilter: everySkill });
 const executor = makeChapAgentExecutor(coord, {
   participant: "agent:orchestrator@local",
-  skillFilter: onlyTheAgentsSkills,
+  skillFilter: everySkill,
 });
 ```
-
-`AGENT_MCP_TOOLS` comes from `@brightbeamai/chap-coordinator-mcp`; the skill
-ids are the MCP tool names.
 
 ## A2A 0.3 clients
 

@@ -11,10 +11,12 @@
  * Usage:
  *
  *   tsx reference/a2a-server-ts/server.ts [--host 127.0.0.1] [--port 9090]
- *       [--as agent:orchestrator@local] [--db <path>] [--allowed-host <name:port>]...
+ *       [--as agent:orchestrator@local] [--skills agent|all] [--db <path>] [--allowed-host <name:port>]...
  *
  * Every call is made as one participant, --as or CHAP_PARTICIPANT, an agent
- * by default; a human: URI is refused. The server answers only under its own
+ * by default; a human: URI is refused. It offers the agent's skills, the
+ * AGENT_MCP_TOOLS set, unless --skills all offers every CHAP method. The
+ * server answers only under its own
  * names (421 otherwise; --allowed-host or CHAP_ALLOWED_HOSTS adds one),
  * refuses a browser request from another origin (403), takes JSON only
  * (415) and caps the body (413). It has no authentication.
@@ -48,6 +50,8 @@ const USAGE = `Usage: tsx server.ts [options]
   --port <number>         the port (default 9090)
   --as <uri>              the participant every call is made as (CHAP_PARTICIPANT,
                           default agent:orchestrator@local); a human: URI is refused
+  --skills agent|all      agent, the default: the skills an agent's own work needs,
+                          the AGENT_MCP_TOOLS set; all: every CHAP method
   --db <path>             keep the workspaces in this SQLite file (CHAP_DB_PATH)
   --allowed-host <name>   another name the server answers to, as a Host header
                           carries it, such as a2a.internal:9090; repeatable
@@ -67,6 +71,7 @@ function parse() {
       host: { type: "string" },
       port: { type: "string" },
       as: { type: "string" },
+      skills: { type: "string" },
       db: { type: "string" },
       "allowed-host": { type: "string", multiple: true },
       help: { type: "boolean" },
@@ -91,6 +96,11 @@ const participant = values.as ?? (process.env.CHAP_PARTICIPANT?.trim() || "agent
 if (participant.startsWith("human:")) {
   usageError(`${participant} names a person. This server acts for an agent, and a person decides in a desk.`);
 }
+
+const skills = values.skills ?? "agent";
+if (skills !== "agent" && skills !== "all") usageError(`--skills takes agent or all; ${skills} is neither`);
+// Unset, the card and the executor offer the agent's skills.
+const skillFilter = skills === "all" ? () => true : undefined;
 
 const allowedHosts = [
   ...(values["allowed-host"] ?? []),
@@ -123,9 +133,10 @@ const card = makeChapAgentCard({
   baseUrl,
   name: "CHAP Coordinator",
   version: "0.3.4",
+  skillFilter,
 });
 
-const executor = makeChapAgentExecutor(coord, { participant });
+const executor = makeChapAgentExecutor(coord, { participant, skillFilter });
 // A refusal is a task: the store keeps the latest 1,000, without the requests.
 const handler = new DefaultRequestHandler(card, new ChapTaskStore(), executor);
 const app = express();
@@ -147,7 +158,8 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (!res.headersSent) res.status(500).json({ error: "internal error" });
 });
 
-process.stderr.write(`CHAP A2A reference server starting on ${baseUrl}, acting as ${participant}\n`);
+process.stderr.write(`CHAP A2A reference server starting on ${baseUrl}, acting as ${participant} ` +
+  `with ${skills === "all" ? "every CHAP skill" : "the agent skills"}\n`);
 process.stderr.write(`Agent Card: ${baseUrl}${AGENT_CARD_PATH}\n`);
 process.stderr.write(`Profiles enabled: ${PROFILES.join(", ")}.\n`);
 process.stderr.write(db ? `Persisting to ${db}\n` : "State is in memory only: the workspaces are lost when this process exits.\n");

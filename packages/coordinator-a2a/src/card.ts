@@ -2,15 +2,15 @@
  * @brightbeamai/chap-coordinator-a2a/card
  *
  * Build the AgentCard advertised at the agent's well-known URL.
- * Every CHAP method becomes a discrete ``AgentSkill`` with id
- * ``chap.<method>``, matching the MCP transport's tool naming so a
+ * Each CHAP method the server offers is a discrete ``AgentSkill`` with
+ * id ``chap.<method>``, matching the MCP transport's tool naming so a
  * caller fluent in one is fluent in the other.
  */
 
 import type { AgentCard, AgentInterface, AgentSkill } from "@a2a-js/sdk";
 
 import { TOOL_NAMES, methodForTool } from "@brightbeamai/chap-coordinator-mcp/schemas";
-import { TOOL_DESCRIPTIONS } from "@brightbeamai/chap-coordinator-mcp/tools";
+import { AGENT_MCP_TOOLS, TOOL_DESCRIPTIONS } from "@brightbeamai/chap-coordinator-mcp/tools";
 
 /**
  * The media type of every part a CHAP skill takes and returns: the call's
@@ -25,15 +25,19 @@ export interface ChapAgentCardOptions {
   name?: string;
   description?: string;
   version?: string;
-  /** Restrict which CHAP methods are exposed as skills. Default: all 39. */
+  /**
+   * Which CHAP methods are listed as skills. Default: the agent's, the
+   * AGENT_MCP_TOOLS set; `() => true` lists every method. Pass the same
+   * filter as the executor's.
+   */
   skillFilter?: (skillId: string) => boolean;
 }
 
 const DEFAULT_DESCRIPTION =
   "Collaborative Human-Agent Protocol coordinator. " +
-  "Exposes every CHAP method as a discrete skill so remote agents " +
-  "can discover and drive workspaces, tasks, reviews, deliberations, " +
-  "handoffs, and audit operations.";
+  "Each CHAP method it offers is a discrete skill, so remote agents " +
+  "can discover and drive the work in its workspaces: tasks, reviews " +
+  "and the audit log.";
 
 /**
  * The card lists the JSON-RPC endpoint twice: at A2A 1.0, and at 0.3 for a
@@ -45,7 +49,7 @@ export function makeChapAgentCard(options: ChapAgentCardOptions): AgentCard {
   if (!options.baseUrl) {
     throw new Error("baseUrl is required");
   }
-  const filter = options.skillFilter ?? (() => true);
+  const filter = options.skillFilter ?? ((skillId: string) => AGENT_MCP_TOOLS.has(skillId));
 
   const skills: AgentSkill[] = TOOL_NAMES
     .filter((name) => filter(name) && methodForTool(name) !== null)

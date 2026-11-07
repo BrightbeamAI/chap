@@ -86,8 +86,8 @@ function dataOf(event: AgentExecutionEvent): Record<string, any> {
 // AgentCard
 // ============================================================
 
-test("agent card lists every CHAP method", () => {
-  const card = makeChapAgentCard({ baseUrl: "http://localhost:9000" });
+test("agent card lists every CHAP method when asked to", () => {
+  const card = makeChapAgentCard({ baseUrl: "http://localhost:9000", skillFilter: () => true });
   assert.equal(card.skills.length, TOOL_NAMES.length,
     "skills should match the CHAP method count");
   const ids = new Set(card.skills.map((s) => s.id));
@@ -174,7 +174,7 @@ test("dispatch CHAP error returns intact", () => {
 // ============================================================
 
 test("executor publishes success as an agent message carrying JSON", async () => {
-  const bus = await run(makeChapAgentExecutor(makeCoord()), buildMessage("chap.workspace.create", { workspace: "wsp_x" }));
+  const bus = await run(makeChapAgentExecutor(makeCoord(), { skillFilter: () => true }), buildMessage("chap.workspace.create", { workspace: "wsp_x" }));
   assert.equal(bus.events.length, 1);
   assert.ok(bus.isFinished);
   const reply = bus.events[0].data as Message;
@@ -185,7 +185,7 @@ test("executor publishes success as an agent message carrying JSON", async () =>
 
 test("executor full workflow exercises every shipped profile via A2A", async () => {
   const coord = makeCoord();
-  const executor = makeChapAgentExecutor(coord);
+  const executor = makeChapAgentExecutor(coord, { skillFilter: () => true });
 
   const dispatch = async (skill: string, params: Record<string, unknown>) => {
     const bus = await run(executor, buildMessage(skill, params));
@@ -242,7 +242,7 @@ test("executor full workflow exercises every shipped profile via A2A", async () 
 });
 
 test("executor deliberation flow", async () => {
-  const executor = makeChapAgentExecutor(makeCoord());
+  const executor = makeChapAgentExecutor(makeCoord(), { skillFilter: () => true });
   const dispatch = async (skill: string, params: Record<string, unknown>) =>
     dataOf((await run(executor, buildMessage(skill, params))).events[0]);
 
@@ -270,7 +270,7 @@ test("executor deliberation flow", async () => {
 
 test("cancelTask publishes nothing: a CHAP call has taken effect before it could be cancelled", async () => {
   const bus = new RecordingBus();
-  await makeChapAgentExecutor(makeCoord()).cancelTask("tsk-test-1", bus);
+  await makeChapAgentExecutor(makeCoord(), { skillFilter: () => true }).cancelTask("tsk-test-1", bus);
   assert.equal(bus.events.length, 0);
   assert.ok(bus.isFinished);
 });

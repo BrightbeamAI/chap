@@ -1,11 +1,8 @@
 """
 The A2A server's checks, and a round trip with the A2A SDK's own client.
 
-The Python reference server parsed a body as JSON whatever its type and
-checked neither Host nor Origin: a page on any site ran decide.approve as
-human:alice with a no-cors fetch, a 40 MB body was read whole before it was
-refused, and an exception came back as repr(exc). make_chap_a2a_app puts
-ChapA2aGuard before the routes: a foreign Host is refused with 421, a
+make_chap_a2a_app puts ChapA2aGuard before the routes, so a page on another
+site cannot call the coordinator: a foreign Host is refused with 421, a
 foreign Origin with 403, a POST that is not JSON with 415, a body over the
 limit with 413 before it is read, and an exception is a short JSON body.
 
@@ -25,7 +22,10 @@ from google.protobuf.struct_pb2 import Value
 
 from chap_coordinator.coordinator import Coordinator, CoordinatorOptions
 from chap_coordinator.transports.a2a_app import ChapA2aGuard, make_chap_a2a_app
+from chap_coordinator.transports import a2a_cli
 from chap_coordinator.transports.a2a_cli import main
+from chap_coordinator.transports.mcp_schemas import TOOL_NAMES
+from chap_coordinator.transports.mcp_tools import AGENT_MCP_TOOLS
 
 BASE = "http://127.0.0.1:9090"
 
@@ -238,5 +238,16 @@ def test_the_command_refuses_a_human_named_by_chap_participant(monkeypatch, caps
 def test_the_command_lists_its_options(capsys):
     assert main(["--help"]) == 0
     out = capsys.readouterr().out
-    for option in ("--host", "--port", "--as URI", "--db PATH", "--allowed-host NAME"):
+    for option in ("--host", "--port", "--as URI", "--skills {agent,all}", "--db PATH", "--allowed-host NAME"):
         assert option in out
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("argv, skills", [([], AGENT_MCP_TOOLS), (["--skills", "all"], set(TOOL_NAMES))])
+async def test_the_command_offers_the_agents_skills_unless_told_to_offer_every_one(argv, skills, monkeypatch):
+    served = {}
+    monkeypatch.setattr(a2a_cli.uvicorn, "run", lambda app, **_options: served.setdefault("app", app))
+    assert main(argv) == 0
+    async with _client(served["app"]) as client:
+        card = (await client.get("/.well-known/agent-card.json", headers={"A2A-Version": "1.0"})).json()
+    assert {skill["id"] for skill in card["skills"]} == skills

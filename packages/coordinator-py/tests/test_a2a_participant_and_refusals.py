@@ -54,7 +54,7 @@ async def _run(coord, message: Message, **options):
     queue = _Queue()
     ctx = RequestContext(call_context=ServerCallContext(), request=SendMessageRequest(message=message),
                          task_id="task-1", context_id="ctx-1")
-    await make_chap_agent_executor(coord, **options).execute(ctx, queue)
+    await make_chap_agent_executor(coord, **{"skill_filter": lambda _name: True, **options}).execute(ctx, queue)
     assert len(queue.events) == 1
     return queue.events[0]
 

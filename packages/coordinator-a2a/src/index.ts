@@ -2,7 +2,8 @@
  * @brightbeamai/chap-coordinator-a2a
  *
  * A2A server adapter for a CHAP Coordinator. Wraps a Coordinator
- * instance and exposes every CHAP method as an A2A skill.
+ * instance and exposes CHAP methods as A2A skills: by default the
+ * agent's, the AGENT_MCP_TOOLS set, and every method on request.
  *
  * Spec target: A2A 1.0, through @a2a-js/sdk 1.x, with v0.3 clients
  * served by the SDK's compatibility layer. CHAP 0.3.

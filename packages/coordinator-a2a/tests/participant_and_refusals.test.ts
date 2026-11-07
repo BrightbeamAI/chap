@@ -50,7 +50,7 @@ function coordWithMembers(): Coordinator {
 
 async function run(coord: Pick<Coordinator, "dispatch">, msg: Message, options: ChapAgentExecutorOptions = {}) {
   const bus = new RecordingBus();
-  await makeChapAgentExecutor(coord as Coordinator, options).execute(
+  await makeChapAgentExecutor(coord as Coordinator, { skillFilter: () => true, ...options }).execute(
     new RequestContext({ tenant: "", message: msg, configuration: undefined, metadata: undefined },
                        "task-1", "ctx-1", new ServerCallContext()), bus);
   assert.equal(bus.events.length, 1);

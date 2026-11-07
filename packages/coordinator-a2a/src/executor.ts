@@ -23,6 +23,7 @@ import { Role, TaskState, type Message, type Part } from "@a2a-js/sdk";
 
 import type { Coordinator, Envelope } from "@brightbeamai/chap-coordinator";
 import { methodForTool } from "@brightbeamai/chap-coordinator-mcp/schemas";
+import { AGENT_MCP_TOOLS } from "@brightbeamai/chap-coordinator-mcp/tools";
 
 import { CHAP_MEDIA_TYPE } from "./card.js";
 
@@ -36,10 +37,12 @@ export interface ChapAgentExecutorOptions {
   /** Optional id generator for CHAP envelope ids. */
   envelopeIdFactory?: () => string;
   /**
-   * Restrict the CHAP skills this executor runs. A skill the filter excludes
-   * is refused with -32601. Pass the same filter as the Agent Card's
-   * `skillFilter`: the card only lists skills, and the executor is what runs
-   * them. Default: all 39.
+   * The CHAP skills this executor runs; a skill the filter excludes is
+   * refused with -32601. Default: the agent's, the AGENT_MCP_TOOLS set, so
+   * a connection made for an agent cannot pause the workspace, change its
+   * members or decide who reviews; `() => true` runs every method. Pass the
+   * same filter as the Agent Card's `skillFilter`: the card only lists
+   * skills, and the executor is what runs them.
    */
   skillFilter?: (skillId: string) => boolean;
   /**
@@ -65,7 +68,7 @@ export class ChapAgentExecutor implements AgentExecutor {
     refusePerson(options.participant);
     let counter = 0;
     this.nextEnvelopeId = options.envelopeIdFactory ?? (() => `a2a-${++counter}`);
-    this.skillFilter = options.skillFilter ?? (() => true);
+    this.skillFilter = options.skillFilter ?? ((skillId) => AGENT_MCP_TOOLS.has(skillId));
     this.participant = options.participant;
   }
 
@@ -160,7 +163,7 @@ export function makeChapAgentExecutor(
 export interface DispatchA2aMessageOptions {
   /** The id of the CHAP envelope. Default: "a2a-call". */
   envelopeId?: string | number;
-  /** Refuse a skill the filter excludes, with -32601. */
+  /** Refuse a skill the filter excludes, with -32601. Default: every skill runs. */
   skillFilter?: (skillId: string) => boolean;
   /**
    * Make the call as this participant, and refuse one that names another

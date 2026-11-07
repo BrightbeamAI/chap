@@ -3,10 +3,11 @@ chap_coordinator.transports.a2a_server
 =======================================
 
 A2A server adapter for a CHAP Coordinator. Wraps a Coordinator
-instance and exposes every CHAP method as an A2A skill. Remote
-agents (Azure AI Foundry, Amazon Bedrock AgentCore, Google ADK, the
-rest) can discover the Coordinator's capabilities via its Agent Card
-and delegate work to it.
+instance and exposes CHAP methods as A2A skills: by default the agent's,
+the ``AGENT_MCP_TOOLS`` set, and every method on request. Remote agents
+(Azure AI Foundry, Amazon Bedrock AgentCore, Google ADK, the rest) can
+discover the Coordinator's capabilities via its Agent Card and delegate
+work to it.
 
 Spec target: A2A 1.0 (current stable). CHAP 0.3.
 
@@ -32,7 +33,7 @@ Architecture notes
 - The adapter holds no state. Each A2A ``message/send`` call
   translates to a JSON-RPC envelope and dispatches through
   ``coord.dispatch()``.
-- Every CHAP method appears as a discrete ``AgentSkill`` on the
+- Each CHAP method offered appears as a discrete ``AgentSkill`` on the
   Agent Card with id ``chap.<method>``. This matches the MCP
   transport's ``chap.<method>`` tool naming, so a caller fluent in
   one is fluent in the other.
@@ -81,7 +82,7 @@ from google.protobuf.struct_pb2 import Value
 from chap_coordinator.coordinator import Coordinator
 
 from .mcp_schemas import SCHEMAS, TOOL_NAMES, method_for_tool
-from .mcp_tools import TOOL_DESCRIPTIONS
+from .mcp_tools import AGENT_MCP_TOOLS, TOOL_DESCRIPTIONS
 
 
 __all__ = [
@@ -111,6 +112,11 @@ CHAP_MEDIA_TYPE = "application/json"
 DEFAULT_MAX_TASKS = 1000
 
 
+def _agent_skills(skill_id: str) -> bool:
+    """The skills an agent's own connection offers, the MCP server's ``AGENT_MCP_TOOLS``."""
+    return skill_id in AGENT_MCP_TOOLS
+
+
 # A2A skill ids reuse the MCP tool naming. The only difference is
 # how the args are carried on the wire: MCP puts them in
 # ``tools/call`` arguments; A2A puts them in a ``DataPart`` on a
@@ -123,17 +129,20 @@ def make_chap_agent_card(
     name: str = "CHAP Coordinator",
     description: str = (
         "Collaborative Human-Agent Protocol coordinator. "
-        "Exposes every CHAP method as a discrete skill so remote agents "
-        "can discover and drive workspaces, tasks, reviews, deliberations, "
-        "handoffs, and audit operations."
+        "Each CHAP method it offers is a discrete skill, so remote agents "
+        "can discover and drive the work in its workspaces: tasks, reviews "
+        "and the audit log."
     ),
     version: str = "0.3.4",
     skill_filter: Callable[[str], bool] | None = None,
 ) -> AgentCard:
     """Build the AgentCard advertised at ``/.well-known/agent-card.json``.
 
-    Every CHAP method becomes an :class:`AgentSkill` with id
-    ``chap.<method>`` and description tuned for LLM consumption.
+    Each CHAP method ``skill_filter`` lets through becomes an
+    :class:`AgentSkill` with id ``chap.<method>`` and description tuned for
+    LLM consumption. Unset, the filter is the agent's, ``AGENT_MCP_TOOLS``;
+    ``lambda _name: True`` lists every method. Pass the same filter as the
+    executor's.
 
     The card lists the JSON-RPC endpoint twice: at A2A 1.0, and at 0.3 for
     a client that has not moved, which the server answers where its
@@ -141,7 +150,7 @@ def make_chap_agent_card(
     what gives the served card the fields a 0.3 client reads, ``url`` among
     them. Both match the TypeScript card.
     """
-    filter_fn = skill_filter or (lambda _name: True)
+    filter_fn = skill_filter or _agent_skills
 
     skills: list[AgentSkill] = []
     for tool_name in TOOL_NAMES:
@@ -193,7 +202,8 @@ def dispatch_a2a_message(
     the requested skill id) and the params in the first data part.
     With ``participant`` the call is made as that member, and one that
     names another ``from`` is refused with -32011. A ``human:`` participant
-    is refused with ``ValueError``.
+    is refused with ``ValueError``. With ``skill_filter`` a skill it excludes
+    is refused with -32601; without one every skill runs.
 
     Returns the CHAP response envelope.
     """
@@ -316,7 +326,7 @@ class ChapAgentExecutor(AgentExecutor):
         self._next_id = envelope_id_factory or _default_id_factory()
         # The card only lists skills; the executor is what runs them, so it
         # takes the same filter as the card and refuses what it excludes.
-        self._skill_filter = skill_filter
+        self._skill_filter = skill_filter or _agent_skills
         self._participant = participant
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
@@ -429,8 +439,12 @@ def make_chap_agent_executor(
 ) -> ChapAgentExecutor:
     """Convenience constructor mirroring ``make_chap_mcp_server``.
 
-    Pass the same ``skill_filter`` as :func:`make_chap_agent_card`: the card
-    only lists skills, and the executor refuses the ones the filter excludes.
+    ``skill_filter`` names the skills the executor runs; one it excludes is
+    refused with -32601. Unset, it is the agent's, ``AGENT_MCP_TOOLS``, so a
+    connection made for an agent cannot pause the workspace, change its
+    members or decide who reviews; ``lambda _name: True`` runs every method.
+    Pass the same filter as :func:`make_chap_agent_card`: the card only
+    lists skills, and the executor refuses the ones the filter excludes.
     ``participant`` makes every call as that member: ``from`` is filled in,
     and a call that names another is refused with -32011. Use it where the
     server is one participant's connection, such as an orchestrator's. A

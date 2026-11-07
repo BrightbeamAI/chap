@@ -33,8 +33,8 @@ before(async () => {
   const app = express();
   http = await new Promise<HttpServer>((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
   port = (http.address() as { port: number }).port;
-  const handler = new DefaultRequestHandler(makeChapAgentCard({ baseUrl: `http://127.0.0.1:${port}/` }),
-                                            new InMemoryTaskStore(), makeChapAgentExecutor(coord));
+  const handler = new DefaultRequestHandler(makeChapAgentCard({ baseUrl: `http://127.0.0.1:${port}/`, skillFilter: () => true }),
+                                            new InMemoryTaskStore(), makeChapAgentExecutor(coord, { skillFilter: () => true }));
   app.use(chapA2aGuard({ allowedHosts: ["a2a.internal:9999"], maxBodyBytes: 300_000 }));
   app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: handler, legacyCompat: { enabled: true } }));
   app.use("/", jsonRpcHandler({ requestHandler: handler, userBuilder: UserBuilder.noAuthentication,

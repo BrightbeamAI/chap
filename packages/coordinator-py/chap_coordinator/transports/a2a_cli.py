@@ -10,6 +10,8 @@ It serves a coordinator as an A2A 1.0 agent, answering A2A 0.3 clients as
 well, with every call made as one participant: ``--as`` or
 ``CHAP_PARTICIPANT``, ``agent:orchestrator@local`` by default. A ``human:``
 URI is refused: a person decides in a desk, never through an orchestrator.
+It offers the agent's skills, the ``AGENT_MCP_TOOLS`` set, unless ``--skills
+all`` offers every CHAP method.
 The app is :func:`chap_coordinator.transports.a2a_app.make_chap_a2a_app`,
 so the server answers only under its own names (421), refuses a browser
 request from another origin (403), takes JSON only (415) and caps the body
@@ -24,6 +26,9 @@ one counts as unset):
     The port, 9090 by default.
 ``--as <uri>`` (``CHAP_PARTICIPANT``)
     The participant every call is made as.
+``--skills agent|all``
+    ``agent``, the default, offers ``AGENT_MCP_TOOLS``; ``all`` offers every
+    method, still as the one participant.
 ``--db <path>`` (``CHAP_DB_PATH``)
     Keep the workspaces in this SQLite file. A leading ``~`` is the home
     directory. Without it state is in memory only.
@@ -88,6 +93,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--as", dest="participant", metavar="URI",
                         help=f"the participant every call is made as (CHAP_PARTICIPANT, default "
                              f"{DEFAULT_PARTICIPANT}); a human: URI is refused")
+    parser.add_argument("--skills", choices=("agent", "all"), default="agent",
+                        help="agent, the default: the skills an agent's own work needs, the "
+                             "AGENT_MCP_TOOLS set; all: every CHAP method")
     parser.add_argument("--db", metavar="PATH",
                         help="keep the workspaces in this SQLite file (CHAP_DB_PATH); a leading ~ is the "
                              "home directory")
@@ -144,10 +152,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 1
     coord = Coordinator(CoordinatorOptions(default_profiles=PROFILES, store=store))
 
-    app = make_chap_a2a_app(coord, base_url=base_url, participant=participant,
+    # Unset, the card and the executor offer the agent's skills.
+    skill_filter = (lambda _name: True) if args.skills == "all" else None
+    app = make_chap_a2a_app(coord, base_url=base_url, participant=participant, skill_filter=skill_filter,
                             allowed_hosts=allowed_hosts, version=__version__)
 
-    print(f"CHAP A2A server {__version__} on {base_url}, acting as {participant}", file=sys.stderr)
+    skill_set = "every CHAP skill" if args.skills == "all" else "the agent skills"
+    print(f"CHAP A2A server {__version__} on {base_url}, acting as {participant} with {skill_set}",
+          file=sys.stderr)
     print(f"Agent Card: {base_url}.well-known/agent-card.json", file=sys.stderr)
     print(f"Profiles enabled: {', '.join(PROFILES)}.", file=sys.stderr)
     print(f"Persisting to {db}" if db else

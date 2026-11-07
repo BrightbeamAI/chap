@@ -1,13 +1,10 @@
 /**
  * The adapter behind the SDK's own server, reached by the SDK's own client.
  *
- * The package was on @a2a-js/sdk 0.3, so its card said protocolVersion
- * 0.3.0 and an A2A 1.0 client's SendMessage was answered with -32601. It is
- * now on the 1.x SDK: a 1.0 client finds the JSON-RPC interface on the card
- * and round-trips, and a 0.3 client, sending message/send with kind-tagged
- * parts and no A2A-Version header, is still answered, through the SDK's
- * compatibility layer. A refused call reaches either client as a task the
- * agent rejected.
+ * A 1.0 client finds the JSON-RPC interface on the card and round-trips,
+ * and a 0.3 client, sending message/send with kind-tagged parts and no
+ * A2A-Version header, is answered through the SDK's compatibility layer. A
+ * refused call reaches either client as a task the agent rejected.
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -32,8 +29,8 @@ before(async () => {
   const app = express();
   http = await new Promise<HttpServer>((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
   base = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-  const handler = new DefaultRequestHandler(makeChapAgentCard({ baseUrl: `${base}/` }), new ChapTaskStore(),
-                                            makeChapAgentExecutor(coord));
+  const handler = new DefaultRequestHandler(makeChapAgentCard({ baseUrl: `${base}/`, skillFilter: () => true }), new ChapTaskStore(),
+                                            makeChapAgentExecutor(coord, { skillFilter: () => true }));
   app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: handler, legacyCompat: { enabled: true } }));
   app.use("/", jsonRpcHandler({ requestHandler: handler, userBuilder: UserBuilder.noAuthentication,
                                 legacyCompat: { enabled: true } }));

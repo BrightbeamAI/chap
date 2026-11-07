@@ -204,8 +204,9 @@ def make_chap_a2a_app(
     at ``/``, for A2A 1.0 clients and, with the SDK's v0.3 compatibility, for
     0.3 ones. ``base_url`` is the endpoint the card advertises. ``participant``
     and ``skill_filter`` are the executor's, and the card lists the same
-    skills; ``version`` is the card's, the package's when unset. Refusals
-    are kept in a :class:`ChapTaskStore`.
+    skills: the agent's, ``AGENT_MCP_TOOLS``, when ``skill_filter`` is unset.
+    ``version`` is the card's, the package's when unset. Refusals are kept
+    in a :class:`ChapTaskStore`.
     """
     card = make_chap_agent_card(base_url=base_url, skill_filter=skill_filter,
                                 **({"version": version} if version is not None else {}))
