@@ -128,6 +128,22 @@ may sign with WebAuthn, which needs a domain name, and on the loopback
 address it listens on IPv4 and IPv6 alike, so the name reaches it either
 way.
 
+A person's first join holds their name for good, with the key it carries,
+so where signatures are required the first join of a person the config
+names needs the enrolment code the server prints at start:
+
+```
+  enrol    7KQ2M-X9D4T: the code human:ana@example.org joins with the first time, or open http://localhost:8792/#enrol=7KQ2M-X9D4T
+```
+
+Open that address, or give the desk the code when it asks. Without the
+code, a process that started first, an agent among them, could join under
+a person's name with a key of its own and approve its own work. A member's
+later joins, and joins under any name but a configured person's, need no
+code. `CHAP_ENROLMENT_CODE` sets the code, and `"enrolment": false` in the
+config turns it off, for a deployment that authenticates joins another
+way.
+
 - `store` is read against the config file's directory, wherever the server
   starts, and a leading `~` is the home directory; `":memory:"` keeps
   everything in the process.
@@ -184,7 +200,9 @@ takes JSON only on `POST /chap`, and its Content-Security-Policy lets no
 other page frame the desk. The pages chap-analytics writes to `analytics/`
 beside the config are served under `/analytics/`, in a sandbox that keeps
 them out of the desk's origin. There is no login: a deployment reached from
-other machines puts one in front.
+other machines puts one in front. A program that joins a person from a
+script, a test among them, passes the code as
+`Participant(desk, workspace, uri, signer=signer, enrolment=code)`.
 
 Every other process reaches the server with `chap_coordinator.client`:
 

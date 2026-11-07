@@ -12,7 +12,11 @@ python desk.py                  # owns the store, serves the desk and POST /chap
 python agent.py tickets.csv     # in a second terminal: drafts, then waits for you
 ```
 
-Then decide in the desk at http://localhost:8788/.
+Then decide in the desk: open the address on the `enrol` line `desk.py`
+prints, http://localhost:8788/ with the enrolment code after `#enrol=`.
+Your first join needs the code, and the desk asks for it where the address
+lacks it, so a process that cannot read `desk.py`'s console cannot join
+under your name before you do.
 
 `desk.py` creates the workspace and keeps the SQLite store under `data/`
 beside `chap.config.json`, wherever you start it from. Opening the desk

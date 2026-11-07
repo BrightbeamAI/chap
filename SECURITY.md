@@ -71,6 +71,16 @@ and A2A adapters leave authentication to the transport, and the servers under
 - Verifier hooks for identity tokens, credentials and SCITT receipts, and a
   SCITT submitter, where it uses those profiles.
 
+The desk servers, `@brightbeamai/chap-server` and `chap_coordinator.server`,
+supply part of this for the projects `create-chap-app` generates
+**(0.3.5)**. They check `Host` and `Origin`, take JSON only, and admit only
+the members `chap.config.json` names. Where signatures are required and
+nobody signs in at an identity provider, a person's first join needs the
+enrolment code the server prints at start, so a process that cannot read the
+server's console cannot take a person's name before they open the desk.
+Where people sign in at an identity provider, the Node server's read API
+answers a person signed in at the desk, or a member whose key signs the read.
+
 Each protection in the coordinator is off until it is configured:
 
 | Protection | Option | Default |
@@ -91,8 +101,8 @@ any workspace's log.
 |---|---|---|
 | A call made in another member's name | Signature verification against the member's registered keys. An MCP server built with `participant` makes every call as that member **(0.3.4)**. | Needs `requireSignatures`, and control over who joins under which name (section 4) |
 | A captured call sent again | A signed copy of an accepted call is refused with `-32075` **(0.3.5)**, and a signed copy of a recorded refusal is answered with that refusal **(0.3.0)**. A repeated `task.create` idempotency key returns the first task. Each entry carries the `seq` and `arrived` the coordinator assigns. | An unsigned copy of an accepted call is evaluated again ([Envelope id replay](#envelope-id-replay)) |
-| A review settled by whoever made the work | The authors of the work cannot decide its review; a review a task requires is decided by people; an author cannot open, address or end that review around a decision; a workspace's `review_rule` sets how many approvals it needs **(0.3.5)** | Needs signatures, so that `from` names its caller |
-| A join under another's name or role | A join with keys the member does not hold is refused; the `admin` role is granted by an admin; under `join_policy: "invite"` only invited participants join; with a token verifier a person joins with a token that names them and binds their key **(0.3.5)** | Under the open join policy without a verifier, a first join can claim any name nobody holds yet (section 4) |
+| A review settled by whoever made the work | The authors of the work, the members who held it before among them, cannot decide its review; a review a task requires is decided by people, opens only when the work is completed, and is not ended by its authors without a decision; a workspace's `review_rule` sets how many approvals it needs **(0.3.5)** | Needs signatures, so that `from` names its caller |
+| A join under another's name or role | A join with keys the member does not hold is refused; the `admin` role is granted by an admin; under `join_policy: "invite"` only invited participants join; with a token verifier a person joins with a token that names them and binds their key; a desk server asks for its enrolment code at a person's first join **(0.3.5)** | Under the open join policy without a verifier or a desk server, a first join can claim any name nobody holds yet (section 4) |
 | An entry altered after it was written | The hash chain, checked by `audit.verify_chain` | Needs the chain switched on, and a head kept where the writer cannot change it |
 | Entries removed and the chain re-linked | Nothing inside the log. A SCITT receipt, or an earlier head held elsewhere, shows it. | Needs `audit-scitt/1.0` with a submitter, or another anchor |
 | A stolen signing key | Revocation by the key's owner or an admin, effective at once | Needs a revocation in each workspace that holds the key |
@@ -213,8 +223,9 @@ are first registered at `participant.join`:
   with keys the member does not hold is refused with `-32011` **(0.3.5)**.
 
 **Rotation.** `participant.rotate_key` names the old key (`old_kid`) and the
-new one (`new_jwk`). With signatures required it must be signed with the old
-key, or it is refused with `-32073`. The old key stops at the moment of
+new one (`new_jwk`), which takes a `kid` the member does not hold, or the
+call is refused with `-32602` **(0.3.5)**. With signatures required it must
+be signed with the old key, or it is refused with `-32073`. The old key stops at the moment of
 rotation and the new key starts then. There is no grace period.
 
 **Revocation.** `participant.revoke_key` names a member (`target_uri`) and a
@@ -488,17 +499,22 @@ membership itself is a claim, because the caller writes the `from`.
 revoking another member's key. The role is granted, never claimed
 **(0.3.5)**: a join names `admin` only as the workspace's first member, or
 under an admin's invitation that names it, and is otherwise refused with
-`-32011`. Only a `human` or a `service` holds it. `control.*` needs
+`-32011`. Only a `human` or a `service` holds it. Where a token verifier is
+configured, an invitation does not register a person's keys: they join with
+a token that binds their key (`-32602`) **(0.3.5)**. `control.*` needs
 membership only, and `control.rollback` can restore members' roles from a
 snapshot. No method-role policy is enforced (SPECIFICATION.md §6.4), and the
 `required_scope` that each method declares in the catalogue is not enforced
 either. A review decision also needs the caller to be a reviewer the review
 was addressed to, and a review addressed to a `workspace:` or `group:` scope
-accepts any member. From 0.3.5 the authors of the work, its assignee and the
-member that completed it, cannot decide its review, and a review a task
-requires is decided by people only. On such a task an author cannot open
-the review with `review.request` or address it to a scope; `task.complete`
-from the assignee opens it under the workspace's `review_rule`.
+accepts any member. From 0.3.5 the authors of the work cannot decide its
+review: its assignee, the member that completed it, and the members the
+task was routed, handed, escalated or superseded from. A review a task
+requires is decided by people only. On such a task the review opens on
+`task.complete` from the assignee, under the workspace's `review_rule`, and
+`review.request` only adds reviewers to it once it is open (`-32011`
+otherwise). While it is open, its authors cannot cancel or supersede the
+task, or cancel it after a pause; another member can.
 
 **Privileged methods and step-up.** The coordinators treat these methods as
 privileged: `control.pause`, `control.resume`, `control.cancel`,
@@ -628,8 +644,10 @@ These are gaps in the current design and code, stated as they stand.
   names but `admin`, and joining a workspace that does not exist creates it.
   A first join can claim any name nobody holds yet (section 4).
   `join_policy: "invite"`, or a token verifier, admits only the participants
-  an admin or the identity provider names **(0.3.5)**. Otherwise
-  authenticate joins at the transport and bind each `from` to its caller.
+  an admin or the identity provider names **(0.3.5)**, and a desk server
+  asks for its enrolment code at a person's first join **(0.3.5)**.
+  Otherwise authenticate joins at the transport and bind each `from` to its
+  caller.
 - **Without required signatures, anyone can act in any member's name.** A
   refusal entry then names a sender it cannot prove, because the `from` it
   records is the caller's claim.
@@ -640,7 +658,9 @@ These are gaps in the current design and code, stated as they stand.
 - **Reads are open by default, and the log is stored in the clear.**
   `workspace.describe` and `audit.read` answer any caller unless read
   membership or signatures are required, and since anyone can join, neither
-  stops a determined reader. The log keeps every request as sent, apart from
+  stops a determined reader. A Node desk server where people sign in at an
+  identity provider answers its read API only to a signed-in person or a
+  signed read **(0.3.5)**. The log keeps every request as sent, apart from
   the identity tokens and presentations sent at join, which it keeps as their
   digests **(0.3.5)**. CHAP does not encrypt log content. Hold sensitive content in a
   separate store with its own access control, and put its URI and hash in the

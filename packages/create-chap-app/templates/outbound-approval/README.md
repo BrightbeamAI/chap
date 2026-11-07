@@ -14,7 +14,11 @@ python agent.py messages.csv     # in a second terminal: drafts, then waits for 
 python pause.py                  # hold the agent; python resume.py lets it go on
 ```
 
-Then decide in the desk at http://localhost:8789/.
+Then decide in the desk: open the address on the `enrol` line `desk.py`
+prints, http://localhost:8789/ with the enrolment code after `#enrol=`.
+Your first join needs the code, and the desk asks for it where the address
+lacks it, so a process that cannot read `desk.py`'s console cannot join
+under your name before you do.
 
 `desk.py` creates the workspace in trial mode and keeps the SQLite store
 under `data/` beside `chap.config.json`, wherever you start it from.
@@ -119,12 +123,15 @@ reach it. `"desk_signing": "auto"` in `chap.config.json`, or
 `CHAP_DESK_SIGNING`, has the desk sign with a passkey where the browser has
 one, which asks you to verify each signature, so such a program cannot sign
 for you; `"webauthn"` asks for a passkey always. A passkey needs the desk
-opened at a name, as `desk.py` prints it: `localhost`. The agent and the
-operator's console are members that are not people: `desk.py` joins the
-agent when it starts, the console joins itself, and the coordinator takes
-their calls unsigned. `true` asks every caller to sign, and `agent.py`,
-`pause.py` and `resume.py` then sign with keys they make in `keys/`, which
-`.gitignore` keeps out of git. `false` asks no one, so any program on this
+opened at a name, as `desk.py` prints it: `localhost`. The agent is a
+member that is not a person: `desk.py` joins it when it starts, and the
+coordinator takes its calls unsigned. The operator's console is a service,
+which signs wherever signatures are required, with a key `pause.py` makes
+in `keys/`; `true` asks every caller to sign, and `agent.py` then signs
+with a key of its own there too. `.gitignore` keeps `keys/` out of git.
+Whoever can read `keys/` can sign as the console, an agent running as your
+user among them, and lift its own pause that way: where that matters, run
+the agent as a user that cannot read the console's key. `false` asks no one, so any program on this
 machine can then decide in your name; `CHAP_REQUIRE_SIGNATURES` (`humans`,
 `1` or `0`) overrides the file. While signatures are required the server
 adds `security-signed/1.0` to the profiles, and says so when it starts. A

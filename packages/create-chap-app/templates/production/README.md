@@ -20,8 +20,13 @@ npm start           # the coordinator, the desk and POST /chap on port 8790
 npm run agent       # in a second terminal: drafts, submits, waits
 ```
 
-Open <http://localhost:8790/>. The desk joins you with a key it generates in
-the browser and lists the drafts waiting for you. Approve one as written,
+Open the desk at the address on the `enrol` line `npm start` prints,
+<http://localhost:8790/> with the enrolment code after `#enrol=`. The desk
+joins you with a key it generates in the browser and lists the drafts
+waiting for you. Your first join needs the code, and the desk asks for it
+where the address lacks it, so the agent cannot join under your name
+before you do; once people sign in at an identity provider (below), the
+sign-in does that job and the server prints no code. Approve one as written,
 edit it and override, or reject it. The agent sees the decision and writes
 the approved message to `outbox/<task_id>.json`. Reject with "ask for a
 revision" ticked and the agent drafts again with your note and submits the
@@ -146,7 +151,9 @@ subject the issuer gave you, to add to your entry in `humans`:
 "humans": [{ "uri": "human:you@example.org", "display_name": "You", "role": "reviewer", "oidc_sub": "248289761001" }]
 ```
 
-A person's join with no token, or with a token that fails a check, is
+Once a provider is set, the read API answers a person signed in at the
+desk, or a member whose key signs the read, and refuses anyone else with
+401. A person's join with no token, or with a token that fails a check, is
 refused with `-32403`; one whose token is for someone other than the join
 names, with `-32404`. A key rotation at the issuer costs one refused join:
 the server fetches the keys again when a token names one it does not have.
@@ -293,9 +300,11 @@ and `--dry-run` changes nothing.
   host names only, so the name the proxy passes goes in `allowed_hosts` in
   `chap.config.json` or in `CHAP_ALLOWED_HOSTS`; a browser request from
   another origin is refused.
-- An OpenID provider people sign in at, registered as above, and a login in
-  front of the read API under `/api/`, which serves every task, the members
-  and the chain to whoever reaches it.
+- An OpenID provider people sign in at, registered as above. With it, the
+  read API under `/api/`, which serves every task, the members and the
+  chain, answers only a person signed in at the desk or a member whose key
+  signs the read, as `agent.mjs` and `doctor.mjs` sign theirs; without it,
+  the read API answers whoever reaches it, so put a login in front.
 - Delivery beyond a webhook, and showing shadow-mode output only to its
   observers. `notify` in `chap.config.json` prints a line and POSTs a notice,
   signed with HMAC-SHA256, to a webhook when a review opens or a question is

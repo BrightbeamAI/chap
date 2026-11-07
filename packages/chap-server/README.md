@@ -71,12 +71,14 @@ to the desk, which uses it in the commands it writes for an agent.
   OpenID provider, and join only with its ID token (`identity-oidc/1.0`,
   below). A person's entry in `humans` may give `oidc_sub`, the subject the
   provider knows them by.
+- `enrolment`: `false` turns off the code a person's first join needs
+  (below).
 - `mode`, `mode_ceiling`: the workspace's mode under `modes/1.0`.
 
 The environment overrides it: `CHAP_CONFIG` names the file; `PORT`,
 `CHAP_HOST` and `CHAP_DB_PATH` replace the port, the host and the store;
 `CHAP_REQUIRE_SIGNATURES` (`1`, `true`, `humans`, `0` or `false`),
-`CHAP_CHAIN` and `CHAP_MCP` (`1` or `true`) replace the flags; `CHAP_DESK_SIGNING` replaces `desk_signing` and `CHAP_DESK_URL` `desk_url`; `CHAP_ALLOWED_HOSTS` adds host names, comma separated;
+`CHAP_CHAIN` and `CHAP_MCP` (`1` or `true`) replace the flags; `CHAP_DESK_SIGNING` replaces `desk_signing` and `CHAP_DESK_URL` `desk_url`; `CHAP_ALLOWED_HOSTS` adds host names, comma separated; `CHAP_ENROLMENT_CODE` sets the enrolment code;
 `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` set the sign-in.
 
 ## What it refuses
@@ -114,6 +116,31 @@ That name resolves to either address first, so the server answers on both,
 and no other program can answer on the one it left free; a port taken on
 either is named at start. On a wildcard address the desk is printed at
 `localhost` too, and on any other host at that host.
+
+## A person's first join
+
+A person's first join holds their name for good, with the key it carries.
+So where signatures are required and nobody signs in at an identity
+provider, the first join of a person `chap.config.json` names needs the
+enrolment code the server prints at start, in the `x-chap-enrolment`
+header; without it the join is refused with `-32011` and
+`data.reason: "enrolment"`, before the coordinator sees it. The server
+prints the code with the people still to join:
+
+```
+  enrol    7KQ2M-X9D4T: the code human:you@local joins with the first time, or open http://localhost:8788/#enrol=7KQ2M-X9D4T
+```
+
+The desk takes the code from `#enrol=` in its address, and then removes it
+from the address, or asks for it when a join is refused for want of it. A
+member's later joins, and joins under any name but a configured person's,
+need no code. The server makes a new code at each start, or takes
+`CHAP_ENROLMENT_CODE`, and keeps it beside the store in `enrolment-code`,
+readable by its own user alone, where the code gate finds it for the links
+it prints. Without the code, a process that started first, an agent among
+them, could join under a person's name with a key of its own and approve
+its own work. `"enrolment": false` turns it off, for a deployment that
+authenticates joins another way.
 
 ## The reviewer's key
 
@@ -166,7 +193,8 @@ verification from `GET /api/chain/verify`, which run the coordinator's
 `audit.read` and `audit.verify_chain` in the server's process, so a read
 needs no signature and the desk signs only what it sends in the reviewer's
 name; with a passkey, each such call asks the reviewer. Like the rest of
-`/api/`, these answer whoever reaches the server.
+`/api/`, these answer whoever reaches the server, unless people sign in
+(below).
 
 The browser key keeps the reviewer's authority from pages elsewhere, and
 from a script that runs on the desk's address and leaves. A program running
@@ -198,6 +226,27 @@ whose entry gives its subject as `oidc_sub`, or the one its
 `chap_participant_uri` names, for an issuer that knows CHAP. A token for
 anyone else is refused, and the desk shows who signed in, with the subject
 to add. The coordinator records the join's token as its SHA-256.
+
+With `oidc` set, the read API (`/api/members`, `/api/reviews`,
+`/api/tasks` and a task's evidence, `/api/chain` and its verification) and
+the pages under
+`/analytics/` answer a person signed in at the desk, by the `chap_session`
+cookie the sign-in sets or an ID token in `Authorization: Bearer`, or a
+member whose key signs the read, and answer anyone else with 401. A program
+signs a read with `signedRead` from `@brightbeamai/chap-server/client`:
+
+```js
+import { signedRead, signerFromJwk } from "@brightbeamai/chap-server/client";
+
+const signer = await signerFromJwk("agent:drafter", privateJwk);
+const path = "/api/tasks";
+const authorization = await signedRead(signer, { workspace: "wsp_support", from: "agent:drafter", path });
+const tasks = await (await fetch(`http://localhost:8788${path}`, { headers: { authorization } })).json();
+```
+
+A signed read names its path and time, and holds for five minutes either
+side of the server's clock. `/api/config` and `/api/health` answer
+everyone, so the desk can find the issuer before anyone signs in.
 
 `chap-server dev-issuer` serves the whole flow for local runs, on port
 8793. Its authorisation endpoint signs in whoever the desk's `login_hint`

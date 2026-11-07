@@ -34,9 +34,12 @@ npm run demo
 The demo makes the agent's key, starts the gate on port 8791 with its store
 under `data/`, makes a small repository under `demo-repo/` with the gate's
 hooks in it, and runs the built-in agent on the three tasks in `tasks.csv`.
-Open <http://localhost:8791/>. The desk joins you as `__HUMAN_URI__` with a
-key it generates in the browser, and the agent's first change arrives as a
-diff:
+Open the desk at the address the demo prints, <http://localhost:8791/> with
+the enrolment code after `#enrol=`. The desk joins you as `__HUMAN_URI__`
+with a key it generates in the browser, and the agent's first change
+arrives as a diff. Your first join needs the code, and the desk asks for it
+where the address lacks it, so the agent cannot join under your name
+before you do:
 
 - **Approve** it, and the agent commits it on `agent/demo` with its trailers
   and the note.

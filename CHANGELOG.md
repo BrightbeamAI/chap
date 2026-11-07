@@ -31,67 +31,96 @@ its own track, reads what 0.3.5 records.
 
 Most of the coordinator changes close ways a review could be settled by
 someone other than an independent person, or a member could join under a
-name or a role nobody gave it. They are security fixes, so they ship as a
-patch release on the supported 0.3 line, as SECURITY.md sets out. Several
-refuse calls 0.3.4 accepted; "Upgrading" below lists each one and what to
-send in its place.
+name or a role nobody gave it. They change what the specification
+requires, which would make a minor release; as security fixes they ship as
+a patch release on the supported 0.3 line, as SECURITY.md sets out and as
+0.3.4 did. Many refuse calls 0.3.4 accepted: "Upgrading" below lists each
+one and what to send in its place.
 
 ### Security
 
+- **A review a task requires is opened by its work, and decided by
+  people.** On a task that requires review, the review opens only on
+  `task.complete`, from the assignee, under the workspace's
+  `review_rule`; `review.request` only adds people to a review already
+  open, and anything else is refused with `-32011`, whoever sends it.
+  Only `type: "human"` members decide it, and a reviewer set the
+  coordinator picks holds only people.
 - **The authors of the work do not decide its review.** The assignee and
   the member that completed the work are recorded as the review's
   `authors`, and a `decide.*`, `abstain.declare` or `review.acknowledge`
   from one of them is refused with `-32011`, however the review is
-  addressed. On a task that requires review, only people decide: an agent
-  or a service named as reviewer is refused, and the reviewer set a
-  coordinator picks holds only `type: "human"` members.
-- **A review once opened is decided.** On a task that requires review, an
-  author cannot open the review with `review.request`, pick its reviewers
-  or rule, or address it to `group:` or `workspace:`; `task.complete`
-  opens it, from the assignee only. Only an author may take the work back
-  to revise it, a task under review cannot be declined before a reviewer
-  rejects it, and `escalate.raise` hands the review on with the work.
+  addressed. The authors go with the work: a new round keeps the earlier
+  rounds' authors, a task `escalate.raise` or `control.supersede` makes
+  carries the authors of the task it replaces as `prior_authors`, and a
+  task `task.route` or `handoff.accept` moves keeps the member it leaves
+  there. A reviewer's decision that completed a task is not taken for a
+  completion of the work.
+- **A review once opened is decided.** Only an author takes the work back
+  to revise it; a task under review is not declined before a reviewer
+  rejects it; `escalate.raise` hands the review on with the work; and
+  while a required review is open its authors cannot end it with
+  `control.cancel`, `control.supersede`, or a pause and then
+  `task.update` to cancelled. A task that has held a review completes
+  only through a decision: completing it again opens a new round.
 - **A workspace sets its review rule.** `workspace.create` takes
-  `review_rule` (`any_one_approves`, `all_approve` or `quorum:<n>`), and
-  every review `task.complete` opens takes it, so a deployment can ask for
-  more than one approval and no author can ask for fewer.
+  `review_rule` (`any_one_approves`, `all_approve` or `quorum:<n>`), so a
+  deployment can ask for more than one approval and no author can ask
+  for fewer.
 - **A signed request takes effect once.** A signed call identical to one
   already accepted is refused with `-32075` and `data.accepted_at_seq`, so
   an accepted envelope copied from the log cannot be sent again, a
   reviewer's reject replayed against a resubmitted artefact for instance.
 - **Who signs.** A workspace's `signature_policy` is `"all"`, the default,
   or `"humans"`: under `"humans"` an agent member may call unsigned, and
-  people and services sign. A workspace that advertises `security-signed`,
-  `identity-oidc` or `identity-vc` cannot drop it with
-  `workspace.set_profiles`.
+  people and services sign. A workspace that advertises
+  `security-signed/1.0` or an identity profile cannot drop it with
+  `workspace.set_profiles`, nor advertise one the coordinator does not
+  enforce.
 - **The admin role is granted.** `role: "admin"` at `participant.join` is
   accepted from the workspace's first member, or from a participant an
   admin's invitation names as admin, and is otherwise refused with
   `-32011`. `workspace.invite` is built, and `join_policy: "invite"`
-  admits only invited participants and the first member.
+  admits only invited participants and the first member. Where a token
+  verifier is configured, an invitation does not register a person's
+  keys: they join again with a token that binds a new one.
 - **Joins.** A join under a member's name with keys the member does not
   hold is refused with `-32011`; a new key arrives through
-  `participant.rotate_key`. Where signatures are required, a join with no
-  key is refused with `-32602`. A URI's scheme must match its `type`, and
-  `group:` and `workspace:` addresses cannot join. Where a token verifier
-  is configured, a person joins with a token for them (`-32403` without
-  one), and the token binds the joining key through its nonce or `cnf`
-  claim (`-32404` otherwise). A credential sent at join is recorded as its
-  SHA-256 digest, and never on the chain.
+  `participant.rotate_key`, under a `kid` of its own. Where signatures are
+  required, a join with no key is refused with `-32602`. A URI's scheme
+  must match its `type`, and `group:` and `workspace:` addresses cannot
+  join. Where a token verifier is configured, a person joins with a token
+  for them (`-32403` without one) that names them, and a token that
+  carries `cnf.jwk` or a nonce binds the join's keys to that key (`-32404`
+  otherwise). A token or presentation sent at join is kept as its SHA-256
+  digest.
+- **The first join of a person needs the server's code.** Where signatures
+  are required and nobody signs in at an identity provider, a desk server,
+  Node or Python, refuses the first join of a person `chap.config.json`
+  names without the enrolment code it prints at start, so a process that
+  does not see the server's console cannot take a person's name before
+  they open the desk. The desk takes the code from the link the server
+  prints, or asks for it; `"enrolment": false` turns it off.
+- **Reads where people sign in.** Where people sign in at an identity
+  provider, the Node desk server's read API and analytics pages answer a
+  person signed in at the desk, or a member whose key signs the read.
 - **Signatures have one spelling.** An Ed25519 signature in anything other
-  than canonical base64 is refused, and `webauthn:` tags are verified,
-  against the origins the coordinator is configured with.
+  than canonical standard base64 is refused.
+- **A pause holds.** A paused participant can neither lift its own pause
+  nor leave and join again to come back unpaused.
 - **Smaller fixes.** `handoff.accept` takes only tasks the proposer still
   holds. `__proto__`, `constructor` and `prototype` are refused as
   idempotency keys. A `-32603` answer carries no exception text; the
-  TypeScript coordinator passes the error to `onInternalError`.
+  TypeScript coordinator passes the error to `onInternalError`. Both
+  coordinators keep `auth_time` in whole seconds.
 - **The servers.** The reference servers and the desk servers check
   `Host` and `Origin`, take JSON only, and send no
   `Access-Control-Allow-Origin`. A desk server admits only the members
   `chap.config.json` names. The desk sends a strict
-  Content-Security-Policy, refuses framing, runs analytics in a sandbox,
-  keeps a reviewer's key where no script can read it, and marks invisible
-  characters and characters outside ASCII in names and changed lines.
+  Content-Security-Policy and refuses framing, runs analytics in a
+  sandbox, keeps a reviewer's key where no script can read it, and marks
+  invisible characters and characters outside ASCII in names and changed
+  lines. A server error answers with no exception text.
 - **The code gate's hooks.** The hooks read the gate's address and the
   signature rule from `chap.config.json` alone, fail closed, and chain to
   the repository's own hooks. A gate joins the trust policy's reviewers
@@ -110,7 +139,8 @@ send in its place.
   `review.acknowledge` when a reviewer opens a review, and notifies people
   through a webhook or the console when a review or a question waits.
   Production projects sign people in with OIDC, with PKCE, and bind the
-  token to the desk's key.
+  token to the desk's key. `signedRead` in its client signs a read with a
+  member's key.
 - **`@brightbeamai/chap-code-gate`.** The code gate's commands, hooks and
   verifier as a package, with `chap-code-gate` on the path.
 - **The Python package runs CHAP.** `chap-coordinator serve` runs the desk
@@ -120,9 +150,14 @@ send in its place.
   `chap_coordinator.server` the desk server as an ASGI app.
 - **`review.acknowledge`.** A reviewer says they have opened a review, so
   the time a review waits unopened is told apart from the time it is read.
+- **WebAuthn signatures.** A `webauthn:` tag carries a passkey's
+  assertion, verified against the origins its key lists.
 - **`create-chap-app upgrade` and `add`.** `upgrade` brings a generated
   project forward, the copies a project made of the server and the gate
-  included. `add` puts CHAP into a project that exists. Each project is
+  included, and adds the configuration the template's code needs, such as
+  outbound-approval's `operator`. `--adopt-settings` takes the template's
+  settings and moves the store aside where they change signing or the
+  chain. `add` puts CHAP into a project that exists. Each project is
   stamped with its template and release.
 - **MCP 2026-07-28.** `chapMcpHttpHandler` serves MCP over HTTP, answering
   2026-07-28 beside the handshake versions. `chap-mcp-server --url`
@@ -150,32 +185,70 @@ send in its place.
 - **Ports.** The `mcp-gate` template and the Python desk server listen on
   8792, clear of a port some editors use for their own sign-in.
 - **The store.** A coordinator reads what another process wrote before it
-  answers, and a write that fails or meets a newer one is answered with
-  `-32603` and `data.reason: "store"`; the call took no effect, and the
-  caller may send it again. The TypeScript coordinator opens SQLite through
-  `node:sqlite` where `better-sqlite3` is not installed.
+  answers. By default, a write that fails or meets a newer one is answered
+  with `-32603` and `data.reason: "store"`: the call took no effect, and
+  the caller may send it again. The TypeScript coordinator opens SQLite
+  through `node:sqlite`, on Node 22.13 and later, where `better-sqlite3`
+  is not installed.
 
 ### Upgrading
 
 Upgrade every coordinator, then every generated project with
-`npx create-chap-app@latest upgrade` and the project's directory. Calls
-0.3.4 accepted that are now refused:
+`npx create-chap-app@latest upgrade` and the project's directory. A
+project keeps its settings; `--adopt-settings` takes the template's on a
+new store, since a store's workspace keeps the settings it was created
+with. Calls 0.3.4 accepted that 0.3.5 refuses, and what to do instead:
 
-- An author's `review.request` on a task that requires review. Call
-  `task.complete`, and set the rule with `review_rule` at
-  `workspace.create`. A code gate configured with `quorum:<n>` or
+- **Opening a review a task requires.** `review.request` on such a task
+  from anyone, unless it adds people to the open review: call
+  `task.complete` from the assignee, and set the rule with `review_rule`
+  at `workspace.create`. A code gate configured with `quorum:<n>` or
   `all_approve` refuses to propose on a store created under a weaker rule;
-  start it on a new store.
-- A decision from an agent or a service on a review that is required, and
-  a decision from an author.
-- `role: "admin"` at join from anyone other than the first member or an
-  invited admin. Invite admins with `workspace.invite`.
-- A join with keys other than the member's, a keyless join where
-  signatures are required, and a person's join with no token where a
-  verifier is configured.
-- An unsigned call from a person or a service under `"humans"`, a signed
-  call sent twice, and a signature in non-canonical base64.
-- An A2A or MCP library set to act as a person.
+  start it on a new store. On such a task, too: a `task.complete` from
+  anyone but the assignee, and a `review.request` naming an author, a
+  member who is not a person, or a `group:` or `workspace:` scope.
+- **Deciding.** A decision, abstention or acknowledgement from an author
+  of the work, a member the task was routed, handed, escalated or
+  superseded from among them, and a decision from an agent or a service on
+  a review a task requires.
+- **Ending a review with no decision.** `task.update` back to
+  `in_progress` from anyone but an author; `task.update` to `declined`
+  before a reviewer rejects the work, or to `completed` on a task that
+  holds a review; and, from an author while a required review is open,
+  `control.cancel`, `control.supersede`, and `task.update` from paused to
+  cancelled. A task that has held a review and is completed again opens a
+  new round; it no longer completes.
+- **Roles and profiles.** `role: "admin"` at join from anyone other than
+  the first member or an invited admin: invite admins with
+  `workspace.invite`. `workspace.set_profiles` that drops
+  `security-signed/1.0` or an identity profile, or adds one the
+  coordinator does not enforce.
+- **Joins.** A join with keys other than the member's (rotate instead), a
+  keyless join where signatures are required, a URI whose scheme is not
+  its `type`, a join as a `group:` or `workspace:` address, and a person's
+  join with no token, or a token that does not name them or bind their
+  key, where a verifier is configured. At a desk server, a join under a
+  name `chap.config.json` does not give, and a person's first join
+  without the enrolment code.
+- **Signatures.** An unsigned call from a person or a service under
+  `"humans"`, a signed call sent twice, an Ed25519 signature in
+  non-canonical base64, and a `participant.rotate_key` to a `kid` the
+  member holds.
+- **Pauses.** A paused participant's `control.resume` of its own pause,
+  and its `participant.leave`.
+- **Invitations.** `workspace.invite` registering keys for a person where
+  a token verifier is configured.
+- **Transports.** The MCP and A2A commands act as `agent:assistant`, with
+  the agent's tools or skills, unless `--as`, `--tools all` or
+  `--skills all` says otherwise, and the libraries refuse a person as the
+  participant they act as: a client that recorded people's decisions
+  through MCP needs the desk, or another signing path, for them.
+  `@brightbeamai/chap-coordinator-a2a` needs `@a2a-js/sdk` 1.3, and the
+  Python `a2a` extra installs `a2a-sdk[http-server]`.
+- **Reads.** Where people sign in at an identity provider, a read of the
+  Node desk server's API from anyone but a signed-in person or a member
+  whose key signs it (`signedRead`).
+- **Node.js.** Node 20.
 
 ## 0.3.4: review rounds, patch size and the MCP gate
 
