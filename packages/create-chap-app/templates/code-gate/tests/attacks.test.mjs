@@ -40,23 +40,20 @@ test("an agent cannot approve its own change: the coordinator refuses, and nothi
   const repo = await demoRepo();
   await appendTo(repo, "lib/calc.mjs", "\nexport const BACKDOOR = true;\n");
   const artefact = await describeChange(repo, { summary: "harmless", drafted_by: "x" });
-  const digest = await contentHash(artefact);
+  // On a task that requires review the author cannot open its review, to
+  // itself or to the whole workspace, so no approval of its own can follow.
   await assert.rejects(submit(artefact, { to: [g.agent.from] }), (e) => e.code === -32011, "a review addressed to its own author is refused");
-  const id = await submit(artefact, { to: [`workspace:${g.config.workspace}`] });
-  await assert.rejects(g.agent.call("decide.approve", { task_id: id, approved_artefact_digest: digest }),
-    (e) => e.code === -32011, "the author cannot decide a review addressed to the whole workspace");
+  await assert.rejects(submit(artefact, { to: [`workspace:${g.config.workspace}`] }), (e) => e.code === -32011, "a review its author opens for the whole workspace is refused");
   await assert.rejects(commit(g, repo, "harmless"), (e) => !/approved as/.test(e.stderr));
   assert.equal((await git(repo, ["status", "--porcelain"])).trim().length > 0, true, "nothing was committed");
 });
 
-test("a participant that joined as a human under a URI the gate does not name counts for nothing", async () => {
+test("a join as a human under a URI the gate does not name is refused, and nothing is committed", async () => {
   const repo = await demoRepo();
   await appendTo(repo, "lib/calc.mjs", "\nexport const ALSO_BAD = true;\n");
   const artefact = await describeChange(repo, { summary: "harmless too", drafted_by: "x" });
-  const fake = await g.reviewer("human:evil@local");
-  const id = await submit(artefact, { to: [fake.from] });
-  assert.equal((await fake.call("decide.approve", { task_id: id, approved_artefact_digest: await contentHash(artefact) })).state, "completed");
-  await assert.rejects(commit(g, repo, "harmless too"), (e) => /human:evil@local approved the change, and is not a reviewer/.test(e.stderr));
+  await assert.rejects(g.reviewer("human:evil@local"), (e) => e.code === -32011, "the gate admits only the people chap.config.json names");
+  await assert.rejects(commit(g, repo, "harmless too"), (e) => !/approved as/.test(e.stderr));
 });
 
 test("a patch that shows one file and applies another is refused in the desk, at the commit and by the verifier", async () => {

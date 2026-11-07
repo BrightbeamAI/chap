@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { jsonPatch } from "@brightbeamai/chap-server/client";
+import { generateSigner, jsonPatch } from "@brightbeamai/chap-server/client";
 import { readKeyFile } from "@brightbeamai/chap-server/keys";
 import { applyJsonPatch, buildNote, checkApproval, contentHash, describeChange, envelopeVerifies, fingerprint, onlinePolicy, propose } from "@brightbeamai/chap-code-gate/gate";
 import { commitInfo, git, head, parseTrailers, rawCommit, readNote } from "@brightbeamai/chap-code-gate/git";
@@ -111,8 +111,8 @@ test("offline, against a trust file the team commits, and with the gate stopped"
   assert.equal(results[0].status, "ok", results[0].detail);
   assert.match(results[0].detail, /checked against .*chap-trust\.json/);
   // A trust file that pins another reviewer's key: the same commit fails.
-  const other = await g.reviewer("human:someone@local");
-  const wrong = { ...trust, reviewers: { [human.from]: [other.signer.publicJwk] } };
+  const other = await generateSigner("human:someone@local");
+  const wrong = { ...trust, reviewers: { [human.from]: [other.publicJwk] } };
   await writeFile(file, JSON.stringify(wrong));
   const failed = await verifyRange(repo, "HEAD", { trust: file });
   assert.equal(failed[0].status, "FAIL");

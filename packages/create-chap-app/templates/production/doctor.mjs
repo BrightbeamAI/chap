@@ -152,7 +152,11 @@ export async function runChecks({ url = process.env.CHAP_URL ?? "http://127.0.0.
     record("oidc", "skip", "no issuer configured; set OIDC_ISSUER and OIDC_CLIENT_ID to sign people in and verify their tokens at participant.join");
     record("nonce", "skip", "no issuer configured");
   } else {
-    const joinWith = (id, extra) => post(`${base}/chap`, { jsonrpc: "2.0", id, method: "participant.join", params: { workspace: cfg.workspace, from: PROBE_URI, type: "human", ...extra } });
+    // The probe joins as the configured reviewer: the server admits only the
+    // people chap.config.json names, so a join under any other name is
+    // refused before the token is looked at.
+    const probe = config.humans?.[0]?.uri ?? PROBE_URI;
+    const joinWith = (id, extra) => post(`${base}/chap`, { jsonrpc: "2.0", id, method: "participant.join", params: { workspace: cfg.workspace, from: probe, type: "human", ...extra } });
     const bare = (await joinWith("doctor-oidc-none", {})).error?.code;
     const garbage = (await joinWith("doctor-oidc-garbage", { oidc_token: "not.a.token" })).error?.code;
     const good = bare === -32403 && garbage === -32403;
@@ -168,7 +172,7 @@ export async function runChecks({ url = process.env.CHAP_URL ?? "http://127.0.0.
  * A token whose nonce names another key binds nothing: with the reviewer
  * on record, a join under their name that brings a key of its own, with a
  * token for them whose nonce is another key's thumbprint, is refused with
- * -32011, and their keys stay as they were. The token comes from the
+ * -32404, and their keys stay as they were. The token comes from the
  * development issuer, which hands one to anyone through the sign-in the
  * desk makes; a real provider asks a person to sign in, which doctor does
  * not do.
@@ -188,9 +192,9 @@ async function nonceCheck({ cfg, config, base, record }) {
     params: { workspace: cfg.workspace, from: reviewer, type: "human", jwks: { keys: [brought.publicJwk] }, oidc_token: token } });
   const after = await keysOf();
   const held = JSON.stringify(after) === JSON.stringify(before);
-  record("nonce", r.error?.code === -32011 && held ? "ok" : "FAIL", r.error?.code === -32011 && held
-    ? `a token for ${reviewer} whose nonce names another key binds nothing: the join is refused with -32011, and ${reviewer} keeps ${before.length} key${before.length === 1 ? "" : "s"}`
-    : `expected -32011 and ${reviewer}'s keys as they were; got ${r.error ? `${r.error.code} ${r.error.message}` : "an accepted join"}, keys ${JSON.stringify(after)}`);
+  record("nonce", r.error?.code === -32404 && held ? "ok" : "FAIL", r.error?.code === -32404 && held
+    ? `a token for ${reviewer} whose nonce names another key binds nothing: the join is refused with -32404, and ${reviewer} keeps ${before.length} key${before.length === 1 ? "" : "s"}`
+    : `expected -32404 and ${reviewer}'s keys as they were; got ${r.error ? `${r.error.code} ${r.error.message}` : "an accepted join"}, keys ${JSON.stringify(after)}`);
 }
 
 /** An ID token for `who` with `nonce`, through the sign-in the desk makes: the development issuer's code, redeemed by the server. */

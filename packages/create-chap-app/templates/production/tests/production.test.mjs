@@ -206,16 +206,13 @@ describe("with an OIDC issuer", () => {
     assert.equal(entry.envelope.params.oidc_token, `sha256:${createHash("sha256").update(token).digest("hex")}`, "the chain keeps the token's digest, never the token");
   });
 
-  test("a token for someone chap.config.json does not name is refused, and one for another participant than the join's with -32404", async () => {
+  test("a join under a name chap.config.json does not give is refused at the server, and a token for another participant than the join's with -32404", async () => {
     const other = await generateSigner("human:someone-else@local");
     const unnamed = issuer.mintToken({ sub: "user-other", uri: "human:someone-else@local" });
     const r = await post(obase, { jsonrpc: "2.0", id: "o1", method: "participant.join",
       params: { workspace: oconfig.workspace, from: "human:someone-else@local", type: "human", jwks: { keys: [other.publicJwk] }, oidc_token: unnamed } });
-    assert.equal(r.error?.code, -32403);
+    assert.equal(r.error?.code, -32011);
     const forReviewer = issuer.mintToken({ sub: "user-other", uri: reviewer.from });
-    const r2 = await post(obase, { jsonrpc: "2.0", id: "o2", method: "participant.join",
-      params: { workspace: oconfig.workspace, from: "human:newcomer@local", type: "human", oidc_token: forReviewer } });
-    assert.equal(r2.error?.code, -32404);
     // A join under the reviewer's name with a token for a different subject is refused the same way.
     const r3 = await post(obase, { jsonrpc: "2.0", id: "o3", method: "participant.join",
       params: { workspace: oconfig.workspace, from: reviewer.from, type: "human", oidc_token: forReviewer } });
@@ -224,17 +221,18 @@ describe("with an OIDC issuer", () => {
 
   test("a garbage token, a token from an unknown key, an expired token and one for another audience are refused with -32403", async () => {
     const join = (oidc_token, id) => post(obase, { jsonrpc: "2.0", id, method: "participant.join",
-      params: { workspace: oconfig.workspace, from: "human:probe@local", type: "human", oidc_token } });
+      params: { workspace: oconfig.workspace, from: reviewer.from, type: "human", oidc_token } });
+    const keysBefore = ocoord.getWorkspace(oconfig.workspace).members.get(reviewer.from)?.keys.length;
     assert.equal((await join("garbage", "g1")).error?.code, -32403);
     assert.equal((await join("not.a.token", "g2")).error?.code, -32403);
     const rogue = generateKeyPairSync("ec", { namedCurve: "P-256" });
     const forged = signJwt({ privateKey: rogue.privateKey, kid: "rogue", payload: { iss: issuer.issuer, sub: "x", aud: issuer.audience, exp: Math.floor(Date.now() / 1000) + 600 } });
     assert.equal((await join(forged, "g3")).error?.code, -32403);
-    const expired = issuer.mintToken({ sub: "x", uri: "human:probe@local", expires_in_sec: -3600 });
+    const expired = issuer.mintToken({ sub: "x", uri: reviewer.from, expires_in_sec: -3600 });
     assert.equal((await join(expired, "g4")).error?.code, -32403);
-    const elsewhere = issuer.mintToken({ sub: "x", uri: "human:probe@local", audience: "another-service" });
+    const elsewhere = issuer.mintToken({ sub: "x", uri: reviewer.from, audience: "another-service" });
     assert.equal((await join(elsewhere, "g5")).error?.code, -32403);
-    assert.equal(ocoord.getWorkspace(oconfig.workspace).members.has("human:probe@local"), false);
+    assert.equal(ocoord.getWorkspace(oconfig.workspace).members.get(reviewer.from)?.keys.length, keysBefore, "no refused join changed the reviewer's keys");
   });
 
   test("the verifier reads the issuer's discovery document and keys, checks signature, issuer, audience and time, and refetches the keys once on an unknown kid", async () => {
@@ -271,7 +269,7 @@ describe("with an OIDC issuer", () => {
     const byName = Object.fromEntries(results.map((r) => [r.name, r]));
     for (const name of ["health", "config", "unsigned", "describe", "chain", "oidc", "nonce"]) assert.equal(byName[name].status, "ok", `${name}: ${byName[name].detail}`);
     assert.match(byName.oidc.detail, /a person's join with no token, and one with a garbage token, are refused with -32403/);
-    assert.match(byName.nonce.detail, /whose nonce names another key binds nothing: the join is refused with -32011/);
+    assert.match(byName.nonce.detail, /whose nonce names another key binds nothing: the join is refused with -32404/);
     assert.equal(byName.store.status, "skip");
     assert.equal(results.filter((r) => r.status === "FAIL").length, 0);
   });
@@ -292,7 +290,7 @@ test("the doctor fails a server that takes a person's join with no token, and sk
     const results = await runChecks({ url: `http://127.0.0.1:${server.address().port}/chap`, dir: projectDir, keyPath, storePath: ":memory:" });
     const byName = Object.fromEntries(results.map((r) => [r.name, r]));
     assert.equal(byName.oidc.status, "FAIL", byName.oidc.detail);
-    assert.match(byName.oidc.detail, /expected -32403 for both, got an accepted join with no token/);
+    assert.match(byName.oidc.detail, /expected -32403 for both, got (?!-32403 with no token and -32403)/);
     assert.equal(byName.nonce.status, "skip");
     assert.match(byName.nonce.detail, /has not signed in at the desk yet/);
   } finally {

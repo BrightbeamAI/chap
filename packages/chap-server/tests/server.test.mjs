@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { chapHandler, createChapServer, loadConfig } from "../index.mjs";
-import { AGENT, HUMAN, project } from "./helpers.mjs";
+import { HUMAN, project } from "./helpers.mjs";
 
 const run = promisify(execFile);
 const BIN = fileURLToPath(new URL("../bin/chap-server.mjs", import.meta.url));
@@ -50,16 +50,11 @@ test("the read API lists the members with the keys they sign with now, and reads
     const desk = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, signer });
     await desk.call("participant.join", { type: "human", role: "reviewer", display_name: "Rev Iewer", jwks: { keys: [signer.publicJwk] } });
     const { members } = await (await fetch(`${base}/api/members`)).json();
-    // Under the humans policy the server joins the agent at start, with no
-    // key, since an agent calls unsigned.
-    assert.deepEqual(members, [
-      { uri: AGENT, type: "agent", role: "drafter", display_name: "The drafter", keys: [] },
-      { uri: HUMAN, type: "human", role: "reviewer", display_name: "Rev Iewer", keys: [signer.publicJwk] },
-    ]);
+    assert.deepEqual(members, [{ uri: HUMAN, type: "human", role: "reviewer", display_name: "Rev Iewer", keys: [signer.publicJwk] }]);
 
-    const chain = await (await fetch(`${base}/api/chain?from_seq=2`)).json();
-    assert.deepEqual(chain.entries.map((e) => [e.envelope.method, e.envelope.params.from]), [["participant.join", HUMAN]]);
-    assert.equal(chain.next_seq, 3);
+    const chain = await (await fetch(`${base}/api/chain?from_seq=1`)).json();
+    assert.deepEqual(chain.entries.map((e) => e.envelope.method), ["participant.join"]);
+    assert.equal(chain.next_seq, 2);
     assert.equal((await fetch(`${base}/api/chain?from_seq=-1`)).status, 400);
     const verified = await (await fetch(`${base}/api/chain/verify`)).json();
     assert.equal(verified.result.status, "verified");

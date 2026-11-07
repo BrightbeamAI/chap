@@ -133,6 +133,8 @@ test("the read API shows what another process wrote to the store", async () => {
   const { base } = await chap.listen({ port: 0, host: "127.0.0.1", log: () => {} });
   const other = await makeCoordinator(await loadConfig(configPath), { log: () => {} });
   try {
+    const joined = other.dispatch({ jsonrpc: "2.0", id: 0, method: "participant.join", params: { workspace: "wsp_test", from: AGENT, type: "agent" } });
+    assert.ok(joined.result, JSON.stringify(joined));
     const r = other.dispatch({ jsonrpc: "2.0", id: 1, method: "task.create", params: { workspace: "wsp_test", from: AGENT, kind: "draft", assignee: AGENT, input: { summary: "from elsewhere" } } });
     assert.ok(r.result, JSON.stringify(r));
     await other.drainSaves();

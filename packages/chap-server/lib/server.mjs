@@ -285,7 +285,7 @@ export async function makeCoordinator(config, { enrol = [], log = console.log, .
 export async function bootstrap(coord, config, { enrol = [], log = console.log } = {}) {
   const send = (method, params) => coord.dispatch({ jsonrpc: "2.0", id: `boot-${method}`, method, params: { workspace: config.workspace, ...params } });
   if (!coord.getWorkspace(config.workspace)) {
-    const r = send("workspace.create", { profiles: config.profiles, ...(config.mode ? { mode: config.mode } : {}), ...(config.mode_ceiling ? { mode_ceiling: config.mode_ceiling } : {}) });
+    const r = send("workspace.create", { profiles: config.profiles, ...(config.mode ? { mode: config.mode } : {}), ...(config.mode_ceiling ? { mode_ceiling: config.mode_ceiling } : {}), ...(config.review?.rule ? { review_rule: config.review.rule } : {}) });
     if (r.error) throw new Error(`workspace.create: ${r.error.message}`);
   }
   settleSignatures(coord.getWorkspace(config.workspace), config, log);
@@ -300,13 +300,7 @@ export async function bootstrap(coord, config, { enrol = [], log = console.log }
     const r = send("participant.join", { from: m.uri, type: m.type, role: m.role, ...(m.display_name ? { display_name: m.display_name } : {}), jwks: { keys: m.keys } });
     if (r.error) throw new Error(`participant.join ${m.uri}: ${r.error.message}`);
   }
-  if (config.require_signatures) {
-    // Under the humans policy the agent calls unsigned, which the
-    // coordinator takes only from a member, so it joins now: /mcp and a
-    // stdio client forwarding with --url work from the first call.
-    if (config.signature_policy === "humans" && config.agent?.uri) await joinMcpAgent(coord, config);
-    return;
-  }
+  if (config.require_signatures) return;
   const ws = coord.getWorkspace(config.workspace);
   const members = [...(config.humans ?? []).map((h) => ({ ...h, type: "human" })), ...(config.agent ? [{ ...config.agent, type: "agent" }] : [])];
   for (const m of members) {
@@ -846,6 +840,10 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
         }
         const stranger = unnamedJoin(envelope, config);
         if (stranger) return reply(res, 200, stranger);
+        // An MCP client on stdio forwarding to /chap with --url acts as the
+        // agent /mcp acts as, and makes its first call before any join: the
+        // agent joins then, as it does on its first /mcp call.
+        if (mcp && envelope?.params?.from === config.agent.uri && envelope.method !== "participant.join") await joinMcpAgent(coord, config);
         return reply(res, 200, coord.dispatch(envelope));
       }
       // The read API reads the coordinator's memory. A cheap call first lets
