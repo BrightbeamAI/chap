@@ -1,16 +1,16 @@
 """
-Tests for chap-google-adk. They run without google-adk installed: the bridge
-reads the call and confirmation structurally, so small stand-ins (and plain
-dicts) drive the same code path the real ADK objects would.
-
-    1. A paused tool call under review -> task.create + complete + review.request.
-    2. A resolved confirmation -> decide.approve | decide.override | decide.reject.
-    3. The audit chain carries the whole trail, hash-linked.
+Tests for chap-google-adk that run without google-adk: recording a
+confirmation your own code made, which reads calls, confirmations and
+agents by their attributes, so plain values and small stand-ins drive the
+path the real objects would; and the bridge made against a desk.
+tests/test_runner.py runs both modes with a real ADK runner.
 """
 
-import asyncio
+import json
 import sys
+import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 THIS = Path(__file__).resolve()
 sys.path.insert(0, str(THIS.parents[1]))
@@ -18,315 +18,213 @@ sys.path.insert(0, str(THIS.parents[2] / "coordinator-py"))
 
 import pytest
 
-from chap_coordinator import Coordinator, CoordinatorOptions
+from chap_coordinator import Coordinator, CoordinatorOptions, content_hash
+from chap_coordinator.client import HttpCoordinator, Participant, Signer
+from chap_coordinator.server import load_config, make_coordinator, make_server
 from chap_google_adk import (
-    ChapConfirmationBridge, ChapBridgeError, Decision, apply_reviewed_args,
+    ChapBridgeError, ChapConfirmationBridge, ChapError, PersonRequired, apply_reviewed_args,
 )
 
+WS = "wsp_adk_test"
+AGENT = "agent:assistant#v1"
+REVIEWER = "human:alice@example.org"
+CALL = {"name": "transfer", "args": {"amount": 100, "to": "Alice"}, "id": "c1"}
+ASKED = {"name": "adk_request_confirmation", "args": {
+    "originalFunctionCall": CALL,
+    "toolConfirmation": {"hint": "Please approve or reject.", "confirmed": False, "payload": None}}}
+LEAVE = {"name": "adk_request_confirmation", "args": {
+    "originalFunctionCall": {"name": "take_leave", "args": {"days": 5}, "id": "c2"},
+    "toolConfirmation": {"hint": "How many days?", "confirmed": False, "payload": {"approved_days": 0}}}}
 
-class Call:
-    """A paused FunctionCall stand-in (attribute access, like the real one)."""
 
-    def __init__(self, name, args, id="fc-1"):
-        self.name = name
-        self.args = args
-        self.id = id
+def transfer(amount: int, to: str, tool_context=None) -> str:
+    return f"sent {amount} to {to}"
 
 
-class Conf:
-    """A ToolConfirmation stand-in."""
+def take_leave(days: int, tool_context=None) -> str:
+    return f"{days} days"
 
-    def __init__(self, confirmed, payload=None):
-        self.confirmed = confirmed
-        self.payload = payload
+
+def confirmed(payload=None):
+    return {"confirmed": True, "payload": payload}
+
+
+EDITS_RUN = SimpleNamespace(canonical_before_tool_callbacks=[apply_reviewed_args], tools=[transfer, take_leave])
+EDITS_IGNORED = SimpleNamespace(canonical_before_tool_callbacks=[], tools=[transfer])
 
 
 @pytest.fixture
 def coord():
-    return Coordinator(CoordinatorOptions(
-        deterministic_ids=True, deterministic_clock=True, enable_chain=True,
-    ))
+    return Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True, enable_chain=True))
 
 
 @pytest.fixture
 def bridge(coord):
-    return ChapConfirmationBridge(
-        coord,
-        workspace="wsp_adk_test",
-        agent="agent:assistant#v1",
-        reviewer="human:alice@example.org",
-    )
+    return ChapConfirmationBridge(coord, workspace=WS, agent=AGENT, reviewer=REVIEWER)
 
 
-def methods(bridge):
-    return [e["envelope"]["method"] for e in bridge.audit()]
+def calls(bridge, method):
+    return [e["envelope"]["params"] for e in bridge.audit()
+            if "envelope" in e and e["envelope"]["method"] == method]
 
 
-def last_params(bridge, method):
-    for entry in reversed(bridge.audit()):
-        if entry["envelope"]["method"] == method:
-            return entry["envelope"]["params"]
-    raise AssertionError(f"no {method} in audit")
+def test_the_bridge_joins_the_agent_and_nobody_else(coord, bridge):
+    assert set(coord.workspaces[WS].members) == {AGENT}
 
 
-# ---- setup ---------------------------------------------------------
+# ---- what a confirmation records -------------------------------------------
 
 
-def test_bridge_joins_the_agent_and_the_reviewer_when_it_records(coord, bridge):
-    ws = coord.workspaces["wsp_adk_test"]
-    assert "agent:assistant#v1" in ws.members
-    # A person who decides at a desk joins there, with their own key, so the
-    # bridge joins the reviewer only to record a decision in their name.
-    assert "human:alice@example.org" not in ws.members
-    bridge.record_decision(Call("transfer", {"amount": 100}), Conf(True))
-    assert ws.members["human:alice@example.org"].type == "human"
+def test_confirmed_is_an_approval_marked_as_recorded_and_bound_to_the_call(coord, bridge):
+    task_id = bridge.record_decision(ASKED, confirmed())
+    [params] = calls(bridge, "decide.approve")
+    artefact = {"tool": "transfer", "args": {"amount": 100, "to": "Alice"}, "tool_call_id": "c1"}
+    assert (params["from"], params["via"], params["approved_artefact_digest"]) == (
+        REVIEWER, "bridge-record", content_hash(artefact))
+    assert coord.workspaces[WS].tasks[task_id].output == artefact
 
 
-def test_the_agent_cannot_review_its_own_calls(coord):
-    with pytest.raises(ValueError, match="cannot be the agent"):
-        ChapConfirmationBridge(coord, workspace="wsp_adk_self",
-                               agent="human:alice@example.org",
-                               reviewer="human:alice@example.org")
+def test_not_confirmed_is_a_rejection(bridge):
+    bridge.record_decision(CALL, {"confirmed": False}, rationale="not this month")
+    assert calls(bridge, "decide.reject")[0]["comment"] == "not this month"
 
 
-# ---- approve / reject derived from `confirmed` ---------------------
-
-
-def test_confirmed_is_approve(bridge):
-    seen = []
-    bridge.on_envelope = lambda m, p: seen.append(m)
-    bridge.record_decision(Call("transfer", {"amount": 100}), Conf(True))
-    assert seen == ["task.create", "task.complete", "review.request", "decide.approve"]
-
-
-def test_not_confirmed_is_reject(bridge):
-    bridge.record_decision(Call("transfer", {"amount": 100}), Conf(False))
-    assert methods(bridge)[-1] == "decide.reject"
-
-
-def test_a_decision_the_confirmation_does_not_carry_is_refused(bridge):
-    # confirmed=True runs the tool, so it cannot be recorded as a reject; and
-    # the other way round.
-    with pytest.raises(ValueError, match="cannot be recorded as 'reject'"):
-        bridge.record_decision(Call("transfer", {"amount": 100}), Conf(True),
-                               decision="reject", rationale="not this recipient")
-    with pytest.raises(ValueError, match="cannot be recorded as 'approve'"):
-        bridge.record_decision(Call("transfer", {"amount": 100}), Conf(False),
-                               decision="approve")
-    assert methods(bridge) == ["workspace.create", "participant.join"]
-
-
-# ---- an edit is what the confirmation carries ------------------------
-
-
-def test_confirmed_with_a_tool_defined_payload_is_an_approve(bridge):
-    # A payload without `args` is the tool's own data, and edits nothing.
-    bridge.record_decision(Call("book_leave", {"days": 5}),
-                           Conf(True, payload={"approved_days": 3}))
-    assert methods(bridge)[-1] == "decide.approve"
-
-
-def test_the_payload_args_are_the_override(bridge):
-    bridge.record_decision(
-        Call("transfer", {"amount": 100, "to": "acct-9"}),
-        Conf(True, payload={"args": {"amount": 50, "to": "acct-9"}}),
-        rationale="capped", tags=["limit"],
-    )
-    params = last_params(bridge, "decide.override")
+def test_an_edit_of_the_arguments_is_recorded_where_adk_runs_it(coord, bridge):
+    task_id = bridge.record_decision(ASKED, confirmed({"args": {"amount": 50, "to": "Alice"}}),
+                                     llm_agent=EDITS_RUN, rationale="over the limit")
+    [params] = calls(bridge, "decide.override")
     assert params["diff"] == [{"op": "replace", "path": "/args/amount", "value": 50}]
-    assert params["intent_preserved"] is True
-    assert params["rationale"] == "capped"
+    assert (params["rationale"], params["intent_preserved"], params["via"]) == ("over the limit", True, "bridge-record")
+    assert coord.workspaces[WS].tasks[task_id].output["args"] == {"amount": 50, "to": "Alice"}
 
 
-def test_an_override_the_confirmation_does_not_carry_is_refused(bridge):
-    """The 0.3.4 example recorded edits passed as `returned` and resumed ADK
-    with {"confirmed": True} alone, so the tool ran the original arguments.
-    Such an override is now refused, and nothing is recorded."""
-    with pytest.raises(ValueError, match="only when ADK will run it"):
-        bridge.record_decision(
-            Call("transfer", {"amount": 100, "to": "Alice"}), Conf(True),
-            decision="override", returned={"amount": 50, "to": "Alice"})
-    assert methods(bridge) == ["workspace.create", "participant.join"]
+@pytest.mark.parametrize("agent, args, why", [
+    (None, {"amount": 50, "to": "Alice"}, "apply_reviewed_args"),          # nothing shows the edit runs
+    (EDITS_IGNORED, {"amount": 50, "to": "Alice"}, "apply_reviewed_args"),   # the agent runs the model's
+    (EDITS_RUN, {"amount": 50}, "transfer needs to"),                         # ADK refuses the call
+    (EDITS_RUN, {"amount": 60, "to": "Alice", "memo": "x"}, "takes no memo"),  # ADK drops memo
+])
+def test_an_edit_adk_would_not_run_as_recorded_is_refused(coord, bridge, agent, args, why):
+    with pytest.raises(ValueError, match=why):
+        bridge.record_decision(ASKED, confirmed({"args": args}), llm_agent=agent)
+    assert coord.workspaces[WS].tasks == {}
 
 
-def test_returned_must_match_the_payload(bridge):
-    with pytest.raises(ValueError, match="`returned` differs"):
-        bridge.record_decision(
-            Call("transfer", {"amount": 100}), Conf(True, payload={"args": {"amount": 50}}),
-            decision="override", returned={"amount": 60})
+def test_a_tools_own_payload_is_recorded_as_the_tool_reads_it(coord, bridge):
+    task_id = bridge.record_decision(LEAVE, confirmed({"approved_days": 2}))
+    [params] = calls(bridge, "decide.override")
+    assert params["diff"] == [{"op": "replace", "path": "/payload/approved_days", "value": 2}]
+    output = coord.workspaces[WS].tasks[task_id].output
+    assert (output["args"], output["payload"], output["hint"]) == ({"days": 5}, {"approved_days": 2}, "How many days?")
 
 
-def test_a_diff_must_give_the_payload_args(bridge):
-    with pytest.raises(ValueError, match="`diff` does not give"):
-        bridge.record_decision(
-            Call("transfer", {"amount": 100}), Conf(True, payload={"args": {"amount": 50}}),
-            diff=[{"op": "replace", "path": "/args/amount", "value": 60}])
-    bridge.record_decision(
-        Call("transfer", {"amount": 100}), Conf(True, payload={"args": {"amount": 50}}),
-        diff=[{"op": "replace", "path": "/args/amount", "value": 50}])
-    assert methods(bridge)[-1] == "decide.override"
+def test_a_tools_own_payload_is_recorded_when_only_the_call_is_given(bridge):
+    bridge.record_decision(LEAVE["args"]["originalFunctionCall"], confirmed({"approved_days": 2}))
+    assert calls(bridge, "decide.override")[0]["diff"] == [
+        {"op": "add", "path": "/payload", "value": {"approved_days": 2}}]
 
 
-def test_override_intent_preserved_false(bridge):
-    bridge.record_decision(
-        Call("transfer", {"to": "acct-9"}), Conf(True, payload={"args": {"to": "acct-escrow"}}),
-        decision="override", intent_preserved=False,
-    )
-    assert last_params(bridge, "decide.override")["intent_preserved"] is False
+def test_the_payload_the_tool_asked_for_unchanged_is_an_approval(bridge):
+    bridge.record_decision(LEAVE, confirmed({"approved_days": 0}))
+    assert len(calls(bridge, "decide.approve")) == 1
 
 
-def test_override_with_no_change_is_an_approve(bridge):
-    bridge.record_decision(
-        Call("transfer", {"amount": 100}), Conf(True, payload={"args": {"amount": 100}}),
-        decision="override",
-    )
-    assert methods(bridge)[-1] == "decide.approve"
+def test_an_edit_that_changes_nothing_is_an_approval(bridge):
+    bridge.record_decision(ASKED, confirmed({"args": dict(CALL["args"])}), decision="override")
+    assert (len(calls(bridge, "decide.approve")), calls(bridge, "decide.override")) == (1, [])
+
+
+@pytest.mark.parametrize("kwargs, message", [
+    ({"decision": "reject"}, "makes this call 'approve'"),
+    ({"decision": "override"}, None),
+    ({"decision": "maybe"}, "decision must be"),
+    ({"returned": {"amount": 1, "to": "Alice"}}, "`returned` differs"),
+])
+def test_a_restatement_must_agree_with_the_confirmation(bridge, kwargs, message):
+    if message is None:
+        bridge.record_decision(ASKED, confirmed(), **kwargs)
+        return
+    with pytest.raises(ValueError, match=message):
+        bridge.record_decision(ASKED, confirmed(), **kwargs)
+
+
+def test_a_diff_must_give_what_the_confirmation_runs(bridge):
+    edited = confirmed({"args": {"amount": 50, "to": "Alice"}})
+    with pytest.raises(ValueError, match="does not give"):
+        bridge.record_decision(ASKED, edited, llm_agent=EDITS_RUN,
+                               diff=[{"op": "replace", "path": "/args/amount", "value": 40}])
+    bridge.record_decision(ASKED, edited, llm_agent=EDITS_RUN,
+                           diff=[{"op": "replace", "path": "/args/amount", "value": 50}])
+    assert len(calls(bridge, "decide.override")) == 1
+
+
+def test_a_decision_is_recorded_in_the_approvers_name(bridge):
+    bridge.record_decision(CALL, confirmed(), approver="human:bob@example.org")
+    assert calls(bridge, "decide.approve")[0]["from"] == "human:bob@example.org"
+    with pytest.raises(ValueError, match="'human:' URI"):
+        bridge.record_decision(CALL, confirmed(), approver="service:autodeploy")
 
 
 def test_apply_reviewed_args_runs_the_call_with_the_payload_args():
-    class Ctx:
-        def __init__(self, confirmation):
-            self.tool_confirmation = confirmation
-
     args = {"amount": 100, "to": "Alice"}
-    apply_reviewed_args(None, args, Ctx(Conf(True, payload={"args": {"amount": 50, "to": "Alice"}})))
+    apply_reviewed_args(None, args, SimpleNamespace(tool_confirmation=SimpleNamespace(
+        confirmed=True, payload={"args": {"amount": 50, "to": "Alice"}})))
     assert args == {"amount": 50, "to": "Alice"}
-    for ctx in (Ctx(None), Ctx(Conf(True)), Ctx(Conf(True, payload={"approved_days": 3})),
-                Ctx(Conf(False, payload={"args": {"amount": 1}}))):
+    for confirmation in (None, SimpleNamespace(confirmed=False, payload={"args": {"amount": 1}}),
+                         SimpleNamespace(confirmed=True, payload={"approved_days": 2})):
         args = {"amount": 100}
-        apply_reviewed_args(None, args, ctx)
+        apply_reviewed_args(None, args, SimpleNamespace(tool_confirmation=confirmation))
         assert args == {"amount": 100}
 
 
-# ---- structural reads ----------------------------------------------
+def test_nothing_is_recorded_in_a_persons_name_where_people_sign():
+    coord = Coordinator(CoordinatorOptions(enable_chain=True, require_signatures=True, signature_policy="humans"))
+    bridge = ChapConfirmationBridge(coord, workspace=WS, agent=AGENT, reviewer=REVIEWER)
+    with pytest.raises(PersonRequired):
+        bridge.record_decision(ASKED, confirmed())
+    assert set(coord.workspaces[WS].members) == {AGENT} and coord.workspaces[WS].tasks == {}
 
 
-# ---- waiting for a decision made at a desk ---------------------------
-
-
-def desk_decides(coord, method, task_id, **params):
-    coord.dispatch({"jsonrpc": "2.0", "id": "join", "method": "participant.join",
-                    "params": {"workspace": "wsp_adk_test", "from": "human:alice@example.org",
-                               "type": "human"}})
-    out = coord.dispatch({"jsonrpc": "2.0", "id": "desk", "method": method,
-                          "params": {"workspace": "wsp_adk_test",
-                                     "from": "human:alice@example.org",
-                                     "task_id": task_id, **params}})
-    assert "error" not in out, out
-
-
-def test_wait_for_decision_yields_to_the_desk(coord, bridge):
-    artefact = {"tool": "transfer", "args": {"amount": 100}, "tool_call_id": "fc-1"}
-    task_id = bridge._submit(artefact, bridge.reviewer, review_required=True)
-    assert coord.workspaces["wsp_adk_test"].tasks[task_id].review_required is True
-
-    async def desk():
-        await asyncio.sleep(0.05)
-        desk_decides(coord, "decide.override", task_id,
-                     diff=[{"op": "replace", "path": "/args/amount", "value": 50}],
-                     rationale="capped")
-
-    async def both():
-        waiting = asyncio.ensure_future(
-            bridge.wait_for_decision(task_id, timeout=5, poll_seconds=0.01))
-        await desk()
-        return await waiting
-
-    assert asyncio.run(both()) == Decision(
-        task_id=task_id, state="completed", kind="override",
-        reviewer="human:alice@example.org", comment="capped",
-        output={**artefact, "args": {"amount": 50}})
-
-
-def test_wait_for_decision_reads_a_client_with_task(coord):
-    class DeskClient:
-        def task(self, task_id):
-            return {"task_id": task_id, "state": "declined", "output": None,
-                    "review": {"decisions": [{"reviewer": "human:alice@example.org",
-                                              "kind": "reject", "comment": "no"}]}}
-
-    bridge = ChapConfirmationBridge(coord, workspace="wsp_adk_test", agent="agent:assistant#v1",
-                                    reviewer="human:alice@example.org", client=DeskClient())
-    decision = asyncio.run(bridge.wait_for_decision("tsk_remote", timeout=1))
-    assert (decision.approved, decision.comment) == (False, "no")
-
-
-def test_wait_for_decision_times_out(bridge):
-    task_id = bridge._submit({"tool": "t", "args": {}, "tool_call_id": "fc-1"},
-                             bridge.reviewer, review_required=True)
-    with pytest.raises(TimeoutError):
-        asyncio.run(bridge.wait_for_decision(task_id, timeout=0.05, poll_seconds=0.01))
-
-
-def test_dict_shaped_call_and_confirmation(bridge):
-    bridge.record_decision({"name": "ship", "args": {"env": "prod"}, "id": "fc-9"},
-                           {"confirmed": False})
-    assert "decide.reject" in methods(bridge)
-    assert last_params(bridge, "review.request")["artefact"]["tool"] == "ship"
-
-
-def test_artefact_is_the_tool_call(bridge):
-    bridge.record_decision(Call("send_email", {"to": "x@y.z"}), Conf(True))
-    art = last_params(bridge, "review.request")["artefact"]
-    assert art == {"tool": "send_email", "args": {"to": "x@y.z"}, "tool_call_id": "fc-1"}
-
-
-def test_per_decision_approver_type_from_uri(coord, bridge):
-    bridge.record_decision(Call("ship", {"env": "prod"}), Conf(True),
-                           approver="service:autodeploy")
-    ws = coord.workspaces["wsp_adk_test"]
-    assert ws.members["service:autodeploy"].type == "service"
-    assert last_params(bridge, "decide.approve")["from"] == "service:autodeploy"
-
-
-# ---- guards --------------------------------------------------------
-
-
-def test_unknown_decision_raises(bridge):
-    with pytest.raises(ValueError, match="approve"):
-        bridge.record_decision(Call("x", {}), Conf(True), decision="maybe")
-
-
-def test_chain_is_hash_linked(bridge):
-    bridge.record_decision(Call("a", {}), Conf(True))
-    bridge.record_decision(Call("b", {}), Conf(False))
-    audit = bridge.audit()
-    assert len(audit) >= 8
-    assert all("prev_hash" in e for e in audit)
-
-
-def test_coordinator_error_surfaces(bridge):
-    with pytest.raises(ChapBridgeError):
-        bridge._dispatch("decide.approve", {
-            "workspace": bridge.workspace,
-            "from": bridge.reviewer,
-            "task_id": "tsk_does_not_exist",
-        })
-
-
-def test_participant_type_rejects_unknown_scheme() -> None:
-    from chap_google_adk import _participant_type
-    assert _participant_type("human:alice") == "human"
-    assert _participant_type("agent:bot#v1") == "agent"
-    with pytest.raises(ValueError, match="known scheme"):
-        _participant_type("alice")
-
-
-def test_every_call_has_an_id_of_its_own(coord):
-    """A client that signs what the bridge sends signed two identical calls
-    alike under one id, and a coordinator takes a signed request once, so
-    the second was refused as a replay. Each call now has an id of its own."""
+def test_refusals_are_chap_errors_and_every_call_has_an_id_of_its_own(coord):
+    assert ChapBridgeError is ChapError
     ids = []
 
     class Recording:
-        workspaces = coord.workspaces
-
         def dispatch(self, envelope):
             ids.append(envelope["id"])
             return coord.dispatch(envelope)
 
-    bridge = ChapConfirmationBridge(Recording(), workspace="wsp_adk_ids", agent="agent:bot#v1",
-                   reviewer="human:alice@example.org")
+    bridge = ChapConfirmationBridge(Recording(), workspace="wsp_adk_ids", agent=AGENT, reviewer=REVIEWER)
     bridge.audit()
     bridge.audit()
     assert len(ids) == len(set(ids)) == 4
+
+
+@pytest.fixture
+def desk(tmp_path, monkeypatch):
+    for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS"):
+        monkeypatch.delenv(name, raising=False)
+    path = tmp_path / "chap.config.json"
+    path.write_text(json.dumps({
+        "workspace": WS, "profiles": ["core/1.0", "review/1.0"], "store": ":memory:", "port": 0,
+        "require_signatures": "humans", "chain": True,
+        "humans": [{"uri": REVIEWER, "display_name": "Alice", "role": "reviewer"}], "agent": {"uri": AGENT},
+    }), encoding="utf-8")
+    config = load_config(path)
+    server = make_server(config, make_coordinator(config))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield HttpCoordinator(f"http://127.0.0.1:{server.server_port}/chap")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_bridge_is_made_against_a_desk_where_people_sign_and_records_nothing_there(desk, tmp_path):
+    pytest.importorskip("cryptography")
+    for coord in (desk, Participant(desk, WS, AGENT)):
+        bridge = ChapConfirmationBridge(coord, workspace=WS, agent=AGENT, reviewer=REVIEWER)
+        with pytest.raises(PersonRequired):
+            bridge.record_decision(ASKED, confirmed())
+    alice = Participant(desk, WS, REVIEWER, Signer.load_or_create(REVIEWER, tmp_path / "keys"))
+    assert alice.join("human", "reviewer") == {"joined": True, "as": REVIEWER}
