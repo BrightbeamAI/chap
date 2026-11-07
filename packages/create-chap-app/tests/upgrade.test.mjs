@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { appendFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -188,4 +188,34 @@ test("a directory create-chap-app did not write is refused, with what to do", as
   await assert.rejects(upgrade([dir]), /has no chap\.config\.json/);
   await writeFile(join(dir, "chap.config.json"), "{}\n");
   await assert.rejects(upgrade([dir]), /no template stamp, and no file .* Name the template it came from with --template/);
+});
+
+test("a 0.3.4 outbound-approval project gains the operator its pause.py and resume.py act as", async () => {
+  const dir = await releasedProject("0.3.4", "outbound-approval", join(await scratch("oa"), "my-approval"));
+  assert.equal(JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8")).operator, undefined);
+  const { text } = await upgrade([dir]);
+  assert.match(text, /chap\.config\.json: operator added, the operator the template's pause\.py and resume\.py act as\./);
+  const config = JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8"));
+  assert.equal(config.operator.uri, "service:operator@local");
+  assert.equal(config.require_signatures, false, "the project's settings stay");
+});
+
+test("upgrade keeps a project's settings, and --adopt-settings takes the template's and moves the store aside", async () => {
+  const dir = await releasedProject("0.3.4", "support-desk", join(await scratch("sd"), "my-desk"));
+  const store = join(dir, "data", "chap.db");
+  await mkdir(join(dir, "data"), { recursive: true });
+  await writeFile(store, "a store written under signatures off");
+  const kept = await upgrade([dir]);
+  assert.match(kept.text, /chap\.config\.json keeps your settings\. The template's differ in:\n {2}require_signatures: "humans" \(yours: false\)/);
+  assert.match(kept.text, /Do not change require_signatures, signature_policy or chain by hand on the store you have/);
+  assert.match(kept.text, /Run upgrade again with --adopt-settings/);
+  assert.equal(await readFile(store, "utf8"), "a store written under signatures off", "the store stays where it is");
+
+  const adopted = await upgrade([dir, "--adopt-settings"]);
+  assert.match(adopted.text, /chap\.config\.json takes the template's settings:\n {2}require_signatures: "humans" \(was false\)/);
+  assert.match(adopted.text, /The store was moved aside to .*chap\.db\.before-/);
+  const config = JSON.parse(await readFile(join(dir, "chap.config.json"), "utf8"));
+  assert.deepEqual([config.require_signatures, config.chain], ["humans", true]);
+  await assert.rejects(readFile(store), "the server starts a new store");
+  assert.equal(await readFile(`${store}.before-${VERSION}`, "utf8"), "a store written under signatures off");
 });

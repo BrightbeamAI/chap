@@ -21,13 +21,21 @@
 //     from the stamp, which it brings up to this release;
 //   - adds keys/ to a .gitignore it keeps, where the template's has it and
 //     the project's does not, since an agent's private key is kept there
-//     and never belongs in the repository.
+//     and never belongs in the repository;
+//   - adds the chap.config.json entries the template's own code needs and
+//     the project's configuration lacks, such as the operator the
+//     outbound-approval template's pause.py and resume.py act as;
+//   - with --adopt-settings, writes the template's values for the settings
+//     the project's configuration differs in, and moves the store aside
+//     where they change how calls are signed or the chain, since a store's
+//     workspace keeps the settings it was created with: the server starts a
+//     new store, and the old one stays beside it.
 // A project without a stamp, from 0.3.1 to 0.3.4, is recognised by the
 // released copies it holds, or named with --template. --dry-run says what
 // would change and changes nothing.
 
 import { spawnSync } from "node:child_process";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { TEMPLATES_DIR, VERSION, generate, listTemplates } from "../index.mjs";
@@ -39,6 +47,10 @@ const ALWAYS_KEPT = /^(hooks\/[^/]+|gate-hook\.mjs)$/;
 const BY_ENTRY = new Set(["package.json", "package-lock.json", "requirements.txt"]);
 /** chap.config.json entries that hold the project's own names, which upgrade does not compare. */
 const OWN_ENTRIES = new Set(["template", "workspace", "profiles", "humans", "agent"]);
+/** chap.config.json entries the template's own code needs, added where the project's configuration lacks them. */
+const NEEDED_ENTRIES = new Set(["operator"]);
+/** Settings a store's workspace keeps from its creation: changing one means a new store. */
+const STORE_SETTINGS = new Set(["require_signatures", "signature_policy", "chain"]);
 /** A CHAP package on npm. */
 const CHAP_NPM = /^@brightbeamai\/chap-/;
 /** A requirement line's distribution name, by PEP 503, with any extras and version left out. */
@@ -110,7 +122,7 @@ export function stamped(text, stamp) {
  * What upgrading the project at `dir` would do, worked out on a copy of the
  * template generated with the project's own values. Changes nothing.
  */
-export async function planUpgrade(dir, { template: named = null, templatesDir = TEMPLATES_DIR, released = loadReleased() } = {}) {
+export async function planUpgrade(dir, { template: named = null, templatesDir = TEMPLATES_DIR, released = loadReleased(), adopt = false } = {}) {
   const root = resolve(dir);
   const configText = await readOr(join(root, "chap.config.json"));
   if (!configText) throw new Error(`${root} has no chap.config.json. upgrade works in a project create-chap-app wrote; give its directory.`);
@@ -135,14 +147,14 @@ export async function planUpgrade(dir, { template: named = null, templatesDir = 
   // The template as this release writes it, with the project's own values.
   const scratch = await mkdtemp(join(tmpdir(), "chap-upgrade-"));
   try {
-    return await plan({ root, scratch, config, configText: configText.toString("utf8"), pkg, name, from, recognised, manifest, templatesDir, released });
+    return await plan({ root, scratch, config, configText: configText.toString("utf8"), pkg, name, from, recognised, manifest, templatesDir, released, adopt });
   } catch (e) {
     await rm(scratch, { recursive: true, force: true });
     throw e;
   }
 }
 
-async function plan({ root, scratch, config, configText, pkg, name, from, recognised, manifest, templatesDir, released }) {
+async function plan({ root, scratch, config, configText, pkg, name, from, recognised, manifest, templatesDir, released, adopt }) {
   const fresh = join(scratch, "template");
   const human = config.humans?.[0] ?? {};
   const { written } = await generate({
@@ -153,7 +165,32 @@ async function plan({ root, scratch, config, configText, pkg, name, from, recogn
 
   const known = released.templates[name] ?? { files: {}, scripts: {} };
   const stamp = { name, version: VERSION };
-  const nextConfig = stamped(configText, stamp);
+  // The configuration as upgraded: stamped, with the entries the template's
+  // code needs, and, with --adopt-settings, the template's settings.
+  const theirConfig = JSON.parse(await readFile(join(fresh, "chap.config.json"), "utf8"));
+  const stampedConfig = stamped(configText, stamp);
+  const ourStamped = JSON.parse(stampedConfig);
+  const settings = [];
+  for (const [key, value] of Object.entries(theirConfig)) {
+    if (OWN_ENTRIES.has(key) || NEEDED_ENTRIES.has(key) || JSON.stringify(ourStamped[key]) === JSON.stringify(value)) continue;
+    settings.push({ key, yours: ourStamped[key], template: value });
+  }
+  const added = [...NEEDED_ENTRIES].filter((key) => theirConfig[key] !== undefined && ourStamped[key] === undefined);
+  const adopted = adopt ? settings : [];
+  let nextConfig = stampedConfig;
+  if (added.length || adopted.length) {
+    const next = { ...ourStamped };
+    for (const key of added) next[key] = theirConfig[key];
+    for (const s of adopted) next[s.key] = s.template;
+    nextConfig = `${JSON.stringify(next, null, 2)}\n`;
+  }
+  // A store whose workspace was created under the settings adopted keeps
+  // them, and holds members joined under them: it is moved aside.
+  let storeMove = null;
+  if (adopted.some((s) => STORE_SETTINGS.has(s.key)) && typeof config.store === "string" && config.store && config.store !== ":memory:") {
+    const from = resolve(root, config.store);
+    if (await readOr(from)) storeMove = { from, to: `${from}.before-${VERSION}` };
+  }
   const files = { add: [], replace: [], remove: [], kept: [], keptByRule: [], differs: [] };
   for (const rel of written.filter((w) => !BY_ENTRY.has(w))) {
     const ours = rel === "chap.config.json" ? Buffer.from(nextConfig) : await readOr(join(root, rel));
@@ -244,17 +281,8 @@ async function plan({ root, scratch, config, configText, pkg, name, from, recogn
     && (await readFile(join(fresh, ".gitignore"), "utf8")).split("\n").some((l) => l.trim() === "keys/")
     && !(await readFile(join(root, ".gitignore"), "utf8")).split("\n").some((l) => /^\/?keys\/?\**$/.test(l.trim()));
 
-  // The settings the template now writes that the project's configuration does not have.
-  const settings = [];
-  const ourConfig = JSON.parse(nextConfig);
-  const theirConfig = JSON.parse(await readFile(join(fresh, "chap.config.json"), "utf8"));
-  for (const [key, value] of Object.entries(theirConfig)) {
-    if (OWN_ENTRIES.has(key) || JSON.stringify(ourConfig[key]) === JSON.stringify(value)) continue;
-    settings.push({ key, yours: ourConfig[key], template: value });
-  }
-
   return {
-    root, fresh, scratch, name, from, recognised, stamp, files, packages, scripts, settings, ignoreKeys, language: manifest.language,
+    root, fresh, scratch, name, from, recognised, stamp, files, packages, scripts, settings, added, adopted, storeMove, ignoreKeys, language: manifest.language,
     devRequirements: written.includes("requirements-dev.txt"),
     nextPkg: nextPkg && JSON.stringify(nextPkg) !== JSON.stringify(pkg) ? nextPkg : null,
     nextRequirements,
@@ -288,6 +316,11 @@ export async function applyUpgrade(plan) {
   if (plan.nextPkg) await writeFile(join(root, "package.json"), `${JSON.stringify(plan.nextPkg, null, 2)}\n`);
   if (plan.nextRequirements !== null) await writeFile(join(root, "requirements.txt"), plan.nextRequirements);
   if (plan.nextConfig) await writeFile(join(root, "chap.config.json"), plan.nextConfig);
+  if (plan.storeMove) {
+    for (const suffix of ["", "-wal", "-shm"]) {
+      if (await readOr(plan.storeMove.from + suffix)) await rename(plan.storeMove.from + suffix, plan.storeMove.to + suffix);
+    }
+  }
   if (plan.ignoreKeys) {
     const text = await readFile(join(root, ".gitignore"), "utf8");
     await writeFile(join(root, ".gitignore"), `${text}${text === "" || text.endsWith("\n") ? "" : "\n"}# CHAP: the agent's private key\nkeys/\n`);
@@ -319,13 +352,23 @@ export function describe(plan, { dryRun = false } = {}) {
   list("Kept whatever they hold, since a repository hooked up before 0.3.5 runs them by path:", files.keptByRule);
   list("Scripts kept as they are, each different from the template's and from every release's:", scripts.kept.map((s) => `${s.name}: the template's is ${JSON.stringify(s.template)}`));
   if (plan.nextConfig) lines.push("", `chap.config.json: ${would("stamped", "to be stamped")} ${plan.stamp.name} ${plan.stamp.version}.`);
+  const why = { operator: "the operator the template's pause.py and resume.py act as" };
+  for (const key of plan.added) lines.push(`chap.config.json: ${key} ${would("added", "to be added")}, ${why[key] ?? "which the template's code reads"}.`);
+  if (plan.adopted.length) {
+    lines.push("", `chap.config.json ${would("takes", "to take")} the template's settings:`,
+      ...plan.adopted.map((s) => `  ${s.key}: ${JSON.stringify(s.template)} (was ${s.yours === undefined ? "not set" : JSON.stringify(s.yours)})`));
+    if (plan.storeMove) lines.push(`The store ${would("was moved", "to be moved")} aside to ${plan.storeMove.to}, since its workspace keeps the settings it was created with; the server starts a new store, and chap-analytics still reads the old one.`);
+  }
   if (plan.ignoreKeys) lines.push("", `.gitignore: keys/ ${would("added", "to be added")}, so the agent's private key stays out of the repository.`);
-  if (plan.settings.length) {
+  if (plan.settings.length && !plan.adopted.length) {
     lines.push("", "chap.config.json keeps your settings. The template's differ in:",
       ...plan.settings.map((s) => `  ${s.key}: ${JSON.stringify(s.template)} (yours: ${s.yours === undefined ? "not set" : JSON.stringify(s.yours)})`),
-      "The template's tests check its own settings, so a test that reads one of these fails until chap.config.json has the template's value.");
+      "The project runs as before with them. The template's tests check its own settings, so a test that reads one of these fails until chap.config.json has the template's value.",
+      "Do not change require_signatures, signature_policy or chain by hand on the store you have: its workspace keeps the settings it was created with, and a store made with signatures off holds its members with no keys, so their signed calls are refused.",
+      "Run upgrade again with --adopt-settings to take the template's settings: it moves the store aside, the server starts a new one, and the old one stays beside it.");
   }
-  const changed = packages.length || files.add.length || files.replace.length || files.remove.length || scripts.add.length || scripts.replace.length || scripts.remove.length || plan.ignoreKeys;
+  const changed = packages.length || files.add.length || files.replace.length || files.remove.length || scripts.add.length || scripts.replace.length || scripts.remove.length || plan.ignoreKeys
+    || plan.added.length || plan.adopted.length;
   if (!changed) lines.push("", "Nothing to bring forward: the project has what this release's template has.");
   if (dryRun) lines.push("", "Nothing was changed: --dry-run.");
   else if (changed) {
@@ -355,12 +398,13 @@ async function diffs(plan) {
 }
 
 export function parseUpgradeArgs(argv) {
-  const args = { dir: null, template: null, dryRun: false, diff: false, help: false };
+  const args = { dir: null, template: null, dryRun: false, diff: false, adopt: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--template" || a === "-t") { args.template = argv[++i]; if (!args.template || args.template.startsWith("-")) throw new Error(`${a} needs a value`); }
     else if (a === "--dry-run") args.dryRun = true;
     else if (a === "--diff") args.diff = true;
+    else if (a === "--adopt-settings") args.adopt = true;
     else if (a === "--help" || a === "-h") args.help = true;
     else if (a.startsWith("-")) throw new Error(`Unknown option ${a}. npx create-chap-app upgrade --help lists the options.`);
     else if (!args.dir) args.dir = a;
@@ -369,7 +413,7 @@ export function parseUpgradeArgs(argv) {
   return args;
 }
 
-export const UPGRADE_USAGE = `Usage: npx create-chap-app upgrade [<dir>] [--template <name>] [--dry-run] [--diff]
+export const UPGRADE_USAGE = `Usage: npx create-chap-app upgrade [<dir>] [--template <name>] [--dry-run] [--diff] [--adopt-settings]
 
 Brings the project in <dir>, the current directory by default, up to this
 release: the CHAP packages forward, and each file or script the template
@@ -378,12 +422,15 @@ Files it keeps because they differ are named.
 
   --template  the template the project came from, where chap.config.json has no stamp
   --dry-run   say what would change, and change nothing
-  --diff      show how each kept file differs from the template's, with git diff`;
+  --diff      show how each kept file differs from the template's, with git diff
+  --adopt-settings
+              take the template's settings in chap.config.json, and move the
+              store aside where they change signing or the chain`;
 
 export async function runUpgrade(argv, { say = console.log, templatesDir = TEMPLATES_DIR, released } = {}) {
   const args = parseUpgradeArgs(argv);
   if (args.help) { say(UPGRADE_USAGE); return 0; }
-  const plan = await planUpgrade(args.dir ?? process.cwd(), { template: args.template, templatesDir, released: released ?? loadReleased() });
+  const plan = await planUpgrade(args.dir ?? process.cwd(), { template: args.template, templatesDir, released: released ?? loadReleased(), adopt: args.adopt });
   try {
     if (!args.dryRun) await applyUpgrade(plan);
     say(describe(plan, { dryRun: args.dryRun }));

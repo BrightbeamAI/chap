@@ -40,6 +40,7 @@ default, `commit`, reviews each change before it is committed.
 ```bash
 npx create-chap-app@latest upgrade my-gate --dry-run
 npx create-chap-app@latest upgrade my-gate
+npx create-chap-app@latest upgrade my-gate --adopt-settings
 ```
 
 Upgrade brings a project this generator wrote, from 0.3.1 on, up to this
@@ -60,9 +61,21 @@ release, and leaves the project its own:
   by path.
 - Every file kept because it differs is named, and `--diff` shows how with
   `git diff`. `chap.config.json` keeps its settings; upgrade brings its
-  `template` stamp up to date and names each setting the template now
-  writes differently. A `.gitignore` kept because it differs gains `keys/`
-  where it lacks it, since an agent's private key is kept there.
+  `template` stamp up to date, adds the entries the template's own code
+  needs and the configuration lacks, such as the `operator` the
+  outbound-approval template's `pause.py` and `resume.py` act as, and names
+  each setting the template now writes differently. A `.gitignore` kept
+  because it differs gains `keys/` where it lacks it, since an agent's
+  private key is kept there.
+- The project runs as before with the settings it has. The template's tests
+  check the template's settings, so a test that reads one the project has
+  differently fails. `--adopt-settings` writes the template's values and,
+  where they change `require_signatures`, `signature_policy` or `chain`,
+  moves the store aside to `<store>.before-<version>`: a store's workspace
+  keeps the settings it was created with, and a store made with signatures
+  off holds its members with no keys, so changing those settings by hand on
+  it leaves people unable to sign. The server then starts a new store, and
+  the old one stays beside it.
 - A Python project gains `requirements-dev.txt`, which installs the project
   and pytest for its tests; upgrade's next step says so.
 
