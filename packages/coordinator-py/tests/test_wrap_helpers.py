@@ -237,12 +237,30 @@ def test_wrap_mcp_with_review_required_leaves_the_call_for_a_person_to_review() 
     assert "human:alice" in task.review.requested_to
 
 
-def test_wrap_mcp_with_review_required_and_no_reviewer_raises() -> None:
+def test_wrap_mcp_with_review_required_and_no_reviewer_raises_before_anything_is_recorded() -> None:
+    # The helper created the task, moved it to in_progress and then raised
+    # on the refused completion, leaving a task nobody could review on the log.
     coord = _make_coord()
-    with pytest.raises(RuntimeError, match="task.complete failed"):
+    ws = coord.get_workspace("wsp_wrap")
+    before = len(ws.audit)
+    with pytest.raises(RuntimeError, match="needs a human member other than the caller"):
         wrap_mcp_tool_call(
             coord, "wsp_wrap",
             caller="agent:bot", tool="payments.refund",
             args={"amount": 50}, result={"refund_id": "R-1"},
             review_required=True,
         )
+    assert (len(ws.audit), dict(ws.tasks)) == (before, {})
+
+    # A person is no reviewer of their own call.
+    coord.dispatch({"jsonrpc": "2.0", "id": "h", "method": "participant.join",
+                    "params": {"workspace": "wsp_wrap", "from": "human:carol", "type": "human"}})
+    before = len(ws.audit)
+    with pytest.raises(RuntimeError, match="needs a human member other than the caller"):
+        wrap_mcp_tool_call(
+            coord, "wsp_wrap",
+            caller="human:carol", tool="payments.refund",
+            args={"amount": 50}, result={"refund_id": "R-1"},
+            review_required=True,
+        )
+    assert (len(ws.audit), dict(ws.tasks)) == (before, {})

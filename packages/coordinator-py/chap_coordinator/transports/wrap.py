@@ -94,11 +94,11 @@ def wrap_mcp_tool_call(
     review_required
         If True, the task is created with ``review_required``, so
         ``task.complete`` holds the result as the artefact under review,
-        opens a review addressed to the workspace's human members, and
-        leaves the task in ``review_requested`` until one of them decides.
-        A workspace with no member who could review it refuses the
-        completion, and this raises. Default False: the task completes at
-        once.
+        opens a review addressed to the workspace's human members other
+        than ``caller``, and leaves the task in ``review_requested`` until
+        one of them decides. Where the workspace has no such member, this
+        raises before anything is recorded. Default False: the task
+        completes at once.
     fulfils
         Optional id of the decision this call fulfils; recorded as a
         ``fulfils`` link on the result artefact. Asserted by the caller
@@ -109,6 +109,12 @@ def wrap_mcp_tool_call(
     dict
         ``{"task_id": ..., "input_hash": ..., "output_hash": ...}``
         for downstream callers that want to cite the wrapped event.
+
+    Raises
+    ------
+    RuntimeError
+        When the coordinator refuses a call. A refused ``task.complete``
+        leaves the task it names in progress, on the log.
     """
     if not workspace:
         raise ValueError("workspace is required")
@@ -116,6 +122,18 @@ def wrap_mcp_tool_call(
         raise ValueError("caller is required")
     if not tool:
         raise ValueError("tool is required")
+    if review_required:
+        described = coord.dispatch({
+            "jsonrpc": "2.0",
+            "id":      f"wrap-{tool}-describe",
+            "method":  "workspace.describe",
+            "params":  {"workspace": workspace, "from": caller},
+        })
+        if "error" in described:
+            raise RuntimeError(f"workspace.describe failed: {described['error']}")
+        if not any(m.get("type") == "human" and m.get("uri") != caller for m in described["result"]["members"]):
+            raise RuntimeError("review_required needs a human member other than the caller to review the "
+                               "result; nothing was recorded")
 
     input_hash = content_hash(args)
     output_hash = content_hash(result)
@@ -180,7 +198,7 @@ def wrap_mcp_tool_call(
         "params":  complete_params,
     })
     if "error" in complete_resp:
-        raise RuntimeError(f"task.complete failed: {complete_resp['error']}")
+        raise RuntimeError(f"task.complete failed for {task_id}: {complete_resp['error']}")
 
     return {
         "task_id":     task_id,

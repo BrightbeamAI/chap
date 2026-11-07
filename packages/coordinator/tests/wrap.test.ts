@@ -121,12 +121,28 @@ test("wrapMcpToolCall with reviewRequired leaves the call for a person to review
   assert.ok(task.review!.requested_to.includes("human:alice"));
 });
 
-test("wrapMcpToolCall with reviewRequired and no reviewer throws", () => {
+test("wrapMcpToolCall with reviewRequired and no reviewer throws before anything is recorded", () => {
+  // The helper created the task, moved it to in_progress and then threw on
+  // the refused completion, leaving a task nobody could review on the log.
+  // Mirrors test_wrap_helpers.py.
   const coord = makeCoord();
+  const ws = coord.getWorkspace("wsp_wrap")!;
+  let before = ws.audit.length;
   assert.throws(() => wrapMcpToolCall(coord, "wsp_wrap", {
     caller: "agent:bot", tool: "payments.refund",
     args: { amount: 50 }, result: { refund_id: "R-1" }, reviewRequired: true,
-  }), /task\.complete failed/);
+  }), /needs a human member other than the caller/);
+  assert.deepEqual([ws.audit.length, ws.tasks.size], [before, 0]);
+
+  // A person is no reviewer of their own call.
+  coord.dispatch({ jsonrpc: "2.0", id: "h", method: "participant.join",
+    params: { workspace: "wsp_wrap", from: "human:carol", type: "human" } });
+  before = ws.audit.length;
+  assert.throws(() => wrapMcpToolCall(coord, "wsp_wrap", {
+    caller: "human:carol", tool: "payments.refund",
+    args: { amount: 50 }, result: { refund_id: "R-1" }, reviewRequired: true,
+  }), /needs a human member other than the caller/);
+  assert.deepEqual([ws.audit.length, ws.tasks.size], [before, 0]);
 });
 
 test("wrapA2aMessageExchange records fulfils when given", () => {

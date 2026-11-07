@@ -39,10 +39,10 @@ export interface WrapMcpToolCallOptions {
   /**
    * Create the task with ``review_required``, so ``task.complete`` holds the
    * result as the artefact under review, opens a review addressed to the
-   * workspace's human members, and leaves the task in ``review_requested``
-   * until one of them decides. A workspace with no member who could review
-   * it refuses the completion, and this throws. Default false: the task
-   * completes at once.
+   * workspace's human members other than ``caller``, and leaves the task in
+   * ``review_requested`` until one of them decides. Where the workspace has
+   * no such member, this throws before anything is recorded. Default false:
+   * the task completes at once.
    */
   reviewRequired?: boolean;
   /** Optional id of the decision this call fulfils; recorded as a ``fulfils`` link on the result artefact. Asserted by the caller and not verified by the coordinator. */
@@ -63,6 +63,9 @@ export interface WrapResult {
  * The result artefact is the MCP tool's return value, plus a
  * ``citations[]`` entry with the input/output hashes per
  * ``integrations/CHAP-with-MCP.md`` §2.
+ *
+ * Throws when the coordinator refuses a call. A refused ``task.complete``
+ * leaves the task it names in progress, on the log.
  */
 export function wrapMcpToolCall(
   coord: Coordinator,
@@ -72,6 +75,19 @@ export function wrapMcpToolCall(
   if (!workspace) throw new Error("workspace is required");
   if (!options.caller) throw new Error("caller is required");
   if (!options.tool) throw new Error("tool is required");
+  if (options.reviewRequired) {
+    const described = coord.dispatch({
+      jsonrpc: "2.0",
+      id:      `wrap-${options.tool}-describe`,
+      method:  "workspace.describe",
+      params:  { workspace, from: options.caller },
+    });
+    if (described.error) throw new Error(`workspace.describe failed: ${JSON.stringify(described.error)}`);
+    const members = (described.result as { members: { uri: string; type: string }[] }).members;
+    if (!members.some((m) => m.type === "human" && m.uri !== options.caller)) {
+      throw new Error("review_required needs a human member other than the caller to review the result; nothing was recorded");
+    }
+  }
 
   const inputHash = contentHash(options.args);
   const outputHash = contentHash(options.result);
@@ -127,7 +143,7 @@ export function wrapMcpToolCall(
     method:  "task.complete",
     params:  completeParams,
   });
-  if (completeResp.error) throw new Error(`task.complete failed: ${JSON.stringify(completeResp.error)}`);
+  if (completeResp.error) throw new Error(`task.complete failed for ${taskId}: ${JSON.stringify(completeResp.error)}`);
 
   return { task_id: taskId, input_hash: inputHash, output_hash: outputHash };
 }
