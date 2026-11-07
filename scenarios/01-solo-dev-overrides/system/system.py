@@ -27,8 +27,8 @@ Run it:
     pip install chap-pydantic-ai "pydantic-ai-slim>=1.41"
     python3 system.py
 
-Prints the same payoff as the core scenario, but every decision below was
-produced by driving a real agent loop through CHAP, not written by hand.
+Prints the same payoff as the core scenario, and every decision below comes
+from driving a real agent loop through CHAP: none is written by hand.
 """
 from __future__ import annotations
 
@@ -230,13 +230,13 @@ def report(bridge) -> None:
 # ---------------------------------------------------------------------------
 # LIVE MODE
 # ---------------------------------------------------------------------------
-# To run this against a real model instead of the deterministic stub, set an
-# API key and replace the agent definition above with:
+# To run this against a real model, set an API key and replace the
+# deterministic stub's agent definition above with:
 #
 #     agent = Agent("anthropic:claude-sonnet-4-5", output_type=[str, DeferredToolRequests])
 #
-# and drive the approval prompt from real developer input instead of the
-# DECISIONS script. Everything on the CHAP side is identical: the bridge and
+# and let real developer input drive the approval prompt that the
+# DECISIONS script drives here. Everything on the CHAP side is identical: the bridge and
 # the audit chain do not change. That is the point: the same integration
 # carries you from an offline demo to a live system.
 

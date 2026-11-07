@@ -201,7 +201,7 @@ def print_integrity(entries) -> None:
     print(f"   If one approval were quietly reattributed: verifies = {intact_after}"
           f" (breaks at seq {broken_seq})")
     print("   -> when the chargeback lands, the draft, your decision, and the")
-    print("      outbound are provable, not a story about expired logs.")
+    print("      outbound are provable, with no story about expired logs.")
     print()
 
 
@@ -261,7 +261,7 @@ def print_pattern_scan(send) -> None:
     print("=" * 52)
     print(f"   Drafts citing '{WRONG_POLICY}' (the wrong policy): {len(wrong)}")
     print(f"   Tickets: {', '.join(wrong)}")
-    print(f"   -> not one bad ticket but {len(wrong)}. You fix the agent's")
+    print(f"   -> {len(wrong)} bad tickets, one cause. You fix the agent's")
     print("      retrieval to consult the real policy; the next ticket cites")
     print(f"      '{RIGHT_POLICY}' and is correct.")
 

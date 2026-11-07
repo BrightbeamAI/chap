@@ -14,9 +14,9 @@ through a CHAP coordinator.
 
 One `audit.read` reconstructs the disputed ticket's whole history in order.
 A scan of the same chain then shows the bigger problem: the founder approved
-the *same wrong policy* on seven earlier tickets, not just this one. Fix the
+the *same wrong policy* on seven earlier tickets as well as this one. Fix the
 agent's retrieval, and the next ticket is correct. Six months later a
-contractor onboards by reading the chain, not the founder's mind.
+contractor onboards by reading the chain.
 
 ## Run it
 
@@ -37,15 +37,15 @@ config.
    every entry, where the record is the envelope, or the outcome and request
    of a refused call the coordinator recorded), confirms it is intact, then shows that quietly
    reattributing one past approval on a copy breaks verification at that
-   entry. When the chargeback lands, the record is provable, not a story
-   about expired logs.
+   entry. When the chargeback lands, the record proves what happened, with
+   no story about expired logs.
 2. **The chargeback query.** It pulls the disputed ticket back out of the
    chain and prints its full history in order: opened, drafted, sent for
-   review, approved, and shows the one ticket the founder escalated, which
-   opened a new task for a specialist rather than ending there.
+   review, approved, and shows the one ticket the founder escalated, whose
+   history goes on in a new task for a specialist.
 3. **The pattern scan.** It counts how many drafts cited the wrong refund
-   policy across the whole chain. The punchline: not one bad ticket but
-   seven, so the fix is the agent's retrieval, not this one reply.
+   policy across the whole chain. The punchline: seven tickets did, so the
+   fix belongs in the agent's retrieval, which every reply draws on.
 
 ### Output shape
 

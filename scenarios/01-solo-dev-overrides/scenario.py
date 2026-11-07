@@ -6,7 +6,7 @@ IN_PRACTICE.md S1. A single developer runs a code-review bot (an ``agent:``
 participant here) over their pull requests. They accept most of its
 comments, reject some, and edit a few before merging. Every decision is
 recorded as a CHAP envelope on a hash-linked audit chain, so months later
-the override history is a queryable, tamper-evident record instead of a
+the override history is a queryable, tamper-evident record, firmer than a
 vague feeling that the bot is "pretty good."
 
 This is the canonical worked example for the scenarios/ directory. It uses
@@ -213,8 +213,8 @@ def print_reconstruction(send) -> None:
     print(f"   edit (JSON Patch): {p['diff']}")
     print(f"   rationale:         {p['rationale']}")
     print(f"   tags:              {p.get('tags')}")
-    print("   -> not 'the human changed something', but the precise diff, the")
-    print("      reason, and the category, recovered from the record.")
+    print("   -> the precise diff, the reason and the category of the change,")
+    print("      recovered from the record.")
     print()
 
 
@@ -243,7 +243,7 @@ def print_override_report(send) -> None:
     print()
     print("   Two thirds of your edits are the same framework-signature false")
     print("   positive. The next prompt you ship for the bot names that")
-    print("   pattern instead of guessing.")
+    print("   pattern, on evidence.")
 
 
 def _task_to_pr(send):

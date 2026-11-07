@@ -13,7 +13,7 @@ but couldn't tell a colleague which specific things it gets wrong.
 With CHAP, every decision is a recorded envelope on a hash-linked audit
 chain. When you edit a comment before merging, that is a `decide.override`
 carrying the diff, a one-line rationale, and tags. Months later the
-override history is a query, not a feeling, and because the chain is
+override history is a query away, and because the chain is
 hash-linked it is tamper-evident: nobody can quietly rewrite what was
 decided.
 
@@ -56,12 +56,12 @@ than a log file:
    one past decision on a copy breaks verification at that entry. A
    spreadsheet gives you no such guarantee.
 2. **Reconstruct one override.** It pulls PR-472 back out of the chain and
-   shows the exact JSON Patch you applied, the rationale, and the tags: not
-   "the human changed something," but precisely what and why.
+   shows the exact JSON Patch you applied, the rationale, and the tags:
+   precisely what changed, and why.
 3. **The override learning report.** It tallies every override by tag and
    prints the breakdown. The punchline: two thirds of your edits are the
    same framework-signature false positive, so the next prompt you ship for
-   the bot names that pattern instead of guessing.
+   the bot names that pattern, on evidence.
 
 ### Output shape
 

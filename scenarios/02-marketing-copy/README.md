@@ -14,8 +14,8 @@ every Friday from memory.
 With CHAP, every brief is a task, the agent's first draft is an artefact,
 and each editor revision is a `decide.override` carrying the diff, a
 one-line rationale, and tags from a short controlled vocabulary. After two
-months the "what do I keep fixing?" question is a query, not a Friday
-guess: the tag histogram shows the opener is where most of the editing
+months a query answers the "what do I keep fixing?" question, with no
+Friday guess: the tag histogram shows the opener is where most of the editing
 goes, so the next prompt revision bans those patterns by name.
 
 ## Run it
@@ -43,11 +43,10 @@ than a log file:
    ships was approved by a named editor, provably.
 2. **Reconstruct one edit.** It pulls the ACME brief back out of the chain
    and shows the exact JSON Patch the editor applied to the opener, the
-   rationale, and the tags: not "the editor tweaked it," but precisely what
-   and why.
+   rationale, and the tags: precisely what changed, and why.
 3. **The override learning report.** It tallies every override by tag. The
    punchline: `opener-rewritten` dominates, so the next prompt revision
-   names those opener patterns instead of guessing.
+   names those opener patterns, on evidence.
 
 ### Output shape
 

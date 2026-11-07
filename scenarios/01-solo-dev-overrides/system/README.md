@@ -63,9 +63,9 @@ agent = Agent(FunctionModel(review_bot), output_type=[str, DeferredToolRequests]
 agent = Agent("anthropic:claude-sonnet-4-5", output_type=[str, DeferredToolRequests])
 ```
 
-Point the agent at a real model, drive the approval prompt from real
-developer input instead of the `DECISIONS` script, and the bridge and audit
-chain are unchanged. That is the whole point of keeping the boundary clean:
+Point the agent at a real model, let real developer input drive the
+approval prompt that the `DECISIONS` script drives here, and the bridge and
+audit chain are unchanged. That is the whole point of keeping the boundary clean:
 the same integration carries you from an offline demo to production. To
 have the developer decide at a CHAP desk, with the review open there until
 they do, call `bridge.request_results(pending)` and resume the agent with

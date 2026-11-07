@@ -33,7 +33,7 @@ core, in one language (Python, matching the adapters). Framework coverage
 is shown once per adapter in that adapter's own `examples/`, never re-done
 per scenario. A TypeScript variant of a scenario is welcome only if
 someone contributes one, in a named subfolder. So there are ~12 scenarios
-and the count grows slowly, not 12 × N.
+and the count grows slowly, with no copy of a scenario per framework.
 
 ## Layout
 
@@ -51,7 +51,7 @@ scenarios/
 
 Status: **done** has a runnable implementation; **open** is available to
 claim. "Regulated" scenarios compose several profiles and are `help
-wanted`, not beginner work.
+wanted`, beyond beginner work.
 
 | # | Scenario | Narrative | Status | Label |
 |---|---|---|---|---|
@@ -116,7 +116,7 @@ Put a system implementation under its scenario's folder (e.g.
 A scenario can also become a template in
 [`packages/create-chap-app`](../packages/create-chap-app/), which
 `npx create-chap-app` generates into a project. A template is a scenario
-with the developer's own agent and data in place of the story's: one
+run on the developer's own agent and data: one
 process owns the store and serves the review desk, the agent is a
 separate process attached through an MCP client, a framework bridge or
 `POST /chap`, the decision is made in the desk, and `diff-profiles` shows
@@ -149,7 +149,7 @@ Every scenario:
 
 The gentle ones (1, 2, 3) were good first issues. The regulated
 ones (10, 11, 12) compose several profiles: identity, signing, SCITT
-anchoring, deliberation, handoff. They are `help wanted`, not beginner
+anchoring, deliberation, handoff. They are `help wanted`, beyond beginner
 work, and a first pass may stage the profiles (a core version first, the
 fuller set as a stretch). Say which profiles are in versus stretch in the
 scenario's README.

@@ -7,7 +7,7 @@ IN_PRACTICE.md S2. A two-person marketing function adds an agent (an
 The editor signs off, edits, or sends back each draft before it ships, and
 keeps making the same kinds of edits, softening corporate openers most of
 all. Every decision is a CHAP envelope on a hash-linked audit chain, so the
-"what do I keep fixing?" question becomes a query instead of a Friday
+"what do I keep fixing?" question becomes a query, with no Friday
 guess.
 
 This uses CHAP core plus two profiles that ship with the reference
@@ -237,8 +237,8 @@ def print_reconstruction(send) -> None:
     print(f"   edit (JSON Patch): {p['diff']}")
     print(f"   rationale:         {p['rationale']}")
     print(f"   tags:              {p.get('tags')}")
-    print("   -> not 'the editor tweaked it', but the precise diff, the reason,")
-    print("      and the category, recovered from the record.")
+    print("   -> the precise diff, the reason and the category of the edit,")
+    print("      recovered from the record.")
     print()
 
 
@@ -267,7 +267,7 @@ def print_override_report(send) -> None:
     print()
     print("   The opener is where most of the editing goes. The next prompt")
     print("   revision bans those corporate opener patterns by name, and the")
-    print("   team watches the rewrite rate drop instead of guessing.")
+    print("   team watches the rewrite rate drop, on the record.")
 
 
 def _task_to_brief(send):
