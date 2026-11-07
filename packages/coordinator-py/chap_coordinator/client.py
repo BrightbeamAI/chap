@@ -103,7 +103,7 @@ class HttpCoordinator:
     ``get`` and ``task`` read the desk server's API beside the endpoint.
     """
 
-    def __init__(self, url: str = "http://127.0.0.1:8787/chap", *, timeout: float = 30.0) -> None:
+    def __init__(self, url: str = "http://127.0.0.1:8792/chap", *, timeout: float = 30.0) -> None:
         self.url = url
         self.base = url[:-len("/chap")] if url.endswith("/chap") else url.rsplit("/", 1)[0]
         self.timeout = timeout

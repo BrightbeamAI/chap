@@ -300,7 +300,7 @@ def load_config(path: Union[str, os.PathLike, None] = None) -> dict:
         raise ValueError(f"{config_path} needs profiles, a list such as [\"core/1.0\", \"review/1.0\"]")
     base = config_path.parent
     port = os.environ.get("PORT") or config.get("port")
-    config["port"] = int(8787 if port is None or port == "" else port)
+    config["port"] = int(8792 if port is None or port == "" else port)
     config["host"] = os.environ.get("CHAP_HOST") or config.get("host") or "127.0.0.1"
     config["store"] = _project_path(os.environ.get("CHAP_DB_PATH") or config.get("store") or "./data/chap.db", base)
     config["analytics"] = _project_path(config.get("analytics") or "./analytics", base)
@@ -608,6 +608,27 @@ def task_evidence(coord: Coordinator, workspace: str, task_id: str) -> Optional[
             "chain_enabled": bool(getattr(ws, "chain_enabled", False))}
 
 
+def unnamed_join(envelope: Any, config: dict) -> dict | None:
+    """The refusal of a join under a name chap.config.json does not give.
+
+    The server admits the people, the agent and the operator it is
+    configured with. A participant.join for any other URI is refused before
+    the coordinator sees it, so a process that can reach /chap cannot add a
+    "person" of its own making and decide as them. None for every other call.
+    """
+    if not isinstance(envelope, dict) or envelope.get("method") != "participant.join":
+        return None
+    params = envelope.get("params")
+    if not isinstance(params, dict) or params.get("workspace") != config.get("workspace"):
+        return None
+    named = {h.get("uri") for h in config.get("humans") or []}
+    named |= {(config.get("agent") or {}).get("uri"), (config.get("operator") or {}).get("uri")}
+    if params.get("from") in named - {None}:
+        return None
+    return {"jsonrpc": "2.0", "id": envelope.get("id"), "error": {"code": -32011, "message":
+            f"{params.get('from')} is not a member chap.config.json names; add them to humans, or agent, to let them join"}}
+
+
 def public_config(config: dict) -> dict:
     return {
         "workspace": config["workspace"],
@@ -887,8 +908,17 @@ class ChapDesk:
                 envelope = json.loads(body)
             except ValueError:
                 return _json(400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+            stranger = unnamed_join(envelope, config)
+            if stranger is not None:
+                return _json(200, stranger)
             with self.lock:
                 return _json(200, _store_failure_said(coord.dispatch(envelope)))
+        if path.startswith("/api/") and path != "/api/config":
+            # The read API reads the coordinator's memory; a cheap call first
+            # lets it take in what another process wrote to the store.
+            with self.lock:
+                coord.dispatch({"jsonrpc": "2.0", "id": "api-read", "method": "workspace.describe",
+                                "params": {"workspace": workspace}})
         if path == "/api/config":
             return _json(200, public_config(config))
         if path == "/api/members":

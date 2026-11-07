@@ -10,6 +10,7 @@
     { "uri": "__HUMAN_URI__", "display_name": "__HUMAN_NAME__", "role": "approver" }
   ],
   "agent": { "uri": "__AGENT_URI__", "display_name": "The drafter" },
+  "operator": { "uri": "service:operator@local", "display_name": "The operator's console" },
   "require_signatures": "humans",
   "chain": true
 }

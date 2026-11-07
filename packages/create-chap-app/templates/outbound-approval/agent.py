@@ -323,14 +323,16 @@ def operator(config: dict, url: str | None = None, keys: Path | None = None) -> 
 
     A person's key is in the desk's browser, so a call from the command
     line cannot carry the approver's signature, and the log names who made
-    it. The console is a member that is not a person, so under "humans" its
-    calls go unsigned; where every call is signed it signs with a key of its
-    own, in ``keys`` beside the agent's.
+    it. Wherever signatures are required the console signs, under "humans"
+    too, since only an agent calls unsigned there, with a key of its own in
+    ``keys`` beside the agent's. chap.config.json's ``operator`` names it, so
+    the desk server admits its join.
     """
     client = HttpCoordinator(url or desk_url(config))
     public = client.get("/api/config") or {}
-    signer = Signer.load_or_create(OPERATOR, keys or KEYS) if public.get("signature_policy") == "all" else None
-    console = Participant(client, config["workspace"], OPERATOR, signer=signer)
+    uri = (config.get("operator") or {}).get("uri", OPERATOR)
+    signer = Signer.load_or_create(uri, keys or KEYS) if public.get("signature_policy") else None
+    console = Participant(client, config["workspace"], uri, signer=signer)
     console.join("service", "operator", "The operator's console")
     return console
 

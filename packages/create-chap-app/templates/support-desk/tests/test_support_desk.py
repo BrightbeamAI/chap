@@ -276,7 +276,10 @@ def test_the_agent_waits_for_a_reviewer_and_a_restart_opens_no_duplicate(desk_wi
     assert agent.call("audit.read", filter={"outcome": "refused"})["entries"] == []
     assert not any(line.startswith("error:") for line in run.lines), run.lines
 
-    # A reviewer joins; the draft is submitted on the next pass and decided.
+    # The operator names a reviewer in the configuration, which the server
+    # needs before it admits their join; they join, and the draft is
+    # submitted on the next pass and decided.
+    config["humans"].append({"uri": "human:late@local", "display_name": "Late", "role": "reviewer"})
     human = person(desk, "human:late@local")
     if not config["require_signatures"]:
         human.join("human", "reviewer")

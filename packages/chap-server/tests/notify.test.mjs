@@ -120,8 +120,10 @@ test("a notify setting that says something else is refused when the configuratio
 test("the console line shows a control character an agent put in its URI as its code point", async () => {
   const { chap, base, lines } = await gate({ console: true });
   try {
+    // The server admits only the members chap.config.json names, so the
+    // URI joins in-process, as a deployment that names it would.
+    chap.coord.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join", params: { workspace: "wsp_test", from: "agent:x\u001b[2Kfake", type: "agent" } });
     const sneaky = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: "agent:x\u001b[2Kfake" });
-    await sneaky.call("participant.join", { type: "agent" });
     const { task_id } = await sneaky.call("task.create", { kind: "draft", assignee: "agent:x\u001b[2Kfake", input: {}, review_required: true });
     await sneaky.call("task.complete", { task_id, output: {} });
     assert.ok(await until(() => lines.some((l) => l.startsWith("agent:x<U+001B>[2Kfake asks"))), lines.join("\n"));

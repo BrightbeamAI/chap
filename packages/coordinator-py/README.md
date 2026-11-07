@@ -109,7 +109,7 @@ describes it:
   "workspace": "wsp_support",
   "profiles": ["core/1.0", "review/1.0"],
   "store": "./data/chap.db",
-  "port": 8787,
+  "port": 8792,
   "humans": [{ "uri": "human:ana@example.org", "display_name": "Ana", "role": "reviewer" }],
   "agent": { "uri": "agent:drafter", "display_name": "The drafter" },
   "require_signatures": "humans",
@@ -122,7 +122,7 @@ pip install "chap-coordinator[crypto]"
 chap-coordinator serve --config chap.config.json
 ```
 
-The desk is then at http://localhost:8787/. The server prints the desk's
+The desk is then at http://localhost:8792/. The server prints the desk's
 address at `localhost` wherever it listens on this machine, since the desk
 may sign with WebAuthn, which needs a domain name, and on the loopback
 address it listens on IPv4 and IPv6 alike, so the name reaches it either
@@ -169,7 +169,7 @@ A notice, as the webhook receives it:
   "from": "agent:drafter",
   "to": ["human:ana@example.org"],
   "summary": "agent:drafter asks human:ana@example.org to review draft_reply tsk_01M6S3RGTEHGM0RX307P50NXT6",
-  "link": "http://localhost:8787/#task=tsk_01M6S3RGTEHGM0RX307P50NXT6",
+  "link": "http://localhost:8792/#task=tsk_01M6S3RGTEHGM0RX307P50NXT6",
   "seq": 7,
   "at": "2026-11-06T19:00:56.270Z"
 }
@@ -191,7 +191,7 @@ Every other process reaches the server with `chap_coordinator.client`:
 ```python
 from chap_coordinator.client import HttpCoordinator, Participant
 
-desk = HttpCoordinator("http://127.0.0.1:8787/chap")
+desk = HttpCoordinator("http://localhost:8792/chap")
 agent = Participant(desk, "wsp_support", "agent:drafter")
 task = agent.call("task.create", kind="draft_reply", assignee=agent.uri,
                   input={"ticket": "T-1"}, review_required=True)
@@ -229,8 +229,8 @@ it sends, so a framework bridge runs against the server unchanged.
 - `serve`: the desk server, from a chap.config.json (`--config`, `--host`,
   `--port`).
 - `mcp`: an MCP server on stdio that acts as one agent, `--as
-  agent:assistant@local` by default. With `--url
-  http://127.0.0.1:8787/chap` it forwards every call to a running desk
+  agent:assistant` by default. With `--url
+  http://localhost:8792/chap` it forwards every call to a running desk
   server, so the assistant's work waits for the person at that desk. Needs
   the `mcp` extra.
 - `a2a`: an A2A server that acts as one agent. Needs the `a2a` extra.
@@ -264,10 +264,13 @@ the server's log.
 
 **Several processes, one store.** Each coordinator holds its workspaces in
 memory. Before a call on a workspace it asks the store whether another
-process has written since, and reloads if so; a write another process got
-to first runs the call once more on what the store holds. Two processes
-over one SQLite file, such as a server and a queue worker, therefore cannot
-contradict each other's decisions. A store of your own that implements
+process has written since, and reloads if so. A write another process got
+to first is answered with `-32603` and `data: {"reason": "store"}`, after
+the workspace has been reloaded, and the caller may send the call again.
+Two processes over one SQLite file, such as a server and a queue worker,
+therefore cannot contradict each other's decisions. The desk server reads
+the store again before each read of its API, so its pages show what other
+processes wrote. A store of your own that implements
 `save` alone has no such check, and still needs one process
 ([SPECIFICATION.md §10.3](../../SPECIFICATION.md#103-writers)).
 
@@ -322,7 +325,7 @@ ends; a later one reads the decision, so no worker waits on a person:
 ```python
 from chap_coordinator.client import HttpCoordinator, Participant
 
-desk = HttpCoordinator("http://127.0.0.1:8787/chap")
+desk = HttpCoordinator("http://localhost:8792/chap")
 agent = Participant(desk, "wsp_support", "agent:drafter")
 
 
@@ -421,7 +424,8 @@ goes back to what the store holds; `store_errors="log"` answers it as it
 was, and the next write carries its change. Before each call on a
 workspace the coordinator asks the store how many entries it holds, and
 reloads a workspace another instance has written; a write another instance
-got to first runs the call once more on what the store holds
+got to first is answered with `-32603` and `data: {"reason": "store"}`, and
+may be sent again
 ([SPECIFICATION.md §10.3](../../SPECIFICATION.md#103-writers)).
 
 `chap_coordinator.server` binds HTTP with the desk included. A minimal

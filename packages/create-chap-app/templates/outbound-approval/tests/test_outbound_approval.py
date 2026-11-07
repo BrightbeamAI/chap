@@ -260,8 +260,8 @@ def test_a_paused_agent_opens_nothing_until_resumed(desk, tmp_path, monkeypatch,
     assert f"Paused {agent.uri} (hold)." in capsys.readouterr().out
     paused = [e for e in approver.call("audit.read", filter={"method": "control.pause"})["entries"]]
     assert [e["envelope"]["params"]["from"] for e in paused] == [drafter.OPERATOR]
-    # The console is a member that is not a person: it signs only where every call is signed.
-    assert ("sig" in paused[0]["envelope"]) is (desk["config"]["signature_policy"] == "all")
+    # The console is a service: where signatures are required it signs, under "humans" too.
+    assert ("sig" in paused[0]["envelope"]) is bool(desk["config"]["signature_policy"])
 
     # The first task.create is refused with -32063 and recorded; after that
     # the agent waits on workspace.describe, so the refusal stays the only one.

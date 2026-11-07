@@ -149,7 +149,7 @@ test("a person's join needs a token, and a token whose nonce names another key b
     const token = (nonce) => issuer.mintToken({ sub: HUMAN, uri: HUMAN, extra: { nonce } });
     await me.call("participant.join", { type: "human", jwks: { keys: [key.publicJwk] }, oidc_token: token(await thumbprint(key.publicJwk)) });
     const other = await generateSigner(HUMAN);
-    await assert.rejects(makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN }).call("participant.join", { type: "human", jwks: { keys: [other.publicJwk] }, oidc_token: token(await thumbprint(key.publicJwk)) }), (e) => e.code === -32011);
+    await assert.rejects(makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN }).call("participant.join", { type: "human", jwks: { keys: [other.publicJwk] }, oidc_token: token(await thumbprint(key.publicJwk)) }), (e) => e.code === -32404);
     assert.deepEqual(chap.coord.getWorkspace("wsp_test").members.get(HUMAN).keys.map((k) => k.kid), [key.kid], "the token bound the key its nonce names, and nothing else");
     const logged = chap.coord.getWorkspace("wsp_test").audit.filter((e) => (e.envelope ?? e.request)?.method === "participant.join" && (e.envelope ?? e.request).params.from === HUMAN);
     for (const e of logged) assert.match((e.envelope ?? e.request).params.oidc_token, /^sha256:[0-9a-f]{64}$/, "the chain keeps the token's digest");

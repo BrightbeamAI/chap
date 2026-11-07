@@ -6,9 +6,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createChapServer, loadConfig } from "../index.mjs";
+import { createChapServer, loadConfig, makeCoordinator } from "../index.mjs";
 import { generateSigner, makeClient, signerFromJwk } from "../desk/chap-client.mjs";
 import { generateKeyFile, readKeyFile } from "../lib/keys.mjs";
 import { AGENT, HUMAN, project } from "./helpers.mjs";
@@ -93,4 +94,53 @@ test("a store keeps the signature policy its workspace was made with, and the co
   } finally {
     await again.close();
   }
+});
+
+test("the server admits only the members chap.config.json names, so a process cannot add a person of its own and decide as them", async () => {
+  const { chap, base } = await humansServer();
+  try {
+    const signer = await generateSigner("human:sock@local");
+    const sock = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: "human:sock@local", signer });
+    await assert.rejects(sock.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [signer.publicJwk] } }),
+      (e) => e.code === -32011 && /not a member chap\.config\.json names/.test(e.message));
+    assert.equal(chap.coord.getWorkspace("wsp_test").members.has("human:sock@local"), false);
+  } finally {
+    await chap.close();
+  }
+});
+
+test("/mcp answers under a name the server is configured to serve, as the rest of the server does", async () => {
+  const { chap, base } = await humansServer({ allowed_hosts: ["gate.internal:8080"] });
+  try {
+    // fetch cannot set Host, so the requests go through node:http.
+    const post = (host) => new Promise((resolve, reject) => {
+      const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "t", version: "1" } } });
+      const req = request(`${base}/mcp`, { method: "POST", headers: { host, "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-11-25" } },
+        (res) => { res.resume(); res.on("end", () => resolve(res.statusCode)); });
+      req.on("error", reject);
+      req.end(body);
+    });
+    assert.equal(await post("gate.internal:8080"), 200, "a configured name reaches /mcp");
+    assert.equal(await post("evil.example:8080"), 421, "any other name is refused");
+  } finally {
+    await chap.close();
+  }
+});
+
+test("the read API shows what another process wrote to the store", async () => {
+  const { dir, configPath } = await project({ require_signatures: "humans", store: "chap.db" });
+  const chap = await createChapServer({ configPath, log: () => {} });
+  const { base } = await chap.listen({ port: 0, host: "127.0.0.1", log: () => {} });
+  const other = await makeCoordinator(await loadConfig(configPath), { log: () => {} });
+  try {
+    const r = other.dispatch({ jsonrpc: "2.0", id: 1, method: "task.create", params: { workspace: "wsp_test", from: AGENT, kind: "draft", assignee: AGENT, input: { summary: "from elsewhere" } } });
+    assert.ok(r.result, JSON.stringify(r));
+    await other.drainSaves();
+    const { tasks } = await (await fetch(`${base}/api/tasks`)).json();
+    assert.ok(tasks.some((t) => t.task_id === r.result.task_id), "the desk's read API reads the other process's task");
+  } finally {
+    await chap.close();
+    other.close?.();
+  }
+  void dir;
 });

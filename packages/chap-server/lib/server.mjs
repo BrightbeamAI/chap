@@ -289,6 +289,7 @@ export async function bootstrap(coord, config, { enrol = [], log = console.log }
     if (r.error) throw new Error(`workspace.create: ${r.error.message}`);
   }
   settleSignatures(coord.getWorkspace(config.workspace), config, log);
+  config.enrolled = enrol.map((m) => m.uri);
   for (const m of enrol) {
     const held = coord.getWorkspace(config.workspace).members.get(m.uri);
     if (held) {
@@ -299,7 +300,13 @@ export async function bootstrap(coord, config, { enrol = [], log = console.log }
     const r = send("participant.join", { from: m.uri, type: m.type, role: m.role, ...(m.display_name ? { display_name: m.display_name } : {}), jwks: { keys: m.keys } });
     if (r.error) throw new Error(`participant.join ${m.uri}: ${r.error.message}`);
   }
-  if (config.require_signatures) return;
+  if (config.require_signatures) {
+    // Under the humans policy the agent calls unsigned, which the
+    // coordinator takes only from a member, so it joins now: /mcp and a
+    // stdio client forwarding with --url work from the first call.
+    if (config.signature_policy === "humans" && config.agent?.uri) await joinMcpAgent(coord, config);
+    return;
+  }
   const ws = coord.getWorkspace(config.workspace);
   const members = [...(config.humans ?? []).map((h) => ({ ...h, type: "human" })), ...(config.agent ? [{ ...config.agent, type: "agent" }] : [])];
   for (const m of members) {
@@ -575,6 +582,28 @@ function reply(res, status, body, type = "application/json", policy = SECURITY_H
   res.end(type === "application/json" && !Buffer.isBuffer(body) ? JSON.stringify(body) : body);
 }
 
+/**
+ * A join under a name chap.config.json does not give. The server admits the
+ * people, the agent and the trust policy's members it is configured with; a
+ * participant.join for any other URI is refused before the coordinator sees
+ * it, so a process that can reach /chap cannot add a "person" of its own
+ * making and decide as them. Null for every other call.
+ */
+function unnamedJoin(envelope, config) {
+  if (envelope?.method !== "participant.join") return null;
+  const p = envelope.params;
+  if (!p || typeof p !== "object" || p.workspace !== config.workspace) return null;
+  const named = new Set([...(config.humans ?? []).map((h) => h.uri), config.agent?.uri, config.operator?.uri, ...(config.enrolled ?? [])].filter(Boolean));
+  if (named.has(p.from)) return null;
+  return { jsonrpc: "2.0", id: envelope.id ?? null, error: { code: -32011,
+    message: `${String(p.from)} is not a member chap.config.json names; add them to humans, or agent, to let them join` } };
+}
+
+/** Bring the coordinator up to date with its store, before a read of its memory. */
+function keepUp(coord, config) {
+  coord.dispatch({ jsonrpc: "2.0", id: "api-read", method: "workspace.describe", params: { workspace: config.workspace } });
+}
+
 /** Largest request body read: a little above the coordinator's envelope limit. */
 const bodyLimit = (config) => (config.max_envelope_bytes ?? 1_048_576) + 64 * 1024;
 
@@ -758,8 +787,13 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
   if (config.mcp) {
     // Stateless: the MCP client keeps no session with this process. Both
     // protocol eras are answered, the handshake one and 2026-07-28.
+    // The handler checks Host and Origin itself, against the loopback names
+    // on the port a request came in on and the names given here: the ones
+    // this server answers to besides those.
+    const names = [...(config.allowed_hosts ?? []), ...(config.port ? [`${config.host}:${config.port}`] : [])];
     mcp = chapMcpHttpHandler(coord, { name: config.workspace, version: VERSION,
-      participant: config.agent.uri, toolFilter: (name) => AGENT_MCP_TOOLS.has(name), maxBodyBytes: bodyLimit(config) });
+      participant: config.agent.uri, toolFilter: (name) => AGENT_MCP_TOOLS.has(name), maxBodyBytes: bodyLimit(config),
+      allowedHosts: names.map((h) => h.toLowerCase()) });
   }
 
   /** Whether a path, below any prefix, is one of the handler's own. */
@@ -810,8 +844,13 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
           if (e instanceof BodyTooLarge) throw e;
           return reply(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
         }
+        const stranger = unnamedJoin(envelope, config);
+        if (stranger) return reply(res, 200, stranger);
         return reply(res, 200, coord.dispatch(envelope));
       }
+      // The read API reads the coordinator's memory. A cheap call first lets
+      // the coordinator take in what another process wrote to the store.
+      if (path.startsWith("/api/") && path !== "/api/oidc/token") keepUp(coord, config);
       if (path === "/api/config") return reply(res, 200, publicConfig(config));
       if (path === "/api/oidc/token") {
         if (!provider) return reply(res, 404, { error: "no OIDC issuer is configured" });

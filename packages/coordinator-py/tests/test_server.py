@@ -162,10 +162,10 @@ def test_port_0_in_the_file_picks_a_free_port(tmp_path, monkeypatch):
     assert config["port"] == 0
     server = make_server(config, make_coordinator(config))
     try:
-        assert server.server_port not in (0, 8787)
+        assert server.server_port not in (0, 8792)
     finally:
         server.server_close()
-    assert load_config(write_config(tmp_path, port=None))["port"] == 8787
+    assert load_config(write_config(tmp_path, port=None))["port"] == 8792
     monkeypatch.setenv("PORT", "8790")
     assert load_config(write_config(tmp_path, port=0))["port"] == 8790
 
@@ -879,3 +879,30 @@ def test_without_the_chain_the_verification_says_so(desk_of):
     port = desk_of()
     status, _, body = request(port, "GET", "/api/chain/verify")
     assert status == 200 and json.loads(body)["error"]["message"] == "Chain not enabled for this workspace"
+
+
+def test_the_server_admits_only_the_members_the_configuration_names(desk_of):
+    port = desk_of()
+    refused = call(port, "participant.join", **{"from": "human:sock@local", "type": "human", "role": "reviewer"})
+    assert refused["error"]["code"] == -32011
+    assert "not a member chap.config.json names" in refused["error"]["message"]
+    assert call(port, "participant.join", **{"from": HUMAN, "type": "human", "role": "reviewer"})["result"]["joined"] is True
+
+
+def test_the_read_api_shows_what_another_process_wrote_to_the_store(tmp_path, monkeypatch):
+    for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS"):
+        monkeypatch.delenv(name, raising=False)
+    config = load_config(write_config(tmp_path / "project", store="./chap.db"))
+    server = make_server(config, make_coordinator(config))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    other = make_coordinator(load_config(tmp_path / "project" / "chap.config.json"))
+    try:
+        made = other.dispatch({"jsonrpc": "2.0", "id": 1, "method": "task.create", "params": {
+            "workspace": "wsp_test", "from": AGENT, "kind": "draft", "assignee": AGENT, "input": {}}})
+        task_id = made["result"]["task_id"]
+        status, _, data = request(server.server_port, "GET", "/api/tasks")
+        assert status == 200
+        assert task_id in [t["task_id"] for t in json.loads(data)["tasks"]]
+    finally:
+        server.shutdown()
+        server.server_close()
