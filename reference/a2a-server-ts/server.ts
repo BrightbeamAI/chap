@@ -31,14 +31,12 @@ import { parseArgs } from "node:util";
 
 import express, { type NextFunction, type Request, type Response } from "express";
 import { AGENT_CARD_PATH } from "@a2a-js/sdk";
-import {
-  DefaultRequestHandler,
-  InMemoryTaskStore,
-} from "@a2a-js/sdk/server";
+import { DefaultRequestHandler } from "@a2a-js/sdk/server";
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from "@a2a-js/sdk/server/express";
 
 import { Coordinator, type Store } from "@brightbeamai/chap-coordinator";
 import {
+  ChapTaskStore,
   chapA2aGuard,
   makeChapAgentCard,
   makeChapAgentExecutor,
@@ -128,9 +126,8 @@ const card = makeChapAgentCard({
 });
 
 const executor = makeChapAgentExecutor(coord, { participant });
-const taskStore = new InMemoryTaskStore();
-
-const handler = new DefaultRequestHandler(card, taskStore, executor);
+// A refusal is a task: the store keeps the latest 1,000, without the requests.
+const handler = new DefaultRequestHandler(card, new ChapTaskStore(), executor);
 const app = express();
 // First, before any route: the Host, Origin, content-type and size checks.
 app.use(chapA2aGuard({ allowedHosts }));

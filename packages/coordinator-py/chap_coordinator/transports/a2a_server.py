@@ -53,12 +53,16 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import OrderedDict
 from datetime import datetime, timezone
 from itertools import count
 from typing import Any, Callable
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
+from a2a.server.owner_resolver import resolve_user_scope
+from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
@@ -82,7 +86,9 @@ from .mcp_tools import TOOL_DESCRIPTIONS
 
 __all__ = [
     "ChapAgentExecutor",
+    "ChapTaskStore",
     "CHAP_MEDIA_TYPE",
+    "DEFAULT_MAX_TASKS",
     "make_chap_agent_executor",
     "make_chap_agent_card",
     "dispatch_a2a_message",
@@ -100,6 +106,9 @@ _FAILED_INSIDE = "The CHAP call failed inside the server; its log has the detail
 #: params in, and its result or refusal out, as JSON data parts. A2A names
 #: input and output modes by media type.
 CHAP_MEDIA_TYPE = "application/json"
+
+#: How many tasks a :class:`ChapTaskStore` keeps by default.
+DEFAULT_MAX_TASKS = 1000
 
 
 # A2A skill ids reuse the MCP tool naming. The only difference is
@@ -368,6 +377,47 @@ class ChapAgentExecutor(AgentExecutor):
             task_id=task_id,
             parts=[Part(data=value, media_type=CHAP_MEDIA_TYPE)],
         )
+
+
+class ChapTaskStore(InMemoryTaskStore):
+    """The task store a CHAP agent needs.
+
+    The executor answers a call with a message, and makes a task only to
+    refuse one, a task that is final the moment it is made. The SDK's
+    ``InMemoryTaskStore`` keeps every task for as long as the server runs,
+    each with the request in its history, so every refused call, up to the
+    1 MiB a request may carry, stayed in memory.
+
+    This store keeps the ``max_tasks`` most recently saved tasks, 1,000 by
+    default, and keeps each without the client's own messages. GetTask still
+    answers for a recent refusal, with its state and the agent's message
+    that carries the CHAP error, and memory stays bounded however many calls
+    are refused. Tasks are scoped by caller, as ``InMemoryTaskStore`` scopes
+    them. Mirrors ``ChapTaskStore`` in the TypeScript package.
+    """
+
+    def __init__(self, max_tasks: int = DEFAULT_MAX_TASKS) -> None:
+        if isinstance(max_tasks, bool) or not isinstance(max_tasks, int) or max_tasks < 1:
+            raise ValueError(f"max_tasks takes a whole number of tasks, 1 or more; {max_tasks!r} is not one")
+        super().__init__()
+        self._max_tasks = max_tasks
+        # Oldest first, each with the context it was saved under, which says
+        # whose it is when it is dropped.
+        self._order: OrderedDict[tuple[str, str], ServerCallContext] = OrderedDict()
+
+    async def save(self, task: Task, context: ServerCallContext) -> None:
+        kept = Task()
+        kept.CopyFrom(task)
+        del kept.history[:]
+        kept.history.extend(message for message in task.history if message.role != Role.ROLE_USER)
+        await super().save(kept, context)
+        # Saved again, a task becomes the newest.
+        key = (resolve_user_scope(context), task.id)
+        self._order.pop(key, None)
+        self._order[key] = context
+        while len(self._order) > self._max_tasks:
+            (_, task_id), owner = self._order.popitem(last=False)
+            await super().delete(task_id, owner)
 
 
 def make_chap_agent_executor(

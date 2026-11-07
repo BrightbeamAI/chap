@@ -26,9 +26,9 @@ adapter's own dependencies are `@brightbeamai/chap-coordinator` and
 ```typescript
 import express from "express";
 import { Coordinator } from "@brightbeamai/chap-coordinator";
-import { chapA2aGuard, makeChapAgentCard, makeChapAgentExecutor } from "@brightbeamai/chap-coordinator-a2a";
+import { ChapTaskStore, chapA2aGuard, makeChapAgentCard, makeChapAgentExecutor } from "@brightbeamai/chap-coordinator-a2a";
 import { AGENT_CARD_PATH } from "@a2a-js/sdk";
-import { DefaultRequestHandler, InMemoryTaskStore } from "@a2a-js/sdk/server";
+import { DefaultRequestHandler } from "@a2a-js/sdk/server";
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from "@a2a-js/sdk/server/express";
 
 const coord = new Coordinator({
@@ -37,7 +37,7 @@ const coord = new Coordinator({
 
 const card = makeChapAgentCard({ baseUrl: "http://127.0.0.1:9090/" });
 const executor = makeChapAgentExecutor(coord, { participant: "agent:orchestrator@local" });
-const handler = new DefaultRequestHandler(card, new InMemoryTaskStore(), executor);
+const handler = new DefaultRequestHandler(card, new ChapTaskStore(), executor);
 
 const app = express();
 app.use(chapA2aGuard());   // first: Host, Origin, JSON only, and a size limit
@@ -52,6 +52,14 @@ app.listen(9090, "127.0.0.1");
 
 A runnable reference server is at
 [`reference/a2a-server-ts/`](../../reference/a2a-server-ts/).
+
+`ChapTaskStore` is the task store to give the request handler. The executor
+answers a call with a message and makes a task only to refuse one, a task
+final the moment it is made. The SDK's `InMemoryTaskStore` would keep every
+such task for as long as the server runs, with the request it refused in
+its history. `ChapTaskStore` keeps the 1,000 most recent (`maxTasks` sets
+another number), each without the client's own messages, so GetTask still
+answers for a recent refusal and memory stays bounded.
 
 ## What a local server checks
 

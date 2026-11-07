@@ -11,14 +11,14 @@
  *
  *   import express from "express";
  *   import { Coordinator } from "@brightbeamai/chap-coordinator";
- *   import { makeChapAgentCard, makeChapAgentExecutor } from "@brightbeamai/chap-coordinator-a2a";
- *   import { DefaultRequestHandler, InMemoryTaskStore } from "@a2a-js/sdk/server";
+ *   import { ChapTaskStore, makeChapAgentCard, makeChapAgentExecutor } from "@brightbeamai/chap-coordinator-a2a";
+ *   import { DefaultRequestHandler } from "@a2a-js/sdk/server";
  *   import { AGENT_CARD_PATH } from "@a2a-js/sdk";
  *   import { agentCardHandler, jsonRpcHandler, UserBuilder } from "@a2a-js/sdk/server/express";
  *
  *   const coord = new Coordinator({ ... });
  *   const card = makeChapAgentCard({ baseUrl: "http://127.0.0.1:9090" });
- *   const handler = new DefaultRequestHandler(card, new InMemoryTaskStore(), makeChapAgentExecutor(coord));
+ *   const handler = new DefaultRequestHandler(card, new ChapTaskStore(), makeChapAgentExecutor(coord));
  *
  *   const app = express();
  *   app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: handler, legacyCompat: { enabled: true } }));
@@ -35,6 +35,8 @@
  *   the Coordinator.
  * - The adapter holds no state. Each A2A ``SendMessage`` translates
  *   to a JSON-RPC envelope and dispatches through coord.dispatch().
+ *   A refusal is a task, final at once; ChapTaskStore keeps the most
+ *   recent of them, without the requests they refused.
  * - Skill ids match the MCP transport's tool names (chap.<method>) so
  *   a caller fluent in one is fluent in the other.
  * - Authentication is out of scope. A2A's security schemes attach to
@@ -46,6 +48,9 @@ export type { ChapAgentCardOptions } from "./card.js";
 
 export { chapA2aGuard } from "./guard.js";
 export type { ChapA2aGuardOptions } from "./guard.js";
+
+export { ChapTaskStore, DEFAULT_MAX_TASKS } from "./task_store.js";
+export type { ChapTaskStoreOptions } from "./task_store.js";
 
 export {
   ChapAgentExecutor,

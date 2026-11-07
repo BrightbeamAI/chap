@@ -43,12 +43,11 @@ from urllib.parse import urlsplit
 
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
-from a2a.server.tasks import InMemoryTaskStore
 from starlette.applications import Starlette
 
 from chap_coordinator.coordinator import Coordinator
 
-from .a2a_server import make_chap_agent_card, make_chap_agent_executor
+from .a2a_server import ChapTaskStore, make_chap_agent_card, make_chap_agent_executor
 
 __all__ = ["ChapA2aGuard", "DEFAULT_MAX_BODY_BYTES", "make_chap_a2a_app"]
 
@@ -205,13 +204,14 @@ def make_chap_a2a_app(
     at ``/``, for A2A 1.0 clients and, with the SDK's v0.3 compatibility, for
     0.3 ones. ``base_url`` is the endpoint the card advertises. ``participant``
     and ``skill_filter`` are the executor's, and the card lists the same
-    skills; ``version`` is the card's, the package's when unset.
+    skills; ``version`` is the card's, the package's when unset. Refusals
+    are kept in a :class:`ChapTaskStore`.
     """
     card = make_chap_agent_card(base_url=base_url, skill_filter=skill_filter,
                                 **({"version": version} if version is not None else {}))
     handler = DefaultRequestHandler(
         agent_executor=make_chap_agent_executor(coord, participant=participant, skill_filter=skill_filter),
-        task_store=InMemoryTaskStore(),
+        task_store=ChapTaskStore(),
         agent_card=card,
     )
     app = Starlette(routes=[

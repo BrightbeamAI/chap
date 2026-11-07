@@ -15,13 +15,13 @@ import type { Server as HttpServer } from "node:http";
 
 import express from "express";
 import { AGENT_CARD_PATH, Role, TaskState, type Message, type Task } from "@a2a-js/sdk";
-import { DefaultRequestHandler, InMemoryTaskStore } from "@a2a-js/sdk/server";
+import { DefaultRequestHandler } from "@a2a-js/sdk/server";
 import { agentCardHandler, jsonRpcHandler, UserBuilder } from "@a2a-js/sdk/server/express";
 import { ClientFactory, type Client } from "@a2a-js/sdk/client";
 
 import { Coordinator } from "@brightbeamai/chap-coordinator";
 
-import { makeChapAgentCard, makeChapAgentExecutor } from "../src/index.js";
+import { ChapTaskStore, makeChapAgentCard, makeChapAgentExecutor } from "../src/index.js";
 
 let http: HttpServer;
 let base: string;
@@ -32,7 +32,7 @@ before(async () => {
   const app = express();
   http = await new Promise<HttpServer>((resolve) => { const s = app.listen(0, "127.0.0.1", () => resolve(s)); });
   base = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
-  const handler = new DefaultRequestHandler(makeChapAgentCard({ baseUrl: `${base}/` }), new InMemoryTaskStore(),
+  const handler = new DefaultRequestHandler(makeChapAgentCard({ baseUrl: `${base}/` }), new ChapTaskStore(),
                                             makeChapAgentExecutor(coord));
   app.use(`/${AGENT_CARD_PATH}`, agentCardHandler({ agentCardProvider: handler, legacyCompat: { enabled: true } }));
   app.use("/", jsonRpcHandler({ requestHandler: handler, userBuilder: UserBuilder.noAuthentication,
