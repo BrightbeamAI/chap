@@ -756,7 +756,7 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
     assertEq(result?.state, "completed", "another member should decide a broadcast review");
   });
 
-  await test("Review profile", "rv-16", "a required review is decided by a person whoever it is addressed to", async () => {
+  await test("Review profile", "rv-16", "a required review is decided by a person it names", async () => {
     await call("participant.join", "agent:second-bot", { type: "agent" });
     const { result: t } = await call("task.create", "human:alice@example.org",
       { kind: "review_test", assignee: BOT, input: {}, review_required: true });
@@ -765,11 +765,13 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
     const { error: added } = await call("review.request", "human:alice@example.org",
       { task_id: t.task_id, artefact: draft, to: ["agent:second-bot"] });
     assert(added?.code === -32011, `an agent was added to a required review, got ${JSON.stringify(added)}`);
-    await call("review.request", "human:alice@example.org", { task_id: t.task_id, artefact: draft, to: ["group:anyone"] });
+    const { error: broadcast } = await call("review.request", "human:alice@example.org",
+      { task_id: t.task_id, artefact: draft, to: ["group:anyone"] });
+    assert(broadcast?.code === -32602, `a required review took a broadcast scope, got ${JSON.stringify(broadcast)}`);
     const { error } = await call("decide.approve", "agent:second-bot", { task_id: t.task_id });
     assert(error?.code === -32011, `an agent decided a required review, got ${JSON.stringify(error)}`);
     const { result } = await call("decide.approve", "human:bystander@example.org", { task_id: t.task_id });
-    assertEq(result?.state, "completed", "a person should decide it through the broadcast entry");
+    assertEq(result?.state, "completed", "a person the review names should decide it");
   });
 
   await test("Review profile", "rv-17", "a task that holds a review completes only through a decision", async () => {
@@ -800,6 +802,50 @@ async function runReviewTests(client: HapClient, ws: string): Promise<void> {
     assertEq(again.body.error.data?.accepted_at_seq, before.audit_count - 1, "the answer names where it took effect");
     const { result: after } = await client.call("workspace.describe", { workspace: ws });
     assertEq(after.audit_count, before.audit_count, "the copy must not be recorded");
+  });
+
+  await test("Review profile", "rv-20", "the authors of work under a required review do not choose its reviewers", async () => {
+    const { result: t } = await call("task.create", "human:alice@example.org",
+      { kind: "review_test", assignee: BOT, input: {}, review_required: true });
+    const draft = { draft: "the bot's work" };
+    await call("task.complete", BOT, { task_id: t.task_id, output: draft });
+    const { error: own } = await call("review.request", BOT,
+      { task_id: t.task_id, artefact: draft, to: ["human:alice@example.org"] });
+    assertEq(own?.code, -32011, "the author widening its own review");
+    assertEq(own?.message, "The author of the work under review cannot request its review", "the refusal says why");
+    const { error: scope } = await call("review.request", "human:alice@example.org",
+      { task_id: t.task_id, artefact: draft, to: [`workspace:${ws}`] });
+    assertEq(scope?.code, -32602, "a broadcast scope on a required review");
+    const { result } = await call("decide.approve", "human:alice@example.org", { task_id: t.task_id });
+    assertEq(result?.state, "completed", "a person the review names decides it");
+  });
+
+  await test("Review profile", "rv-21", "only the assignee completes a task that requires review", async () => {
+    const { result: t } = await call("task.create", "human:alice@example.org",
+      { kind: "review_test", assignee: BOT, input: {}, review_required: true });
+    const { error } = await call("task.complete", "agent:second-bot", { task_id: t.task_id, output: { draft: "not mine" } });
+    assertEq(error?.code, -32011, "a member other than the assignee completing");
+    const { result: opened } = await call("task.complete", BOT, { task_id: t.task_id, output: { draft: "mine" } });
+    assertEq(opened?.state, "review_requested", "the assignee's completion opens the review");
+    const { result } = await call("decide.approve", "human:alice@example.org", { task_id: t.task_id });
+    assertEq(result?.state, "completed", "a person decides it");
+  });
+
+  await test("Review profile", "rv-22", "a review once opened is decided: only its authors withdraw it, and nobody declines or escalates it away", async () => {
+    const { result: t } = await call("task.create", "human:alice@example.org", { kind: "review_test", assignee: BOT, input: {} });
+    await call("review.request", BOT, { task_id: t.task_id, artefact: { draft: "v1" }, to: ["human:alice@example.org"] });
+    const { error: other } = await call("task.update", "agent:second-bot", { task_id: t.task_id, state: "in_progress" });
+    assertEq(other?.code, -32011, "a member who is not an author withdrawing the work");
+    const { result: back } = await call("task.update", BOT, { task_id: t.task_id, state: "in_progress" });
+    assertEq(back?.state, "in_progress", "the author withdraws its work");
+    const { error: declined } = await call("task.update", BOT, { task_id: t.task_id, state: "declined" });
+    assertEq(declined?.code, -32602, "declining around an undecided review");
+    const { result: escalated } = await call("escalate.raise", BOT,
+      { original_task_id: t.task_id, new_task: { kind: "review_test", assignee: "agent:second-bot" } });
+    assert(typeof escalated?.new_task_id === "string", `the escalation should be made, got ${JSON.stringify(escalated)}`);
+    const { result: next } = await call("task.complete", "agent:second-bot",
+      { task_id: escalated.new_task_id, output: { draft: "v2" } });
+    assertEq(next?.state, "review_requested", "the successor completes only through a review");
   });
 
   await test("Review profile", "rv-19", "a reviewer acknowledges an open review once a round, and its author cannot", async () => {

@@ -23,7 +23,9 @@ from chap_coordinator.jsonrpc import E
 PROFILES = ["core/1.0", "review/1.0"]
 
 
-def _ready():
+def _ready(required=True):
+    """A task in progress, by default one that requires review, whose review a
+    person requests."""
     c = Coordinator(CoordinatorOptions(default_profiles=PROFILES, deterministic_ids=True))
 
     def send(method, actor="agent:b", **params):
@@ -34,7 +36,7 @@ def _ready():
     for uri, kind in (("human:a", "human"), ("human:c", "human"), ("agent:b", "agent")):
         send("participant.join", actor=uri, type=kind)
     tid = send("task.create", kind="k", input={}, assignee="agent:b",
-               review_required=True)["result"]["task_id"]
+               review_required=required)["result"]["task_id"]
     send("task.update", task_id=tid, state="in_progress")
     return c, send, tid
 
@@ -51,7 +53,7 @@ def _ok(reply):
 @pytest.mark.parametrize("rule", ["all_approve", "quorum:2"])
 def test_an_approval_of_the_first_artefact_does_not_count_for_the_second(rule):
     c, send, tid = _ready()
-    _ok(send("review.request", task_id=tid, to=["human:a", "human:c"], rule=rule,
+    _ok(send("review.request", actor="human:a", task_id=tid, to=["human:a", "human:c"], rule=rule,
              artefact={"draft": "v1"}))
     _ok(send("decide.approve", actor="human:a", task_id=tid))
     assert _task(c, tid).state == "review_requested"
@@ -75,8 +77,8 @@ def test_an_approval_of_the_first_artefact_does_not_count_for_the_second(rule):
 
 def test_after_a_reject_with_request_revision_the_new_artefact_starts_a_new_round():
     c, send, tid = _ready()
-    _ok(send("review.request", task_id=tid, to=["human:a", "human:c"], rule="quorum:2",
-             artefact={"draft": "v1"}))
+    _ok(send("review.request", actor="human:a", task_id=tid, to=["human:a", "human:c"],
+             rule="quorum:2", artefact={"draft": "v1"}))
     _ok(send("decide.approve", actor="human:a", task_id=tid))
     _ok(send("decide.reject", actor="human:c", task_id=tid, comment="redo",
              request_revision=True))
@@ -107,11 +109,12 @@ def test_an_implicit_review_keeps_its_reviewers_in_the_new_round():
 
 
 def test_a_reviewer_who_submits_the_new_artefact_is_not_among_its_reviewers():
-    c, send, tid = _ready()
+    c, send, tid = _ready(required=False)
     _ok(send("review.request", task_id=tid, to=["human:a", "human:c"], rule="any_one_approves",
              artefact={"draft": "v1"}))
     _ok(send("decide.reject", actor="human:a", task_id=tid, request_revision=True))
-    # Any member may complete the task, so a reviewer can submit the revision.
+    # Any member may complete a task that does not require review, so a
+    # reviewer can submit the revision.
     _ok(send("task.complete", actor="human:a", task_id=tid, output={"draft": "v2 by a"}))
     assert _task(c, tid).review.requested_to == ["human:c"]
     assert "error" in send("decide.approve", actor="human:a", task_id=tid), \
@@ -122,7 +125,7 @@ def test_a_reviewer_who_submits_the_new_artefact_is_not_among_its_reviewers():
 
 
 def test_a_completion_that_would_leave_the_review_with_no_reviewer_is_refused():
-    c, send, tid = _ready()
+    c, send, tid = _ready(required=False)
     _ok(send("review.request", task_id=tid, to=["human:a"], artefact={"draft": "v1"}))
     _ok(send("decide.reject", actor="human:a", task_id=tid, request_revision=True))
     r = send("task.complete", actor="human:a", task_id=tid, output={"draft": "v2"})
@@ -133,8 +136,8 @@ def test_a_completion_that_would_leave_the_review_with_no_reviewer_is_refused():
 
 def test_the_first_rounds_decisions_stay_on_the_chain():
     c, send, tid = _ready()
-    _ok(send("review.request", task_id=tid, to=["human:a", "human:c"], rule="all_approve",
-             artefact={"draft": "v1"}))
+    _ok(send("review.request", actor="human:a", task_id=tid, to=["human:a", "human:c"],
+             rule="all_approve", artefact={"draft": "v1"}))
     _ok(send("decide.approve", actor="human:a", task_id=tid))
     _ok(send("task.update", task_id=tid, state="in_progress"))
     _ok(send("task.complete", task_id=tid, output={"draft": "v2"}))
@@ -145,8 +148,8 @@ def test_the_first_rounds_decisions_stay_on_the_chain():
 
 def test_a_copy_of_a_decision_that_names_the_first_artefact_is_refused_in_the_new_round():
     c, send, tid = _ready()
-    _ok(send("review.request", task_id=tid, to=["human:a", "human:c"], rule="all_approve",
-             artefact={"draft": "v1"}))
+    _ok(send("review.request", actor="human:a", task_id=tid, to=["human:a", "human:c"],
+             rule="all_approve", artefact={"draft": "v1"}))
     approval = {"task_id": tid, "approved_artefact_digest": content_hash({"draft": "v1"})}
     _ok(send("decide.approve", actor="human:a", **approval))
     _ok(send("task.update", task_id=tid, state="in_progress"))

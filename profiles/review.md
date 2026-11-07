@@ -121,7 +121,9 @@ completed the work under review, once each. On the implicit review and on a
 new round (below), the completer is the `from` of the `task.complete` that
 submitted the artefact. On an explicit `review.request`, it is the `from` of
 the task's latest `completed` history entry, where there is one. A review
-recorded before authors were kept is read as having the assignee alone.
+recorded before authors were kept takes them from the task's history in the
+same way: the assignee, and the sender of the latest completion, or of the
+`task.complete` that opened the review.
 
 A Coordinator MUST refuse with `-32011`, "The author of the work under review
 cannot decide it", a `decide.approve`, `decide.reject`, `decide.override`,
@@ -130,15 +132,30 @@ review is addressed, broadcast scopes included. A decision by whoever made the w
 and without this rule an agent could request review of its own output from
 `group:` or `workspace:` and approve it.
 
-Where the task requires review, a person decides it, and a person other than
-the authors is asked:
+Where the task requires review, a person decides it, a person other than
+the authors is asked, and the authors do not choose who:
 
 - A decision from a member whose `type` is not `human` MUST be refused with
   `-32011`.
-- A `review.request`, opening the review or amending it, whose `to` names an
-  author or a member whose `type` is not `human` MUST be refused with
-  `-32011`. Without this the agent whose work a required review holds could
-  add itself to the review and then approve its own work.
+- A `review.request`, opening the review or amending it, from an author
+  MUST be refused with `-32011`, "The author of the work under review cannot
+  request its review". Without this the agent whose work the review holds
+  could add a person it had just joined, and that person's approval would
+  read as oversight.
+- A `review.request` whose `to` names an author or a member whose `type` is
+  not `human` MUST be refused with `-32011`, and one whose `to` names a
+  `workspace:` or `group:` scope with `-32602`: a required review names its
+  reviewers, and a scope would let any person who joins later decide it.
+- Only the assignee completes the task: a `task.complete` from any other
+  member MUST be refused with `-32011`. A completion makes its sender an
+  author, so a member who routed the task to a reviewer and completed it
+  would otherwise take that reviewer off the review.
+
+The guarantee is as good as a member's `type`. A join declares it, and
+without an identity profile (SPECIFICATION §5.4) or admission by invitation
+(SPECIFICATION §6.3.3) nothing checks that a member of type `human` is a
+person. A deployment whose reviews must mean a person looked binds its
+people with one or the other.
 
 An explicit `review.request` on a task that does not require review keeps
 whatever `to` it was given. Addressing another agent is a deliberate choice
@@ -209,6 +226,19 @@ this the review is skipped outright: the task finishes with no artefact
 recorded and no `decide.*` on the chain, which is the single failure a
 review exists to prevent. See
 [SPECIFICATION.md §8.1](../SPECIFICATION.md#81-lifecycle).
+
+**No way round a review.** Three more routes would end a review with no
+decision, on any task that holds one:
+
+- `task.update` from `review_requested` to `in_progress` takes the work
+  back to revise it, and only its authors may: from anyone else it MUST be
+  refused with `-32011`.
+- `task.update` to `declined` of a task whose review no decision has
+  closed, none of its decisions a `decide.reject`, MUST be refused with
+  `-32602`. Once a reviewer has rejected the work, its author may give the
+  task up.
+- `escalate.raise` hands the work on with its review: the successor
+  requires review (§3.5).
 
 ### 3.2 `decide.approve` · `decide.reject`
 
@@ -441,9 +471,9 @@ An original in `completed`, `cancelled` or `superseded` is refused with
 
 The new task takes the mode `new_task.mode` names, or else the original's,
 and keeps the original's review requirement. It requires review when the
-original did, or when it is a `trial` task on a workspace that advertises
-`modes/1.0`, so escalating a task never removes the review its completion
-needs. The Coordinator applies the checks `task.create` applies: an assignee
+original did or held a review, or when it is a `trial` task on a workspace
+that advertises `modes/1.0`, so escalating a task never removes the review
+its completion needs, and never ends an open review with no decision. The Coordinator applies the checks `task.create` applies: an assignee
 who is paused is refused with `-32063` ([`control.md`](./control.md) §2),
 and a mode above the workspace's current `mode_ceiling` with `-32040`. After
 the ceiling has been lowered, naming a mode within it in `new_task.mode` is

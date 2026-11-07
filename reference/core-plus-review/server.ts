@@ -618,6 +618,14 @@ const handlers: Record<string, Handler> = {
       return { error: err(E.PARAMS,
         "This task holds a review. Submit the output with task.complete, which opens a new round; a reviewer decision completes it.") };
     }
+    // A review once opened is decided: only its authors take the work back,
+    // and a review no decision closed is not declined around.
+    if (task.state === "review_requested" && !task.review!.authors.includes(p.from as string)) {
+      return { error: err(E.NOT_AUTHORISED, "Only the authors of the work under review take it back from review") };
+    }
+    if (newState === "declined" && task.review && !task.review.decisions.some((d) => d.kind === "reject")) {
+      return { error: err(E.PARAMS, "This task holds a review no decision has closed; a reviewer's decision ends it") };
+    }
 
     task.state      = newState;
     task.updated_at = new Date().toISOString();
@@ -640,6 +648,10 @@ const handlers: Record<string, Handler> = {
     // reviving a terminal task (matches the reference coordinators).
     if (task.state !== "created" && task.state !== "in_progress") {
       return { error: err(E.PARAMS, `Cannot complete task in state: ${task.state}`) };
+    }
+    // The assignee does the work a person reviews.
+    if (task.review_required && p.from !== task.assignee) {
+      return { error: err(E.NOT_AUTHORISED, "Only the assignee completes a task that requires review") };
     }
 
     // review/1.0 S3.1: task.complete on a task whose review is required opens a
@@ -765,6 +777,14 @@ const handlers: Record<string, Handler> = {
     // work, whether it opens the review or widens it.
     const authors = open ? open.authors : authorsOf(task, lastCompleter(task));
     if (task.review_required) {
+      // The work's authors do not choose its reviewers, and each is named.
+      if (authors.includes(p.from as string)) {
+        return { error: err(E.NOT_AUTHORISED, "The author of the work under review cannot request its review") };
+      }
+      const scope = reviewers.find((r) => typeof r === "string" && (r.startsWith("workspace:") || r.startsWith("group:")));
+      if (scope !== undefined) {
+        return { error: err(E.PARAMS, `A review that requires a person names its reviewers, and ${scope} is an address scope`) };
+      }
       for (const r of reviewers) {
         if (authors.includes(r)) {
           return { error: err(E.NOT_AUTHORISED, `The author of the work under review cannot review it: ${r}`) };
@@ -956,8 +976,9 @@ const handlers: Record<string, Handler> = {
       created_at: now, updated_at: now,
       supersedes: orig.id,
       // Escalating hands the work on and keeps its review: the successor
-      // requires review when the original did, as in both coordinators.
-      ...(orig.review_required ? { review_required: true } : {}),
+      // requires review when the original did or held a review, as in both
+      // coordinators.
+      ...(orig.review_required || orig.review ? { review_required: true } : {}),
       history: [{ ts: now, from: p.from as string, state: "created", note: `escalated from ${orig.id}` }],
     });
     orig.state = "escalated";

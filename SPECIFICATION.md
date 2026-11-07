@@ -687,7 +687,8 @@ be a person where the task requires review, and be one of the reviewers
 the review was addressed to in `review.request`'s `to` set; see
 [`profiles/review.md`](./profiles/review.md).
 A `to` entry that is a broadcast scope (`workspace:<id>` or `group:<name>`)
-is satisfied by any workspace member other than the authors: the
+is satisfied by any workspace member other than the authors, and a review
+the task requires names its reviewers, so it takes no scope (§8.1). The
 Coordinator does not model group membership,
 so a `group:` target means "any member", not "any member of that named
 group". Deployments that need a decision restricted to a named
@@ -962,10 +963,13 @@ categories, because several methods carry preconditions of their own.
 |------|--------|-----|
 | created, in_progress | `task.complete` (review not required, no review held) | completed |
 | created, in_progress | `task.complete` (review required, or a review held) | review_requested, output held as the artefact under review |
+| created, in_progress | `task.complete` (review required) from a member other than the assignee | refused, -32011 |
 | created | `task.update` | in_progress, declined |
 | in_progress | `task.update` | in_progress, completed, declined |
 | in_progress | `task.update` to completed (review required, or a review held) | refused, -32602 |
-| review_requested | `task.update` | in_progress |
+| in_progress | `task.update` to declined (a review held that no decision closed) | refused, -32602 |
+| review_requested | `task.update` from an author of the work under review | in_progress |
+| review_requested | `task.update` from any other member | refused, -32011 |
 | paused | `task.update` | cancelled |
 | created, in_progress, completed, declined, abstained, escalated | `review.request` | review_requested |
 | review_requested | `review.request` (same artefact) | review_requested, reviewer set widened |
@@ -1027,14 +1031,19 @@ A task whose review is required does not complete on `task.complete`. The
 call opens a review instead, holding the submitted output as the artefact
 under review, and only a reviewer decision then reaches `completed`. Review
 is required when the task carries `review_required`, or when it runs in
-`trial` mode on a workspace that has loaded `modes/1.0`. The successor that
-`escalate.raise` or `control.supersede` makes requires review when the task
-it replaces did, so neither removes a required review.
+`trial` mode on a workspace that has loaded `modes/1.0`. Only the task's
+assignee completes it. The successor that `escalate.raise` or
+`control.supersede` makes requires review when the task it replaces did,
+and the successor of `escalate.raise` also when the task it replaces held a
+review, so neither removes a required review or ends an open one.
 
 A review once opened is decided. `task.complete` on a task that holds a
 review, taken back to `in_progress` by `task.update` or by a reject with
 `request_revision`, opens a new round of that review whether or not the
 task requires one, and only a reviewer decision then reaches `completed`.
+Only the work's authors take it back with `task.update`, and a task whose
+review no decision has closed is not declined through `task.update`
+([`profiles/review.md`](./profiles/review.md) §3.1).
 
 `task.complete` reads no reviewer list from `to`, so the Coordinator
 selects the reviewer set: the members of `type: "human"` other than the
@@ -1042,9 +1051,10 @@ completer and the assignee. Where none qualifies the completion MUST be
 refused with `-32011`. Every review records its authors, the assignee and
 the completer, and a Coordinator MUST refuse a decision from an author with
 `-32011`. Where review is required, a decision MUST come from a member of
-`type: "human"`, and a `review.request` whose `to` names an author or a
-member of another type MUST be refused with `-32011`; otherwise an
-explicit `review.request` keeps whatever `to` it was given. See
+`type: "human"`; a `review.request` from an author, or whose `to` names an
+author or a member of another type, MUST be refused with `-32011`; and one
+whose `to` names a broadcast scope with `-32602`. Otherwise an explicit
+`review.request` keeps whatever `to` it was given. See
 [`profiles/review.md`](./profiles/review.md) §3.1.
 
 The finer-grained `task.assign` / `task.accept` / `task.start` /

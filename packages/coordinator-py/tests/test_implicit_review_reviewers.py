@@ -89,21 +89,14 @@ def test_every_human_is_addressed():
     assert set(_task(c, tid).review.requested_to) == {"human:you", "human:them"}
 
 
-def test_the_completer_is_excluded_even_when_human():
-    c, send = _ws([("human:you", "human"), ("human:them", "human"),
-                   ("agent:drafter", "agent")])
-    tid = send("task.create", kind="k", input={}, assignee="agent:drafter",
-               review_required=True)["result"]["task_id"]
-    send("task.complete", actor="human:you", task_id=tid, output=DRAFT)
-    assert _task(c, tid).review.requested_to == ["human:them"]
-
-
-def test_the_assignee_is_excluded_even_when_human():
+def test_only_the_assignee_completes_and_it_is_excluded_even_when_human():
     c, send = _ws([("human:you", "human"), ("human:them", "human"),
                    ("agent:drafter", "agent")])
     tid = send("task.create", kind="k", input={}, assignee="human:them",
                review_required=True)["result"]["task_id"]
-    send("task.complete", actor="agent:drafter", task_id=tid, output=DRAFT)
+    assert send("task.complete", actor="agent:drafter", task_id=tid,
+                output=DRAFT)["error"]["code"] == -32011
+    send("task.complete", actor="human:them", task_id=tid, output=DRAFT)
     assert _task(c, tid).review.requested_to == ["human:you"]
 
 

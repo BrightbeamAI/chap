@@ -20,7 +20,8 @@ import { E } from "../src/jsonrpc.js";
 
 const PROFILES = ["core/1.0", "review/1.0"];
 
-function ready() {
+/** A task in progress, by default one that requires review, whose review a person requests. */
+function ready(required = true) {
   const c = new Coordinator({ defaultProfiles: PROFILES, deterministicIds: true });
   const send = (method: string, params: Record<string, unknown> = {}, actor = "agent:b") =>
     c.dispatch({ jsonrpc: "2.0", id: method, method,
@@ -29,7 +30,7 @@ function ready() {
   for (const [uri, type] of [["human:a", "human"], ["human:c", "human"], ["agent:b", "agent"]])
     send("participant.join", { type }, uri);
   const id = send("task.create", { kind: "k", input: {}, assignee: "agent:b",
-                                   review_required: true }).result.task_id;
+                                   review_required: required }).result.task_id;
   send("task.update", { task_id: id, state: "in_progress" });
   return { c, send, id };
 }
@@ -41,7 +42,7 @@ for (const rule of ["all_approve", "quorum:2"]) {
   test(`${rule}: an approval of the first artefact does not count for the second`, () => {
     const { c, send, id } = ready();
     ok(send("review.request", { task_id: id, to: ["human:a", "human:c"], rule,
-                                artefact: { draft: "v1" } }));
+                                artefact: { draft: "v1" } }, "human:a"));
     ok(send("decide.approve", { task_id: id }, "human:a"));
     assert.equal(task(c, id).state, "review_requested");
 
@@ -67,7 +68,7 @@ for (const rule of ["all_approve", "quorum:2"]) {
 test("after a reject with request_revision the new artefact starts a new round", () => {
   const { c, send, id } = ready();
   ok(send("review.request", { task_id: id, to: ["human:a", "human:c"], rule: "quorum:2",
-                              artefact: { draft: "v1" } }));
+                              artefact: { draft: "v1" } }, "human:a"));
   ok(send("decide.approve", { task_id: id }, "human:a"));
   ok(send("decide.reject", { task_id: id, comment: "redo", request_revision: true }, "human:c"));
   assert.equal(task(c, id).state, "in_progress");
@@ -98,11 +99,12 @@ test("an implicit review keeps its reviewers in the new round", () => {
 });
 
 test("a reviewer who submits the new artefact is not among its reviewers", () => {
-  const { c, send, id } = ready();
+  const { c, send, id } = ready(false);
   ok(send("review.request", { task_id: id, to: ["human:a", "human:c"], rule: "any_one_approves",
                               artefact: { draft: "v1" } }));
   ok(send("decide.reject", { task_id: id, request_revision: true }, "human:a"));
-  // Any member may complete the task, so a reviewer can submit the revision.
+  // Any member may complete a task that does not require review, so a
+  // reviewer can submit the revision.
   ok(send("task.complete", { task_id: id, output: { draft: "v2 by a" } }, "human:a"));
   assert.deepEqual(task(c, id).review.requested_to, ["human:c"]);
   assert.ok(send("decide.approve", { task_id: id }, "human:a").error, "the author approved its own artefact");
@@ -112,7 +114,7 @@ test("a reviewer who submits the new artefact is not among its reviewers", () =>
 });
 
 test("a completion that would leave the review with no reviewer is refused", () => {
-  const { c, send, id } = ready();
+  const { c, send, id } = ready(false);
   ok(send("review.request", { task_id: id, to: ["human:a"], artefact: { draft: "v1" } }));
   ok(send("decide.reject", { task_id: id, request_revision: true }, "human:a"));
   const r = send("task.complete", { task_id: id, output: { draft: "v2" } }, "human:a");
@@ -124,7 +126,7 @@ test("a completion that would leave the review with no reviewer is refused", () 
 test("the first round's decisions stay on the chain", () => {
   const { send, id } = ready();
   ok(send("review.request", { task_id: id, to: ["human:a", "human:c"], rule: "all_approve",
-                              artefact: { draft: "v1" } }));
+                              artefact: { draft: "v1" } }, "human:a"));
   ok(send("decide.approve", { task_id: id }, "human:a"));
   ok(send("task.update", { task_id: id, state: "in_progress" }));
   ok(send("task.complete", { task_id: id, output: { draft: "v2" } }));
@@ -136,7 +138,7 @@ test("the first round's decisions stay on the chain", () => {
 test("a copy of a decision that names the first artefact is refused in the new round", () => {
   const { c, send, id } = ready();
   ok(send("review.request", { task_id: id, to: ["human:a", "human:c"], rule: "all_approve",
-                              artefact: { draft: "v1" } }));
+                              artefact: { draft: "v1" } }, "human:a"));
   const approval = { task_id: id, approved_artefact_digest: contentHash({ draft: "v1" }) };
   ok(send("decide.approve", approval, "human:a"));
   ok(send("task.update", { task_id: id, state: "in_progress" }));

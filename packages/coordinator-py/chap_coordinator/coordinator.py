@@ -362,6 +362,14 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
         k: _build(Member, v) for k, v in (data.get("members") or {}).items()
     }
     for m in members.values():
+        # A member written before its type was checked against its URI takes
+        # the type the scheme names, and holds the admin role only where that
+        # type may (SPECIFICATION 5.1, 6.3).
+        scheme = m.uri.split(":", 1)[0] if isinstance(m.uri, str) else ""
+        if scheme in _PARTICIPANT_TYPES:
+            m.type = scheme
+        if m.role == "admin" and m.type not in _ADMIN_TYPES:
+            m.role = "participant"
         if isinstance(m.keys, list):
             m.keys = [_build(KeyRecord, k) if isinstance(k, dict) else k for k in m.keys]
         elif isinstance(m.keys, dict):
@@ -374,10 +382,10 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
         v["history"] = [_history_entry(h) for h in v.get("history", [])]
         if isinstance(v.get("review"), dict):
             review = dict(v["review"])
-            # A review written before authors were recorded takes the
-            # assignee, the one author every review has.
+            # A review written before authors were recorded takes them from
+            # the task's history.
             if not isinstance(review.get("authors"), list):
-                review["authors"] = [v.get("assignee")]
+                review["authors"] = _stored_authors(v.get("assignee"), v["history"])
             # and one written before acknowledgements were kept has none.
             if not isinstance(review.get("acknowledgements"), list):
                 review["acknowledgements"] = []
@@ -584,6 +592,30 @@ def _last_completer(task: Task) -> str | None:
         if entry.state == "completed":
             return entry.from_
     return None
+
+
+#: The note on the history entry of a review task.complete opened.
+_OPENED_ON_COMPLETE = "review required; opened on task.complete"
+
+
+def _stored_authors(assignee: str, history: list) -> list[str]:
+    """The authors of a review recorded before authors were kept, read from
+    the task's history: the assignee, and whoever completed the work, whether
+    the completion opened the review or came before a review.request."""
+    for entry in reversed(history):
+        if entry.state == "completed" or (entry.state == "review_requested"
+                                          and entry.note == _OPENED_ON_COMPLETE):
+            authors = [assignee]
+            if isinstance(entry.from_, str) and entry.from_ != assignee:
+                authors.append(entry.from_)
+            return authors
+    return [assignee]
+
+
+def _is_scope(uri: Any) -> bool:
+    """Whether a URI is an address scope, which every member it covers
+    answers to."""
+    return isinstance(uri, str) and (uri.startswith("workspace:") or uri.startswith("group:"))
 
 
 def _review_rule_supported(rule: str) -> bool:
@@ -2250,6 +2282,18 @@ class Coordinator:
                 E.PARAMS,
                 "This task holds a review. Submit the output with task.complete, "
                 "which opens a new round; a reviewer decision completes it.")}
+        # A review once opened is decided. Its authors may take their work
+        # back to revise it, and nobody else; and a task whose review no
+        # decision has closed is not declined around it.
+        if task.state == "review_requested" and p.get("from") not in task.review.authors:
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED,
+                "Only the authors of the work under review take it back from review")}
+        if (new_state == "declined" and task.review is not None
+                and not any(d.get("kind") == "reject" for d in task.review.decisions)):
+            return {"error": rpc_error(
+                E.PARAMS,
+                "This task holds a review no decision has closed; a reviewer's decision ends it")}
         task.state = new_state
         task.updated_at = self.now_iso()
         task.history.append(TaskHistoryEntry(
@@ -2281,6 +2325,14 @@ class Coordinator:
         if confidence is not None and (isinstance(confidence, bool)
                                        or not isinstance(confidence, (int, float, str))):
             return {"error": rpc_error(E.PARAMS, "confidence must be a number or a string")}
+        # The assignee does the work a person reviews. A completion from
+        # anyone else would make them an author, and an author cannot decide:
+        # routing a task to a reviewer and completing it would take that
+        # reviewer off the review.
+        required = _review_required(ws, task)
+        if required and p.get("from") != task.assignee:
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED, "Only the assignee completes a task that requires review")}
         # review/1.0 S3.1: task.complete on a task whose review is required
         # opens a review implicitly and does not complete, and so does
         # task.complete on a task that holds a review from an earlier round.
@@ -2289,13 +2341,12 @@ class Coordinator:
         # Without this a review_required task would reach completed with
         # unreviewed output and no decision, and a task taken back from review
         # with task.update would complete with none.
-        required = _review_required(ws, task)
         if required or task.review is not None:
             now = self.now_iso()
             # The assignee and the completer made this artefact, and neither
             # may decide it.
             authors = _authors_of(task, p.get("from"))
-            note = "review required; opened on task.complete"
+            note = _OPENED_ON_COMPLETE
             if task.review is None:
                 # review_required means a person has to see this. The producer
                 # must not satisfy its own review, and neither must another
@@ -2491,16 +2542,26 @@ class Coordinator:
                     f"(currently {open_review.rule})",
                 )}
 
-        # Where a person's review is required, the reviewers a request names,
-        # opening the review or widening it, must be people other than the
-        # authors of the work. Without this the agent whose work a required
-        # review holds could add itself to that review and approve its own
-        # work. An explicit review of a task that does not require one keeps
-        # its own `to`, so a deliberate agent-reviews-agent flow is still
-        # available.
+        # Where a person's review is required, the work's authors do not
+        # choose who reviews it, and the reviewers a request names, opening
+        # the review or widening it, are people other than the authors, each
+        # named. Without this the agent whose work a required review holds
+        # could add itself, or a person it joined, or any member at all
+        # through a broadcast scope, and approve its own work. An explicit
+        # review of a task that does not require one keeps its own `to`, so a
+        # deliberate agent-reviews-agent flow is still available.
         authors = (open_review.authors if open_review is not None
                    else _authors_of(task, _last_completer(task)))
         if _review_required(ws, task):
+            if p.get("from") in authors:
+                return {"error": rpc_error(
+                    E.NOT_AUTHORISED, "The author of the work under review cannot request its review")}
+            scope = next((r for r in reviewers if _is_scope(r)), None)
+            if scope is not None:
+                return {"error": rpc_error(
+                    E.PARAMS,
+                    f"A review that requires a person names its reviewers, and {scope} is an "
+                    "address scope")}
             for r in reviewers:
                 if r in authors:
                     return {"error": rpc_error(
@@ -2832,11 +2893,12 @@ class Coordinator:
                 note=f"escalated from {orig.id}",
             )],
         )
-        # Escalating hands the work on and keeps its review requirement. The
-        # successor requires review when the original did, and a trial task
-        # forces review under modes/1.0 as it does at task.create.
-        if orig.review_required or (ws.has_profile("modes")
-                                    and new_task.mode == "trial"):
+        # Escalating hands the work on and keeps its review. The successor
+        # requires review when the original did or held a review, since a
+        # review once opened is decided, and a trial task forces review under
+        # modes/1.0 as it does at task.create.
+        if (orig.review_required or orig.review is not None
+                or (ws.has_profile("modes") and new_task.mode == "trial")):
             new_task.review_required = True
         ws.tasks[new_id] = new_task
         orig.state = "escalated"

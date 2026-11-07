@@ -46,19 +46,23 @@ function requiredUnderReview() {
   return { ...ready_, id };
 }
 
-test("the agent cannot add itself to its own required review, or approve it", () => {
+test("the agent cannot add itself, or anyone, to its own required review, or approve it", () => {
   const { c, send, id } = requiredUnderReview();
-  refused(send("review.request", { task_id: id, artefact: DRAFT, to: ["agent:b"] }),
-          "The author of the work under review cannot review it: agent:b");
+  for (const to of [["agent:b"], ["human:c"]]) {
+    refused(send("review.request", { task_id: id, artefact: DRAFT, to }),
+            "The author of the work under review cannot request its review");
+  }
   refused(send("decide.approve", { task_id: id }), "The author of the work under review cannot decide it");
   assert.deepEqual(task(c, id).review!.requested_to, ["human:a", "human:c"]);
   assert.equal(task(c, id).state, "review_requested");
 });
 
-test("before completing, the agent cannot open a required review addressed to itself", () => {
+test("before completing, the agent cannot open a required review, and a person cannot name it", () => {
   const { c, send } = ready();
   const id = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b", review_required: true })).task_id;
-  refused(send("review.request", { task_id: id, artefact: DRAFT, to: ["agent:b"] }),
+  refused(send("review.request", { task_id: id, artefact: DRAFT, to: ["human:a"] }),
+          "The author of the work under review cannot request its review");
+  refused(send("review.request", { task_id: id, artefact: DRAFT, to: ["agent:b"] }, "human:a"),
           "The author of the work under review cannot review it: agent:b");
   assert.equal(task(c, id).review, undefined);
 });
@@ -69,14 +73,58 @@ test("another agent cannot be added to a required review", () => {
           "This task requires a person's review: agent:d is not a human member");
 });
 
-test("a broadcast reviewer on a required review still means a person", () => {
+test("a required review names its reviewers: a broadcast scope is refused", () => {
   const { c, send, id } = requiredUnderReview();
-  ok(send("review.request", { task_id: id, artefact: DRAFT, to: ["group:any"] }, "human:a"));
+  for (const scope of ["group:any", "workspace:w"]) {
+    const r = send("review.request", { task_id: id, artefact: DRAFT, to: [scope] }, "human:a");
+    assert.deepEqual(r.error, { code: E.PARAMS,
+      message: `A review that requires a person names its reviewers, and ${scope} is an address scope` });
+  }
+  assert.deepEqual(task(c, id).review!.requested_to, ["human:a", "human:c"]);
   refused(send("decide.approve", { task_id: id }, "agent:d"),
           "This task requires a person's review: agent:d is not a human member");
-  refused(send("decide.approve", { task_id: id }), "The author of the work under review cannot decide it");
   assert.equal(ok(send("decide.approve", { task_id: id }, "human:c")).state, "completed");
-  assert.equal(task(c, id).state, "completed");
+});
+
+test("only the assignee completes a task that requires review", () => {
+  // Completed by another member, the task would count that member as an
+  // author, and routing it to a reviewer first would take that reviewer off
+  // the review.
+  const { c, send } = ready();
+  const id = ok(send("task.create", { kind: "k", input: {}, assignee: "human:a", review_required: true },
+                     "human:c")).task_id;
+  refused(send("task.complete", { task_id: id, output: DRAFT }),
+          "Only the assignee completes a task that requires review");
+  assert.equal(task(c, id).state, "created");
+  assert.equal(ok(send("task.complete", { task_id: id, output: DRAFT }, "human:a")).state, "review_requested");
+  assert.deepEqual(task(c, id).review!.authors, ["human:a"]);
+});
+
+test("only the work's authors take it back from review, and an undecided review is not declined", () => {
+  const { c, send } = ready();
+  const id = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" })).task_id;
+  ok(send("review.request", { task_id: id, artefact: DRAFT, to: ["human:a"] }));
+  refused(send("task.update", { task_id: id, state: "in_progress" }, "agent:d"),
+          "Only the authors of the work under review take it back from review");
+  ok(send("task.update", { task_id: id, state: "in_progress" }));
+  const declined = send("task.update", { task_id: id, state: "declined" });
+  assert.deepEqual(declined.error, { code: E.PARAMS,
+    message: "This task holds a review no decision has closed; a reviewer's decision ends it" });
+  assert.equal(task(c, id).state, "in_progress");
+  // Once a reviewer rejected the work, the review is decided, and its
+  // author may give the task up.
+  ok(send("task.complete", { task_id: id, output: { body: "v2" } }));
+  ok(send("decide.reject", { task_id: id, request_revision: true }, "human:a"));
+  assert.equal(ok(send("task.update", { task_id: id, state: "declined" })).state, "declined");
+});
+
+test("an escalation of a task that held a review requires review", () => {
+  const { c, send } = ready();
+  const id = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" })).task_id;
+  ok(send("review.request", { task_id: id, artefact: DRAFT, to: ["human:a"] }));
+  const next = ok(send("escalate.raise", { original_task_id: id, new_task: { assignee: "agent:d" } })).new_task_id;
+  assert.equal(task(c, next).review_required, true);
+  assert.equal(ok(send("task.complete", { task_id: next, output: DRAFT }, "agent:d")).state, "review_requested");
 });
 
 test("the completer cannot decide a broadcast review of its own work", () => {
@@ -106,8 +154,8 @@ test("a review records the assignee and the completer as its authors", () => {
   const { c, send } = ready();
   const required = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b",
                                             review_required: true })).task_id;
-  ok(send("task.complete", { task_id: required, output: DRAFT }, "agent:d"));
-  assert.deepEqual(task(c, required).review!.authors, ["agent:b", "agent:d"]);
+  ok(send("task.complete", { task_id: required, output: DRAFT }));
+  assert.deepEqual(task(c, required).review!.authors, ["agent:b"]);
   assert.deepEqual(task(c, required).review!.requested_to, ["human:a", "human:c"]);
 
   const explicit = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" })).task_id;
@@ -156,18 +204,50 @@ test("a new round of a required review leaves out a reviewer who is not a person
   assert.deepEqual(task(c, id).review!.requested_to, ["human:a", "human:c"]);
 });
 
-test("a review restored without authors takes its assignee", () => {
+test("a review restored without authors takes them from the task's history", () => {
+  // A task one agent completed for another and then sent for review, and one
+  // whose completion opened a review its assignee completed: the shapes a
+  // store written before authors were recorded holds.
   const { c, send } = ready();
-  const id = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" })).task_id;
-  ok(send("review.request", { task_id: id, artefact: DRAFT, to: ["group:any"] }));
+  const explicit = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" })).task_id;
+  ok(send("task.complete", { task_id: explicit, output: DRAFT }, "agent:d"));
+  ok(send("review.request", { task_id: explicit, artefact: DRAFT, to: ["group:any"] }, "agent:d"));
+  const implicit = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b",
+                                            review_required: true })).task_id;
+  ok(send("task.complete", { task_id: implicit, output: DRAFT }));
+  const fresh = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" })).task_id;
+  ok(send("review.request", { task_id: fresh, artefact: DRAFT, to: ["group:any"] }));
   const snapshot = JSON.parse(JSON.stringify(c.snapshot()));
-  delete snapshot[0].tasks.find((t: any) => t.id === id).review.authors;
+  for (const t of snapshot[0].tasks) delete t.review?.authors;
   const again = new Coordinator({ defaultProfiles: ["core/1.0", "review/1.0"] });
   again.restore(snapshot);
-  assert.deepEqual(again.workspaces.get("w")!.tasks.get(id)!.review!.authors, ["agent:b"]);
+  const authors = (id: string) => again.workspaces.get("w")!.tasks.get(id)!.review!.authors;
+  assert.deepEqual(authors(explicit), ["agent:b", "agent:d"]);
+  assert.deepEqual(authors(implicit), ["agent:b"]);
+  assert.deepEqual(authors(fresh), ["agent:b"]);
   const r = again.dispatch({ jsonrpc: "2.0", id: "x", method: "decide.approve",
-                             params: { workspace: "w", from: "agent:b", task_id: id } });
+                             params: { workspace: "w", from: "agent:d", task_id: explicit } });
   assert.equal(r.error?.code, E.NOT_AUTHORISED);
+});
+
+test("a member restored with a type its URI does not name takes the scheme's", () => {
+  const { c, send } = ready();
+  const id = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b",
+                                      review_required: true }, "human:a")).task_id;
+  ok(send("task.complete", { task_id: id, output: DRAFT }));
+  // Written by a release that took the type a join declared.
+  const snapshot = JSON.parse(JSON.stringify(c.snapshot()));
+  const evil = { uri: "agent:evil", type: "human", role: "admin", joined: "t", keys: [], paused: false };
+  snapshot[0].members.push(evil);
+  snapshot[0].tasks.find((t: any) => t.id === id).review.requested_to.push("agent:evil");
+  const again = new Coordinator({ defaultProfiles: ["core/1.0", "review/1.0"] });
+  again.restore(snapshot);
+  const member = again.workspaces.get("w")!.members.get("agent:evil")!;
+  assert.equal(member.type, "agent");
+  assert.equal(member.role, "participant");
+  const r = again.dispatch({ jsonrpc: "2.0", id: "x", method: "decide.approve",
+                             params: { workspace: "w", from: "agent:evil", task_id: id } }) as any;
+  assert.equal(r.error?.message, "This task requires a person's review: agent:evil is not a human member");
 });
 
 test("authors are written to the store, and a new round's authors replace them", async () => {
@@ -189,8 +269,9 @@ test("authors are written to the store, and a new round's authors replace them",
     for (const [uri, type] of [["human:a", "human"], ["agent:b", "agent"], ["agent:d", "agent"]]) {
       send("participant.join", { type }, uri);
     }
-    const id = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b", review_required: true })).task_id;
+    const id = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" })).task_id;
     ok(send("task.complete", { task_id: id, output: DRAFT }));
+    ok(send("review.request", { task_id: id, artefact: DRAFT, to: ["human:a"] }));
     ok(send("decide.reject", { task_id: id, request_revision: true }, "human:a"));
     ok(send("task.complete", { task_id: id, output: DRAFT }, "agent:d"));
     store.close();

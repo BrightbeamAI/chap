@@ -462,6 +462,29 @@ function lastCompleter(task: Task): ParticipantUri | undefined {
   return undefined;
 }
 
+/** The note on the history entry of a review task.complete opened. */
+const OPENED_ON_COMPLETE = "review required; opened on task.complete";
+
+/**
+ * The authors of a review recorded before authors were kept, read from the
+ * task's history: the assignee, and whoever completed the work, whether
+ * the completion opened the review or came before a review.request.
+ */
+function storedAuthors(task: Task): ParticipantUri[] {
+  for (let i = task.history.length - 1; i >= 0; i--) {
+    const h = task.history[i];
+    if (h.state === "completed" || (h.state === "review_requested" && h.note === OPENED_ON_COMPLETE)) {
+      return authorsOf(task, h.from);
+    }
+  }
+  return [task.assignee];
+}
+
+/** Whether a URI is an address scope, which every member it covers answers to. */
+function isScope(uri: unknown): boolean {
+  return typeof uri === "string" && (uri.startsWith("workspace:") || uri.startsWith("group:"));
+}
+
 function reply(env: Envelope, body: { result?: unknown; error?: { code: number; message: string; data?: unknown } }): Envelope {
   // JSON-RPC answers with a null id where the request carries none, or is
   // not an object at all, as the Python reference does. Reading `id` from
@@ -1115,12 +1138,18 @@ export class Coordinator {
       // Defensive: ensure required collections exist even on older snapshots.
       if (!Array.isArray(m.keys)) m.keys = [];
       if (m.paused === undefined) m.paused = false;
+      // A member written before its type was checked against its URI takes
+      // the type the scheme names, and holds the admin role only where that
+      // type may (SPECIFICATION 5.1, 6.3).
+      const scheme = typeof m.uri === "string" ? m.uri.split(":")[0] : "";
+      if (PARTICIPANT_TYPES.includes(scheme)) m.type = scheme as Member["type"];
+      if (m.role === "admin" && !ADMIN_TYPES.includes(m.type)) m.role = "participant";
       ws.members.set(m.uri, m);
     }
     for (const t of (w.tasks as Task[]) ?? []) {
-      // A review written before authors were recorded takes the assignee,
-      // the one author every review has.
-      if (t.review && !Array.isArray(t.review.authors)) t.review.authors = [t.assignee];
+      // A review written before authors were recorded takes them from the
+      // task's history.
+      if (t.review && !Array.isArray(t.review.authors)) t.review.authors = storedAuthors(t);
       // and one written before acknowledgements were kept has none.
       if (t.review && !Array.isArray(t.review.acknowledgements)) t.review.acknowledgements = [];
       ws.tasks.set(t.id, t);
@@ -2375,6 +2404,17 @@ export class Coordinator {
       return { error: rpcError(E.PARAMS,
         "This task holds a review. Submit the output with task.complete, which opens a new round; a reviewer decision completes it.") };
     }
+    // A review once opened is decided. Its authors may take their work back
+    // to revise it, and nobody else; and a task whose review no decision has
+    // closed is not declined around it.
+    if (task.state === "review_requested" && !task.review!.authors.includes(p.from as ParticipantUri)) {
+      return { error: rpcError(E.NOT_AUTHORISED,
+        "Only the authors of the work under review take it back from review") };
+    }
+    if (newState === "declined" && task.review && !task.review.decisions.some((d) => d.kind === "reject")) {
+      return { error: rpcError(E.PARAMS,
+        "This task holds a review no decision has closed; a reviewer's decision ends it") };
+    }
     task.state = newState;
     task.updated_at = this.now();
     task.history.push({
@@ -2402,6 +2442,14 @@ export class Coordinator {
     if (p.confidence != null && typeof p.confidence !== "number" && typeof p.confidence !== "string") {
       return { error: rpcError(E.PARAMS, "confidence must be a number or a string") };
     }
+    // The assignee does the work a person reviews. A completion from anyone
+    // else would make them an author, and an author cannot decide: routing a
+    // task to a reviewer and completing it would take that reviewer off the
+    // review.
+    const required = reviewRequired(ws, task);
+    if (required && p.from !== task.assignee) {
+      return { error: rpcError(E.NOT_AUTHORISED, "Only the assignee completes a task that requires review") };
+    }
     // review/1.0 S3.1: task.complete on a task whose review is required opens a
     // review implicitly and does not complete, and so does task.complete on a
     // task that holds a review from an earlier round. The submitted output
@@ -2409,13 +2457,12 @@ export class Coordinator {
     // then takes the task to completed. Without this a review_required task
     // would reach completed with unreviewed output and no decision, and a task
     // taken back from review with task.update would complete with none.
-    const required = reviewRequired(ws, task);
     if (required || task.review) {
       const now = this.now();
       // The assignee and the completer made this artefact, and neither may
       // decide it.
       const authors = authorsOf(task, p.from);
-      let note = "review required; opened on task.complete";
+      let note = OPENED_ON_COMPLETE;
       if (!task.review) {
         // review_required means a person has to see this. The producer must
         // not satisfy its own review, and neither must another agent: an agent
@@ -2593,14 +2640,24 @@ export class Coordinator {
       }
     }
 
-    // Where a person's review is required, the reviewers a request names,
-    // opening the review or widening it, must be people other than the
-    // authors of the work. Without this the agent whose work a required
-    // review holds could add itself to that review and approve its own work.
-    // An explicit review of a task that does not require one keeps its own
-    // `to`, so a deliberate agent-reviews-agent flow is still available.
+    // Where a person's review is required, the work's authors do not choose
+    // who reviews it, and the reviewers a request names, opening the review
+    // or widening it, are people other than the authors, each named. Without
+    // this the agent whose work a required review holds could add itself, or
+    // a person it joined, or any member at all through a broadcast scope,
+    // and approve its own work. An explicit review of a task that does not
+    // require one keeps its own `to`, so a deliberate agent-reviews-agent
+    // flow is still available.
     const authors = open ? open.authors : authorsOf(task, lastCompleter(task));
     if (reviewRequired(ws, task)) {
+      if (authors.includes(p.from as ParticipantUri)) {
+        return { error: rpcError(E.NOT_AUTHORISED, "The author of the work under review cannot request its review") };
+      }
+      const scope = reviewers.find(isScope);
+      if (scope !== undefined) {
+        return { error: rpcError(E.PARAMS,
+          `A review that requires a person names its reviewers, and ${scope} is an address scope`) };
+      }
       for (const r of reviewers) {
         if (authors.includes(r)) {
           return { error: rpcError(E.NOT_AUTHORISED, `The author of the work under review cannot review it: ${r}`) };
@@ -2894,10 +2951,12 @@ export class Coordinator {
       history: [{ ts: now, from: p.from as ParticipantUri, state: "created", note: `escalated from ${orig.id}` }],
       paused: false,
     };
-    // Escalating hands the work on and keeps its review requirement. The
-    // successor requires review when the original did, and a trial task
-    // forces review under modes/1.0 as it does at task.create.
-    if (orig.review_required || (ws.profiles.some(pr => pr.startsWith("modes/")) && newTask.mode === "trial")) {
+    // Escalating hands the work on and keeps its review. The successor
+    // requires review when the original did or held a review, since a review
+    // once opened is decided, and a trial task forces review under modes/1.0
+    // as it does at task.create.
+    if (orig.review_required || orig.review !== undefined
+        || (ws.profiles.some(pr => pr.startsWith("modes/")) && newTask.mode === "trial")) {
       newTask.review_required = true;
     }
     ws.tasks.set(newId, newTask);

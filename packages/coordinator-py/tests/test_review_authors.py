@@ -62,21 +62,24 @@ def _required_under_review():
     return c, send, tid
 
 
-def test_the_agent_cannot_add_itself_to_its_own_required_review_or_approve_it():
+def test_the_agent_cannot_add_itself_or_anyone_to_its_own_required_review_or_approve_it():
     c, send, tid = _required_under_review()
-    _refused(send("review.request", task_id=tid, artefact=DRAFT, to=["agent:b"]),
-             "The author of the work under review cannot review it: agent:b")
+    for to in (["agent:b"], ["human:c"]):
+        _refused(send("review.request", task_id=tid, artefact=DRAFT, to=to),
+                 "The author of the work under review cannot request its review")
     _refused(send("decide.approve", task_id=tid),
              "The author of the work under review cannot decide it")
     assert _task(c, tid).review.requested_to == ["human:a", "human:c"]
     assert _task(c, tid).state == "review_requested"
 
 
-def test_before_completing_the_agent_cannot_open_a_required_review_addressed_to_itself():
+def test_before_completing_the_agent_cannot_open_a_required_review_and_a_person_cannot_name_it():
     c, send = _ready()
     tid = _ok(send("task.create", kind="k", input={}, assignee="agent:b",
                    review_required=True))["task_id"]
-    _refused(send("review.request", task_id=tid, artefact=DRAFT, to=["agent:b"]),
+    _refused(send("review.request", task_id=tid, artefact=DRAFT, to=["human:a"]),
+             "The author of the work under review cannot request its review")
+    _refused(send("review.request", actor="human:a", task_id=tid, artefact=DRAFT, to=["agent:b"]),
              "The author of the work under review cannot review it: agent:b")
     assert _task(c, tid).review is None
 
@@ -87,14 +90,63 @@ def test_another_agent_cannot_be_added_to_a_required_review():
              "This task requires a person's review: agent:d is not a human member")
 
 
-def test_a_broadcast_reviewer_on_a_required_review_still_means_a_person():
+def test_a_required_review_names_its_reviewers_and_a_broadcast_scope_is_refused():
     c, send, tid = _required_under_review()
-    _ok(send("review.request", actor="human:a", task_id=tid, artefact=DRAFT, to=["group:any"]))
+    for scope in ("group:any", "workspace:w"):
+        r = send("review.request", actor="human:a", task_id=tid, artefact=DRAFT, to=[scope])
+        assert r["error"] == {
+            "code": E.PARAMS,
+            "message": f"A review that requires a person names its reviewers, and {scope} "
+                       "is an address scope"}
+    assert _task(c, tid).review.requested_to == ["human:a", "human:c"]
     _refused(send("decide.approve", actor="agent:d", task_id=tid),
              "This task requires a person's review: agent:d is not a human member")
-    _refused(send("decide.approve", task_id=tid),
-             "The author of the work under review cannot decide it")
     assert _ok(send("decide.approve", actor="human:c", task_id=tid))["state"] == "completed"
+
+
+def test_only_the_assignee_completes_a_task_that_requires_review():
+    # Completed by another member, the task would count that member as an
+    # author, and routing it to a reviewer first would take that reviewer off
+    # the review.
+    c, send = _ready()
+    tid = _ok(send("task.create", actor="human:c", kind="k", input={}, assignee="human:a",
+                   review_required=True))["task_id"]
+    _refused(send("task.complete", task_id=tid, output=DRAFT),
+             "Only the assignee completes a task that requires review")
+    assert _task(c, tid).state == "created"
+    assert _ok(send("task.complete", actor="human:a", task_id=tid,
+                    output=DRAFT))["state"] == "review_requested"
+    assert _task(c, tid).review.authors == ["human:a"]
+
+
+def test_only_the_works_authors_take_it_back_from_review_and_an_undecided_review_is_not_declined():
+    c, send = _ready()
+    tid = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
+    _ok(send("review.request", task_id=tid, artefact=DRAFT, to=["human:a"]))
+    _refused(send("task.update", actor="agent:d", task_id=tid, state="in_progress"),
+             "Only the authors of the work under review take it back from review")
+    _ok(send("task.update", task_id=tid, state="in_progress"))
+    declined = send("task.update", task_id=tid, state="declined")
+    assert declined["error"] == {
+        "code": E.PARAMS,
+        "message": "This task holds a review no decision has closed; a reviewer's decision ends it"}
+    assert _task(c, tid).state == "in_progress"
+    # Once a reviewer rejected the work, the review is decided, and its
+    # author may give the task up.
+    _ok(send("task.complete", task_id=tid, output={"body": "v2"}))
+    _ok(send("decide.reject", actor="human:a", task_id=tid, request_revision=True))
+    assert _ok(send("task.update", task_id=tid, state="declined"))["state"] == "declined"
+
+
+def test_an_escalation_of_a_task_that_held_a_review_requires_review():
+    c, send = _ready()
+    tid = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
+    _ok(send("review.request", task_id=tid, artefact=DRAFT, to=["human:a"]))
+    nxt = _ok(send("escalate.raise", original_task_id=tid,
+                   new_task={"assignee": "agent:d"}))["new_task_id"]
+    assert _task(c, nxt).review_required is True
+    assert _ok(send("task.complete", actor="agent:d", task_id=nxt,
+                    output=DRAFT))["state"] == "review_requested"
 
 
 def test_the_completer_cannot_decide_a_broadcast_review_of_its_own_work():
@@ -123,8 +175,8 @@ def test_a_review_records_the_assignee_and_the_completer_as_its_authors():
     c, send = _ready()
     required = _ok(send("task.create", kind="k", input={}, assignee="agent:b",
                         review_required=True))["task_id"]
-    _ok(send("task.complete", actor="agent:d", task_id=required, output=DRAFT))
-    assert _task(c, required).review.authors == ["agent:b", "agent:d"]
+    _ok(send("task.complete", task_id=required, output=DRAFT))
+    assert _task(c, required).review.authors == ["agent:b"]
     assert _task(c, required).review.requested_to == ["human:a", "human:c"]
 
     explicit = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
@@ -173,22 +225,61 @@ def test_a_new_round_of_a_required_review_leaves_out_a_reviewer_who_is_not_a_per
     assert _task(c, tid).review.requested_to == ["human:a", "human:c"]
 
 
-def test_a_review_restored_without_authors_takes_its_assignee():
+def test_a_review_restored_without_authors_takes_them_from_the_tasks_history():
+    # A task one agent completed for another and then sent for review, and one
+    # whose completion opened a review its assignee completed: the shapes a
+    # store written before authors were recorded holds.
     from chap_coordinator.storage.store import MemoryStore
     store = MemoryStore()
     c, send = _ready(store=store)
-    tid = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
-    _ok(send("review.request", task_id=tid, artefact=DRAFT, to=["group:any"]))
-    # Rewrite the stored task as a release before authors wrote it.
+    explicit = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
+    _ok(send("task.complete", actor="agent:d", task_id=explicit, output=DRAFT))
+    _ok(send("review.request", actor="agent:d", task_id=explicit, artefact=DRAFT,
+             to=["group:any"]))
+    implicit = _ok(send("task.create", kind="k", input={}, assignee="agent:b",
+                        review_required=True))["task_id"]
+    _ok(send("task.complete", task_id=implicit, output=DRAFT))
+    fresh = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
+    _ok(send("review.request", task_id=fresh, artefact=DRAFT, to=["group:any"]))
+    # Rewrite the stored tasks as a release before authors wrote them.
     held = store._held["w"]["objects"]["tasks"]
-    stored = json.loads(held[tid])
-    del stored["review"]["authors"]
-    held[tid] = json.dumps(stored)
+    for tid in (explicit, implicit, fresh):
+        stored = json.loads(held[tid])
+        del stored["review"]["authors"]
+        held[tid] = json.dumps(stored)
     again = Coordinator(CoordinatorOptions(store=store))
-    assert again.workspaces["w"].tasks[tid].review.authors == ["agent:b"]
+    tasks = again.workspaces["w"].tasks
+    assert tasks[explicit].review.authors == ["agent:b", "agent:d"]
+    assert tasks[implicit].review.authors == ["agent:b"]
+    assert tasks[fresh].review.authors == ["agent:b"]
     r = again.dispatch({"jsonrpc": "2.0", "id": "x", "method": "decide.approve",
-                        "params": {"workspace": "w", "from": "agent:b", "task_id": tid}})
+                        "params": {"workspace": "w", "from": "agent:d", "task_id": explicit}})
     assert r["error"]["code"] == E.NOT_AUTHORISED
+
+
+def test_a_member_restored_with_a_type_its_uri_does_not_name_takes_the_schemes():
+    from chap_coordinator.storage.store import MemoryStore
+    store = MemoryStore()
+    c, send = _ready(store=store)
+    tid = _ok(send("task.create", actor="human:a", kind="k", input={}, assignee="agent:b",
+                   review_required=True))["task_id"]
+    _ok(send("task.complete", task_id=tid, output=DRAFT))
+    # Written by a release that took the type a join declared.
+    objects = store._held["w"]["objects"]
+    objects["members"]["agent:evil"] = json.dumps({
+        "uri": "agent:evil", "type": "human", "role": "admin", "joined": "t", "keys": [],
+        "paused": False})
+    stored = json.loads(objects["tasks"][tid])
+    stored["review"]["requested_to"].append("agent:evil")
+    objects["tasks"][tid] = json.dumps(stored)
+    again = Coordinator(CoordinatorOptions(store=store))
+    member = again.workspaces["w"].members["agent:evil"]
+    assert member.type == "agent"
+    assert member.role == "participant"
+    r = again.dispatch({"jsonrpc": "2.0", "id": "x", "method": "decide.approve",
+                        "params": {"workspace": "w", "from": "agent:evil", "task_id": tid}})
+    assert r["error"]["message"] == ("This task requires a person's review: agent:evil is not a "
+                                     "human member")
 
 
 def test_authors_are_written_to_the_store_and_a_new_rounds_authors_replace_them(tmp_path):
@@ -196,9 +287,9 @@ def test_authors_are_written_to_the_store_and_a_new_rounds_authors_replace_them(
     store = SqliteStore(path)
     c, send = _ready(members=(("human:a", "human"), ("agent:b", "agent"), ("agent:d", "agent")),
                      store=store)
-    tid = _ok(send("task.create", kind="k", input={}, assignee="agent:b",
-                   review_required=True))["task_id"]
+    tid = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
     _ok(send("task.complete", task_id=tid, output=DRAFT))
+    _ok(send("review.request", task_id=tid, artefact=DRAFT, to=["human:a"]))
     _ok(send("decide.reject", actor="human:a", task_id=tid, request_revision=True))
     _ok(send("task.complete", actor="agent:d", task_id=tid, output=DRAFT))
     store.close()

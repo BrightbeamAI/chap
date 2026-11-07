@@ -83,21 +83,13 @@ test("every human is addressed", () => {
   assert.deepEqual([...task(c, id).review.requested_to].sort(), ["human:them", "human:you"]);
 });
 
-test("the completer is excluded even when human", () => {
-  const { c, send } = ws([["human:you", "human"], ["human:them", "human"],
-                          ["agent:drafter", "agent"]]);
-  const id = send("task.create", { kind: "k", input: {}, assignee: "agent:drafter",
-                                   review_required: true }).result.task_id;
-  send("task.complete", { task_id: id, output: DRAFT }, "human:you");
-  assert.deepEqual(task(c, id).review.requested_to, ["human:them"]);
-});
-
-test("the assignee is excluded even when human", () => {
+test("only the assignee completes, and it is excluded even when human", () => {
   const { c, send } = ws([["human:you", "human"], ["human:them", "human"],
                           ["agent:drafter", "agent"]]);
   const id = send("task.create", { kind: "k", input: {}, assignee: "human:them",
                                    review_required: true }).result.task_id;
-  send("task.complete", { task_id: id, output: DRAFT }, "agent:drafter");
+  assert.equal(send("task.complete", { task_id: id, output: DRAFT }, "agent:drafter").error.code, -32011);
+  send("task.complete", { task_id: id, output: DRAFT }, "human:them");
   assert.deepEqual(task(c, id).review.requested_to, ["human:you"]);
 });
 

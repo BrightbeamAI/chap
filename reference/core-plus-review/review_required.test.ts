@@ -83,15 +83,15 @@ test("the only human cannot review their own work", () => {
   assert.equal(done.error?.code, -32011);
 });
 
-test("the implicit review excludes the completer and the assignee", () => {
+test("only the assignee completes, and the implicit review leaves it out", () => {
   workspace("w4", [["human:a", "human"], ["human:b", "human"], ["agent:bot", "agent"]]);
-  const id = activeTask("w4", "human:a", "agent:bot", true);
+  const id = activeTask("w4", "human:b", "human:a", true);
 
+  const other = call("task.complete", { workspace: "w4", from: "agent:bot", task_id: id, output: { d: 1 } });
+  assert.equal(other.error.code, -32011);
   call("task.complete", { workspace: "w4", from: "human:a", task_id: id, output: { d: 1 } });
-  const desc = call("audit.read", { workspace: "w4", filter: { task_id: id } });
-  assert.ok(desc.result, "audit read should succeed");
-
-  // human:b is the only member who is neither the completer nor the assignee.
+  // human:b is the only person who did not make the work.
+  assert.equal(call("decide.approve", { workspace: "w4", from: "human:a", task_id: id }).error.code, -32011);
   const approved = call("decide.approve", { workspace: "w4", from: "human:b", task_id: id });
   assert.equal(approved.result.state, "completed");
 });
