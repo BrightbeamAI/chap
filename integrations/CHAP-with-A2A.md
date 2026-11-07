@@ -334,6 +334,13 @@ compatibility off builds its card with `legacyCompat: false`
 (`legacy_compat=False`), so the card lists the 1.0 interface alone. Every
 input and output mode is `application/json`.
 
+A data part travels as a protobuf `Value` in both 1.x SDKs, and a `Value`
+holds every number as a double. Both servers send whole numbers as JSON
+integers, `"seq": 0` and `"chap_error": -32602`, as CHAP writes them. A
+client built on the Python `a2a-sdk` parses them into doubles again and
+reads `0.0` and `-32602.0`: compare them as numbers, or take `int()` of a
+field that holds a count or a code.
+
 ### What gets exposed
 
 Each CHAP method the server offers appears as an `AgentSkill` on the Agent
