@@ -16,6 +16,10 @@ import { createDemoRepo } from "@brightbeamai/chap-code-gate/demo-repo";
 import { agentClient, contentHash, reviewerClient } from "@brightbeamai/chap-code-gate/gate";
 
 export const run = promisify(execFile);
+// The enrolment code every gate in these tests takes, as the printed link
+// carries it: a person's first join needs it.
+process.env.CHAP_ENROLMENT_CODE ??= "TESTS-ENROL";
+
 export const projectDir = fileURLToPath(new URL("..", import.meta.url));
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -51,7 +55,7 @@ export async function startGate({ suffix = "", humans = null, review = null, ext
   const { path: keyPath } = await generateKeyFile(config.agent.uri, keyDir);
   const agent = await agentClient(gate, { keyPath });
   const reviewer = async (uri) => {
-    const c = reviewerClient(gate, uri, await generateSigner(uri));
+    const c = reviewerClient(gate, uri, await generateSigner(uri), process.env.CHAP_ENROLMENT_CODE);
     await c.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [c.signer.publicJwk] } });
     return c;
   };

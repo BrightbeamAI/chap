@@ -55,7 +55,7 @@ function setHash(changes) {
 }
 async function getJson(path) {
   const res = await fetch(path);
-  if (!res.ok) throw new Error(`${path} answered ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(`${path} answered ${res.status}`), { status: res.status });
   return res.json();
 }
 /** POST JSON to the server; resolves { ok, body }. */
@@ -148,6 +148,10 @@ async function boot() {
   document.addEventListener("keydown", onKey);
 
   state.config = await getJson("api/config");
+  // The link the server printed carries the enrolment code: kept for this
+  // tab, and taken off the address so it is not shared with it.
+  const code = hashParams().get("enrol");
+  if (code) { sessionStorage.setItem(ENROLMENT_KEY(), code); setHash({ enrol: null }); }
   // Back from the provider: the page's address loses the code at once, and
   // the server redeems it for the ID token the join presents.
   const back = returnedSignIn();
@@ -219,7 +223,7 @@ async function setReviewer(uri) {
 
 /** Sign as `uri` with `signer`, joining where the workspace does not hold its key; `setup` is what the reviewer must do first. */
 async function useSigner(uri, signer, setup = null) {
-  state.client = makeClient({ url: "chap", workspace: state.config.workspace, from: uri, signer });
+  state.client = makeClient({ url: "chap", workspace: state.config.workspace, from: uri, signer, enrolment });
   state.key = { signer, fingerprint: signer ? await fingerprint(signer.publicJwk) : null, status: !state.config.require_signatures ? "unsigned" : signer ? "unchecked" : "setup", refused: false, setup };
   if (signer) {
     await checkKey();
@@ -268,7 +272,7 @@ async function makeKey() {
   }
   await keepSigner(ws, uri, passkey);
   if (state.config.oidc && !(before && state.key.status === "on record")) {
-    state.client = makeClient({ url: "chap", workspace: ws, from: uri, signer: passkey });
+    state.client = makeClient({ url: "chap", workspace: ws, from: uri, signer: passkey, enrolment });
     await startSignIn(passkey);
     return;
   }
@@ -286,9 +290,25 @@ async function makeKey() {
 async function join(token = null) {
   const uri = state.client.from;
   const me = humanOf(uri);
+  const params = { type: "human", role: me?.role ?? "reviewer", display_name: me?.display_name, jwks: { keys: [state.key.signer.publicJwk] }, ...(token ? { oidc_token: token } : {}) };
   try {
-    await state.client.call("participant.join", { type: "human", role: me?.role ?? "reviewer", display_name: me?.display_name, jwks: { keys: [state.key.signer.publicJwk] }, ...(token ? { oidc_token: token } : {}) });
+    try {
+      await state.client.call("participant.join", params);
+    } catch (e) {
+      // A person's first join needs the code the server printed when it
+      // started; asked for once, then tried again.
+      if (e.code !== -32011 || e.data?.reason !== "enrolment") throw e;
+      const typed = prompt(`${uri} joins this workspace for the first time. Enter the enrolment code the desk server printed when it started.`);
+      if (!typed) { toast("Not joined: the desk needs the enrolment code to join you the first time.", "bad"); return; }
+      sessionStorage.setItem(ENROLMENT_KEY(), typed.trim());
+      await state.client.call("participant.join", params);
+    }
   } catch (e) {
+    if (e.data?.reason === "enrolment") {
+      sessionStorage.removeItem(ENROLMENT_KEY());
+      toast("Not joined: that is not the enrolment code the desk server printed. Choose the reviewer again to type it once more.", "bad");
+      return;
+    }
     if (e.code === -32011) {
       state.key.refused = true;
       await checkKey();
@@ -473,10 +493,16 @@ function showSetup() {
 }
 
 function lost(e) {
+  // Where people sign in, the workspace is read once the reviewer has.
+  if (e?.status === 401) { chip("connection", "sign in to read", ""); return; }
   state.lost = true;
   chip("connection", "connection lost", "bad");
   console.warn(e);
 }
+
+/** The enrolment code this browser was given for the workspace: by the link the server printed, or typed in. */
+const ENROLMENT_KEY = () => `chap-enrolment:${state.config.workspace}`;
+const enrolment = () => sessionStorage.getItem(ENROLMENT_KEY());
 
 // -- data -----------------------------------------------------------------------
 

@@ -26,7 +26,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMain, usage, wantsHelp } from "@brightbeamai/chap-server";
-import { makeClient, signerFromJwk } from "@brightbeamai/chap-server/client";
+import { makeClient, signedRead, signerFromJwk } from "@brightbeamai/chap-server/client";
 import { makeProvider } from "@brightbeamai/chap-server/providers";
 import { keyPathFor, readKeyFile } from "@brightbeamai/chap-server/keys";
 
@@ -129,8 +129,14 @@ export async function joinWorkspace(client, config) {
   });
 }
 
-async function fetchTask(base, taskId) {
-  const res = await fetch(`${base}/api/tasks/${encodeURIComponent(taskId)}`);
+/**
+ * A task's view from the read API. The read is signed with the agent's key,
+ * which a server where people sign in requires of a member that reads.
+ */
+async function fetchTask(base, taskId, client) {
+  const url = new URL(`${base}/api/tasks/${encodeURIComponent(taskId)}`);
+  const authorization = await signedRead(client.signer, { workspace: client.workspace, from: client.from, path: url.pathname + url.search });
+  const res = await fetch(url, { headers: { authorization } });
   if (!res.ok) throw new Error(`GET /api/tasks/${taskId} answered ${res.status}`);
   return res.json();
 }
@@ -203,7 +209,7 @@ async function reviewerPresent(client) {
  * reached another way.
  */
 async function advance({ client, base, provider, outbox, taskId, item, log }) {
-  const view = await fetchTask(base, taskId);
+  const view = await fetchTask(base, taskId, client);
   const { row } = item;
   switch (view.state) {
     case "created":

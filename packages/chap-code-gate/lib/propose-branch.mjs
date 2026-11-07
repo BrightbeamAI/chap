@@ -56,7 +56,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentClient, api, approvalOf, buildNote, checkApproval, commitSigning, contentHash, deskUrl, ensureGate, evidence, gateEnv, lastDecision, loadGate, onlinePolicy, reviewersReady, reviewRule, reviewUrl, strictestRule, trustAtRef } from "./gate.mjs";
+import { agentClient, deskLink, api, approvalOf, buildNote, checkApproval, commitSigning, contentHash, ensureGate, evidence, gateEnv, lastDecision, loadGate, onlinePolicy, reviewersReady, reviewRule, reviewUrl, strictestRule, trustAtRef } from "./gate.mjs";
 import { git, parseTrailers, rawCommit, repoRoot } from "./git.mjs";
 import { announce, commandAgain, printPrompt, promptAfter, readContext, reviewerName, waitWithin, withNote } from "./loop.mjs";
 import { MODEL_SOURCES, sessionModel } from "./model.mjs";
@@ -213,7 +213,7 @@ export async function main(argv, { log = console.log, gateDir } = {}) {
   const review = reviewRule(gate);
   let ready = await reviewersReady(client, review);
   if (!ready.ok) {
-    const advice = `${review.rule} needs ${ready.need} reviewer${ready.need === 1 ? "" : "s"} in the workspace and ${ready.have} ${ready.have === 1 ? "has" : "have"} joined. A reviewer joins by opening the desk at ${deskUrl(gate)}`;
+    const advice = `${review.rule} needs ${ready.need} reviewer${ready.need === 1 ? "" : "s"} in the workspace and ${ready.have} ${ready.have === 1 ? "has" : "have"} joined. A reviewer joins by opening the desk at ${await deskLink(gate)}`;
     if (!args.wait) throw new Error(`${advice}; propose again after that.`);
     log(`${advice}; waiting for that.`);
     while (!(ready = await reviewersReady(client, review)).ok) await new Promise((r) => setTimeout(r, args.poll));

@@ -29,7 +29,7 @@ log as a first-class entry.
 | Scope         | Effect                                                          |
 |---------------|-----------------------------------------------------------------|
 | `task`        | A specific task stops accepting updates.                        |
-| `participant` | A specific participant stops being assigned new tasks; in-flight tasks complete by default. `task.create`, `control.supersede` and `escalate.raise` refuse a paused assignee with `-32063`, `handoff.accept` refuses a paused acceptor with `-32063`, and `task.route` passes over a paused candidate, and refuses with `-32063` when an operator policy picks one. Any member can resume the participant, the participant included. |
+| `participant` | A specific participant stops being assigned new tasks; in-flight tasks complete by default. `task.create`, `control.supersede` and `escalate.raise` refuse a paused assignee with `-32063`, `handoff.accept` refuses a paused acceptor with `-32063`, and `task.route` passes over a paused candidate, and refuses with `-32063` when an operator policy picks one. Any other member can resume the participant; the paused participant's own `control.resume` is refused with `-32011`, and so is its `participant.leave` while it is paused, since it would come back unpaused. |
 | `workspace`   | The workspace refuses every call with `-32063` except `workspace.create`, `workspace.describe`, `audit.read`, `participant.join`, `participant.leave` and `control.resume`. |
 
 At task scope, `control.resume` returns the task to the state it held at the

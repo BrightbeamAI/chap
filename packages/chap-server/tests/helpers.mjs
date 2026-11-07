@@ -4,6 +4,10 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// The enrolment code every server in these tests takes, and the desk the
+// harness opens carries, as a server's printed link does.
+process.env.CHAP_ENROLMENT_CODE ??= "TESTS-ENROL";
+
 export const HUMAN = "human:reviewer@example.org";
 export const AGENT = "agent:drafter";
 

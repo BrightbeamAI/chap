@@ -130,6 +130,11 @@ def register_control(coord: "Coordinator") -> None:
             if uri not in ws.members:
                 return {"error": rpc_error(E.PARAMS,
                                            f"Unknown participant: {uri}")}
+            # A pause holds until someone else lifts it: the paused member
+            # lifting its own would make the pause its to keep or drop.
+            if uri == p.get("from"):
+                return {"error": rpc_error(E.NOT_AUTHORISED,
+                                           "A paused participant does not lift its own pause")}
             ws.members[uri].paused = False
             return {"result": {"scope": "participant",
                                "participant_uri": uri, "paused": False}}

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { fileURLToPath } from "node:url";
-import { loadConfig, makeCoordinator, makeServer, AGENT_MCP_TOOLS } from "@brightbeamai/chap-server";
+import { enrolmentCode, loadConfig, makeCoordinator, makeServer, AGENT_MCP_TOOLS } from "@brightbeamai/chap-server";
 import { generateSigner, makeClient } from "@brightbeamai/chap-server/client";
 
 let config, coord, server, base, mcp, desk;
@@ -21,8 +21,15 @@ before(async () => {
   base = `http://127.0.0.1:${server.address().port}`;
   mcp = new Client({ name: "gate-test", version: "0" });
   await mcp.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`)));
-  // The human joins as the desk does, with a key made for them.
-  desk = makeClient({ url: `${base}/chap`, workspace: config.workspace, from: config.humans[0].uri, signer: await generateSigner(config.humans[0].uri) });
+  // Before the human opens the desk, a process that reaches /chap cannot
+  // take their name: the first join needs the code the server printed.
+  const squat = await generateSigner(config.humans[0].uri);
+  const early = makeClient({ url: `${base}/chap`, workspace: config.workspace, from: config.humans[0].uri, signer: squat });
+  await assert.rejects(early.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [squat.publicJwk] } }),
+    (e) => e.code === -32011 && e.data?.reason === "enrolment");
+  // The human joins as the desk does, with a key made for them and the code
+  // from the link the server printed.
+  desk = makeClient({ url: `${base}/chap`, workspace: config.workspace, from: config.humans[0].uri, signer: await generateSigner(config.humans[0].uri), enrolment: enrolmentCode(config) });
   await desk.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [desk.signer.publicJwk] } });
 });
 

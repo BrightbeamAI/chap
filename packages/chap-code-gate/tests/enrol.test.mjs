@@ -59,7 +59,7 @@ test("a store that holds a reviewer under another key is reported at start", asy
   config.store = join(dir, "chap.db");
   const first = await startGate(config, { log: () => {} });
   const squat = await generateSigner(HUMAN);
-  await makeClient({ url: `${first.base}/chap`, workspace: "wsp_gate", from: HUMAN, signer: squat }).call("participant.join", { type: "human", jwks: { keys: [squat.publicJwk] } });
+  await makeClient({ url: `${first.base}/chap`, workspace: "wsp_gate", from: HUMAN, signer: squat, enrolment: process.env.CHAP_ENROLMENT_CODE }).call("participant.join", { type: "human", jwks: { keys: [squat.publicJwk] } });
   await new Promise((r) => first.server.close(r));
   await policyFor(dir, await generateSigner(HUMAN), await generateSigner(AGENT));
   const lines = [];

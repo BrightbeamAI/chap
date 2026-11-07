@@ -19,6 +19,8 @@ import { git } from "@brightbeamai/chap-code-gate/git";
 
 const run = promisify(execFile);
 const projectDir = fileURLToPath(new URL("..", import.meta.url));
+// The enrolment code the gate takes, which the reviewer's first join carries.
+process.env.CHAP_ENROLMENT_CODE ??= "TESTS-ENROL";
 const python = process.env.PYTHON ?? "python3";
 const ready = spawnSync(python, ["-c", "import chap_analytics"], { stdio: "ignore" }).status === 0;
 
@@ -37,7 +39,7 @@ test("analytics.py reads the gate's store and writes the report, the cases and t
     const { path: keyPath } = await generateKeyFile(config.agent.uri, keyDir);
     const gate = { dir: projectDir, config, url: `${base}/chap`, base };
     const agent = await agentClient(gate, { keyPath });
-    const human = reviewerClient(gate, config.humans[0].uri, await generateSigner(config.humans[0].uri));
+    const human = reviewerClient(gate, config.humans[0].uri, await generateSigner(config.humans[0].uri), process.env.CHAP_ENROLMENT_CODE);
     await human.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [human.signer.publicJwk] } });
     const repo = await createDemoRepo(await mkdtemp(join(tmpdir(), "chap-repo-")), { log: () => {}, hooks: false });
     const decide = async (method, id, extra) => {

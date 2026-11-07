@@ -18,7 +18,7 @@ let g, reviewer, repo;
 before(async () => {
   g = await startGate({ suffix: "passkey" });
   const uri = g.config.humans[0].uri;
-  reviewer = reviewerClient(g.gate, uri, await passkeySigner(uri, `http://localhost:${g.server.address().port}`));
+  reviewer = reviewerClient(g.gate, uri, await passkeySigner(uri, `http://localhost:${g.server.address().port}`), process.env.CHAP_ENROLMENT_CODE);
   await reviewer.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [reviewer.signer.publicJwk] } });
   repo = await demoRepo();
 });

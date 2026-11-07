@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
-import { loadConfig as loadConfigFrom, makeCoordinator, makeServer } from "@brightbeamai/chap-server";
+import { enrolmentCode, loadConfig as loadConfigFrom, makeCoordinator, makeServer } from "@brightbeamai/chap-server";
 import { makeClient, generateSigner, signerFromJwk, thumbprint as jwkThumbprint } from "@brightbeamai/chap-server/client";
 import { generateKeyFile, readKeyFile, kidFor, thumbprint } from "@brightbeamai/chap-server/keys";
 import { startDevIssuer, signJwt } from "@brightbeamai/chap-server/dev-issuer";
@@ -42,7 +42,9 @@ before(async () => {
   ({ path: keyPath } = await generateKeyFile(config.agent.uri, keyDir));
   const signer = await signerFromJwk(config.agent.uri, await readKeyFile(config.agent.uri, keyPath));
   agent = makeClient({ url: `${base}/chap`, workspace: config.workspace, from: config.agent.uri, signer });
-  human = makeClient({ url: `${base}/chap`, workspace: config.workspace, from: config.humans[0].uri, signer: await generateSigner(config.humans[0].uri) });
+  // The person joins with the code the server printed, as the desk does
+  // from the link it printed.
+  human = makeClient({ url: `${base}/chap`, workspace: config.workspace, from: config.humans[0].uri, signer: await generateSigner(config.humans[0].uri), enrolment: enrolmentCode(config) });
 });
 
 after(async () => {
@@ -320,7 +322,7 @@ describe("the agent's loop", () => {
     lconfig = await loadConfig();
     lconfig.store = ":memory:";
     ({ server: lserver, base: lbase } = await startServer(lconfig));
-    lhuman = makeClient({ url: `${lbase}/chap`, workspace: lconfig.workspace, from: lconfig.humans[0].uri, signer: await generateSigner(lconfig.humans[0].uri) });
+    lhuman = makeClient({ url: `${lbase}/chap`, workspace: lconfig.workspace, from: lconfig.humans[0].uri, signer: await generateSigner(lconfig.humans[0].uri), enrolment: enrolmentCode(lconfig) });
     // A signed reader with the agent's key, for the chain checks.
     probe = makeClient({ url: `${lbase}/chap`, workspace: lconfig.workspace, from: lconfig.agent.uri, signer: agent.signer });
     outbox = await mkdtemp(join(tmpdir(), "chap-outbox-"));

@@ -33,7 +33,7 @@
 
 import { join } from "node:path";
 import { submittedArtefact } from "@brightbeamai/chap-server/desk/followup.js";
-import { agentClient, changeSince, commitSigning, describeChange, deskUrl, ensureGate, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, reviewUrl, revisionTarget, task } from "./gate.mjs";
+import { agentClient, deskLink, changeSince, commitSigning, describeChange, ensureGate, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, reviewUrl, revisionTarget, task } from "./gate.mjs";
 import { announce, commandAgain, printPrompt, promptAfter, readContext, reviewerName, waitWithin, withNote } from "./loop.mjs";
 import { MODEL_SOURCES, sessionModel } from "./model.mjs";
 import { applyToWorkingTree, commitAll, patchApplies, repoRoot } from "./git.mjs";
@@ -103,7 +103,7 @@ export async function main(argv, { log = console.log, gateDir } = {}) {
   const review = reviewRule(gate);
   let ready = await reviewersReady(client, review);
   if (!ready.ok) {
-    const advice = `${review.rule} needs ${ready.need} reviewer${ready.need === 1 ? "" : "s"} in the workspace and ${ready.have} ${ready.have === 1 ? "has" : "have"} joined, so the review cannot open yet. A reviewer joins by opening the desk at ${deskUrl(gate)}`;
+    const advice = `${review.rule} needs ${ready.need} reviewer${ready.need === 1 ? "" : "s"} in the workspace and ${ready.have} ${ready.have === 1 ? "has" : "have"} joined, so the review cannot open yet. A reviewer joins by opening the desk at ${await deskLink(gate)}`;
     if (!args.wait) throw new Error(`${advice}; propose again after that.`);
     log(`${advice}; waiting for that.`);
     while (!(ready = await reviewersReady(client, review)).ok) await new Promise((r) => setTimeout(r, args.poll));

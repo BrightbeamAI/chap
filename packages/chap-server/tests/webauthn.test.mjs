@@ -225,7 +225,7 @@ test("a desk from before 0.3.5 keeps signing at 127.0.0.1 with its key, and the 
   const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
   const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
   const { legacyKid } = await import("../desk/chap-client.mjs");
-  await makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN }).call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [{ kty: "OKP", crv: "Ed25519", kid: await legacyKid(HUMAN), use: "sig", alg: "EdDSA", x: jwk.x }] } });
+  await makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, enrolment: process.env.CHAP_ENROLMENT_CODE }).call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [{ kty: "OKP", crv: "Ed25519", kid: await legacyKid(HUMAN), use: "sig", alg: "EdDSA", x: jwk.x }] } });
   let desk = await openDesk(`http://127.0.0.1:${port}`, { authenticator, storage: { [`chap-desk-key:wsp_test:${HUMAN}`]: JSON.stringify(jwk) } });
   try {
     assert.ok(await desk.until(() => desk.$("signing").classList.contains("warn")), "the moved key signs, marked");

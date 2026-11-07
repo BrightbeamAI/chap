@@ -4,6 +4,10 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// The enrolment code every gate in these tests takes, which a person's
+// first join carries.
+process.env.CHAP_ENROLMENT_CODE ??= "TESTS-ENROL";
+
 export const HUMAN = "human:reviewer@example.org";
 export const AGENT = "agent:coder";
 

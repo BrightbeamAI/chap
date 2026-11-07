@@ -4,7 +4,7 @@
 // project's chap.config.json.
 
 export {
-  AGENT_MCP_TOOLS, ANALYTICS_POLICY, DESK_DIR, SECURITY_HEADERS, bootstrap, chapHandler, createChapServer, deskBase, hasProfile, listMembers, listTasks, loadConfig,
+  AGENT_MCP_TOOLS, ANALYTICS_POLICY, DESK_DIR, SECURITY_HEADERS, bootstrap, chapHandler, createChapServer, deskBase, enrolmentCode, hasProfile, listMembers, listTasks, loadConfig,
   makeCoordinator, makeHandler, makeServer, openReviews, openStore, publicConfig, reconcileOidcProfile, reconcileSignedProfile, serve, start, storePath,
   taskEvidence, taskView,
 } from "./lib/server.mjs";

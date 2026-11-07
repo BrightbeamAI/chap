@@ -22,9 +22,10 @@
 // an origin of their own, and cannot read the desk's storage or call the
 // server as the desk.
 
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-import { readFile, readdir, mkdir, stat } from "node:fs/promises";
+import { readFile, readdir, mkdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -528,7 +529,8 @@ export function taskEvidence(coord, workspace, taskId) {
   return { workspace, task: viewOf(ws, task, decisionLog(ws)), submissions, decisions, keys, members, chain_head: ws.chain_head ?? null, chain_enabled: !!ws.chain_enabled };
 }
 
-export function publicConfig(config) {
+export function publicConfig(config, coord = null) {
+  const ws = coord?.getWorkspace(config.workspace);
   return {
     workspace: config.workspace,
     profiles: config.profiles,
@@ -539,10 +541,16 @@ export function publicConfig(config) {
     require_signatures: !!config.require_signatures,
     signature_policy: config.signature_policy ?? null,
     desk_signing: config.desk_signing ?? "browser-key",
-    chain_enabled: !!config.chain,
+    // What the store's workspace keeps: a store created with the chain off
+    // keeps it off whatever chap.config.json says now.
+    chain_enabled: ws ? !!ws.chain_enabled : !!config.chain,
     persistent: config.store !== ":memory:",
-    // Where this project lives, so a prompt the desk writes can name its commands.
-    gate_dir: config.dir,
+    // Whether the first join of a person this desk names needs the code the
+    // server printed at start; never the code.
+    enrolment: !!enrolmentCode(config),
+    // Where this project lives, so a prompt the desk writes can name its
+    // commands; left out where people sign in, on a server others reach.
+    ...(config.oidc ? {} : { gate_dir: config.dir }),
     // What the desk signs people in with; never the client secret.
     oidc: config.oidc ? {
       issuer: config.oidc.issuer, client_id: config.oidc.client_id,
@@ -591,6 +599,106 @@ function unnamedJoin(envelope, config) {
   if (named.has(p.from)) return null;
   return { jsonrpc: "2.0", id: envelope.id ?? null, error: { code: -32011,
     message: `${String(p.from)} is not a member chap.config.json names; add them to humans, or agent, to let them join` } };
+}
+
+/** Crockford's base 32: the letters of an enrolment code, none of them mistaken for another. */
+const CODE_LETTERS = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const ENROLMENT = new WeakMap();
+
+/**
+ * The enrolment code of a desk server, or null where it takes none. Where
+ * signatures are required and nobody signs in at an identity provider, the
+ * first join of a person chap.config.json names holds that name for good,
+ * with the key it carries. So that join needs a code the server prints when
+ * it starts: a process on this machine that does not see the server's
+ * console, an agent among them, cannot take a person's name before they
+ * open the desk. CHAP_ENROLMENT_CODE sets the code for a scripted setup;
+ * "enrolment": false in chap.config.json turns it off.
+ */
+export function enrolmentCode(config) {
+  if (ENROLMENT.has(config)) return ENROLMENT.get(config);
+  let code = null;
+  if (config.require_signatures && !config.oidc && config.enrolment !== false && (config.humans ?? []).length > 0) {
+    const set = process.env.CHAP_ENROLMENT_CODE?.trim();
+    if (set) code = set;
+    else {
+      const letters = [...randomBytes(10)].map((b) => CODE_LETTERS[b % 32]).join("");
+      code = `${letters.slice(0, 5)}-${letters.slice(5)}`;
+    }
+  }
+  ENROLMENT.set(config, code);
+  return code;
+}
+
+/** A code as it is compared: its letters and digits, upper case. */
+const codeLetters = (code) => String(code ?? "").toUpperCase().replace(/[^0-9A-Z]/g, "");
+
+/** The people chap.config.json names who have not joined yet, and so need the code. */
+function unenrolled(coord, config) {
+  const ws = coord.getWorkspace(config.workspace);
+  return (config.humans ?? []).map((h) => h.uri).filter((uri) => !ws?.members.has(uri));
+}
+
+/**
+ * The first join of a person chap.config.json names, without the
+ * enrolment code in its x-chap-enrolment header: refused before the
+ * coordinator sees it, and so not recorded. Null for every other call.
+ */
+function unenrolledJoin(envelope, config, coord, req) {
+  const code = enrolmentCode(config);
+  if (!code || envelope?.method !== "participant.join") return null;
+  const p = envelope.params;
+  if (!p || typeof p !== "object" || p.workspace !== config.workspace) return null;
+  if (!unenrolled(coord, config).includes(p.from)) return null;
+  const given = Buffer.from(codeLetters(req.headers["x-chap-enrolment"]));
+  const wanted = Buffer.from(codeLetters(code));
+  if (given.length === wanted.length && timingSafeEqual(given, wanted)) return null;
+  return { jsonrpc: "2.0", id: envelope.id ?? null, error: { code: -32011,
+    message: `${String(p.from)} joins for the first time with the enrolment code the desk server printed when it started`,
+    data: { reason: "enrolment" } } };
+}
+
+/** The read API's paths that answer with what the workspace holds. */
+const GUARDED_READS = new Set(["/api/members", "/api/chain", "/api/chain/verify", "/api/reviews", "/api/tasks"]);
+const guardedRead = (path) => GUARDED_READS.has(path) || path.startsWith("/api/tasks/") || path.startsWith("/analytics/");
+
+/** The value of one cookie in a request, or null. */
+function cookieOf(req, name) {
+  for (const part of String(req.headers.cookie ?? "").split(";")) {
+    const at = part.indexOf("=");
+    if (at > 0 && part.slice(0, at).trim() === name) return part.slice(at + 1).trim();
+  }
+  return null;
+}
+
+/** How long a signed read stays good, either side of the server's clock. */
+const SIGNED_READ_WINDOW_MS = 5 * 60 * 1000;
+
+/**
+ * Who a read comes from, where people sign in: a person whose ID token the
+ * desk holds in its session cookie, or that a script sends as a bearer
+ * token; or a member whose key signed the read (signedRead in the client).
+ * Null when it comes from nobody the workspace knows, and the read is then
+ * refused.
+ */
+function readerOf(req, url, config, coord, provider) {
+  const auth = String(req.headers.authorization ?? "");
+  const token = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : cookieOf(req, "chap_session");
+  if (token) {
+    const checked = provider.people(token);
+    if (checked.claims) return checked.claims.chap_participant_uri;
+  }
+  if (!auth.startsWith("CHAP ")) return null;
+  let signed;
+  try { signed = JSON.parse(Buffer.from(auth.slice("CHAP ".length).trim(), "base64url").toString("utf8")); } catch { return null; }
+  const p = signed?.params;
+  if (signed?.method !== "workspace.describe" || typeof signed.sig !== "string" || !p || p.workspace !== config.workspace) return null;
+  if (p.path !== url.pathname + url.search) return null;
+  const at = Date.parse(p.ts);
+  if (!Number.isFinite(at) || Math.abs(Date.now() - at) > SIGNED_READ_WINDOW_MS) return null;
+  const ws = coord.getWorkspace(config.workspace);
+  if (!ws || !hasProfile(ws.profiles, "security-signed") || !ws.members.has(p.from)) return null;
+  return coord.dispatch(signed).error ? null : p.from;
 }
 
 /** Bring the coordinator up to date with its store, before a read of its memory. */
@@ -819,6 +927,12 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
         const file = desk.get(path.slice(1));
         return reply(res, 200, file.body, file.type);
       }
+      // Where people sign in at a provider, what the workspace holds is read
+      // by its members alone: a person signed in at the desk, or a member
+      // whose key signs the read.
+      if (provider && guardedRead(path) && !readerOf(req, url, config, coord, provider)) {
+        return reply(res, 401, { error: "sign in at the desk to read this workspace, or sign the read with a member's key" });
+      }
       if (req.method === "GET" && path.startsWith("/analytics/")) {
         let name;
         try { name = decodeURIComponent(path.slice("/analytics/".length)) || "index.html"; } catch { return reply(res, 400, { error: "a malformed escape in the path" }); }
@@ -840,6 +954,8 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
         }
         const stranger = unnamedJoin(envelope, config);
         if (stranger) return reply(res, 200, stranger);
+        const unenrolledFirst = unenrolledJoin(envelope, config, coord, req);
+        if (unenrolledFirst) return reply(res, 200, unenrolledFirst);
         // An MCP client on stdio forwarding to /chap with --url acts as the
         // agent /mcp acts as, and makes its first call before any join: the
         // agent joins then, as it does on its first /mcp call.
@@ -849,7 +965,7 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
       // The read API reads the coordinator's memory. A cheap call first lets
       // the coordinator take in what another process wrote to the store.
       if (path.startsWith("/api/") && path !== "/api/oidc/token") keepUp(coord, config);
-      if (path === "/api/config") return reply(res, 200, publicConfig(config));
+      if (path === "/api/config") return reply(res, 200, publicConfig(config, coord));
       if (path === "/api/oidc/token") {
         if (!provider) return reply(res, 404, { error: "no OIDC issuer is configured" });
         if (req.method !== "POST") return reply(res, 405, { error: "POST /api/oidc/token takes a sign-in's code" });
@@ -862,6 +978,14 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
         const fields = ["code", "code_verifier", "redirect_uri", "nonce"];
         if (!fields.every((f) => typeof body?.[f] === "string" && body[f])) return reply(res, 400, { error: `${fields.join(", ")} are each a string` });
         const answer = await redeemCode(config, provider, body);
+        if (answer.status === 200) {
+          // The desk's reads carry the ID token in a cookie no script reads,
+          // until the token expires.
+          const exp = Number(provider.people(answer.body.id_token).claims?.exp);
+          const age = Number.isFinite(exp) ? Math.max(0, Math.floor(exp - Date.now() / 1000)) : 3600;
+          const secure = req.socket?.encrypted || String(req.headers["x-forwarded-proto"] ?? "").split(",")[0].trim() === "https";
+          res.setHeader("set-cookie", `chap_session=${answer.body.id_token}; HttpOnly; SameSite=Strict; Path=${prefix || ""}/; Max-Age=${age}${secure ? "; Secure" : ""}`);
+        }
         return reply(res, answer.status, answer.body);
       }
       if (path === "/api/members") return reply(res, 200, { members: listMembers(coord, config.workspace) });
@@ -919,7 +1043,10 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
     } catch (e) {
       if (res.headersSent) return;
       if (e instanceof BodyTooLarge) return reply(res, 413, { error: e.message });
-      reply(res, 500, { error: e instanceof Error ? e.message : String(e) });
+      // What failed is for the operator's log; the caller is told no more
+      // than that something did.
+      console.error(e);
+      reply(res, 500, { error: "the server failed to answer; its log says why" });
     }
   };
 }
@@ -966,15 +1093,31 @@ export async function createChapServer(options = {}) {
         if (config.signature_policy === "all") log(`           every call is signed here and /mcp's are not, so they are refused; "require_signatures": "humans" takes them`);
       }
       log(`  profiles ${config.profiles.join(", ")}`);
-      log(`  store    ${config.store}${config.chain ? ", chain on" : ""}`);
+      const kept = coord.getWorkspace(config.workspace);
+      log(`  store    ${config.store}${(kept ? kept.chain_enabled : config.chain) ? ", chain on" : ""}`);
       if (config.oidc) log(`  oidc     people sign in at ${config.oidc.issuer}, as client ${config.oidc.client_id}${config.oidc.discovery?.chap_development_issuer ? "; a development issuer, which authenticates nobody" : ""}`);
       log(`  signing  ${SIGNING[config.signature_policy]}`);
       if (config.require_signatures) log(`           ${DESK_SIGNING[config.desk_signing ?? "browser-key"]}`);
       if (config.notify) log(`  notify   ${[config.notify.console ? "console" : null, config.notify.webhook ? `webhook ${new URL(config.notify.webhook.url).origin}` : null].filter(Boolean).join(", ") || "nothing"}, linking ${config.desk_url}`);
+      const code = enrolmentCode(config);
+      const waiting = code ? unenrolled(coord, config) : [];
+      if (waiting.length) {
+        log(`  enrol    ${code}: the code ${waiting.join(", ")} ${waiting.length === 1 ? "joins" : "join"} with the first time, or open ${base}/#enrol=${code}`);
+        await keepCode(config, code);
+      }
       return { base };
     },
     close: () => new Promise((resolve) => server.close(resolve)),
   };
+}
+
+/**
+ * Keep the enrolment code beside the store, readable by this user alone,
+ * where a command of the project that opens the desk for a person finds it.
+ */
+async function keepCode(config, code) {
+  if (!config.store || config.store === ":memory:") return;
+  await writeFile(join(dirname(config.store), "enrolment-code"), `${code}\n`, { mode: 0o600 }).catch(() => {});
 }
 
 /** The loopback address by the names a host setting gives it. */

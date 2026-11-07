@@ -203,9 +203,11 @@ let nextId = 1;
 /**
  * A client for one participant. `signer` is optional; with one, every call
  * except workspace.create and participant.join is signed, which is what a
- * coordinator with requireSignatures expects.
+ * coordinator with requireSignatures expects. `enrolment` is the code a
+ * desk server prints at start, or a function that gives it: a person's
+ * first join carries it in the x-chap-enrolment header.
  */
-export function makeClient({ url = "/chap", workspace, from, signer = null, fetchImpl = globalThis.fetch }) {
+export function makeClient({ url = "/chap", workspace, from, signer = null, fetchImpl = globalThis.fetch, enrolment = null }) {
   async function call(method, params = {}) {
     let envelope = {
       jsonrpc: "2.0",
@@ -216,11 +218,10 @@ export function makeClient({ url = "/chap", workspace, from, signer = null, fetc
     if (signer && method !== "workspace.create" && method !== "participant.join") {
       envelope = await signer.sign(envelope);
     }
-    const res = await fetchImpl(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(envelope),
-    });
+    const headers = { "content-type": "application/json" };
+    const code = method === "participant.join" ? (typeof enrolment === "function" ? enrolment() : enrolment) : null;
+    if (code) headers["x-chap-enrolment"] = code;
+    const res = await fetchImpl(url, { method: "POST", headers, body: JSON.stringify(envelope) });
     const body = await res.json();
     if (body.error) {
       const err = new Error(`${method}: ${body.error.message} (${body.error.code})`);
@@ -231,6 +232,22 @@ export function makeClient({ url = "/chap", workspace, from, signer = null, fetc
     return body.result;
   }
   return { call, workspace, from, signer };
+}
+
+/**
+ * The Authorization header of a read from the read API, signed with a
+ * member's key, where the server takes reads from members alone: a
+ * workspace.describe naming the path and the time, which the server checks
+ * as the coordinator checks a call. `path` is the path read, with its query.
+ */
+export async function signedRead(signer, { workspace, from, path }) {
+  const envelope = await signer.sign({ jsonrpc: "2.0", id: `read-${Date.now()}-${nextId++}`, method: "workspace.describe",
+    params: { workspace, from, path, ts: new Date().toISOString() } });
+  const json = JSON.stringify(envelope);
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return `CHAP ${btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
 }
 
 // -- RFC 6902 patch -----------------------------------------------------------

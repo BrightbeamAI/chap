@@ -47,7 +47,7 @@ test("the read API lists the members with the keys they sign with now, and reads
   try {
     const { generateSigner, makeClient } = await import("../desk/chap-client.mjs");
     const signer = await generateSigner(HUMAN);
-    const desk = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, signer });
+    const desk = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, signer, enrolment: process.env.CHAP_ENROLMENT_CODE });
     await desk.call("participant.join", { type: "human", role: "reviewer", display_name: "Rev Iewer", jwks: { keys: [signer.publicJwk] } });
     const { members } = await (await fetch(`${base}/api/members`)).json();
     assert.deepEqual(members, [{ uri: HUMAN, type: "human", role: "reviewer", display_name: "Rev Iewer", keys: [signer.publicJwk] }]);

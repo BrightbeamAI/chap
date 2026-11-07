@@ -36,7 +36,7 @@ import agent as drafter  # noqa: E402
 import pause  # noqa: E402
 import resume  # noqa: E402
 from chap_coordinator.client import HttpCoordinator, Participant, Signer  # noqa: E402
-from chap_coordinator.server import load_config, make_coordinator, make_server  # noqa: E402
+from chap_coordinator.server import enrolment_code, load_config, make_coordinator, make_server  # noqa: E402
 from providers import make_provider  # noqa: E402
 
 MODES = {
@@ -63,13 +63,13 @@ NODE = node()
 #: naming the artefact and the round as the desk does.
 DESK_PERSON = """
 import { pathToFileURL } from "node:url";
-const [base, clientFile] = process.argv.slice(1);
+const [base, clientFile, enrolment] = process.argv.slice(1);
 const { contentHash, generateSigner, makeClient } = await import(pathToFileURL(clientFile).href);
 const get = async (path) => (await fetch(base + path)).json();
 const config = await get("/api/config");
 const me = config.humans[0];
 const signer = await generateSigner(me.uri);
-const desk = makeClient({ url: base + "/chap", workspace: config.workspace, from: me.uri, signer });
+const desk = makeClient({ url: base + "/chap", workspace: config.workspace, from: me.uri, signer, enrolment });
 await desk.call("participant.join", { type: "human", role: me.role, display_name: me.display_name,
                                       jwks: { keys: [signer.publicJwk] } });
 let review;
@@ -161,7 +161,8 @@ def participants(desk):
     agent = drafter.connect(config, desk["base"] + "/chap", keys=desk["keys"])
     uri = config["humans"][0]["uri"]
     signer = Signer.load_or_create(uri, desk["keys"] / "desk") if config["require_signatures"] else None
-    approver = Participant(HttpCoordinator(desk["base"] + "/chap"), config["workspace"], uri, signer)
+    approver = Participant(HttpCoordinator(desk["base"] + "/chap"), config["workspace"], uri, signer,
+                           enrolment=enrolment_code(config))
     if signer:
         approver.join("human", "approver")
     return agent, approver
@@ -321,7 +322,8 @@ def test_the_desks_own_client_signs_the_approvers_decision(tmp_path):
         [mid] = [m["message_id"] for m in drafter.read_messages(source)]
         outbox = tmp_path / "outbox"
         run = AgentRun(agent, make_provider(drafter.scripted_body), source, outbox)
-        person = subprocess.run([NODE, "--input-type=module", "-e", DESK_PERSON, base, str(client)],
+        person = subprocess.run([NODE, "--input-type=module", "-e", DESK_PERSON, base, str(client),
+                                 enrolment_code(desk["config"]) or ""],
                                 capture_output=True, text=True, timeout=60)
         assert person.returncode == 0, person.stderr
         decided = json.loads(person.stdout)
@@ -399,7 +401,7 @@ def test_the_readmes_bridge_example_runs_as_written(tmp_path, capsys):
     try:
         uri = desk["config"]["humans"][0]["uri"]
         approver = Participant(HttpCoordinator(desk["base"] + "/chap"), desk["config"]["workspace"], uri,
-                               Signer.load_or_create(uri, tmp_path / "desk"))
+                               Signer.load_or_create(uri, tmp_path / "desk"), enrolment=enrolment_code(desk["config"]))
         approver.join("human", "approver")
 
         def decide():

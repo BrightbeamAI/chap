@@ -44,7 +44,7 @@ test("under \"humans\" the agent works unsigned from its first call, and a decis
     const taskId = JSON.parse(created.text).task_id;
 
     const signer = await generateSigner(HUMAN);
-    const desk = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, signer });
+    const desk = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, signer, enrolment: process.env.CHAP_ENROLMENT_CODE });
     await desk.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [signer.publicJwk] } });
     const agent = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: AGENT });
     assert.equal((await agent.call("task.complete", { task_id: taskId, output: { body: "hello" } })).state, "review_requested", "the agent's unsigned call is taken");

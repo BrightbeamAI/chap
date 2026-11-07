@@ -90,6 +90,9 @@ export function registerControl(coord: Coordinator): void {
       const uri = (p.participant_uri as string) || (p.uri as string);
       if (!uri) return { error: rpcError(E.PARAMS, "participant_uri is required") };
       if (!ws.members.has(uri)) return { error: rpcError(E.PARAMS, `Unknown participant: ${uri}`) };
+      // A pause holds until someone else lifts it: the paused member lifting
+      // its own would make the pause its to keep or drop.
+      if (uri === p.from) return { error: rpcError(E.NOT_AUTHORISED, "A paused participant does not lift its own pause") };
       ws.members.get(uri)!.paused = false;
       return { result: { scope: "participant", participant_uri: uri, paused: false } };
     }

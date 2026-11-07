@@ -109,11 +109,13 @@ class HttpCoordinator:
         self.timeout = timeout
         self.workspaces = _RemoteWorkspaces(self.describe)
 
-    def dispatch(self, envelope: dict) -> dict:
-        """POST one envelope; the JSON-RPC response, a refusal included."""
+    def dispatch(self, envelope: dict, headers: Optional[dict] = None) -> dict:
+        """POST one envelope; the JSON-RPC response, a refusal included.
+        ``headers`` adds to the request's, such as the x-chap-enrolment a
+        person's first join carries."""
         request = urllib.request.Request(
             self.url, data=json.dumps(envelope, ensure_ascii=False).encode("utf-8"), method="POST",
-            headers={"content-type": "application/json", "accept": "application/json"})
+            headers={"content-type": "application/json", "accept": "application/json", **(headers or {})})
         status, text = self._open(request)
         try:
             body = json.loads(text)
@@ -302,15 +304,20 @@ class Participant:
     It also stands in for a coordinator, for code written against one, such
     as a framework bridge: ``dispatch`` signs an envelope whose ``from`` is
     this participant, and ``workspaces`` reads as this participant.
+
+    ``enrolment`` is the code a desk server prints when it starts, which a
+    person's first join carries.
     """
 
-    def __init__(self, client: HttpCoordinator, workspace: str, uri: str, signer: Optional[Signer] = None) -> None:
+    def __init__(self, client: HttpCoordinator, workspace: str, uri: str, signer: Optional[Signer] = None,
+                 enrolment: Optional[str] = None) -> None:
         if signer is not None and signer.uri != uri:
             raise ValueError(f"The signer holds the key of {signer.uri}, and this participant is {uri}")
         self.client = client
         self.workspace = workspace
         self.uri = uri
         self.signer = signer
+        self.enrolment = enrolment
         self.workspaces = _RemoteWorkspaces(self._described)
 
     def envelope(self, method: str, params: dict) -> dict:
@@ -320,6 +327,8 @@ class Participant:
 
     def send(self, method: str, **params: Any) -> dict:
         """The raw JSON-RPC response, error and all."""
+        if method == "participant.join" and self.enrolment:
+            return self.client.dispatch(self.envelope(method, params), {"x-chap-enrolment": self.enrolment})
         return self.client.dispatch(self.envelope(method, params))
 
     def call(self, method: str, **params: Any) -> Any:

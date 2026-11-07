@@ -72,6 +72,7 @@ import logging
 import os
 import queue
 import re
+import secrets
 import socket
 import sqlite3
 import sys
@@ -79,7 +80,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Awaitable, Callable, MutableMapping, NamedTuple, Optional, Union
+from typing import Any, Awaitable, Callable, Iterable, MutableMapping, NamedTuple, Optional, Union
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from . import __version__
@@ -390,6 +391,9 @@ def bootstrap(coord: Coordinator, config: dict) -> None:
             params["mode"] = config["mode"]
         if config.get("mode_ceiling"):
             params["mode_ceiling"] = config["mode_ceiling"]
+        rule = (config.get("review") or {}).get("rule")
+        if rule:
+            params["review_rule"] = rule
         r = send("workspace.create", params)
         if "error" in r:
             raise RuntimeError(f"workspace.create: {r['error']['message']}")
@@ -629,7 +633,72 @@ def unnamed_join(envelope: Any, config: dict) -> dict | None:
             f"{params.get('from')} is not a member chap.config.json names; add them to humans, or agent, to let them join"}}
 
 
-def public_config(config: dict) -> dict:
+#: Crockford's base 32: the letters of an enrolment code, none of them
+#: mistaken for another.
+_CODE_LETTERS = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+
+def enrolment_code(config: dict) -> Optional[str]:
+    """The enrolment code of a desk server, or None where it takes none.
+
+    Where signatures are required and nobody signs in at an identity
+    provider, the first join of a person chap.config.json names holds that
+    name for good, with the key it carries. So that join needs a code the
+    server prints when it starts: a process on this machine that does not
+    see the server's console, an agent among them, cannot take a person's
+    name before they open the desk. CHAP_ENROLMENT_CODE sets the code for a
+    scripted setup; ``"enrolment": false`` in chap.config.json turns it off.
+    """
+    if "_enrolment_code" not in config:
+        code = None
+        if (config.get("require_signatures") and not config.get("oidc")
+                and config.get("enrolment") is not False and config.get("humans")):
+            code = (os.environ.get("CHAP_ENROLMENT_CODE") or "").strip() or None
+            if code is None:
+                letters = "".join(_CODE_LETTERS[b % 32] for b in secrets.token_bytes(10))
+                code = f"{letters[:5]}-{letters[5:]}"
+        config["_enrolment_code"] = code
+    return config["_enrolment_code"]
+
+
+def _code_letters(code: Any) -> str:
+    """A code as it is compared: its letters and digits, upper case."""
+    return re.sub(r"[^0-9A-Z]", "", str(code or "").upper())
+
+
+def unenrolled(coord: Coordinator, config: dict) -> list[str]:
+    """The people chap.config.json names who have not joined yet, and so
+    need the code."""
+    ws = coord.get_workspace(config["workspace"])
+    return [h.get("uri") for h in config.get("humans") or []
+            if h.get("uri") and (ws is None or h.get("uri") not in ws.members)]
+
+
+def unenrolled_join(envelope: Any, config: dict, coord: Coordinator,
+                    headers: Iterable[tuple[str, str]]) -> dict | None:
+    """The refusal of a person's first join without the enrolment code in
+    its x-chap-enrolment header, before the coordinator sees it, so it is
+    not recorded. None for every other call."""
+    code = enrolment_code(config)
+    if not code or not isinstance(envelope, dict) or envelope.get("method") != "participant.join":
+        return None
+    params = envelope.get("params")
+    if not isinstance(params, dict) or params.get("workspace") != config.get("workspace"):
+        return None
+    if params.get("from") not in unenrolled(coord, config):
+        return None
+    given = _header(list(headers), "x-chap-enrolment")
+    if hmac.compare_digest(_code_letters(given).encode(), _code_letters(code).encode()):
+        return None
+    return {"jsonrpc": "2.0", "id": envelope.get("id"), "error": {
+        "code": -32011,
+        "message": f"{params.get('from')} joins for the first time with the enrolment code the desk server "
+                   "printed when it started",
+        "data": {"reason": "enrolment"}}}
+
+
+def public_config(config: dict, coord: Optional[Coordinator] = None) -> dict:
+    ws = coord.get_workspace(config["workspace"]) if coord is not None else None
     return {
         "workspace": config["workspace"],
         "profiles": config["profiles"],
@@ -639,8 +708,13 @@ def public_config(config: dict) -> dict:
         "require_signatures": bool(config.get("require_signatures")),
         "signature_policy": config.get("signature_policy"),
         "desk_signing": config.get("desk_signing") or "browser-key",
-        "chain_enabled": bool(config.get("chain")),
+        # What the store's workspace keeps: a store created with the chain
+        # off keeps it off whatever chap.config.json says now.
+        "chain_enabled": bool(ws.chain_enabled) if ws is not None else bool(config.get("chain")),
         "persistent": config["store"] != ":memory:",
+        # Whether a person's first join needs the code the server printed
+        # at start; never the code.
+        "enrolment": bool(enrolment_code(config)),
         "oidc": None,
         "mcp": False,
     }
@@ -885,17 +959,19 @@ class ChapDesk:
                 return _too_large()
         return None
 
-    def handle(self, method: str, path: str, query: str, body: bytes) -> _Reply:
+    def handle(self, method: str, path: str, query: str, body: bytes,
+               headers: Iterable[tuple[str, str]] = ()) -> _Reply:
         """The answer to a request that passed :meth:`check`. A fault is
         logged here with its traceback, and the client is told only that it
         happened."""
         try:
-            return self._route(method, path, query, body)
+            return self._route(method, path, query, body, list(headers))
         except Exception:  # noqa: BLE001 - the detail goes to the log, never to the client
             logger.exception("%s %s failed", method, path)
             return _json(500, {"error": "internal error; the server's log has the detail"})
 
-    def _route(self, method: str, path: str, query: str, body: bytes) -> _Reply:
+    def _route(self, method: str, path: str, query: str, body: bytes,
+               headers: Optional[list[tuple[str, str]]] = None) -> _Reply:
         config, coord, workspace = self.config, self.coord, self.config["workspace"]
         if path in ("/", "/desk", "/index.html"):
             return _Reply(200, *self.desk["index.html"])
@@ -912,6 +988,9 @@ class ChapDesk:
             if stranger is not None:
                 return _json(200, stranger)
             with self.lock:
+                first = unenrolled_join(envelope, config, coord, headers or [])
+                if first is not None:
+                    return _json(200, first)
                 return _json(200, _store_failure_said(coord.dispatch(envelope)))
         if path.startswith("/api/") and path != "/api/config":
             # The read API reads the coordinator's memory; a cheap call first
@@ -920,7 +999,8 @@ class ChapDesk:
                 coord.dispatch({"jsonrpc": "2.0", "id": "api-read", "method": "workspace.describe",
                                 "params": {"workspace": workspace}})
         if path == "/api/config":
-            return _json(200, public_config(config))
+            with self.lock:
+                return _json(200, public_config(config, coord))
         if path == "/api/members":
             with self.lock:
                 return _json(200, {"members": list_members(coord, workspace)})
@@ -1026,7 +1106,8 @@ class ChapDesk:
             if body is None:
                 reply = _too_large()
             else:
-                reply = await asyncio.get_running_loop().run_in_executor(None, self.handle, method, path, query, body)
+                reply = await asyncio.get_running_loop().run_in_executor(
+                    None, self.handle, method, path, query, body, headers)
         await send({"type": "http.response.start", "status": reply.status,
                     "headers": [(name.encode("latin-1"), value.encode("latin-1"))
                                 for name, value in _response_headers(path, reply)]})
@@ -1170,7 +1251,7 @@ class _Handler(BaseHTTPRequestHandler):
                 # under the limit.
                 size = int(self.headers.get("content-length") or 0) if self.command == "POST" else 0
                 body = self.rfile.read(size) if size > 0 else b""
-                reply = desk.handle(self.command, path, url.query, body)
+                reply = desk.handle(self.command, path, url.query, body, headers)
             self.send_response(reply.status)
             for name, value in [("content-type", reply.content_type), ("content-length", str(len(reply.body))),
                                 *reply.headers]:
@@ -1229,10 +1310,18 @@ def serve(config: dict) -> int:
     print(f"  desk     {base}/")
     print(f"  calls    POST {base}/chap")
     print(f"  profiles {', '.join(config['profiles'])}")
-    print(f"  store    {config['store']}{', chain on' if config.get('chain') else ''}")
+    kept = coord.get_workspace(config["workspace"])
+    chain_on = kept.chain_enabled if kept is not None else config.get("chain")
+    print(f"  store    {config['store']}{', chain on' if chain_on else ''}")
     print(f"  signing  {POLICY_WORDS[config.get('signature_policy')]}")
     if config.get("require_signatures"):
         print(f"           {DESK_SIGNING[config.get('desk_signing') or 'browser-key']}")
+    code = enrolment_code(config)
+    waiting = unenrolled(coord, config) if code else []
+    if waiting:
+        joins = "joins" if len(waiting) == 1 else "join"
+        print(f"  enrol    {code}: the code {', '.join(waiting)} {joins} with the first time, "
+              f"or open {base}/#enrol={code}")
     sys.stdout.flush()
     try:
         server.serve_forever()

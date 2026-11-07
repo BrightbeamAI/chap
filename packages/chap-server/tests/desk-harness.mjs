@@ -16,18 +16,25 @@ const NODE_FETCH = globalThis.fetch;
 const NODE_SET_TIMEOUT = globalThis.setTimeout;
 const NODE_SET_INTERVAL = globalThis.setInterval;
 const BLOCKED_MARKUP = /<(script|style)\b|\sstyle\s*=|\son[a-z]+\s*=/i;
+// The cookies each server set, kept as a browser profile keeps them: a desk
+// opened again on the same server sends them.
+const JAR = new Map();
 
 /**
  * Open the desk at `base` (with `path`, a query and a hash after the
  * slash), as a browser that already holds `storage` (localStorage entries),
  * `session` (sessionStorage entries) and `indexedDB` (an IDBFactory), with
  * `authenticator` as its WebAuthn authenticator, if it has one
- * (webauthn-authenticator.mjs). Waits `waitMs` for it to settle. Returns
+ * (webauthn-authenticator.mjs), at the link that carries `enrol`, the
+ * enrolment code, and with `prompt` answering what the desk asks. Waits `waitMs` for it to settle. Returns
  * the window, a log of the CHAP calls it made, what a policy would have
  * blocked, and close().
  */
-export async function openDesk(base, { hash = "", path = "", waitMs = 1500, storage = {}, session = {}, indexedDB = new IDBFactory(), authenticator = null } = {}) {
+export async function openDesk(base, { hash = "", path = "", waitMs = 1500, storage = {}, session = {}, indexedDB = new IDBFactory(), authenticator = null, enrol = process.env.CHAP_ENROLMENT_CODE ?? null, prompt = () => null } = {}) {
   const html = await (await NODE_FETCH(`${base}/`)).text();
+  // Opened by the link the server prints, which carries the enrolment code;
+  // `enrol: null` opens it without one.
+  if (enrol) hash = `#${[hash.replace(/^#/, ""), `enrol=${encodeURIComponent(enrol)}`].filter(Boolean).join("&")}`;
   const dom = new JSDOM(html, { url: `${base}/${path}${hash}`, pretendToBeVisual: true });
   const w = dom.window;
   for (const [k, v] of Object.entries(storage)) w.localStorage.setItem(k, v);
@@ -52,6 +59,8 @@ export async function openDesk(base, { hash = "", path = "", waitMs = 1500, stor
   install("indexedDB", indexedDB);
   install("PublicKeyCredential", authenticator ? authenticator.install(w) : undefined);
   install("matchMedia", () => ({ matches: false, addEventListener() {} }));
+  // What the person types when the desk asks; nothing, by default.
+  install("prompt", prompt);
   w.Element.prototype.scrollIntoView = () => {};
   const calls = [];
   // The desk polls for ever; its timers are the harness's to stop.
@@ -67,8 +76,15 @@ export async function openDesk(base, { hash = "", path = "", waitMs = 1500, stor
   install("fetch", async (input, init = {}) => {
     if (closed) return gone();
     const url = new URL(String(input), w.location.href).href;
-    const headers = { ...(init.headers ?? {}), ...(init.method === "POST" ? { origin: new URL(base).origin } : {}) };
+    const jar = JAR.get(new URL(url).origin) ?? new Map();
+    const cookie = [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+    const headers = { ...(init.headers ?? {}), ...(init.method === "POST" ? { origin: new URL(base).origin } : {}), ...(cookie ? { cookie } : {}) };
     const res = await NODE_FETCH(url, { ...init, headers });
+    for (const set of res.headers.getSetCookie?.() ?? []) {
+      const [pair] = set.split(";");
+      const at = pair.indexOf("=");
+      if (at > 0) { jar.set(pair.slice(0, at).trim(), pair.slice(at + 1).trim()); JAR.set(new URL(url).origin, jar); }
+    }
     const body = await res.arrayBuffer();
     if (closed) return gone();
     if (init.method === "POST" && new URL(url).pathname.endsWith("/chap")) {

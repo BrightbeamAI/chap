@@ -34,9 +34,15 @@ HUMAN = "human:you@local"
 AGENT = "agent:drafter"
 
 
+#: The enrolment code every desk server in these tests takes, which a
+#: person's first join carries.
+ENROL = "TESTS-ENROL"
+
+
 def start(tmp_path: Path, monkeypatch, **fields):
     for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CHAP_ENROLMENT_CODE", ENROL)
     path = tmp_path / "chap.config.json"
     path.write_text(json.dumps({
         "workspace": WORKSPACE, "profiles": ["core/1.0", "review/1.0"], "store": ":memory:", "port": 0,
@@ -55,7 +61,7 @@ def signed(tmp_path, monkeypatch):
     joined with its key file."""
     server, url = start(tmp_path, monkeypatch, require_signatures=True)
     client = HttpCoordinator(url)
-    human = Participant(client, WORKSPACE, HUMAN, Signer.load_or_create(HUMAN, tmp_path / "desk-keys"))
+    human = Participant(client, WORKSPACE, HUMAN, Signer.load_or_create(HUMAN, tmp_path / "desk-keys"), enrolment=ENROL)
     agent = Participant(client, WORKSPACE, AGENT, Signer.load_or_create(AGENT, tmp_path / "keys"))
     human.join("human", "reviewer")
     agent.join("agent", "drafter")

@@ -34,7 +34,7 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMain, storePath as resolveStore, usage, wantsHelp } from "@brightbeamai/chap-server";
-import { generateSigner, makeClient, signerFromJwk, thumbprint } from "@brightbeamai/chap-server/client";
+import { generateSigner, makeClient, signedRead, signerFromJwk, thumbprint } from "@brightbeamai/chap-server/client";
 import { keyPathFor, readKeyFile } from "@brightbeamai/chap-server/keys";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -162,7 +162,7 @@ export async function runChecks({ url = process.env.CHAP_URL ?? "http://127.0.0.
     const good = bare === -32403 && garbage === -32403;
     record("oidc", good ? "ok" : "FAIL", good ? `a person's join with no token, and one with a garbage token, are refused with -32403 (issuer ${cfg.oidc.issuer})`
       : `expected -32403 for both, got ${bare ?? "an accepted join"} with no token and ${garbage ?? "an accepted join"} with a garbage one`);
-    await nonceCheck({ cfg, config, base, record });
+    await nonceCheck({ cfg, config, base, record, client });
   }
 
   return results;
@@ -177,10 +177,15 @@ export async function runChecks({ url = process.env.CHAP_URL ?? "http://127.0.0.
  * desk makes; a real provider asks a person to sign in, which doctor does
  * not do.
  */
-async function nonceCheck({ cfg, config, base, record }) {
+async function nonceCheck({ cfg, config, base, record, client }) {
   const reviewer = config.humans?.[0]?.uri;
   if (!cfg.oidc.development) return record("nonce", "skip", `a token needs a person to sign in at ${cfg.oidc.issuer}; the template's tests check this against the development issuer`);
-  const keysOf = async () => (await (await fetch(`${base}/api/members`)).json()).members.find((m) => m.uri === reviewer)?.keys.map((k) => k.kid);
+  // Where people sign in, a member signs its reads: the agent's key does.
+  const keysOf = async () => {
+    const url = new URL(`${base}/api/members`);
+    const headers = client ? { authorization: await signedRead(client.signer, { workspace: client.workspace, from: client.from, path: url.pathname }) } : {};
+    return (await (await fetch(url, { headers })).json()).members?.find((m) => m.uri === reviewer)?.keys.map((k) => k.kid);
+  };
   const before = await keysOf();
   if (!before) return record("nonce", "skip", `${reviewer} has not signed in at the desk yet; sign in there, then run doctor again`);
   const [named, brought] = [await generateSigner(reviewer), await generateSigner(reviewer)];

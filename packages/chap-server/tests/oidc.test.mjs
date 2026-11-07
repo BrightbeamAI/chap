@@ -233,3 +233,48 @@ test("a sign-in for someone chap.config.json does not name is said in the desk, 
     await chap.close();
   }
 });
+
+test("where people sign in, the read API answers a person signed in or a member's signed read, and nobody else", async () => {
+  const { chap, base } = await oidcGate();
+  try {
+    for (const path of ["/api/tasks", "/api/members", "/api/chain", "/api/reviews", "/analytics/index.html"]) {
+      const res = await fetch(`${base}${path}`);
+      assert.equal(res.status, 401, path);
+      assert.match((await res.json()).error, /sign in at the desk/);
+    }
+    for (const path of ["/api/config", "/api/health"]) assert.equal((await fetch(`${base}${path}`)).status, 200, path);
+
+    // A member's key signs the read: the agent's, as the production agent
+    // does, on a server where the agent joined with its key.
+    const keyed = await import("../desk/chap-client.mjs");
+    const agentSigner = await generateSigner(AGENT);
+    const { dir } = await project({ require_signatures: "humans", oidc: { issuer: issuer.issuer, client_id: DEV_AUDIENCE } });
+    const second = await createChapServer({ configPath: join(dir, "chap.config.json"), log: () => {} });
+    const { base: other } = await second.listen({ port: 0, host: "127.0.0.1", log: () => {} });
+    try {
+      await makeClient({ url: `${other}/chap`, workspace: "wsp_test", from: AGENT, signer: agentSigner })
+        .call("participant.join", { type: "agent", jwks: { keys: [agentSigner.publicJwk] } });
+      const header = await keyed.signedRead(agentSigner, { workspace: "wsp_test", from: AGENT, path: "/api/tasks?limit=5" });
+      assert.equal((await fetch(`${other}/api/tasks?limit=5`, { headers: { authorization: header } })).status, 200, "a signed read");
+      assert.equal((await fetch(`${other}/api/members`, { headers: { authorization: header } })).status, 401, "signed for another path");
+      const stranger = await generateSigner("agent:stranger");
+      const forged = await keyed.signedRead(stranger, { workspace: "wsp_test", from: AGENT, path: "/api/tasks?limit=5" });
+      assert.equal((await fetch(`${other}/api/tasks?limit=5`, { headers: { authorization: forged } })).status, 401, "a key the member does not hold");
+      const stale = await agentSigner.sign({ jsonrpc: "2.0", id: "r", method: "workspace.describe",
+        params: { workspace: "wsp_test", from: AGENT, path: "/api/tasks", ts: new Date(Date.now() - 10 * 60 * 1000).toISOString() } });
+      assert.equal((await fetch(`${other}/api/tasks`, { headers: { authorization: `CHAP ${Buffer.from(JSON.stringify(stale)).toString("base64url")}` } })).status, 401, "a read signed ten minutes ago");
+    } finally {
+      await second.close();
+    }
+
+    // A person's ID token, sent as a bearer token.
+    const { verifier, challenge } = pkce();
+    const redirect = `${base}/`;
+    const sent = await authorize({ redirect_uri: redirect, state: "s", nonce: "n", code_challenge: challenge, code_challenge_method: "S256", login_hint: HUMAN });
+    const minted = await (await tokenRequest({ grant_type: "authorization_code", code: sent.location.searchParams.get("code"), redirect_uri: redirect, client_id: DEV_AUDIENCE, code_verifier: verifier })).json();
+    assert.equal((await fetch(`${base}/api/tasks`, { headers: { authorization: `Bearer ${minted.id_token}` } })).status, 200, "a person's token");
+    assert.equal((await fetch(`${base}/api/tasks`, { headers: { authorization: "Bearer not-a-token" } })).status, 401);
+  } finally {
+    await chap.close();
+  }
+});

@@ -115,3 +115,16 @@ test("a request after an approval does not name the approving reviewer an author
   assert.deepEqual(task(c, id).review!.authors, ["agent:b"]);
   assert.equal(ok(send("decide.approve", { task_id: id }, "human:c")).state, "completed");
 });
+
+test("a paused participant does not lift its own pause; another member does", () => {
+  const { c, send } = ready();
+  ok(send("control.pause", { scope: "participant", participant_uri: "agent:b" }, "human:a"));
+  assert.deepEqual(send("control.resume", { scope: "participant", participant_uri: "agent:b" }).error,
+                   { code: E.NOT_AUTHORISED, message: "A paused participant does not lift its own pause" });
+  assert.equal(c.workspaces.get("w")!.members.get("agent:b")!.paused, true);
+  assert.deepEqual(send("participant.leave").error,
+                   { code: E.NOT_AUTHORISED, message: "A paused participant does not leave until another member lifts its pause" },
+                   "leaving and joining again would lift it");
+  ok(send("control.resume", { scope: "participant", participant_uri: "agent:b" }, "human:a"));
+  assert.equal(c.workspaces.get("w")!.members.get("agent:b")!.paused, false);
+});

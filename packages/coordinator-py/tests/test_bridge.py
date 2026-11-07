@@ -409,9 +409,11 @@ def test_nobody_is_recorded_or_joined_in_a_persons_name_where_signatures_are_req
 # -- over HTTP, against a desk that requires signatures ------------------------
 
 def desk_config(tmp_path, monkeypatch, signatures):
-    """A desk's configuration as chap-coordinator serve reads it."""
+    """A desk's configuration as chap-coordinator serve reads it, with the
+    enrolment code a person's first join carries."""
     for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CHAP_ENROLMENT_CODE", "TESTS-ENROL")
     path = tmp_path / "chap.config.json"
     path.write_text(json.dumps({
         "workspace": WS, "profiles": ["core/1.0", "review/1.0"], "store": ":memory:", "port": 0,
@@ -437,7 +439,7 @@ def desk(tmp_path, monkeypatch):
 
 def test_request_and_wait_against_a_desk_where_people_sign(desk, tmp_path):
     pytest.importorskip("cryptography")
-    alice = Participant(desk, WS, ALICE, Signer.load_or_create(ALICE, tmp_path / "keys"))
+    alice = Participant(desk, WS, ALICE, Signer.load_or_create(ALICE, tmp_path / "keys"), enrolment="TESTS-ENROL")
     alice.join("human", "reviewer")
     for coord in (desk, Participant(desk, WS, AGENT)):
         agent = ReviewClient(coord, WS, AGENT, ALICE)

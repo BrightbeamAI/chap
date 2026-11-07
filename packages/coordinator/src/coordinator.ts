@@ -2443,6 +2443,11 @@ export class Coordinator {
     // `from` is the transport's responsibility.
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    // A member that left and joined again would come back unpaused, so a
+    // paused member stays until another member lifts its pause.
+    if (rawMember(ws, p.from)?.paused) {
+      return { error: rpcError(E.NOT_AUTHORISED, "A paused participant does not leave until another member lifts its pause") };
+    }
     ws.members.delete(p.from as string);
     return { result: { left: true } };
   }

@@ -6,8 +6,8 @@
 import { execFile, spawn } from "node:child_process";
 import { createHash, createPublicKey, verify as cryptoVerify } from "node:crypto";
 import { access, mkdir, open, readFile, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { canonicalize, contentHash, deepEqual, makeClient, signerFromJwk } from "@brightbeamai/chap-server/client";
+import { basename, dirname, isAbsolute, join } from "node:path";
+import { canonicalize, contentHash, deepEqual, makeClient, signedRead, signerFromJwk } from "@brightbeamai/chap-server/client";
 import { keyPathFor, readKeyFile, sshKeyFiles } from "@brightbeamai/chap-server/keys";
 import { modelName } from "@brightbeamai/chap-server/providers";
 import { blobAt, currentBranch, faithfulCheck, git, head, numstat, signsOwnCommits, treeDiff, treeOf, workingTreeChange } from "./git.mjs";
@@ -77,9 +77,28 @@ export function gateEnv(gate) {
   return { CHAP_URL: gate.url, ...(gate.configPath ? { CHAP_CONFIG: gate.configPath } : {}) };
 }
 
-/** GET from the gate's read API. A 404 gives null. */
+/** The agent's signer, from its key in keys/ or the file CHAP_AGENT_KEY names; null without one. */
+async function agentSigner(gate) {
+  const uri = gate.config.agent?.uri;
+  if (!uri) return null;
+  try { return await signerFromJwk(uri, await readKeyFile(uri, process.env.CHAP_AGENT_KEY ?? keyPathFor(uri, join(gate.dir, "keys")))); } catch { return null; }
+}
+
+/**
+ * GET from the gate's read API. A 404 gives null. A gate where people sign
+ * in answers its members alone, 401 to anyone else, so the read is made
+ * again signed with the agent's key.
+ */
 export async function api(gate, path) {
-  const res = await fetch(`${gate.base}${path}`);
+  let res = await fetch(`${gate.base}${path}`);
+  if (res.status === 401) {
+    const signer = await agentSigner(gate);
+    if (signer) {
+      const url = new URL(`${gate.base}${path}`);
+      const authorization = await signedRead(signer, { workspace: gate.config.workspace, from: gate.config.agent.uri, path: url.pathname + url.search });
+      res = await fetch(url, { headers: { authorization } });
+    }
+  }
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GET ${path} answered ${res.status}`);
   return res.json();
@@ -167,11 +186,29 @@ export function deskUrl(gate) {
 export const reviewUrl = (gate, taskId) => `${deskUrl(gate)}#task=${encodeURIComponent(taskId)}`;
 
 /**
+ * The enrolment code the gate kept beside its store when it started, which
+ * a person's first join from the desk needs; null where there is none.
+ */
+export async function keptEnrolment(gate) {
+  const store = gate.config.store;
+  if (typeof store !== "string" || !store || store === ":memory:") return null;
+  const dir = isAbsolute(store) ? dirname(store) : join(gate.dir, dirname(store));
+  try { return (await readFile(join(dir, "enrolment-code"), "utf8")).trim() || null; } catch { return null; }
+}
+
+/** The desk's address, with the enrolment code where the gate kept one, as the link a person first opens. */
+export async function deskLink(gate, taskId = null) {
+  const code = await keptEnrolment(gate);
+  const parts = [taskId ? `task=${encodeURIComponent(taskId)}` : null, code ? `enrol=${encodeURIComponent(code)}` : null].filter(Boolean);
+  return `${deskUrl(gate)}${parts.length ? `#${parts.join("&")}` : ""}`;
+}
+
+/**
  * Bring the reviewer to a review: an open desk shows it by itself; with no
  * desk open, the browser opens at it. Returns what was done, to say so.
  */
 export async function showReview(gate, taskId, { open: allowed = true } = {}) {
-  const url = reviewUrl(gate, taskId);
+  const url = await deskLink(gate, taskId);
   if (await deskIsOpen(gate)) return { url, how: "desk" };
   if (allowed && openBrowser(url)) return { url, how: "browser" };
   return { url, how: "none" };
@@ -246,8 +283,8 @@ export async function commitSigning(gate, repo, { keyPath } = {}) {
 }
 
 /** A client for a human reviewer, signing with a key when one is given. */
-export function reviewerClient(gate, uri, signer = null) {
-  return makeClient({ url: gate.url, workspace: gate.config.workspace, from: uri, signer });
+export function reviewerClient(gate, uri, signer = null, enrolment = null) {
+  return makeClient({ url: gate.url, workspace: gate.config.workspace, from: uri, signer, enrolment });
 }
 
 export const sha256 = (text) => createHash("sha256").update(text).digest("hex");

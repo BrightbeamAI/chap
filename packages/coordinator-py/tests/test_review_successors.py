@@ -128,3 +128,17 @@ def test_a_request_after_an_approval_does_not_name_the_approving_reviewer_an_aut
              to=["human:c", "human:h"]))
     assert _task(c, tid).review.authors == ["agent:b"]
     assert _ok(send("decide.approve", actor="human:c", task_id=tid))["state"] == "completed"
+
+
+def test_a_paused_participant_does_not_lift_its_own_pause_and_another_member_does():
+    c, send = _ready()
+    _ok(send("control.pause", actor="human:a", scope="participant", participant_uri="agent:b"))
+    assert send("control.resume", scope="participant", participant_uri="agent:b")["error"] == {
+        "code": E.NOT_AUTHORISED, "message": "A paused participant does not lift its own pause"}
+    assert c.workspaces["w"].members["agent:b"].paused is True
+    assert send("participant.leave")["error"] == {
+        "code": E.NOT_AUTHORISED,
+        "message": "A paused participant does not leave until another member lifts its pause"}, \
+        "leaving and joining again would lift it"
+    _ok(send("control.resume", actor="human:a", scope="participant", participant_uri="agent:b"))
+    assert c.workspaces["w"].members["agent:b"].paused is False

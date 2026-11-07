@@ -81,7 +81,7 @@ test("the desk makes a key no script can read out, keeps it in IndexedDB under i
 test("when the workspace refuses the desk's join because another key holds the name, the desk says so and signs nothing", async () => {
   const { chap, base, agent } = await signedGate();
   const squat = await generateSigner(HUMAN);
-  await makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, signer: squat }).call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [squat.publicJwk] } });
+  await makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, signer: squat, enrolment: process.env.CHAP_ENROLMENT_CODE }).call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [squat.publicJwk] } });
   const task = await waiting(agent, "approve me");
   const desk = await openDesk(base, { hash: `#task=${task}` });
   try {
@@ -105,7 +105,7 @@ test("when the workspace refuses the desk's join because another key holds the n
 
 test("a join under the reviewer's name with no key is refused, so it holds nothing, and the desk joins with its key", async () => {
   const { chap, base } = await signedGate();
-  const bare = await fetch(`${base}/chap`, { method: "POST", headers: { "content-type": "application/json" },
+  const bare = await fetch(`${base}/chap`, { method: "POST", headers: { "content-type": "application/json", "x-chap-enrolment": process.env.CHAP_ENROLMENT_CODE },
     body: JSON.stringify({ jsonrpc: "2.0", id: "bare", method: "participant.join", params: { workspace: "wsp_test", from: HUMAN, type: "human", role: "reviewer" } }) });
   assert.equal((await bare.json()).error.code, -32602, "a person joins a signed workspace with a key");
   const desk = await openDesk(base);
@@ -125,7 +125,7 @@ test("a key the workspace no longer holds: the decision is refused with -32072, 
   const chap = await createChapServer({ configPath: join(dir, "chap.config.json") });
   const { base } = await chap.listen({ port: 0, host: "127.0.0.1", log: () => {} });
   const adminSigner = await generateSigner(ADMIN);
-  const admin = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: ADMIN, signer: adminSigner });
+  const admin = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: ADMIN, signer: adminSigner, enrolment: process.env.CHAP_ENROLMENT_CODE });
   await admin.call("participant.join", { type: "human", role: "admin", jwks: { keys: [adminSigner.publicJwk] } });
   const signer = await generateSigner(AGENT);
   const agent = makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: AGENT, signer });
@@ -155,7 +155,7 @@ test("a key an earlier desk kept in localStorage moves into IndexedDB under the 
   const pair = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
   const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
   const kid = await legacyKid(HUMAN);
-  await makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN }).call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [{ kty: "OKP", crv: "Ed25519", kid, use: "sig", alg: "EdDSA", x: jwk.x }] } });
+  await makeClient({ url: `${base}/chap`, workspace: "wsp_test", from: HUMAN, enrolment: process.env.CHAP_ENROLMENT_CODE }).call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [{ kty: "OKP", crv: "Ed25519", kid, use: "sig", alg: "EdDSA", x: jwk.x }] } });
   const task = await waiting(agent, "approve me");
   const indexedDB = new IDBFactory();
   const name = `chap-desk-key:wsp_test:${HUMAN}`;

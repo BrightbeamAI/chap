@@ -2333,6 +2333,12 @@ class Coordinator:
         ws = self.workspaces.get(p.get("workspace", ""))
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        # A member that left and joined again would come back unpaused, so a
+        # paused member stays until another member lifts its pause.
+        member = _raw_member(ws, p.get("from"))
+        if member is not None and member.paused:
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED, "A paused participant does not leave until another member lifts its pause")}
         ws.members.pop(p.get("from", ""), None)
         return {"result": {"left": True}}
 

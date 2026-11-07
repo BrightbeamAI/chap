@@ -34,7 +34,7 @@ os.environ["CHAP_MODEL_PROVIDER"] = "scripted"
 
 import agent as drafter  # noqa: E402
 from chap_coordinator.client import HttpCoordinator, Participant, Signer  # noqa: E402
-from chap_coordinator.server import load_config, make_coordinator, make_server  # noqa: E402
+from chap_coordinator.server import enrolment_code, load_config, make_coordinator, make_server  # noqa: E402
 from providers import make_provider  # noqa: E402
 
 MODES = {
@@ -61,13 +61,13 @@ NODE = node()
 #: artefact and the round as the desk does.
 DESK_PERSON = """
 import { pathToFileURL } from "node:url";
-const [base, clientFile] = process.argv.slice(1);
+const [base, clientFile, enrolment] = process.argv.slice(1);
 const { contentHash, generateSigner, makeClient } = await import(pathToFileURL(clientFile).href);
 const get = async (path) => (await fetch(base + path)).json();
 const config = await get("/api/config");
 const me = config.humans[0];
 const signer = await generateSigner(me.uri);
-const desk = makeClient({ url: base + "/chap", workspace: config.workspace, from: me.uri, signer });
+const desk = makeClient({ url: base + "/chap", workspace: config.workspace, from: me.uri, signer, enrolment });
 await desk.call("participant.join", { type: "human", role: me.role, display_name: me.display_name,
                                       jwks: { keys: [signer.publicJwk] } });
 let review;
@@ -167,7 +167,8 @@ def person(desk, uri: str) -> Participant:
     joined with it, when signatures are required."""
     config = desk["config"]
     signer = Signer.load_or_create(uri, desk["keys"] / "desk") if config["require_signatures"] else None
-    human = Participant(HttpCoordinator(desk["base"] + "/chap"), config["workspace"], uri, signer)
+    human = Participant(HttpCoordinator(desk["base"] + "/chap"), config["workspace"], uri, signer,
+                        enrolment=enrolment_code(config))
     if signer:
         human.join("human", "reviewer")
     return human
@@ -346,7 +347,8 @@ def test_the_desks_own_client_signs_the_persons_decision(tmp_path):
         source.write_text("id,customer,subject,body\nT-7,Ada Byrne,Order 7,Where is order 7?\n", encoding="utf-8")
         replies_dir = tmp_path / "replies"
         run = AgentRun(agent, make_provider(drafter.scripted_reply), source, replies_dir)
-        person = subprocess.run([NODE, "--input-type=module", "-e", DESK_PERSON, base, str(client)],
+        person = subprocess.run([NODE, "--input-type=module", "-e", DESK_PERSON, base, str(client),
+                                 enrolment_code(desk["config"]) or ""],
                                 capture_output=True, text=True, timeout=60)
         assert person.returncode == 0, person.stderr
         decided = json.loads(person.stdout)

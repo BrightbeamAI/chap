@@ -572,10 +572,10 @@ participants is the deployment's job.
 tasks being assigned to a member. `task.create` and `control.supersede`
 refuse it as an assignee with `-32063`. `escalate.raise` refuses it as an
 assignee too, `handoff.accept` refuses it as an acceptor, and `task.route`
-never assigns it **(0.3.0)**. The pause holds only while the member
-cooperates. Any member can lift it with `control.resume`, the paused member
-included, and a member that leaves and joins again comes back unpaused. A
-paused member can also still act: it can complete the tasks it holds and
+never assigns it **(0.3.0)**. Any other member can lift it with
+`control.resume`; the paused member cannot lift its own pause, nor leave and
+join again to come back unpaused **(0.3.5)**. A paused member can also still
+act: it can complete the tasks it holds and
 decide reviews, and reviews, whispers and deliberations can still be
 addressed to it. Where signatures are required, revoking its keys stops its
 signed calls until it registers another key, which a join carrying a token or

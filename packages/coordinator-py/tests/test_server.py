@@ -74,6 +74,7 @@ def desk_of(tmp_path, monkeypatch):
     for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS",
                  "CHAP_DESK_SIGNING"):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CHAP_ENROLMENT_CODE", ENROL)
     servers = []
 
     def start(**fields) -> int:
@@ -123,10 +124,15 @@ def request(port: int, method: str, path: str, headers=(), body: bytes = b"", ho
     return response.status, {k.lower(): v for k, v in response.getheaders()}, data
 
 
-def call(port: int, method: str, **params):
+#: The enrolment code every server in these tests takes, which a person's
+#: first join carries.
+ENROL = "TESTS-ENROL"
+
+
+def call(port: int, method: str, enrolment: str | None = ENROL, **params):
     envelope = {"jsonrpc": "2.0", "id": method, "method": method, "params": {"workspace": "wsp_test", **params}}
-    status, _, data = request(port, "POST", "/chap", [("Content-Type", "application/json")],
-                              json.dumps(envelope).encode())
+    headers = [("Content-Type", "application/json")] + ([("x-chap-enrolment", enrolment)] if enrolment else [])
+    status, _, data = request(port, "POST", "/chap", headers, json.dumps(envelope).encode())
     assert status == 200, data
     return json.loads(data)
 
@@ -272,7 +278,7 @@ def test_under_humans_the_agent_calls_unsigned_and_a_person_does_not(desk_of):
 def test_signed_the_persons_decision_is_accepted_under_humans(desk_of, tmp_path):
     port = desk_of(require_signatures="humans")
     person = Participant(HttpCoordinator(f"http://127.0.0.1:{port}/chap"), "wsp_test", HUMAN,
-                         Signer.load_or_create(HUMAN, tmp_path / "desk-keys"))
+                         Signer.load_or_create(HUMAN, tmp_path / "desk-keys"), enrolment=ENROL)
     person.join("human", "reviewer")
     task = call(port, "task.create", **{"from": AGENT}, kind="draft", assignee=AGENT, input={},
                 review_required=True)["result"]
@@ -848,7 +854,7 @@ def test_the_read_api_lists_members_with_their_keys_and_reads_and_verifies_the_c
     # gesture on every signature, a signed poll would ask each time.
     port = desk_of(require_signatures="humans", chain=True)
     person = Participant(HttpCoordinator(f"http://127.0.0.1:{port}/chap"), "wsp_test", HUMAN,
-                         Signer.load_or_create(HUMAN, tmp_path / "desk-keys"))
+                         Signer.load_or_create(HUMAN, tmp_path / "desk-keys"), enrolment=ENROL)
     person.join("human", "reviewer", "You")
 
     def get(path: str):
@@ -906,3 +912,47 @@ def test_the_read_api_shows_what_another_process_wrote_to_the_store(tmp_path, mo
     finally:
         server.shutdown()
         server.server_close()
+
+
+# -- the enrolment code and the review rule (pre-publish review S3, S4, S7) --------
+
+def test_a_persons_first_join_needs_the_enrolment_code_and_nothing_is_recorded_without_it(desk_of):
+    port = desk_of(require_signatures="humans")
+    jwks = {"keys": [public_jwk(HUMAN)]}
+    for code in (None, "WRONG-CODE0"):
+        r = call(port, "participant.join", enrolment=code, **{"from": HUMAN}, type="human", role="reviewer", jwks=jwks)
+        assert r["error"]["code"] == -32011 and r["error"]["data"] == {"reason": "enrolment"}, r
+        assert "joins for the first time with the enrolment code" in r["error"]["message"]
+    entries = call(port, "audit.read", **{"from": AGENT})["result"]["entries"]
+    assert not [e for e in entries if (e.get("envelope") or e.get("request") or {}).get("params", {}).get("from") == HUMAN]
+    assert call(port, "participant.join", enrolment="tests enrol", **{"from": HUMAN}, type="human", role="reviewer",
+                jwks=jwks)["result"]["joined"], "the code is read in any case, with or without its hyphen"
+    assert call(port, "participant.join", enrolment=None, **{"from": HUMAN}, type="human", role="reviewer",
+                jwks=jwks)["result"]["joined"], "a later join needs no code"
+    status, _, body = request(port, "GET", "/api/config")
+    config = json.loads(body)
+    assert config["enrolment"] is True and ENROL not in body.decode()
+
+
+def test_no_enrolment_code_where_signatures_are_off_or_chap_config_turns_it_off(tmp_path, monkeypatch):
+    from chap_coordinator.server import enrolment_code
+    monkeypatch.delenv("CHAP_ENROLMENT_CODE", raising=False)
+    for n, fields in enumerate(({"require_signatures": False}, {"require_signatures": "humans", "enrolment": False})):
+        assert enrolment_code(load_config(write_config(tmp_path / f"p{n}", **fields))) is None, fields
+    code = enrolment_code(load_config(write_config(tmp_path / "p2", require_signatures="humans")))
+    assert re.fullmatch(r"[0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5}", code), code
+
+
+def test_the_desk_server_creates_the_workspace_under_the_configured_review_rule(desk_of):
+    port = desk_of(require_signatures=False, review={"rule": "quorum:2"})
+    assert call(port, "workspace.describe", **{"from": AGENT})["result"]["review_rule"] == "quorum:2"
+
+
+def test_the_chain_the_desk_reports_is_the_one_the_store_keeps(tmp_path, monkeypatch):
+    for name in ("CHAP_DB_PATH", "CHAP_CHAIN", "CHAP_REQUIRE_SIGNATURES"):
+        monkeypatch.delenv(name, raising=False)
+    from chap_coordinator.server import _close, public_config
+    _close(make_coordinator(load_config(write_config(tmp_path / "chain", chain=False, store="chap.db"))))
+    config = load_config(write_config(tmp_path / "chain", chain=True, store="chap.db"))
+    coord = make_coordinator(config)
+    assert public_config(config, coord)["chain_enabled"] is False, "a store created with the chain off keeps it off"
