@@ -1,72 +1,42 @@
 """
-chap-langgraph: glue between LangGraph workflows and a CHAP Coordinator.
+chap-langgraph: put a LangGraph draft in front of a person, as a CHAP
+review, and carry on with what they decide.
 
-The point of this adapter is to make the human-in-the-loop moment in a
-LangGraph workflow audit-visible. LangGraph pauses a graph with interrupt()
-and resumes it with Command(resume=...). This adapter turns those events
-into CHAP envelopes:
-
-    LangGraph event              CHAP envelope
-    -----------------            -------------------------
-    a draft is ready             task.create + review.request
-    Command(resume=...) sent     decide.approve | decide.reject | decide.override
-
-LangGraph runs a node again from its first line when the graph resumes. So
-the review is opened in one node and the decision applied in the next: the
-node that drafts and opens the review finishes before the graph pauses, its
-result is checkpointed with the review's task id, and resuming runs only the
-node that paused.
-
-Usage:
-
-    from chap_coordinator import Coordinator
-    from chap_langgraph import ChapBridge, ReviewRejected, hil_review
-    from langgraph.types import interrupt
-
-    coord = Coordinator(enable_chain=True)
-    bridge = ChapBridge(
-        coord,
-        workspace="wsp_my_app",
-        agent="agent:drafter#v1",
-        reviewer="human:alice@example.org",
-    )
+A node that makes a draft opens its review with hil_review. The next node
+waits for the person's decision, made at a CHAP desk, and applies it:
 
     def draft(state):
         return hil_review(bridge, produce_draft(state), kind="draft_response")
 
     def review(state):
-        decision = interrupt({"task_id": state["chap_task_id"],
-                              "draft": state["chap_artefact"]})
-        try:
-            reply = bridge.apply_decision(state["chap_task_id"], decision,
-                                          state["chap_artefact"])
-        except ReviewRejected:
-            reply = None
-        return {"reply": reply}
+        decision = bridge.wait_for_decision(state["chap_task_id"])
+        return {"reply": bridge.apply_decision(state["chap_task_id"], decision,
+                                               state["chap_artefact"])}
 
-apply_decision records the decision under the reviewer's URI and returns
-the artefact to carry on: the draft as shown when approved, the reviewer's
-version when overridden. A rejection raises ReviewRejected, so a rejected
-draft goes no further.
+LangGraph runs a node again from its first line when the graph resumes, so
+the review is opened in one node and decided in the next: the draft and
+its review are made once, and the decision lands on the draft the person
+was shown. apply_decision returns what the coordinator holds as decided,
+the draft as shown or the person's version of it, and raises
+ReviewRejected for anything else.
 
-When the person decides at a CHAP desk, the decision is on the chain
-already: wait_for_decision reads it back, and apply_decision applies it
-without recording it a second time.
+A decision made in your own interface, sent back as the graph's resume
+value, is recorded in the reviewer's name, marked as recorded, in a
+workspace where nobody signs; where people sign, they decide at the desk.
 
-The adapter depends on neither langgraph nor langchain at import time. Pass
-LangGraph state dicts in and get LangGraph-shaped values out.
+The bridge depends on chap-coordinator alone and imports no LangGraph: it
+takes dict-shaped state and returns LangGraph-shaped values.
 """
 
 from __future__ import annotations
 
-import dataclasses
-import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Union
-from uuid import uuid4
 
-from chap_coordinator import Coordinator, content_hash
-
+from chap_coordinator.bridge import (
+    ChapError, Decision, PersonRequired, ReviewClient, ReviewRejected, artefact_digest,
+    wait_for_decision,
+)
 
 try:
     from importlib.metadata import version as _pkg_version, PackageNotFoundError
@@ -74,513 +44,181 @@ try:
 except PackageNotFoundError:  # running from a source checkout, not installed
     __version__ = "0.0.0+source"
 
-
-def _make_envelope(method: str, params: dict) -> dict:
-    """Build a JSON-RPC 2.0 envelope with an id of its own. A client that
-    signs what the bridge sends then signs two identical calls as two
-    requests, and the coordinator, which takes a signed request once,
-    takes each of them."""
-    return {
-        "jsonrpc": "2.0",
-        "id":      f"chap-langgraph-{method}-{uuid4().hex}",
-        "method":  method,
-        "params":  params,
-    }
-
-
-# ============================================================
-#   Decisions read back from the coordinator
-# ============================================================
-
-
-# A task in these states still waits for its reviewer: under review, or
-# paused during its review.
-_UNDECIDED = ("review_requested", "paused")
-
-
-@dataclass(frozen=True)
-class Decision:
-    """A reviewer's decision on a review, as the coordinator recorded it.
-
-    `approved` is true when the task completed through an approval or an
-    override, and `output` is then the artefact as decided: the draft as it
-    was, or the reviewer's version. Any other ending, a rejection, an
-    abstention, or a review escalated or cancelled, approves nothing, and
-    `output` is None.
-    """
-
-    task_id:  str
-    state:    str
-    kind:     Optional[str] = None   # approve, override, reject or abstain
-    reviewer: Optional[str] = None
-    output:   Any = None
-    comment:  Optional[str] = None   # the reviewer's note, or an override's rationale
-    tags:     tuple = ()
-
-    @property
-    def approved(self) -> bool:
-        return self.state == "completed" and self.kind in ("approve", "override")
-
-    @property
-    def revision_requested(self) -> bool:
-        """The reviewer rejected the draft and asked the agent for another."""
-        return self.kind == "reject" and self.state == "in_progress"
-
-
-def _read_task(source: Any, workspace: str, task_id: str) -> Optional[dict]:
-    """The task as GET /api/tasks/<id> shows it: its state, its output and
-    its review's decisions, or None when the task is unknown.
-
-    An in-process Coordinator is read directly. Any other source is read
-    with source.task(task_id), the call a desk client offers."""
-    if isinstance(source, Coordinator):
-        ws = source.workspaces.get(workspace)
-        task = ws.tasks.get(task_id) if ws is not None else None
-        if task is None:
-            return None
-        decisions = []
-        for decided in (task.review.decisions if task.review else []):
-            decided = dict(decided)
-            override = ws.overrides.get(decided.get("override_artefact_id") or "")
-            if override is not None:
-                decided["rationale"] = override.rationale
-            decisions.append(decided)
-        return {"state": task.state, "output": task.output,
-                "review": {"decisions": decisions}}
-    read = getattr(source, "task", None)
-    if not callable(read):
-        raise TypeError(
-            "waiting for a decision reads the task: give the bridge an "
-            "in-process Coordinator, or a client with task(task_id) as `client`"
-        )
-    return read(task_id)
-
-
-def _decision(task_id: str, view: dict) -> Decision:
-    """The decision that ended the review: the last one recorded on it."""
-    decisions = (view.get("review") or {}).get("decisions") or []
-    last = decisions[-1] if decisions else {}
-    decision = Decision(
-        task_id=task_id,
-        state=view.get("state"),
-        kind=last.get("kind"),
-        reviewer=last.get("reviewer"),
-        comment=last.get("comment") or last.get("rationale"),
-        tags=tuple(last.get("tags") or ()),
-    )
-    if decision.approved:
-        decision = dataclasses.replace(decision, output=view.get("output"))
-    return decision
-
-
-# ============================================================
-#   ChapBridge
-# ============================================================
+#: The name chap-langgraph 0.3.4 gave the coordinator's refusals.
+ChapBridgeError = ChapError
 
 
 @dataclass
 class ChapBridge:
-    """
-    Holds the CHAP Coordinator, the workspace it writes into, and the
-    default participants for one LangGraph deployment. One bridge per
+    """The agent's side of the reviews in one workspace. One bridge per
     workspace; share it across nodes.
 
-    The bridge joins the agent when it is made. It joins the reviewer only
-    when it records a decision in the reviewer's name, so a person who
-    decides at a desk joins there, with their own key.
+    ``coord`` is a Coordinator in this process, or a desk's, through
+    ``chap_coordinator.client``: an HttpCoordinator, or a Participant for the
+    agent, which signs the agent's calls with its key. The bridge joins the
+    agent when it is made. A review is addressed to every person in the
+    workspace; ``reviewer`` names the person a decision recorded from your
+    own interface is made in, who joins when the first review opens where
+    nobody signs. Where people sign, each joins from the desk with their own
+    key, and the bridge joins nobody in their name.
+
+    ``on_envelope`` sees each call's method and params before it is sent.
+    ``client`` reads a task, for a coordinator that cannot: anything whose
+    ``task(task_id)`` returns the ``GET /api/tasks/<id>`` view.
     """
 
-    coord:     Coordinator
+    coord:     Any
     workspace: str
     agent:     str
     reviewer:  str
     profiles:  tuple = ("core/1.0", "review/1.0")
-    # Hook for tests / consumers who want to see every envelope before
-    # it hits the Coordinator. Receives the params dict.
     on_envelope: Optional[Callable[[str, dict], None]] = None
-    # Reads a task for wait_for_decision: anything with task(task_id)
-    # returning the GET /api/tasks/<id> view. Leave it unset with an
-    # in-process Coordinator, which is read directly, or with a
-    # coordinator client that has task(task_id) itself.
     client: Any = None
-    _reviewer_joined: bool = field(default=False, init=False, repr=False)
+    _review: ReviewClient = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        if not self.reviewer.startswith("human:"):
-            raise ValueError(
-                "reviewer must be a 'human:' URI for a human-in-the-loop "
-                f"bridge, got {self.reviewer!r}"
-            )
-        if self.reviewer == self.agent:
-            raise ValueError(
-                "the reviewer cannot be the agent whose work is under review: "
-                f"{self.reviewer!r}"
-            )
-        # Ensure the workspace exists. workspace.create is idempotent
-        # on the same id: the second call is a no-op for the data
-        # model and produces a clean error rather than corrupting state.
-        _safe_dispatch(self.coord, "workspace.create", {
-            "workspace": self.workspace,
-            "profiles":  list(self.profiles),
-        })
-        _safe_dispatch(self.coord, "participant.join", {
-            "workspace": self.workspace,
-            "from":      self.agent,
-            "type":      "agent",
-        })
+        self._review = ReviewClient(
+            self.coord, self.workspace, self.agent, self.reviewer, profiles=self.profiles,
+            client=self.client, on_envelope=self._seen, name="chap-langgraph")
 
-    # ---- task lifecycle helpers ----------------------------------
+    def _seen(self, method: str, params: dict) -> None:
+        if self.on_envelope is not None:
+            self.on_envelope(method, params)
 
-    def create_task(self, kind: str, input_: Any,
-                    review_required: bool = False) -> str:
-        """Open a task that an agent is about to complete. A task that
-        requires review completes only through a reviewer's decision."""
-        params: dict = {
-            "workspace": self.workspace,
-            "from":      self.agent,
-            "assignee":  self.agent,
-            "kind":      kind,
-            "input":     input_,
-        }
-        if review_required:
-            params["review_required"] = True
-        env = self._dispatch("task.create", params)
-        return env["result"]["task_id"]
+    def wait_for_decision(self, task_id: str, *, timeout: Optional[float] = None,
+                          poll_seconds: float = 2.0) -> Decision:
+        """Wait for the decision on a review hil_review opened, and return it.
 
-    def request_review(self, task_id: str, artefact: Any) -> None:
-        """Ask the reviewer to review the artefact. The task waits under
-        review until the reviewer decides."""
-        self._dispatch("review.request", {
-            "workspace": self.workspace,
-            "from":      self.agent,
-            "task_id":   task_id,
-            "artefact":  artefact,
-            "to":        self.reviewer,
-        })
-
-    def complete_with_review(self, task_id: str, artefact: Any) -> None:
+        The task is read every ``poll_seconds`` until a decision takes it out
+        of review. Raises TimeoutError after ``timeout`` seconds; None waits
+        as long as the reviewer takes. A wait that stops leaves the review
+        open: the graph's state holds its task id, and resuming the graph
+        waits on it again. :meth:`withdraw` gives a draft up.
         """
-        Record the agent's output and immediately request human review.
-        The task reads completed until the review.request reopens it;
-        hil_review opens its review with request_review alone.
-        """
-        self._dispatch("task.complete", {
-            "workspace": self.workspace,
-            "from":      self.agent,
-            "task_id":   task_id,
-            "output":    artefact,
-        })
-        self.request_review(task_id, artefact)
+        return wait_for_decision(self._review.read, task_id, timeout=timeout, poll_seconds=poll_seconds)
 
-    # ---- decision helpers ----------------------------------------
-    #
-    # Each records a decision in the reviewer's name. `rationale` is the
-    # reviewer's note; decide.approve and decide.reject carry it as
-    # `comment`, decide.override as `rationale`. An
-    # `approved_artefact_digest` binds the decision to the artefact the
-    # reviewer was shown: the coordinator refuses it for any other.
+    def withdraw(self, task_id: str, note: str = "The graph gave this draft up.") -> Optional[Decision]:
+        """Take a review back, so no decision lands on a draft the graph will
+        not carry on with, and return None; or the decision, where one
+        landed first. ``hil_review`` with ``existing_task_id`` opens the
+        task's next round."""
+        return self._review.withdraw(task_id, note)
 
-    def approve(self, task_id: str, rationale: Optional[str] = None,
-                approved_artefact_digest: Optional[str] = None) -> None:
-        params: dict = {
-            "workspace": self.workspace,
-            "from":      self.reviewer,
-            "task_id":   task_id,
-        }
-        if rationale is not None:
-            params["comment"] = rationale
-        if approved_artefact_digest is not None:
-            params["approved_artefact_digest"] = approved_artefact_digest
-        self._join_reviewer()
-        self._dispatch("decide.approve", params)
-
-    def reject(self, task_id: str, rationale: str,
-               category: Optional[str] = None,
-               approved_artefact_digest: Optional[str] = None) -> None:
-        params: dict = {
-            "workspace": self.workspace,
-            "from":      self.reviewer,
-            "task_id":   task_id,
-            "comment":   rationale,
-        }
-        if category is not None:
-            params["category"] = category
-        if approved_artefact_digest is not None:
-            params["approved_artefact_digest"] = approved_artefact_digest
-        self._join_reviewer()
-        self._dispatch("decide.reject", params)
-
-    def override(self, task_id: str, diff: list[dict[str, Any]],
-                 rationale: str,
-                 tags: Optional[list[str]] = None,
-                 intent_preserved: Optional[bool] = None,
-                 approved_artefact_digest: Optional[str] = None) -> Any:
-        """
-        Apply an RFC-6902 JSON Patch to the agent's draft and record
-        the resulting artefact. Returns the applied (post-patch) value
-        so LangGraph can route it forward.
-        """
-        params: dict = {
-            "workspace": self.workspace,
-            "from":      self.reviewer,
-            "task_id":   task_id,
-            "diff":      diff,
-            "rationale": rationale,
-            "tags":      tags or [],
-        }
-        if intent_preserved is not None:
-            params["intent_preserved"] = intent_preserved
-        if approved_artefact_digest is not None:
-            params["approved_artefact_digest"] = approved_artefact_digest
-        self._join_reviewer()
-        env = self._dispatch("decide.override", params)
-        return env["result"]["applied"]
-
-    def apply_decision(self, task_id: str,
-                       decision: Union[str, dict[str, Any], Decision],
+    def apply_decision(self, task_id: str, decision: Union[str, dict[str, Any], Decision],
                        artefact: Any) -> Any:
-        """
-        Apply the reviewer's decision on `artefact`, the draft the reviewer
-        was shown, and return the artefact to carry on: `artefact` itself
-        when approved, the reviewer's version when overridden. Anything else
-        raises ReviewRejected, so a rejected draft goes no further.
+        """Apply the decision on the draft under review, and return the draft
+        to carry on with, as the coordinator holds it: the draft the person
+        was shown when approved, their version when overridden. Anything
+        else raises ReviewRejected, whose ``outcome`` says how the review
+        ended: reject, revise when the person asked for another draft,
+        abstain, or another ending.
 
-        `decision` is the resume payload of a decision made in your own
-        interface, recorded here in the reviewer's name:
+        ``decision`` is a Decision from wait_for_decision, made at a desk and
+        recorded there, which is applied and not recorded again; or the
+        resume value of a decision made in your own interface:
 
             "approve"
             "reject"
             {"action": "approve" | "reject" | "override", ...}
-            {"diff": [...], "rationale": "..."}  (implied override)
+            {"diff": [...], "rationale": "..."}  (an override)
 
-        or a Decision from wait_for_decision, made at a desk and recorded
-        there, which is applied and not recorded again.
-
-        A recorded decision carries `approved_artefact_digest`: the one the
-        payload names, when your interface sends back the digest of what it
-        showed, or else the digest of `artefact`. The coordinator refuses
-        the decision unless the digest matches the artefact under review.
+        A payload takes ``rationale``, ``tags``, a rejection's ``category``
+        and ``request_revision``, and an override's ``diff`` and
+        ``intent_preserved``. It is recorded in the reviewer's name, bound to
+        ``approved_artefact_digest``: the one the payload names, where your
+        interface sends back the digest of what it showed, or else the
+        digest of ``artefact``, the draft as the graph's state holds it. The
+        coordinator refuses it unless that is the draft under review. A
+        decision recorded once is read back, and not recorded again, when
+        the node runs again. Where people sign, PersonRequired is raised and
+        nothing is recorded: they decide at the desk.
         """
         if isinstance(decision, Decision):
             if decision.task_id != task_id:
-                raise ValueError(
-                    f"the decision is on {decision.task_id}; "
-                    f"apply_decision was given {task_id}")
-            if decision.approved:
-                return decision.output
-            raise ReviewRejected(task_id, decision.comment,
-                                 reviewer=decision.reviewer, state=decision.state)
-
-        if isinstance(decision, str):
-            action = decision
-            payload: dict[str, Any] = {}
-        elif isinstance(decision, dict):
-            payload = dict(decision)
-            action = payload.pop("action", None)
-            if action is None and "diff" in payload:
-                action = "override"
-            if action is None:
-                raise ValueError(
-                    "decision payload needs an explicit 'action' "
-                    "(approve/reject/override)"
-                )
+                raise ValueError(f"the decision is on {decision.task_id}; apply_decision was given {task_id}")
         else:
-            raise TypeError(f"unexpected decision payload: {type(decision)}")
-
-        digest = payload.get("approved_artefact_digest") or content_hash(artefact)
-        if action == "approve":
-            self.approve(task_id, rationale=payload.get("rationale"),
-                         approved_artefact_digest=digest)
-            return artefact
-        if action == "reject":
-            rationale = payload.get("rationale", "rejected by reviewer")
-            self.reject(task_id, rationale=rationale,
-                        category=payload.get("category"),
-                        approved_artefact_digest=digest)
-            raise ReviewRejected(task_id, rationale, reviewer=self.reviewer)
-        if action == "override":
-            diff = payload.get("diff")
-            if not diff:
-                raise ValueError("override requires a 'diff' payload")
-            return self.override(
-                task_id,
-                diff=diff,
-                rationale=payload.get("rationale", "reviewer override"),
-                tags=payload.get("tags"),
-                intent_preserved=payload.get("intent_preserved"),
-                approved_artefact_digest=digest,
-            )
-        raise ValueError(f"unknown decision action: {action!r}")
-
-    def wait_for_decision(self, task_id: str, *,
-                          timeout: Optional[float] = None,
-                          poll_seconds: float = 2.0) -> Decision:
-        """
-        Wait for a decision made at a desk on a review this bridge opened,
-        and return it. The task is read every `poll_seconds` until it is no
-        longer under review. Raises TimeoutError after `timeout` seconds;
-        None waits as long as the reviewer takes.
-        """
-        started = time.monotonic()
-        while True:
-            view = _read_task(self.client or self.coord, self.workspace, task_id)
-            if view is None:
-                raise KeyError(f"Unknown task: {task_id}")
-            if view.get("state") not in _UNDECIDED:
-                return _decision(task_id, view)
-            if timeout is not None and time.monotonic() - started >= timeout:
-                raise TimeoutError(f"No decision on {task_id} after {timeout} seconds")
-            time.sleep(poll_seconds)
-
-    # ---- audit ----------------------------------------------------
+            kind, payload = _read_payload(decision)
+            decision = self._review.decide(
+                task_id, kind,
+                digest=payload.get("approved_artefact_digest") or artefact_digest(artefact),
+                comment=payload.get("rationale"), tags=payload.get("tags"),
+                category=payload.get("category"),
+                request_revision=bool(payload.get("request_revision")),
+                diff=payload.get("diff"), intent_preserved=payload.get("intent_preserved"))
+        if decision.approved:
+            return decision.output
+        raise ReviewRejected.from_decision(decision)
 
     def audit(self) -> list[dict[str, Any]]:
-        """Return the full audit chain for this workspace."""
-        env = self._dispatch("audit.read", {"workspace": self.workspace})
-        return env["result"]["entries"]
-
-    # ---- internal -------------------------------------------------
-
-    def _join_reviewer(self) -> None:
-        if not self._reviewer_joined:
-            _safe_dispatch(self.coord, "participant.join", {
-                "workspace": self.workspace,
-                "from":      self.reviewer,
-                "type":      "human",
-            })
-            self._reviewer_joined = True
-
-    def _dispatch(self, method: str, params: dict) -> dict:
-        if self.on_envelope is not None:
-            self.on_envelope(method, params)
-        envelope = _make_envelope(method, params)
-        out = self.coord.dispatch(envelope)
-        if "error" in out and out["error"] is not None:
-            err = out["error"]
-            raise ChapBridgeError(err.get("code", 0), err.get("message", ""))
-        return out
+        """The workspace's audit log."""
+        return self._review.audit()
 
 
-# ============================================================
-#   hil_review helper
-# ============================================================
+def _read_payload(decision: Union[str, dict[str, Any]]) -> tuple[str, dict]:
+    """The kind of decision a resume value records, and its other fields."""
+    if isinstance(decision, str):
+        kind, payload = decision, {}
+    elif isinstance(decision, dict):
+        payload = dict(decision)
+        kind = payload.pop("action", None)
+        if kind is None and "diff" in payload:
+            kind = "override"
+        if kind is None:
+            raise ValueError("a decision payload needs an explicit 'action' (approve, reject or override)")
+    else:
+        raise TypeError(f"unexpected decision payload: {type(decision)}")
+    if kind not in ("approve", "reject", "override"):
+        raise ValueError(f"unknown decision action: {kind!r}")
+    if kind == "override" and not payload.get("diff"):
+        raise ValueError("an override needs a 'diff', an RFC 6902 patch of the draft")
+    return kind, payload
 
 
-def hil_review(bridge: ChapBridge, artefact: Any, kind: str,
-               input_: Any = None,
-               existing_task_id: Optional[str] = None) -> dict[str, Any]:
+def hil_review(bridge: ChapBridge, artefact: Any, kind: str, input_: Any = None,
+               existing_task_id: Optional[str] = None, *, prefix: str = "chap_") -> dict[str, Any]:
     """
-    Open a review of `artefact` for the bridge's reviewer.
+    Open a review of ``artefact``, and return the state keys that carry it
+    to the node that waits for the decision.
 
-    Call it in the node that produces the draft, and return its result from
-    that node. The review is then opened once per draft, and the task id is
-    checkpointed in the graph state before the next node interrupts.
-    Calling interrupt() in the same node would run this again on resume:
-    the draft would be made a second time and a second review opened, and
-    the decision would land on a draft the reviewer never saw.
+    Call it in the node that makes the draft, and return its result from
+    that node: the review is then opened once per draft, and its task id
+    checkpointed before the next node waits or interrupts. Opened in the
+    node that interrupts, it would run again on resume: the draft would be
+    made a second time and a second review opened, and the decision would
+    land on a draft the person never saw.
 
-    The task requires review, so only the reviewer's decision completes it.
-    The returned dict carries:
+    The task requires review, so only a person's decision completes it.
+    ``input_`` is the task's input, such as the ticket the draft answers.
+    With ``existing_task_id`` the draft is the next one on a task whose
+    reviewer asked for another, or whose review was withdrawn, and opens the
+    review's next round. Where people sign, the review opens once a person
+    has joined from the desk; until then hil_review waits. The keys are:
 
-        chap_task_id          The CHAP task id; pass it to apply_decision()
-                              once the reviewer has decided.
-        chap_artefact         The artefact sent for review.
-        chap_artefact_digest  Its digest, which the decision carries as
-                              approved_artefact_digest.
-        chap_kind             The task kind, for logging/routing.
+        chap_task_id          The CHAP task id, for wait_for_decision and
+                              apply_decision.
+        chap_artefact         The draft under review.
+        chap_artefact_digest  Its digest, the approved_artefact_digest a
+                              decision on it carries.
+        chap_kind             The task kind.
 
-    The integration with LangGraph looks like:
-
-        def draft(state):
-            return hil_review(bridge, produce_draft(state), kind="draft_response")
-
-        def review(state):
-            decision = interrupt({"task_id": state["chap_task_id"],
-                                  "draft": state["chap_artefact"]})
-            return {"reply": bridge.apply_decision(
-                state["chap_task_id"], decision, state["chap_artefact"])}
+    ``prefix`` begins each key, ``chap_`` by default, so drafts made in
+    parallel branches each write keys of their own.
     """
-    task_id = existing_task_id or bridge.create_task(kind, input_ or {},
-                                                     review_required=True)
-    bridge.request_review(task_id, artefact)
+    task_id = bridge._review.open(artefact, kind=kind, input=input_ or {}, task_id=existing_task_id)
     return {
-        "chap_task_id":         task_id,
-        "chap_artefact":        artefact,
-        "chap_artefact_digest": content_hash(artefact),
-        "chap_kind":            kind,
+        f"{prefix}task_id":         task_id,
+        f"{prefix}artefact":        artefact,
+        f"{prefix}artefact_digest": artefact_digest(artefact),
+        f"{prefix}kind":            kind,
     }
-
-
-# ============================================================
-#   Errors and helpers
-# ============================================================
-
-
-class ChapBridgeError(RuntimeError):
-    """Raised when a CHAP envelope is rejected by the Coordinator."""
-
-    def __init__(self, code: int, message: str) -> None:
-        super().__init__(f"CHAP error {code}: {message}")
-        self.code = code
-        self.message = message
-
-
-class ReviewRejected(Exception):
-    """The reviewer did not approve the draft.
-
-    apply_decision raises it once the rejection is recorded, so a rejected
-    draft goes no further. A review that ended another way at a desk,
-    abstained, escalated or cancelled, raises it too, since nothing was
-    approved. `state` is the task's state: declined after a rejection,
-    in_progress when the reviewer asked for another draft.
-    """
-
-    def __init__(self, task_id: str, rationale: Optional[str] = None, *,
-                 reviewer: Optional[str] = None, state: str = "declined") -> None:
-        detail = f": {rationale}" if rationale else ""
-        super().__init__(f"{task_id} was not approved ({state}){detail}")
-        self.task_id = task_id
-        self.rationale = rationale
-        self.reviewer = reviewer
-        self.state = state
-
-
-def _safe_dispatch(coord: Coordinator, method: str, params: dict) -> None:
-    """
-    Dispatch and swallow errors that arise from idempotent re-application
-    (re-creating an existing workspace, re-joining an existing participant).
-    Other errors propagate.
-
-    Uses a structural check rather than string-matching the error message:
-    after a failed call, look at the actual workspace state to decide
-    whether the desired effect is already in place.
-    """
-    envelope = _make_envelope(method, params)
-    out = coord.dispatch(envelope)
-    if "error" not in out or out["error"] is None:
-        return
-
-    # Structural idempotency: if the desired post-condition holds, the
-    # error is benign and we proceed. Otherwise propagate.
-    if method == "workspace.create":
-        ws_id = params.get("workspace")
-        if ws_id and ws_id in coord.workspaces:
-            return
-    elif method == "participant.join":
-        ws_id = params.get("workspace")
-        uri   = params.get("from")
-        ws = coord.workspaces.get(ws_id) if ws_id else None
-        if ws is not None and uri in ws.members:
-            return
-
-    raise ChapBridgeError(out["error"].get("code", 0),
-                          out["error"].get("message", ""))
 
 
 __all__ = [
     "ChapBridge",
     "ChapBridgeError",
+    "ChapError",
     "Decision",
+    "PersonRequired",
     "ReviewRejected",
     "hil_review",
 ]
