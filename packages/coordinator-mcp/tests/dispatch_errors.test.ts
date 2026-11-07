@@ -1,8 +1,7 @@
 /**
  * A dispatcher that throws is a fault in the server, and its message can
- * carry a path or a stack line. The tool error repeated it ("CHAP dispatch
- * threw: <message>"); it now says only that the call failed inside the
- * server, and the error goes to the server's log.
+ * carry a path or a stack line. The tool error says only that the call
+ * failed inside the server; the error itself goes to the server's log.
  *
  * Mirrors packages/coordinator-py/tests/test_mcp_dispatch_errors.py.
  */
@@ -39,7 +38,7 @@ test("a dispatcher's exception text stays in the server's log", async () => {
 
 test("a coordinator's internal error reaches the client without its detail", async () => {
   // The coordinators answer a fault in a handler with -32603 and the
-  // exception's text in data.detail; the tool error passed that on.
+  // exception's text in data.detail; the detail goes to the log alone.
   const internal = { code: -32603, message: "Internal error", data: { detail: "rule.startsWith is not a function at /srv/chap/coordinator.js:1801" } };
   const server = makeChapMcpServer({ dispatch: (envelope) => ({ jsonrpc: "2.0", id: envelope.id, error: internal }) });
   const client = new Client({ name: "test", version: "1.0.0" });

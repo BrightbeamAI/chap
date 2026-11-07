@@ -1,8 +1,7 @@
 """
 A dispatcher that throws is a fault in the server, and its message can carry
-a path or a stack line. The tool error repeated it ("CHAP dispatch threw:
-<message>"); it now says only that the call failed inside the server, and the
-error goes to the server's log.
+a path or a stack line. The tool error says only that the call failed inside
+the server; the error itself goes to the server's log.
 
 Mirrors packages/coordinator-mcp/tests/dispatch_errors.test.ts.
 """
@@ -47,7 +46,7 @@ class _Internal:
 @pytest.mark.asyncio
 async def test_a_coordinators_internal_error_reaches_the_client_without_its_detail(caplog):
     # The coordinators answer a fault in a handler with -32603 and the
-    # exception's text in data.detail; the tool error passed that on.
+    # exception's text in data.detail; the detail goes to the log alone.
     with caplog.at_level(logging.ERROR, logger="chap_coordinator.transports.mcp_server"):
         async with Client(make_chap_mcp_server(_Internal())) as client:
             r = await client.call_tool("chap.workspace.describe", {"workspace": "w"})
