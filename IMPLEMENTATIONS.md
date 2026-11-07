@@ -23,14 +23,14 @@ another team is welcome: see [Wanted](#wanted).
 | Name | Language | Specification | Package | Surface | Tested with | Status | Licence | Authors |
 |---|---|---|---|---|---|---|---|---|
 | `@brightbeamai/chap-coordinator` | TypeScript | 0.3 | 0.3.4 | Core and every profile. Identity profiles as verifier hooks. Methods marked spec-only or reserved are not built. | Package tests and the differential fuzzer. No recorded harness run against this package. | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-coordinator` | Python 3.10+ | 0.3 | 0.3.4 | As the TypeScript coordinator, with MCP and A2A transports as modules. | Package tests and the differential fuzzer. Harness (Core and review) through `reference/python/server.py`, passing at v0.3.0. | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-coordinator` | Python 3.10+ | 0.3 | 0.3.4 | As the TypeScript coordinator, with MCP and A2A transports as modules, and the CHAP half the framework bridges share, `chap_coordinator.bridge`. | Package tests and the differential fuzzer. Harness (Core and review) through `reference/python/server.py`, passing at v0.3.0. | Beta | Apache-2.0 | Brightbeam AI |
 | `@brightbeamai/chap-coordinator-mcp` | TypeScript | 0.3 | 0.3.4 | Every method the coordinator implements, as MCP tools. | Package tests. No harness run over MCP. | Beta | Apache-2.0 | Brightbeam AI |
 | `@brightbeamai/chap-coordinator-a2a` | TypeScript | 0.3 | 0.3.4 | Every method the coordinator implements, as skills on an A2A 0.3 Agent Card. | Package tests. No harness run over A2A. | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-langgraph` | Python 3.10+ | 0.3 | 0.3.4 | Records approve, reject and override decisions from LangGraph. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-pydantic-ai` | Python 3.10+ | 0.3 | 0.3.4 | Records approve, reject and override decisions from Pydantic AI. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-ag2` | Python 3.10+ | 0.3 | 0.3.4 | Records approve, reject and override decisions from AG2 (AutoGen). | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-llama-index` | Python 3.10+ | 0.3 | 0.3.4 | Records approve, reject and override decisions from LlamaIndex Workflows. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
-| `chap-google-adk` | Python 3.10+ | 0.3 | 0.3.4 | Records approve, reject and override decisions from Google ADK. | Bridge tests in CI | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-langgraph` | Python 3.10+ | 0.3 | 0.3.4 | Puts a LangGraph draft in front of a person as a review, and carries the graph on with their decision; records one made elsewhere, marked as recorded. | Bridge tests; with langgraph 1.2.20 through `scripts/test-bridges.sh` | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-pydantic-ai` | Python 3.10+ | 0.3 | 0.3.4 | Puts a Pydantic AI tool call that needs approval in front of a person, and carries out their decision; records one made elsewhere, marked as recorded. | Bridge tests; with pydantic-ai 2.54.0 through `scripts/test-bridges.sh` | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-ag2` | Python 3.10+ | 0.3 | 0.3.4 | Puts an AG2 (AutoGen) message, or a tool call, in front of a person, and carries out their decision; records one made elsewhere, marked as recorded. | Bridge tests; with ag2 0.14.0 and 1.2.2 through `scripts/test-bridges.sh` | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-llama-index` | Python 3.10+ | 0.3 | 0.3.4 | Puts a LlamaIndex Workflow's proposed output in front of a person, and answers the workflow with their decision; records one made elsewhere, marked as recorded. | Bridge tests; with llama-index-workflows 2.26.1 through `scripts/test-bridges.sh` | Beta | Apache-2.0 | Brightbeam AI |
+| `chap-google-adk` | Python 3.10+ | 0.3 | 0.3.4 | Puts a Google ADK tool call that needs confirmation in front of a person, and resumes the run with their decision; records one made elsewhere, marked as recorded. | Bridge tests; with google-adk 2.11.0 through `scripts/test-bridges.sh` | Beta | Apache-2.0 | Brightbeam AI |
 
 "Specification" is the CHAP version an entry implements, and "Package" is
 the release of the package. Every package here is Beta: CHAP 0.3 is a draft,
@@ -107,10 +107,13 @@ Walkthrough: [`examples/drive-chap-from-an-a2a-orchestrator.md`](./examples/driv
 
 ### `chap-langgraph` (LangGraph bridge)
 
-Connects LangGraph workflows to a CHAP coordinator. It turns LangGraph's
-`interrupt()` and `Command(resume=...)` cycle into the CHAP `task.complete`,
-`review.request` and `decide.*` sequence, so each human-in-the-loop
-checkpoint is recorded on the workspace's audit log. By default the bridge
+Connects LangGraph workflows to a CHAP coordinator. A node that makes a
+draft opens its review on a task that requires one, `task.create` then
+`task.complete`; the next node waits for the person's decision, made at a
+CHAP desk, and the graph carries on with what CHAP holds as decided. A
+decision made in the application's own interface, sent back as the
+graph's resume value, is recorded in the reviewer's name as `decide.*`,
+marked `via: "bridge-record"`, where nobody signs. By default the bridge
 opens a workspace with `core/1.0` and `review/1.0`, and its entries are
 hash-linked only when the coordinator has the chain switched on, for
 example with `enable_chain=True`. LangGraph is an optional dependency.
@@ -121,20 +124,26 @@ Examples: [`packages/chap-langgraph/examples/`](./packages/chap-langgraph/exampl
 ### `chap-pydantic-ai` (Pydantic AI bridge)
 
 Bridges [Pydantic AI](https://ai.pydantic.dev)'s deferred-tool approval flow
-(`ToolApproved` / `ToolDenied`) to CHAP. An approval becomes
-`decide.approve`, an approval with edited arguments becomes
-`decide.override` carrying the diff, and a denial becomes `decide.reject`.
-Per-call rationale and tags are read from the tool-result metadata.
-Pydantic AI is an optional dependency.
+(`ToolApproved` / `ToolDenied`) to CHAP. Each pending call is reviewed at a
+CHAP desk, and the person's approval, edit of the arguments or denial comes
+back as the `DeferredToolResults` that carry it out. A resolution the
+application's own code made is recorded as `decide.approve`,
+`decide.override` with the diff, or `decide.reject`, marked
+`via: "bridge-record"`, where nobody signs. Pydantic AI is an optional
+dependency.
 
 Package: [`packages/chap-pydantic-ai/`](./packages/chap-pydantic-ai/) ·
 Examples: [`packages/chap-pydantic-ai/examples/`](./packages/chap-pydantic-ai/examples/).
 
 ### `chap-ag2` (AG2 / AutoGen bridge)
 
-Bridges [AG2](https://github.com/ag2ai/ag2) (AutoGen) agent turns to CHAP,
-recording the human's decision on a proposed turn as the matching
-`decide.*` entry. AG2 is an optional dependency.
+Bridges [AG2](https://github.com/ag2ai/ag2) (AutoGen) to CHAP. At an AG2
+0.x human-input turn, the agent's message, with the tool calls it would
+make, is reviewed at a CHAP desk and the reply carries the decision out;
+with AG2 1.x, a tool middleware puts each call in front of a person the
+same way. A turn the application's own code took is recorded as the
+matching `decide.*` entry, marked `via: "bridge-record"`, where nobody
+signs. AG2 is an optional dependency.
 
 Package: [`packages/chap-ag2/`](./packages/chap-ag2/) ·
 Examples: [`packages/chap-ag2/examples/`](./packages/chap-ag2/examples/).
@@ -143,18 +152,26 @@ Examples: [`packages/chap-ag2/examples/`](./packages/chap-ag2/examples/).
 
 Bridges [LlamaIndex
 Workflows](https://developers.llamaindex.ai/python/framework/understanding/workflows/)
-human-in-the-loop events to CHAP's `review`/`decide` sequence.
-LlamaIndex is an optional dependency.
+human-in-the-loop events to CHAP. The output an `InputRequiredEvent`
+proposes is reviewed at a CHAP desk, and the `HumanResponseEvent` that
+answers the pause carries the decision. A reply the application's own code
+made is recorded as the matching `decide.*` entry, marked
+`via: "bridge-record"`, where nobody signs. LlamaIndex is an optional
+dependency.
 
 Package: [`packages/chap-llama-index/`](./packages/chap-llama-index/) ·
 Examples: [`packages/chap-llama-index/examples/`](./packages/chap-llama-index/examples/).
 
 ### `chap-google-adk` (Google ADK bridge)
 
-Bridges [Google ADK](https://google.github.io/adk-docs/)
-human-in-the-loop tool confirmations to CHAP. Approve, edit, and
-reject map to `decide.approve` / `decide.override` / `decide.reject`.
-Google ADK is an optional dependency.
+Bridges [Google ADK](https://adk.dev/) human-in-the-loop tool
+confirmations to CHAP. A paused call is reviewed at a CHAP desk, and the
+`ToolConfirmation` that resumes the run carries the decision: confirmed,
+confirmed with the person's arguments or their answer to the tool's own
+question, or not confirmed. A confirmation the application's own code made
+is recorded as `decide.approve`, `decide.override` or `decide.reject`,
+marked `via: "bridge-record"`, where nobody signs, and only as ADK will
+carry it out. Google ADK is an optional dependency.
 
 Package: [`packages/chap-google-adk/`](./packages/chap-google-adk/) ·
 Examples: [`packages/chap-google-adk/examples/`](./packages/chap-google-adk/examples/).
