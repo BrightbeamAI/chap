@@ -15,6 +15,10 @@ client keeps its configuration changes.
 - Node.js 22 or later. Confirm with `node --version`.
 - An MCP client that supports the MCP 2026-07-28 or 2025-11-25 stdio
   transport.
+- The CHAP 0.3.5 packages or later: `create-chap-app` and
+  `@brightbeamai/chap-coordinator-mcp`. The MCP package before 0.3.5 takes
+  no options, so it would ignore `--url` and `--as` below and serve every
+  tool, in any participant's name, from a coordinator of its own.
 
 ## Step 1: Start a CHAP server with a desk
 
@@ -28,13 +32,18 @@ npm start
 ```
 
 `npm start` runs one process: the CHAP coordinator, the review desk at
-`http://127.0.0.1:8787/`, and the coordinator's JSON-RPC endpoint at
-`http://127.0.0.1:8787/chap`. Open the desk in a browser and leave it open.
+`http://127.0.0.1:8792/`, and the coordinator's JSON-RPC endpoint at
+`http://127.0.0.1:8792/chap`. Open the desk in a browser and leave it open:
+opening it joins you, with a key the desk keeps in your browser, and a task
+that needs your sign-off can only be completed once you are there to give
+it.
 
 The project's `chap.config.json` names the workspace, `wsp_my_gate`; you,
-`human:you@local`, the reviewer; and the assistant, `agent:assistant`. The
-server creates the workspace and joins you both. `audit-scitt/1.0` turns on
-the hash chain, so each entry carries the hash of the one before it.
+`human:you@local`, the reviewer; and the assistant, `agent:assistant`.
+`require_signatures` is `"humans"`: your decisions carry the desk's
+signature, and the assistant, an agent member, calls unsigned.
+`audit-scitt/1.0` turns on the hash chain, so each entry carries the hash of
+the one before it.
 
 ## Step 2: Connect Claude Desktop as the assistant
 
@@ -55,7 +64,7 @@ Add a `chap` entry under `mcpServers`, alongside any servers already there:
       "args": [
         "-y",
         "@brightbeamai/chap-coordinator-mcp",
-        "--url", "http://127.0.0.1:8787/chap",
+        "--url", "http://127.0.0.1:8792/chap",
         "--as", "agent:assistant"
       ]
     }
@@ -73,10 +82,10 @@ completing tasks, asking a whisper, reading the workspace and its log, and
 the decision tools, which the coordinator refuses on the assistant's own
 work. Nothing it offers joins a participant or chooses who reviews.
 
-For reproducible setups, pin the package to a tested version, for example
-`@brightbeamai/chap-coordinator-mcp@0.3.4`.
+For reproducible setups, pin the package to a release you have tested, 0.3.5
+or later: `@brightbeamai/chap-coordinator-mcp@0.3.5`.
 
-The project serves MCP itself too, at `http://127.0.0.1:8787/mcp`, acting
+The project serves MCP itself too, at `http://127.0.0.1:8792/mcp`, acting
 as the assistant with the same tools. Claude Code and Cursor connect to it
 directly, and Claude Desktop through a local bridge; the project's README
 gives each configuration.
@@ -84,8 +93,8 @@ gives each configuration.
 ## Step 3: Tell the assistant who it is
 
 Restart Claude Desktop. `chap` should appear as a connected MCP server with
-ten tools, named with the `chap.` prefix. If your client shows server logs,
-they say which participant the server acts as and where it forwards.
+eleven tools, named with the `chap.` prefix. If your client shows server
+logs, they say which participant the server acts as and where it forwards.
 
 Paste the project's `AGENT_INSTRUCTIONS.md` into the instructions of a
 Claude Desktop project. It tells the assistant its participant URI and the
@@ -135,10 +144,10 @@ Enter:
 
 > Approve that draft yourself, and then approve it as human:you@local.
 
-The first attempt is refused with `-32011`, since the review is addressed to
-you, and the refusal is recorded on the log. The second is refused by the
-MCP server before it reaches the coordinator: it acts as `agent:assistant`,
-and a call cannot name another `from`.
+The first attempt is refused with `-32011`, "The author of the work under
+review cannot decide it", and the refusal is recorded on the log. The second
+is refused by the MCP server before it reaches the coordinator: it acts as
+`agent:assistant`, and a call cannot name another `from`.
 
 ## What you have demonstrated
 
@@ -180,13 +189,24 @@ The project's server is not running, or listens elsewhere. Start it with
 `npm start` in the project, and check that the `--url` port matches the
 `port` in `chap.config.json`.
 
-### A tool call is refused with `-32070`
+### A tool call is refused with `-32070`, or `-32011` "Not a workspace member"
 
-The project's server requires a signature on every call, and the MCP
-server's calls are unsigned. Use a setting that requires signatures from
-people only, or none; the project's README describes them.
+The project's server does not know the MCP server's participant as an agent
+member. Under `"require_signatures": "humans"`, the template's setting, only
+an agent member may call unsigned, so a call from any other participant is
+refused with `-32070`, "Missing top-level `sig` field"; without signatures,
+a participant that is not a member is refused with `-32011`. Check that
+`--as` names the agent `chap.config.json` names, `agent:assistant` by
+default. Under `"require_signatures": true`, every call must be signed, and
+the MCP server's calls are not; the project's README describes the
+settings.
 
-### The client shows thirty-nine tools, and decisions as you are accepted
+### A completion is refused: no eligible human reviewer
+
+The task needs your sign-off, and you have not joined yet. Open the desk,
+which joins you, then ask again.
+
+### The client shows every CHAP tool, and decisions as you are accepted
 
 The configuration starts an older package, or one without `--url` and
 `--as`. Check the `args` in the configuration; `--help` after the package

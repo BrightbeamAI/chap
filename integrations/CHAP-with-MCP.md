@@ -328,8 +328,11 @@ CHAP workspace from natural language.
   with `makeChapMcpServer(coord, options)` and pass the result to any
   MCP transport, or serve it on an HTTP endpoint with
   `chapMcpHttpHandler(coord, options)`, which answers MCP 2026-07-28 and
-  the handshake-era revisions alike. Its command, `chap-mcp-server`, runs
-  the server on stdio.
+  the handshake-era revisions alike, under the server's own names only: a
+  foreign `Host` is refused with 421 and a browser's request from another
+  origin with 403, as the MCP specification requires against DNS
+  rebinding, and `allowedHosts` and `allowedOrigins` add names. Its
+  command, `chap-mcp-server`, runs the server on stdio.
 - `chap_coordinator.transports.mcp_server`. Python adapter (installable
   via `pip install chap-coordinator[mcp]`). Same shape:
   `make_chap_mcp_server(coord, name=..., version=..., participant=...,
@@ -365,14 +368,19 @@ participant's connection is pinned to that participant:
   alone. Pass the set as `toolFilter` (`tool_filter=`); a tool the filter
   excludes is refused when called by name.
 
-The commands are pinned by default: they act as `agent:assistant@local`
-(`--as` or `CHAP_PARTICIPANT` names another), offer the agent's tools
-(`--tools all` offers every method, still as the one participant), and
-refuse a `human:` participant at start. A person decides in a desk. With
-`--url`, the command forwards every call to a running CHAP server's
-JSON-RPC endpoint, such as the desk server a `create-chap-app` mcp-gate
-project runs, so the assistant on stdio works in a workspace whose person
-decides there.
+The commands are pinned by default: they act as `agent:assistant`, the
+agent a `create-chap-app` mcp-gate project names (`--as` or
+`CHAP_PARTICIPANT` names another), offer the agent's tools (`--tools all`
+offers every method, still as the one participant), and refuse a `human:`
+participant at start; the libraries refuse one too. A person decides in a
+desk. With `--url`, the command forwards every call to a running CHAP
+server's JSON-RPC endpoint, such as the desk server an mcp-gate project
+runs, so the assistant on stdio works in a workspace whose person decides
+there:
+
+```bash
+npx -y @brightbeamai/chap-coordinator-mcp --url http://127.0.0.1:8792/chap --as agent:assistant
+```
 
 The pin covers the connection only. It records that a call came through
 this server, and does not show who sent it; any process that can start the
@@ -383,7 +391,7 @@ unsigned local server trusts.
 
 ### What gets exposed
 
-All 39 CHAP methods become MCP tools, named with a `chap.` prefix to
+Every CHAP method becomes an MCP tool, named with a `chap.` prefix to
 avoid collisions with other servers a client might have loaded:
 
 ```
@@ -393,6 +401,7 @@ chap.task.create
 chap.task.update
 chap.task.complete
 chap.review.request
+chap.review.acknowledge
 chap.decide.approve
 chap.decide.reject
 chap.decide.override
@@ -430,7 +439,9 @@ chap.participant.leave
 
 Each tool's `inputSchema` is the JSON Schema for the corresponding
 method's params. CHAP-level errors surface as MCP tool errors with
-the JSON-RPC error code preserved in the response body.
+the JSON-RPC error code preserved in the response body. A call naming no
+CHAP tool is a protocol error, `-32602` "Unknown tool: <name>", as the MCP
+tools specification has it.
 
 ### Quickstart: drive a CHAP Coordinator from Claude Desktop
 

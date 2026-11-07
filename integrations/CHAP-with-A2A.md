@@ -329,13 +329,15 @@ named `TASK_STATE_*`. Both cards list the JSON-RPC endpoint twice, at
 protocol version 1.0 and at 0.3, and both servers turn on their SDK's v0.3
 compatibility (`legacyCompat` in TypeScript, `enable_v0_3_compat` in
 Python), so a client still on A2A 0.3 reads the card in its 0.3 shape and
-calls `message/send` at the same URL. Every input and output mode is
-`application/json`.
+calls `message/send` at the same URL. A server that leaves the
+compatibility off builds its card with `legacyCompat: false`
+(`legacy_compat=False`), so the card lists the 1.0 interface alone. Every
+input and output mode is `application/json`.
 
 ### What gets exposed
 
-Every CHAP method appears as an `AgentSkill` on the Agent Card with
-id `chap.<method>`. The skill names match the MCP adapter's tool
+Each CHAP method the server offers appears as an `AgentSkill` on the Agent
+Card with id `chap.<method>`. The skill names match the MCP adapter's tool
 names, so callers fluent in one are fluent in the other:
 
 ```
@@ -346,7 +348,14 @@ chap.task.create             chap.decide.override
 ...
 ```
 
-(All 39 methods listed in `CHAP-with-MCP.md` §10.)
+(Every method is listed in `CHAP-with-MCP.md` §10.)
+
+By default the card lists, and the executor runs, the agent's skills: the
+`AGENT_MCP_TOOLS` set the MCP commands offer an assistant, which covers the
+agent's own work and leaves out workspace, membership and control methods
+and the choice of who reviews. `skillFilter: () => true` (`skill_filter=
+lambda _name: True`) on both offers every method, and so does `--skills
+all` on the reference servers and the Python command.
 
 A2A messages carry the CHAP params in a data part. The skill id
 identifies which CHAP method to dispatch, looked up in this order:
@@ -358,7 +367,10 @@ call CHAP refuses is a failure in A2A's terms: a task in
 `TASK_STATE_REJECTED`, or `TASK_STATE_FAILED` when the coordinator could
 not complete it, whose status message carries the CHAP error as
 `{chap_error, message, data?}`. An orchestrator that reads only A2A
-states sees the failure; one that reads CHAP codes has them.
+states sees the failure; one that reads CHAP codes has them. A refusal is
+final the moment it is made, so the servers keep refusals in a
+`ChapTaskStore`: the 1,000 most recent, each without the request it
+refused, which GetTask still answers for and memory cannot grow past.
 
 ### Who the server acts as
 
@@ -370,10 +382,11 @@ The reference servers and the Python command act as
 `agent:orchestrator@local` unless `CHAP_PARTICIPANT`, or `--as` for the
 TypeScript server and the Python command, names another, and refuse a
 `human:` participant: a person decides in a desk, never through an
-orchestrator. They offer every skill, as one participant, so the
-orchestrator can also open workspaces, join them as itself and request
-reviews; `skillFilter` (`skill_filter=`) restricts the skills, on the card
-and in the executor alike.
+orchestrator. The libraries refuse a `human:` participant too. They offer
+the agent's skills unless `--skills all` is given, so by default the
+orchestrator cannot open workspaces, change who is in them or request
+reviews; `skillFilter` (`skill_filter=`) sets the skills, on the card and
+in the executor alike.
 
 ### What a local server checks
 
@@ -382,8 +395,10 @@ server on the user's machine makes the create-chap-app servers' checks
 before its routes: a `Host` that is not one of its names is refused with
 421, which defeats DNS rebinding; an `Origin` naming another site with 403;
 a POST that is not `application/json` with 415, which stops a page's
-cross-site `fetch` with a `text/plain` body; and a body over 1,114,112
-bytes with 413 before the rest is read. Each refusal is a short JSON body.
+cross-site `fetch` with a `text/plain` body; a body over 1,114,112 bytes
+with 413 before the rest is read; and a body that nests deeper than 32
+levels with 400, before a parser deeper in runs out of stack. Each refusal
+is a short JSON body.
 A fault inside the coordinator or the server reaches the client as a
 failure without its detail, which stays in the server's log, so no stack
 trace, path or exception text crosses the wire; a malformed A2A request is
@@ -399,12 +414,14 @@ Start either reference server, or the Python command, then point an A2A
 client at its agent-card URL:
 
 ```bash
-# TypeScript
-tsx reference/a2a-server-ts/server.ts --port 9090
+# TypeScript, from reference/a2a-server-ts in a clone, after npm install and npm run build at its root
+npm start -- --port 9090
 # Python
 python3 reference/a2a-server-py/server.py --port 9090
 python -m chap_coordinator.transports.a2a_cli --port 9090 --db ~/chap-a2a.db
 ```
+
+Each offers the agent's skills; add `--skills all` for every method.
 
 ```bash
 curl http://localhost:9090/.well-known/agent-card.json

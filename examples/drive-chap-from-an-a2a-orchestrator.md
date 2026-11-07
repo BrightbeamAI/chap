@@ -14,7 +14,7 @@ same CHAP coordinator underneath, different transport on top.
 
 - Either Python 3.10+ (the package's command, no clone needed) or
   Node.js 22+ and a clone of the repository (the TypeScript reference
-  server). Both expose the same 39 skills.
+  server). Both expose the same skills, from CHAP 0.3.5 on.
 - An A2A client. The walkthrough uses raw `curl` to keep it
   self-contained; substitute Azure AI Foundry, Amazon Bedrock
   AgentCore, Google ADK, or your own orchestrator for the real
@@ -26,7 +26,7 @@ same CHAP coordinator underneath, different transport on top.
 
 ```bash
 pip install "chap-coordinator[a2a]"
-python -m chap_coordinator.transports.a2a_cli --port 9090
+python -m chap_coordinator.transports.a2a_cli --port 9090 --skills all
 ```
 
 **TypeScript**, from a clone:
@@ -37,14 +37,14 @@ cd chap
 npm install
 npm run build
 cd reference/a2a-server-ts
-npm start -- --port 9090
+npm start -- --port 9090 --skills all
 ```
 
 Either way stderr says where the server listens, the participant it acts
-as, and that its state is in memory only:
+as and the skills it offers, and that its state is in memory only:
 
 ```
-... on http://localhost:9090/, acting as agent:orchestrator@local
+... on http://localhost:9090/, acting as agent:orchestrator@local with every CHAP skill
 Agent Card: http://localhost:9090/.well-known/agent-card.json
 ```
 
@@ -53,6 +53,11 @@ Every call is made as that participant, `agent:orchestrator@local`;
 server will not start as a `human:` participant: a person decides in a
 desk, never through an orchestrator.
 
+`--skills all` offers every CHAP method, since the orchestrator here sets
+up its own workspace. Without it the server offers the agent's skills
+only; "The orchestrator's own skills" below says what they are, and why a
+deployment gives an orchestrator those.
+
 ## Step 2: Discover capabilities
 
 ```bash
@@ -60,9 +65,10 @@ curl -s http://localhost:9090/.well-known/agent-card.json -H "A2A-Version: 1.0" 
 ```
 
 The card lists the JSON-RPC endpoint at protocol version 1.0 and at 0.3,
-names `application/json` as every input and output mode, and has 39 skills,
-each named `chap.<method>`. Without the `A2A-Version` header the server
-answers in the card's 0.3 shape, with the `url` an A2A 0.3 client reads.
+names `application/json` as every input and output mode, and has a skill
+for each CHAP method, named `chap.<method>`. Without the `A2A-Version`
+header the server answers in the card's 0.3 shape, with the `url` an A2A
+0.3 client reads.
 
 ## Step 3: Drive the coordinator
 
@@ -211,11 +217,14 @@ The answer comes in 0.3 shapes: `"kind": "message"`, or for a refusal
 - **A person's decisions.** The server acts only as the orchestrator,
   so nothing here decides as a person; a review waits for a person who
   decides in a desk, such as the one a `create-chap-app` project runs.
-- **A narrower orchestrator.** The server offers every skill, so the
-  orchestrator can also request reviews and join a workspace as itself.
-  Where it should do neither, give the card and the executor the same
-  skill filter, as the adapter's README shows with the MCP server's agent
-  tool set.
+- **The orchestrator's own skills.** Started without `--skills all`, the
+  server offers the agent's skills, the set the MCP server offers an
+  assistant: the orchestrator creates, updates and completes tasks, asks
+  whispers, reads the workspace and its log, and decides work it is asked
+  to review. It cannot pause the workspace, change its members or
+  profiles, or choose who reviews. That is the set to give an
+  orchestrator in a deployment, where a person or a service sets up the
+  workspace.
 
 See `integrations/CHAP-with-A2A.md` §8 for the full integration
 picture, including the **other** direction: how an A2A exchange

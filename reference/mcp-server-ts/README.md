@@ -7,7 +7,8 @@ workspace without being able to act in anyone else's name.
 
 For use with a desk, where a person decides on the assistant's work, run the
 published server instead: `npx @brightbeamai/chap-coordinator-mcp --url
-http://127.0.0.1:8787/chap` forwards the assistant's calls to a desk server.
+http://127.0.0.1:8792/chap --as agent:assistant` forwards the assistant's
+calls to a desk server, such as a create-chap-app mcp-gate project's.
 See [`examples/drive-chap-from-claude-desktop.md`](../../examples/drive-chap-from-claude-desktop.md).
 
 Spec target: MCP 2026-07-28, serving 2025-11-25 clients as well. CHAP 0.3.
@@ -62,7 +63,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
 ```
 
 Restart Claude Desktop. "chap" should appear as a connected MCP
-server with 39 tools.
+server with a tool for every CHAP method.
 
 ## What it exposes
 

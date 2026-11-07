@@ -11,7 +11,8 @@ Spec target: **MCP 2026-07-28**, serving MCP 2025-11-25 clients as well · CHAP 
 
 The package ships a stdio server, `chap-mcp-server`, so an MCP client can use
 CHAP without any code. It makes every call as one participant, by default the
-agent `agent:assistant@local`, and offers the tools an agent's own work needs.
+agent `agent:assistant`, as a create-chap-app mcp-gate project names its
+agent, and offers the tools an agent's own work needs.
 A person decides in a desk, never through the assistant, so the server
 refuses to act as a `human:` participant and refuses a call that names
 anyone else.
@@ -27,7 +28,7 @@ person in the desk:
     "chap": {
       "command": "npx",
       "args": ["-y", "@brightbeamai/chap-coordinator-mcp",
-               "--url", "http://127.0.0.1:8787/chap", "--as", "agent:assistant"]
+               "--url", "http://127.0.0.1:8792/chap", "--as", "agent:assistant"]
     }
   }
 }
@@ -35,9 +36,9 @@ person in the desk:
 
 | Option | Environment | Effect |
 |--------|-------------|--------|
-| `--as <uri>` | `CHAP_PARTICIPANT` | The participant every call is made as. Default `agent:assistant@local`. `from` is filled in, a call naming anyone else is refused, and a `human:` URI is refused at start. |
-| `--tools agent\|all` | | `agent`, the default, offers `AGENT_MCP_TOOLS` (below). `all` offers all 39 methods, still as the one participant. |
-| `--url <endpoint>` | | Forward every call to a running CHAP server's JSON-RPC endpoint, such as a desk server's `http://127.0.0.1:8787/chap`. That server keeps the workspaces, its store and its profiles. |
+| `--as <uri>` | `CHAP_PARTICIPANT` | The participant every call is made as. Default `agent:assistant`. `from` is filled in, a call naming anyone else is refused, and a `human:` URI is refused at start. |
+| `--tools agent\|all` | | `agent`, the default, offers `AGENT_MCP_TOOLS` (below). `all` offers every method, still as the one participant. |
+| `--url <endpoint>` | | Forward every call to a running CHAP server's JSON-RPC endpoint, such as a desk server's `http://127.0.0.1:8792/chap`. That server keeps the workspaces, its store and its profiles. A call waits 30 seconds for its answer. |
 | `--db <path>` | `CHAP_DB_PATH` | Keep the workspaces in this SQLite file. A leading `~` is the home directory. |
 | `--profiles <list>` | `CHAP_PROFILES` | Comma-separated profiles for new workspaces. Defaults to Core plus review, whisper, deliberation, handoff, control, routing, modes and audit-scitt, so the audit chain is on from the first entry. |
 | `--help` | | Print the options and exit. |
@@ -82,7 +83,7 @@ const coord = new Coordinator({
 
 // The assistant's own connection: every call as the agent, with its tools.
 const server = makeChapMcpServer(coord, {
-  participant: "agent:assistant@local",
+  participant: "agent:assistant",
   toolFilter: (name) => AGENT_MCP_TOOLS.has(name),
 });
 await server.connect(new StdioServerTransport());
@@ -96,14 +97,14 @@ transport (stdio, Streamable HTTP, etc.).
 
 | Option | Effect |
 |--------|--------|
-| `participant` | Make every call as this participant: `from` is filled in, and a call that names another `from` is refused. The tools list `from` as optional, with this URI in its description. |
+| `participant` | Make every call as this participant: `from` is filled in, and a call that names another `from` is refused. The tools list `from` as optional, with this URI in its description. A `human:` URI is refused, as the commands refuse it. |
 | `toolFilter` | `(toolName) => boolean`. A tool the filter excludes is left out of the list and refused when called by name. |
 | `name`, `version` | What the server reports to its client. |
 | `envelopeIdFactory` | The id of each envelope a tool call sends. |
 
 Without `participant` or `toolFilter`,
-`makeChapMcpServer(coord, { name: "chap", version: "0.3.4" })` serves all 39
-tools and each call names its own `from`. That suits a connection that stands
+`makeChapMcpServer(coord, { name: "chap", version: "0.3.4" })` serves every
+tool and each call names its own `from`. That suits a connection that stands
 for no one member, such as a service of your own that authenticates its
 callers and checks the `from` they send.
 
@@ -210,9 +211,12 @@ signature on it.
 
 ## What gets exposed
 
-All 39 CHAP methods become MCP tools named `chap.<method>`. Each
+Every CHAP method becomes an MCP tool named `chap.<method>`. Each
 tool's `inputSchema` is the JSON Schema for the corresponding method's
-params. Tool descriptions are tuned for LLM consumption.
+params. Tool descriptions are tuned for LLM consumption. A call naming no
+CHAP tool is a protocol error, `-32602` "Unknown tool: <name>", as the MCP
+tools specification has it; a CHAP tool the server leaves out is refused
+as a tool result, as the coordinator's refusals are.
 
 The `chap.` prefix avoids collisions with other MCP servers a client
 might have loaded simultaneously.

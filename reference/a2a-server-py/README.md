@@ -20,6 +20,7 @@ pip install -e "../../packages/coordinator-py[a2a]"
 ```bash
 python3 server.py                # 127.0.0.1:9090
 python3 server.py --port 9091
+python3 server.py --skills all   # every CHAP method
 CHAP_ALLOWED_HOSTS=a2a.internal:9090 python3 server.py --host 0.0.0.0
                                  # all interfaces, reached as a2a.internal (see below)
 ```
@@ -27,10 +28,14 @@ CHAP_ALLOWED_HOSTS=a2a.internal:9090 python3 server.py --host 0.0.0.0
 Every call is made as the participant `CHAP_PARTICIPANT` names,
 `agent:orchestrator@local` when it is unset: `from` is filled in, and a call
 naming anyone else is refused with `-32011`. A `human:` URI is refused at
-start: a person decides in a desk, never through an orchestrator.
+start: a person decides in a desk, never through an orchestrator. It offers
+the agent's skills, the `AGENT_MCP_TOOLS` set the MCP server offers an
+assistant, unless `--skills all` offers every CHAP method. `--host` falls
+back to `CHAP_HOST`, and the card names the address the server listens on,
+`localhost` for a loopback or wildcard one.
 
 The package's command serves the same app with every option, `--as`,
-`--db` and `--allowed-host` among them:
+`--skills`, `--db` and `--allowed-host` among them:
 
 ```bash
 python -m chap_coordinator.transports.a2a_cli --port 9090 --db ~/chap-a2a.db
@@ -39,7 +44,7 @@ python -m chap_coordinator.transports.a2a_cli --port 9090 --db ~/chap-a2a.db
 You should see, on stderr:
 
 ```
-CHAP A2A reference server starting on http://localhost:9090/, acting as agent:orchestrator@local
+CHAP A2A reference server starting on http://localhost:9090/, acting as agent:orchestrator@local with the agent skills
 Agent Card: http://localhost:9090/.well-known/agent-card.json
 Profiles enabled: core/1.0, review/1.0, whisper/1.0, deliberation/1.0, handoff/1.0, control/1.0, routing/1.0, modes/1.0, audit-scitt/1.0.
 ```
@@ -52,10 +57,13 @@ or a name in `CHAP_ALLOWED_HOSTS`, is refused with 421, so a page that
 rebinds its own name to this address gets nothing. A request from
 a browser on another origin is refused with 403; a client that is not a
 browser sends no `Origin`. A POST must be `application/json` (415), so a
-page's cross-site `fetch` with a `text/plain` body is refused, and a body
-over 1,114,112 bytes is refused with 413 before it is read. Each refusal is
-a short JSON body, and a fault inside the coordinator or the server reaches
-the client without its detail, which stays in the log.
+page's cross-site `fetch` with a `text/plain` body is refused, a body over
+1,114,112 bytes is refused with 413 before it is read, and one that nests
+deeper than 32 levels with 400; a call whose body is cut short never runs.
+Each refusal is a short JSON body, and a fault inside the coordinator or
+the server reaches the client without its detail, which stays in the log.
+A refused call is kept as a task, the latest 1,000 of them, without the
+request, and a whole number reaches the client as an integer.
 
 It has no authentication. Any local process can call it, as the one
 participant. It binds `127.0.0.1` by default, and warns when bound to
@@ -67,7 +75,9 @@ another address. Only expose it on a trusted network.
 curl http://localhost:9090/.well-known/agent-card.json | head -30
 ```
 
-Send via the v0.3-compatible slash form:
+A fresh server holds no workspace, and the agent's skills create none, so
+start it with `python3 server.py --skills all` for the call below. Send via
+the v0.3-compatible slash form:
 
 ```bash
 curl -X POST http://localhost:9090/ \
@@ -98,9 +108,10 @@ message carries the CHAP error.
 
 ## What it exposes
 
-Every CHAP method, as an A2A skill named `chap.<method>` on the
-agent card, made as the one participant. New workspaces get the profiles
-listed above. State is in memory and lost on exit.
+The agent's skills, or with `--skills all` every CHAP method, each as an
+A2A skill named `chap.<method>` on the agent card, made as the one
+participant. New workspaces get the profiles listed above. State is in
+memory and lost on exit.
 
 ## See also
 
