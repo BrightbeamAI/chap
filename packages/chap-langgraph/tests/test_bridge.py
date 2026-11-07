@@ -307,12 +307,16 @@ def test_a_node_that_runs_again_reads_its_decision_back(bridge, coord):
     assert len(bridge.audit()) == before + 3
 
 
-def test_nothing_is_recorded_in_a_persons_name_where_people_sign():
+def test_nothing_is_recorded_in_a_persons_name_where_people_sign(tmp_path):
+    pytest.importorskip("cryptography")
     coord = Coordinator(CoordinatorOptions(enable_chain=True, require_signatures=True,
                                            signature_policy="humans"))
     bridge = ChapBridge(coord, workspace=WS, agent=AGENT, reviewer=REVIEWER)
+    # Bob joins from the desk, with his own key, as a person must where people sign.
+    bob = Signer.load_or_create("human:bob@example.org", tmp_path / "keys")
     coord.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
-                    "params": {"workspace": WS, "from": "human:bob@example.org", "type": "human"}})
+                    "params": {"workspace": WS, "from": "human:bob@example.org", "type": "human",
+                               "jwks": {"keys": [bob.public_jwk]}}})
     state = hil_review(bridge, {"reply": "draft"}, "draft")
     with pytest.raises(PersonRequired):
         bridge.apply_decision(state["chap_task_id"], "approve", state["chap_artefact"])

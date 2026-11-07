@@ -44,6 +44,16 @@ def send(coord, method, sender, **params):
     return out["result"]
 
 
+def join_with_a_key(coord, uri, keys):
+    """A person joining from their own client, with their own key, as they
+    must where signatures are required."""
+    signer = Signer.load_or_create(uri, keys)
+    out = coord.dispatch({"jsonrpc": "2.0", "id": f"join-{uri}", "method": "participant.join",
+                          "params": {"workspace": WS, "from": uri, "type": "human",
+                                     "jwks": {"keys": [signer.public_jwk]}}})
+    assert "error" not in out, out
+
+
 def entries(client, method):
     return [e["envelope"]["params"] for e in client.audit()
             if "envelope" in e and e["envelope"]["method"] == method]
@@ -275,7 +285,8 @@ def test_a_review_whose_opening_is_cancelled_is_withdrawn_once_open(coord, agent
     assert task.state == "in_progress"
 
 
-def test_a_signed_workspace_opens_a_review_once_a_person_has_joined(coord):
+def test_a_signed_workspace_opens_a_review_once_a_person_has_joined(tmp_path):
+    pytest.importorskip("cryptography")
     signed = Coordinator(CoordinatorOptions(enable_chain=True, require_signatures=True,
                                             signature_policy="humans"))
     agent = ReviewClient(signed, WS, AGENT, ALICE)
@@ -283,8 +294,7 @@ def test_a_signed_workspace_opens_a_review_once_a_person_has_joined(coord):
         agent.open({"reply": "refund 100"}, kind="draft", timeout=0.05, poll_seconds=0.01)
     # Nothing was written, and nobody was joined in the person's name.
     assert signed.workspaces[WS].tasks == {} and ALICE not in signed.workspaces[WS].members
-    threading.Timer(0.05, signed.dispatch, ({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
-                                             "params": {"workspace": WS, "from": BOB, "type": "human"}},)).start()
+    threading.Timer(0.05, join_with_a_key, (signed, BOB, tmp_path / "keys")).start()
     task_id = agent.open({"reply": "refund 100"}, kind="draft", timeout=5, poll_seconds=0.01)
     assert signed.workspaces[WS].tasks[task_id].review.requested_to == [BOB]
 
@@ -368,15 +378,15 @@ def test_a_decision_on_another_artefact_than_the_one_shown_is_refused(agent):
     assert refused.value.code == -32074
 
 
-def test_nobody_is_recorded_or_joined_in_a_persons_name_where_signatures_are_required():
+def test_nobody_is_recorded_or_joined_in_a_persons_name_where_signatures_are_required(tmp_path):
+    pytest.importorskip("cryptography")
     signed = Coordinator(CoordinatorOptions(enable_chain=True, require_signatures=True,
                                             signature_policy="humans"))
     agent = ReviewClient(signed, WS, AGENT, ALICE)
     with pytest.raises(PersonRequired, match="requires signatures"):
         agent.record({"reply": "refund 100"}, "approve", task_kind="draft")
-    signed.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
-                     "params": {"workspace": WS, "from": BOB, "type": "human"}})
-    task_id = agent.open({"reply": "refund 100"}, kind="draft")
+    join_with_a_key(signed, BOB, tmp_path / "keys")
+    task_id = agent.open({"reply": "refund 100"}, kind="draft", timeout=5)
     with pytest.raises(PersonRequired):
         agent.decide(task_id, "approve", digest=artefact_digest({"reply": "refund 100"}))
     assert set(signed.workspaces[WS].members) == {AGENT, BOB}
