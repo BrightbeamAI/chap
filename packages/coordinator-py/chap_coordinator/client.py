@@ -267,24 +267,26 @@ class _TaskReader(Protocol):
 
 def wait_for_decision(client: _TaskReader, task_id: str, poll_seconds: float = 2.0,
                       timeout: Optional[float] = None) -> dict:
-    """Read a task until its state is no longer ``review_requested``, and
-    return its view; call it once the task is submitted for review.
+    """Read a task until it is out of review, and return its view; call it
+    once the task is submitted for review. A task under review, or paused
+    during its review, is still waiting, as :mod:`chap_coordinator.bridge`
+    reads it.
 
     ``client`` is anything whose ``task(task_id)`` returns the task's view,
     or None for a task it does not know: an HttpCoordinator or a
     Participant. Raises TimeoutError after ``timeout`` seconds, and KeyError
     when the server does not know the task.
     """
-    started = time.monotonic()
+    from .bridge import _deadline, _pause, is_decided
+
+    deadline = _deadline(timeout)
     while True:
         view = client.task(task_id)
         if view is None:
             raise KeyError(f"Unknown task: {task_id}")
-        if view["state"] != "review_requested":
+        if is_decided(view):
             return view
-        if timeout is not None and time.monotonic() - started >= timeout:
-            raise TimeoutError(f"No decision on {task_id} after {timeout} seconds")
-        time.sleep(poll_seconds)
+        time.sleep(_pause(deadline, poll_seconds, f"No decision on {task_id} after {timeout} seconds"))
 
 
 class Participant:
