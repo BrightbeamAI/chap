@@ -1,12 +1,14 @@
 """
 Whole numbers cross the Python A2A server as integers, both ways.
 
-a2a-sdk holds a data part's numbers as protobuf doubles, so 1042 came out
-of it as 1042.0: a call's input was stored as 1042.0, and a client read
-error codes and sequence numbers as floats. The TypeScript server sends
-integers.
+a2a-sdk holds a data part's numbers as protobuf doubles. The server gives
+whole numbers back their integer form on the way in, so a call's input keeps
+1042, and on the way out, so a client reads error codes and sequence numbers
+as integers, as the TypeScript server sends them.
 """
 from __future__ import annotations
+
+import re
 
 import httpx
 import pytest
@@ -44,7 +46,8 @@ async def test_whole_numbers_reach_the_coordinator_and_the_client_as_integers():
         entries = log.json()["result"]["message"]["parts"][0]["data"]["entries"]
         assert [entry["seq"] for entry in entries] == list(range(len(entries)))
         assert all(isinstance(entry["seq"], int) for entry in entries)
-        assert '"seq":0,' in log.text
+        # A data part's members come out in no fixed order: seq may be the last.
+        assert re.search(r'"seq":0[,}]', log.text), log.text
 
         refused = await call("chap.workspace.describe", {"workspace": "missing"}, "m5")
         assert '"chap_error":-32602' in refused.text
