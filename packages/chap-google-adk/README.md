@@ -275,8 +275,8 @@ in-process desk and a desk server where people sign.
 ## Compatibility
 
 - `chap-coordinator` 0.3.4 and later
-- `google-adk` 1.29 and later (optional; tested with google-adk 2.11.0 and
-  google-genai 2.33.0)
+- `google-adk` 1.29 and later (optional; tested with google-adk 1.29.0 and
+  2.11.0)
 - Python 3.10, 3.11, 3.12, 3.13
 
 ## License

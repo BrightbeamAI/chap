@@ -9,7 +9,7 @@ stages the same story.
 ## Run it
 
 ```bash
-pip install chap-pydantic-ai "pydantic-ai-slim>=1.19"
+pip install chap-pydantic-ai "pydantic-ai-slim>=1.41"
 python3 system.py
 ```
 

@@ -246,7 +246,7 @@ against an in-process desk and a desk server where people sign.
 
 - `chap-coordinator` 0.3.4 and later
 - `llama-index-workflows` 1.x and 2.x (optional; tested with
-  llama-index-workflows 2.26.1)
+  llama-index-workflows 1.0.0 and 2.26.1)
 - Python 3.10, 3.11, 3.12, 3.13
 
 ## License

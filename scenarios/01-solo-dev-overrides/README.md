@@ -35,7 +35,7 @@ config.
 |---|---|---|
 | **What it is** | The story staged directly against the coordinator. | The story wired into a real agent framework (Pydantic AI). |
 | **Proves** | The CHAP mechanics: record, verify, query. | CHAP slots into a real system's human-in-the-loop path. |
-| **Runs with** | Standard library only. | `pip install chap-pydantic-ai "pydantic-ai-slim>=1.19"`, still offline, no API key. |
+| **Runs with** | Standard library only. | `pip install chap-pydantic-ai "pydantic-ai-slim>=1.41"`, still offline, no API key. |
 | **Bar to read/copy** | Good first issue. | A completed system example to aspire to. |
 
 Start with `scenario.py` to understand what CHAP records; open

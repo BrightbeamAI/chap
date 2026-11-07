@@ -18,7 +18,7 @@ pip install chap-pydantic-ai
 ```
 
 Depends on `chap-coordinator>=0.3.4`. Install the extra to run a live
-agent; `request_results` needs Pydantic AI 1.19 or later to build the
+agent; `request_results` needs Pydantic AI 1.41 or later to build the
 results it returns:
 
 ```bash
@@ -253,8 +253,8 @@ server where people sign.
 ## Compatibility
 
 - `chap-coordinator` 0.3.4 and later
-- `pydantic-ai` 1.x and 2.x for `record_results`, 1.19 and later for
-  `request_results` (optional; tested with pydantic-ai 2.54.0)
+- `pydantic-ai` 1.41 and later (optional; tested with pydantic-ai-slim
+  1.41.0 and pydantic-ai 2.54.0)
 - Python 3.10, 3.11, 3.12, 3.13
 
 ## License

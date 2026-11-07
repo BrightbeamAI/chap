@@ -293,8 +293,9 @@ a scripted model, each with a person deciding at a desk.
 
 - `chap-coordinator` 0.3.4 and later
 - `ag2` 0.9 to 0.x for `request_reply` and `record_turn`, through
-  `get_human_input` (optional; tested with ag2 0.14.0)
-- `ag2` 1.2 and later 1.x for `tool_approval` (tested with ag2 1.2.2)
+  `get_human_input` (optional; tested with ag2 0.9 and 0.14.0)
+- `ag2` 1.2 and later 1.x for `tool_approval` (tested with ag2 1.2.0 and
+  1.2.2)
 - Python 3.10, 3.11, 3.12, 3.13
 
 ## License

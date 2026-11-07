@@ -277,7 +277,7 @@ sent back for another, which is approved, then the chain, verified.
 ## Compatibility
 
 - `chap-coordinator` 0.3.4 and later
-- `langgraph` 1.x (optional; tested with langgraph 1.2.20 and
+- `langgraph` 1.x (optional; tested with langgraph 1.0.0 and 1.2.20, and
   langchain-core 1.7.6)
 - Python 3.10, 3.11, 3.12, 3.13
 
