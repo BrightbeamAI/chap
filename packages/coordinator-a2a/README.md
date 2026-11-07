@@ -163,7 +163,10 @@ JSON-RPC handlers, as above, a client still on A2A 0.3 reads the card in its
 0.3 shape and calls `message/send` with `kind`-tagged parts at the same
 URL, and the SDK translates in both directions; a 1.0 client sends
 `A2A-Version: 1.0` and calls `SendMessage`. The executor sees only 1.0
-types. The Python counterpart serves the same two versions.
+types. The Python counterpart serves the same two versions. A server whose
+handlers leave `legacyCompat` off passes `legacyCompat: false` to
+`makeChapAgentCard` too, so the card lists only the 1.0 interface it
+answers.
 
 ## Upgrading from 0.3.4
 

@@ -175,6 +175,12 @@ def test_dispatch_unknown_skill_returns_method_not_found() -> None:
     assert resp["error"]["code"] == -32601
 
 
+def test_agent_card_lists_the_1_0_interface_alone_for_a_server_without_legacy_compat() -> None:
+    card = make_chap_agent_card(base_url="http://localhost:9000", legacy_compat=False)
+    assert [(i.url, i.protocol_binding, i.protocol_version) for i in card.supported_interfaces] == [
+        ("http://localhost:9000", "JSONRPC", "1.0")]
+
+
 def test_the_first_data_part_decides_and_one_holding_no_object_gives_no_call() -> None:
     listed, called = Value(), Value()
     ParseDict([1, 2], listed)

@@ -31,6 +31,13 @@ export interface ChapAgentCardOptions {
    * filter as the executor's.
    */
   skillFilter?: (skillId: string) => boolean;
+  /**
+   * Whether the card also lists the endpoint at A2A 0.3, which the server
+   * answers where its handlers have `legacyCompat` enabled. Default true;
+   * pass false for a server whose handlers do not, so the card claims only
+   * what the server answers.
+   */
+  legacyCompat?: boolean;
 }
 
 const DEFAULT_DESCRIPTION =
@@ -40,10 +47,11 @@ const DEFAULT_DESCRIPTION =
   "and the audit log.";
 
 /**
- * The card lists the JSON-RPC endpoint twice: at A2A 1.0, and at 0.3 for a
- * client that has not moved. A v0.3 client reaches the endpoint only where
- * the card lists it at 0.3, and only where the server's handlers have
- * `legacyCompat` enabled, as the reference server's do.
+ * The card lists the JSON-RPC endpoint at A2A 1.0, and with `legacyCompat`,
+ * the default, at 0.3 as well, for a client that has not moved. A v0.3
+ * client reaches the endpoint only where the card lists it at 0.3, and only
+ * where the server's handlers have `legacyCompat` enabled, as the reference
+ * server's do.
  */
 export function makeChapAgentCard(options: ChapAgentCardOptions): AgentCard {
   if (!options.baseUrl) {
@@ -73,7 +81,7 @@ export function makeChapAgentCard(options: ChapAgentCardOptions): AgentCard {
   return {
     name:        options.name        ?? "CHAP Coordinator",
     description: options.description ?? DEFAULT_DESCRIPTION,
-    supportedInterfaces: [jsonRpc("1.0"), jsonRpc("0.3")],
+    supportedInterfaces: options.legacyCompat === false ? [jsonRpc("1.0")] : [jsonRpc("1.0"), jsonRpc("0.3")],
     provider:    undefined,
     version:     options.version     ?? "0.3.4",
     capabilities: {

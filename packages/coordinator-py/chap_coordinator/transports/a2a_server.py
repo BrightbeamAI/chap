@@ -158,6 +158,7 @@ def make_chap_agent_card(
     ),
     version: str = "0.3.4",
     skill_filter: Callable[[str], bool] | None = None,
+    legacy_compat: bool = True,
 ) -> AgentCard:
     """Build the AgentCard advertised at ``/.well-known/agent-card.json``.
 
@@ -167,11 +168,14 @@ def make_chap_agent_card(
     ``lambda _name: True`` lists every method. Pass the same filter as the
     executor's.
 
-    The card lists the JSON-RPC endpoint twice: at A2A 1.0, and at 0.3 for
-    a client that has not moved, which the server answers where its
-    JSON-RPC routes have ``enable_v0_3_compat`` set. The 0.3 entry is also
-    what gives the served card the fields a 0.3 client reads, ``url`` among
-    them. Both match the TypeScript card.
+    The card lists the JSON-RPC endpoint at A2A 1.0, and with
+    ``legacy_compat``, the default, at 0.3 as well, for a client that has
+    not moved: the server answers one where its JSON-RPC routes have
+    ``enable_v0_3_compat`` set, as :func:`make_chap_a2a_app`'s do. Pass
+    ``legacy_compat=False`` for an app whose routes do not, so the card
+    claims only what the server answers. The 0.3 entry is also what gives
+    the served card the fields a 0.3 client reads, ``url`` among them. Both
+    match the TypeScript card.
     """
     filter_fn = skill_filter or _agent_skills
 
@@ -202,10 +206,9 @@ def make_chap_agent_card(
         skills=skills,
         supported_interfaces=[
             # "JSONRPC" is the value A2A defines, which a2a-sdk's
-            # ClientFactory matches exactly. With "jsonrpc" every SDK client
-            # given the card found no compatible transport.
-            AgentInterface(url=base_url, protocol_binding="JSONRPC", protocol_version=version)
-            for version in ("1.0", "0.3")
+            # ClientFactory matches exactly.
+            AgentInterface(url=base_url, protocol_binding="JSONRPC", protocol_version=protocol_version)
+            for protocol_version in (("1.0", "0.3") if legacy_compat else ("1.0",))
         ],
     )
 

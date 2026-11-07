@@ -105,6 +105,13 @@ test("agent card offers the endpoint at A2A 1.0, and at 0.3 for clients not yet 
   ]);
 });
 
+test("agent card lists the 1.0 interface alone for a server without legacyCompat", () => {
+  const card = makeChapAgentCard({ baseUrl: "http://localhost:9000", legacyCompat: false });
+  assert.deepEqual(card.supportedInterfaces, [
+    { url: "http://localhost:9000", protocolBinding: "JSONRPC", tenant: "", protocolVersion: "1.0" },
+  ]);
+});
+
 test("agent card names its input and output modes by media type", () => {
   const card = makeChapAgentCard({ baseUrl: "http://localhost:9000" });
   assert.deepEqual(card.defaultInputModes, ["application/json"]);
