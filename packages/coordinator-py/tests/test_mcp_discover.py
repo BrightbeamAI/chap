@@ -204,20 +204,11 @@ async def test_tool_results_are_tagged_for_a_modern_caller() -> None:
     assert bad["isError"] is True
     assert '"chap_error": -32602' in bad["content"][0]["text"]
 
-    # An unprefixed name never maps to a CHAP method, so it is refused by the
-    # adapter. A `chap.`-prefixed unknown maps through and is refused by the
-    # Coordinator instead; both surface as a terminal error result.
-    unknown = (await send_raw("tools/call", {
-        **envelope(), "name": "not.a.tool", "arguments": {},
-    }))["result"]
-    assert unknown["isError"] is True
-    assert "Unknown CHAP tool" in unknown["content"][0]["text"]
-
-    unknown_method = (await send_raw("tools/call", {
-        **envelope(), "name": "chap.not.a.tool", "arguments": {},
-    }))["result"]
-    assert unknown_method["isError"] is True
-    assert '"chap_error": -32601' in unknown_method["content"][0]["text"]
+    # A name that is no CHAP tool, prefixed or not, is a protocol error.
+    for name in ("not.a.tool", "chap.not.a.tool"):
+        unknown = await send_raw("tools/call", {**envelope(), "name": name, "arguments": {}})
+        assert "result" not in unknown, name
+        assert unknown["error"] == {"code": -32602, "message": f"Unknown tool: {name}"}
 
 
 @pytest.mark.asyncio

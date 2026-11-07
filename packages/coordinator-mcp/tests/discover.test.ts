@@ -178,24 +178,12 @@ test("tool results are tagged complete for a modern caller", async () => {
   assert.equal(bad.result.isError, true);
   assert.match(bad.result.content[0].text, /"chap_error": -32602/);
 
-  // An unprefixed name never maps to a CHAP method, so it is refused by the
-  // adapter. A `chap.`-prefixed unknown maps through and is refused by the
-  // Coordinator instead; both surface as a terminal error result.
-  const unknown = await send("tools/call", {
-    ...envelope(),
-    name: "not.a.tool",
-    arguments: {},
-  });
-  assert.equal(unknown.result.isError, true);
-  assert.match(unknown.result.content[0].text, /Unknown CHAP tool/);
-
-  const unknownMethod = await send("tools/call", {
-    ...envelope(),
-    name: "chap.not.a.tool",
-    arguments: {},
-  });
-  assert.equal(unknownMethod.result.isError, true);
-  assert.match(unknownMethod.result.content[0].text, /"chap_error": -32601/);
+  // A name that is no CHAP tool, prefixed or not, is a protocol error.
+  for (const name of ["not.a.tool", "chap.not.a.tool"]) {
+    const unknown = await send("tools/call", { ...envelope(), name, arguments: {} });
+    assert.equal(unknown.result, undefined, name);
+    assert.deepEqual(unknown.error, { code: -32602, message: `Unknown tool: ${name}` });
+  }
 });
 
 test("a handshake-era caller gets its own result shape, without 2026 fields", async () => {

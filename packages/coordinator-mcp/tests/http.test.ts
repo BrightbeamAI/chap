@@ -157,6 +157,12 @@ test("a 2026-07-28 tools/call runs as the participant, and another from is refus
   assert.match(hidden.body.result.content[0].text, /not offered by this server/);
 });
 
+test("a 2026-07-28 call of an unknown tool is a protocol error, answered 400 -32602", async () => {
+  const r = await send(call(42, "chap.no.such.tool", { workspace: "w" }), { headers: { "mcp-name": "chap.no.such.tool" } });
+  assert.equal(r.status, 400);
+  assert.deepEqual(r.body, { jsonrpc: "2.0", id: 42, error: { code: -32602, message: "Unknown tool: chap.no.such.tool" } });
+});
+
 test("server/discover answers on the 2026-07-28 path", async () => {
   const r = await send({ jsonrpc: "2.0", id: 5, method: "server/discover", params: { _meta: META } });
   assert.equal(r.status, 200);

@@ -85,9 +85,11 @@ import logging
 from itertools import count
 from typing import Any, Awaitable, Callable, Optional, Protocol, Union
 
+from mcp import MCPError
 from mcp.server import CacheHint, Server
 from mcp.server.context import ServerRequestContext
 from mcp.types import (
+    INVALID_PARAMS,
     CallToolRequestParams,
     CallToolResult,
     DiscoverResult,
@@ -267,12 +269,12 @@ def make_chap_mcp_server(
         tool_name = params.name
         arguments = params.arguments or {}
 
+        # A name that is no CHAP tool is a protocol error, -32602, as the
+        # tools page of both revisions has it. A tool this server leaves out
+        # is refused below as a tool result, as any refusal is.
+        if tool_name not in SCHEMAS:
+            raise MCPError(INVALID_PARAMS, f"Unknown tool: {tool_name}")
         method = method_for_tool(tool_name)
-        if method is None:
-            return CallToolResult(
-                isError=True,
-                content=[TextContent(type="text", text=f"Unknown CHAP tool: {tool_name}")],
-            )
         # The filter decides what this server offers, so a tool it excludes is
         # refused here as well as left out of the list. Hidden alone, it still
         # ran for any client that called it by name.

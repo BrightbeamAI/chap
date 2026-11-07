@@ -105,20 +105,16 @@ test("CHAP error surfaces as MCP tool error", async () => {
   }
 });
 
-test("Unknown tool name returns tool error", async () => {
+test("an unknown tool name is a protocol error, -32602", async () => {
   const { client, cleanup } = await setup();
   try {
-    // Disable schema validation on the client side so we can attempt
-    // calling a name the server doesn't expose.
-    let threwAtClient = false;
-    try {
-      await client.callTool({ name: "chap.not.a.method", arguments: {} });
-    } catch {
-      threwAtClient = true;
+    for (const name of ["chap.not.a.method", "not.a.tool"]) {
+      await assert.rejects(client.callTool({ name, arguments: {} }), (err: { code?: number; message?: string }) => {
+        assert.equal(err.code, -32602, name);
+        assert.match(String(err.message), new RegExp(`Unknown tool: ${name.replace(/\./g, "\\.")}$`));
+        return true;
+      });
     }
-    // The client SDK may reject this before it hits the wire; either
-    // outcome is acceptable for the test (the misuse is caught somewhere).
-    assert.ok(threwAtClient || true);
   } finally {
     await cleanup();
   }

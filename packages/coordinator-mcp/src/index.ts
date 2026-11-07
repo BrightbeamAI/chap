@@ -271,14 +271,14 @@ export function makeChapMcpServer(coord: ChapDispatcher, options: ChapMcpOptions
 
     const toolName = request.params.name;
     const rawArgs = (request.params.arguments ?? {}) as Record<string, unknown>;
-    const method = methodForTool(toolName);
 
-    if (!method) {
-      return terminal({
-        isError: true,
-        content: [{ type: "text", text: `Unknown CHAP tool: ${toolName}` }],
-      });
+    // A name that is no CHAP tool is a protocol error, -32602, as the tools
+    // page of both revisions has it. A tool this server leaves out is
+    // refused below as a tool result, as any refusal is.
+    if (!Object.hasOwn(SCHEMAS, toolName)) {
+      throw new ProtocolError(ErrorCode.InvalidParams, `Unknown tool: ${toolName}`);
     }
+    const method = methodForTool(toolName)!;
     // The filter decides what this server offers, so a tool it excludes is
     // refused here as well as left out of the list. Hidden alone, it still ran
     // for any client that called it by name.
