@@ -413,7 +413,11 @@ leave it off.
    with SSH signing set up for git and the key added to GitHub as a signing
    key, GitHub shows them as verified.
 4. **A review rule.** `"review": { "rule": "quorum:2" }` in
-   `chap.config.json` makes every change wait for two reviewers. Under a rule
+   `chap.config.json` makes every change wait for two reviewers. The gate
+   creates its workspace under this rule, and an agent cannot ask for fewer
+   approvals, so set it before the gate first starts: a store created under
+   another rule keeps that rule, and the gate refuses a proposal whose rule
+   the store does not hold until it starts on a new store. Under a rule
    that needs more than one approval, each revision opens a new round, so an
    approval of an earlier version does not count for the revised one, and
    the desk offers no edit, since an edit settles a review with one person's

@@ -441,6 +441,8 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
         ws.signature_policy = "all"
     if ws.join_policy != "invite":
         ws.join_policy = "open"
+    if not isinstance(ws.review_rule, str) or not _review_rule_supported(ws.review_rule):
+        ws.review_rule = None
     ws.members = members
     ws.tasks = tasks
     ws.overrides = overrides
@@ -1777,6 +1779,10 @@ class Coordinator:
             join_policy = self.options.join_policy
         if join_policy not in ("open", "invite"):
             return None, {"error": rpc_error(E.PARAMS, "join_policy must be open or invite")}
+        review_rule = p.get("review_rule")
+        if review_rule is not None and (not isinstance(review_rule, str) or not _review_rule_supported(review_rule)):
+            return None, {"error": rpc_error(
+                E.PARAMS, "review_rule must be any_one_approves, all_approve or quorum:<n>")}
         ws_id = p.get("workspace") or self.ids.workspace_id()
         if ws_id in self.workspaces:
             return None, {"error": rpc_error(E.PARAMS, f"workspace already exists: {ws_id}")}
@@ -1820,6 +1826,7 @@ class Coordinator:
             min_acr=p.get("min_acr"),
             signature_policy=policy,
             join_policy=join_policy,
+            review_rule=review_rule,
         )
         if "audit-scitt/1.0" in profiles or self.options.enable_chain:
             ws.chain_enabled = True
@@ -1853,6 +1860,7 @@ class Coordinator:
             "step_up_window_sec": ws.step_up_window_sec,
             "signature_policy": ws.signature_policy,
             "join_policy": ws.join_policy,
+            "review_rule": ws.review_rule or "any_one_approves",
             "profiles": ws.profiles,
             "members": [m.to_dict() for m in dict.values(ws.members)],
             "audit_count": len(ws.audit),
@@ -2468,6 +2476,7 @@ class Coordinator:
                         "Task requires review but has no eligible human reviewer "
                         "(needs a human member other than its assignee and completer)")}
                 task.review = ReviewState(requested_at=now, requested_to=eligible,
+                                          rule=ws.review_rule or "any_one_approves",
                                           authors=authors)
             else:
                 # The task held a review already: it went back to in_progress

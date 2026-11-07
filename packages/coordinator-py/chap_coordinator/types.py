@@ -639,6 +639,8 @@ class Workspace:
     # Who may join: anyone ("open"), or only a participant an admin invited,
     # and the first member ("invite").
     join_policy: str = "open"
+    # The rule of a review that opens on task.complete; any_one_approves when None.
+    review_rule: str | None = None
     members: dict[str, Member] = field(default_factory=dict)
     tasks: dict[str, Task] = field(default_factory=dict)
     overrides: dict[str, OverrideArtefact] = field(default_factory=dict)

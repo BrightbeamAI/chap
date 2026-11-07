@@ -623,6 +623,7 @@ after `closed`, is likewise specified and not yet built.
   "step_up_window_sec": 300,
   "signature_policy": "all",
   "join_policy": "open",
+  "review_rule": "any_one_approves",
   "profiles": ["core/1.0", "review/1.0", "audit-scitt/1.0"],
   "members": [
     { "uri": "human:alice@example.org", "type": "human",
@@ -640,7 +641,11 @@ after `closed`, is likewise specified and not yet built.
 `evidence_head` appears only where the workspace keeps a chain, and
 `routing_policy_uri` only where set. `signature_policy` is always present,
 and matters where the workspace requires signatures (§5.2); so is
-`join_policy` (§6.3.3). Member entries
+`join_policy` (§6.3.3), and `review_rule`, the rule of a review that
+`task.complete` opens ([review profile §3.1](./profiles/review.md#31-reviewrequest)),
+set by the `review_rule` param of `workspace.create` and fixed after; a rule
+other than `any_one_approves`, `all_approve` or `quorum:<n>` is refused with
+`-32602`. Member entries
 add `display_name`, `capabilities`, `scopes`, `jwks`, `key_history`,
 `paused`, `oidc_sub` and `vc_holder` when set.
 

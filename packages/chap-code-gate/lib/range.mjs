@@ -7,7 +7,7 @@
 // verify.mjs accept a sealed commit only when all of that holds.
 
 import { basename } from "node:path";
-import { api, approvalOf, contentHash, lastDecision, modelLabel, noteArtefacts, RANGE_KIND, sha256, submitForReview, trailersFor } from "./gate.mjs";
+import { api, approvalOf, contentHash, lastDecision, modelLabel, noteArtefacts, RANGE_KIND, ruleHeld, sha256, submitForReview, trailersFor } from "./gate.mjs";
 import { blobAt, committerIdent, commitTree, emptyTree, faithfulCheck, git, GATE_TRAILER, numstat, parseTrailers, rawCommit, treeDiff, treeOf, writeNote } from "./git.mjs";
 import { modelName } from "@brightbeamai/chap-server/providers";
 import { branchModel, commitModel, withoutAttribution } from "./model.mjs";
@@ -165,8 +165,9 @@ export async function branchReviews(gate, client, artefact) {
  * review holds when it is not the one given.
  */
 export async function proposeRange(client, artefact, { gate = null, taskId = null, review = { rule: "any_one_approves", to: null } } = {}) {
+  await ruleHeld(client, review.rule);
   const digest = await contentHash(artefact);
-  if (taskId) return { task_id: taskId, state: await submitForReview(client, taskId, artefact, review), revised: true, digest };
+  if (taskId) return { task_id: taskId, state: await submitForReview(client, taskId, artefact), revised: true, digest };
   if (gate) {
     const { open, approved, headOf } = await branchReviews(gate, client, artefact);
     const done = approved.find((a) => a.head === artefact.head);
@@ -175,7 +176,7 @@ export async function proposeRange(client, artefact, { gate = null, taskId = nul
       const same = headOf(open) === artefact.head;
       return { task_id: open.task_id, state: "review_requested", revised: false, digest, held: open.artefact, ...(same ? {} : { waiting_on: headOf(open) }) };
     }
-    if (open) return { task_id: open.task_id, state: await submitForReview(client, open.task_id, artefact, review), revised: true, digest };
+    if (open) return { task_id: open.task_id, state: await submitForReview(client, open.task_id, artefact), revised: true, digest };
   }
   const input = { summary: artefact.summary, repo: artefact.repo, branch: artefact.branch, base: artefact.base, head: artefact.head, commits: artefact.commits.length };
   const created = await client.call("task.create", { kind: RANGE_KIND, assignee: client.from, input, review_required: true, idempotency_key: rangeKey(artefact.base, artefact.head) });

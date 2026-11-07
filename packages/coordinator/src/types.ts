@@ -401,6 +401,8 @@ export interface Workspace {
   signature_policy: SignaturePolicy;
   /** Who may join. */
   join_policy:     JoinPolicy;
+  /** The rule of a review that opens on task.complete; any_one_approves when unset. */
+  review_rule?:    string;
   members:         Map<ParticipantUri, Member>;
   /** Invitations not yet taken up, by the URI each admits. */
   invitations:     Map<ParticipantUri, Invitation>;

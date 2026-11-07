@@ -42,6 +42,7 @@ export interface WorkspaceCreateParams extends Partial<WorkspaceParam> {
   mode_ceiling?:       "shadow" | "trial" | "production";
   signature_policy?:   SignaturePolicy;
   join_policy?:        JoinPolicy;
+  review_rule?:        string;
 }
 export interface WorkspaceCreateResult { workspace: WorkspaceId }
 

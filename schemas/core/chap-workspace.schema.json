@@ -54,6 +54,12 @@
       "default": "open",
       "description": "Who may join (SPECIFICATION 6.3.3): anyone, or only a participant an admin invited with workspace.invite, and the first member, who becomes the admin."
     },
+    "review_rule": {
+      "type": "string",
+      "pattern": "^(any_one_approves|all_approve|quorum:[1-9][0-9]*)$",
+      "default": "any_one_approves",
+      "description": "The rule of a review that task.complete opens (review profile 3.1): set at workspace.create and fixed after."
+    },
     "max_envelope_bytes": {
       "type": "integer",
       "minimum": 1024,

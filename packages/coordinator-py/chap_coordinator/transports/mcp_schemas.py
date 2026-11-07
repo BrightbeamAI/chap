@@ -96,6 +96,12 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "default": "open",
                 "description": "Who may join. 'open' admits anyone. 'invite' admits only a participant an admin invited with chap.workspace.invite, and the workspace's first member, which becomes its admin; any other join is refused with -32011. It cannot be changed afterwards.",
             },
+            "review_rule": {
+                "type": "string",
+                "pattern": "^(any_one_approves|all_approve|quorum:[1-9][0-9]*)$",
+                "default": "any_one_approves",
+                "description": "The rule of every review that task.complete opens here: any_one_approves, all_approve or quorum:<n>. An author cannot open a review of their own review-required task, so this is how a workspace asks for more than one approval. It cannot be changed afterwards.",
+            },
         },
         "additionalProperties": False,
     },

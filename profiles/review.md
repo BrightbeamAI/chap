@@ -102,7 +102,10 @@ loaded `modes/1.0`.
 
 Nobody chose the reviewer set on this path, so the Coordinator picks it: the
 members of `type: "human"` who are neither the completer nor the task's
-assignee, with `rule: "any_one_approves"`.
+assignee, under the workspace's `review_rule` (SPECIFICATION §6.2),
+`"any_one_approves"` where none was set. An author cannot open a review of
+their own review-required task, so the workspace's rule is how a deployment
+asks for more than one approval, and no author can ask for fewer.
 
 Both exclusions serve the same rule: a `decide.approve` on the chain must
 mean a person looked. A review its own author can approve does not, and

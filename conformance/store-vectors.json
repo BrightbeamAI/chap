@@ -948,6 +948,7 @@
   "min_acr": null,
   "signature_policy": "all",
   "join_policy": "open",
+  "review_rule": null,
   "members": {
    "human:a": {
     "uri": "human:a",

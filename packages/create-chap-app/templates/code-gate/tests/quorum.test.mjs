@@ -1,11 +1,11 @@
 // Two reviewers: a change waits for both, an approval of an earlier version
-// does not count for a revision, the rule holds whatever route the agent
-// took to open the review, an edit does not settle it, and the commit
-// carries one Reviewed-by trailer per approving reviewer.
+// does not count for a revision, the workspace's rule holds whatever rule
+// the agent asks for, an edit does not settle it, and the commit carries one
+// Reviewed-by trailer per approving reviewer.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { jsonPatch } from "@brightbeamai/chap-server/client";
-import { buildNote, checkApproval, contentHash, describeChange, onlinePolicy, propose, reviewersReady, reviewRule } from "@brightbeamai/chap-code-gate/gate";
+import { buildNote, checkApproval, contentHash, describeChange, onlinePolicy, propose, reviewersReady, reviewRule, ruleHeld } from "@brightbeamai/chap-code-gate/gate";
 import { commitInfo, head, parseTrailers } from "@brightbeamai/chap-code-gate/git";
 import { verifyRange } from "@brightbeamai/chap-code-gate/verify";
 import { appendTo, commit, decide, demoRepo, reviewsFor, startGate } from "./helpers.mjs";
@@ -48,18 +48,21 @@ test("a change waits for two reviewers, a revision starts a new round, and the c
   assert.match(results[0].detail, /\(quorum:2\)/);
 });
 
-test("the rule holds when the agent opens a one-approval review itself", async () => {
+test("the workspace's rule holds when the agent asks for one approval", async () => {
   const repo = await demoRepo();
   await appendTo(repo, "README.md", "\nOne approval only.\n");
   const artefact = await describeChange(repo, { summary: "One approval", drafted_by: "the test" });
-  // task.complete opens an any_one_approves review, whatever the gate's rule.
   const { task_id } = await propose(g.agent, artefact, { review: { rule: "any_one_approves", to: null } });
   const review = (await reviewsFor(g, alice)).find((r) => r.task_id === task_id);
-  assert.equal(review.rule, "any_one_approves");
-  assert.equal((await decide(alice, "decide.approve", review)).state, "completed");
-  await assert.rejects(commit(g, repo, "One approval"), (e) => /quorum:2 needs 2 approvals/.test(e.stderr));
-  const ev = await (await fetch(`${g.base}/api/tasks/${task_id}/evidence`)).json();
-  assert.match((await checkApproval(buildNote(ev, g.gate.url), onlinePolicy(g.gate, ev))).join(), /quorum:2 needs 2 approvals .*; 1 on record/);
+  assert.equal(review.rule, "quorum:2", "the review opens under the workspace's rule");
+  assert.equal((await decide(alice, "decide.approve", review)).state, "review_requested");
+  await assert.rejects(commit(g, repo, "One approval"));
+});
+
+test("a proposal is refused when the workspace's rule needs fewer approvals than the configuration", async () => {
+  const client = { call: async () => ({ review_rule: "any_one_approves" }) };
+  await assert.rejects(ruleHeld(client, "quorum:2"), /opens reviews under any_one_approves and chap.config.json asks for quorum:2/);
+  assert.equal(await ruleHeld({ call: async () => ({ review_rule: "quorum:2" }) }, "any_one_approves"), "quorum:2");
 });
 
 test("an edit under quorum:2 completes the task at the coordinator, and the gate does not accept it", async () => {

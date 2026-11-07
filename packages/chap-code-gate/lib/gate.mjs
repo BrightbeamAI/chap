@@ -363,6 +363,18 @@ export function strictestRule(rules, reviewers = []) {
   return rules.filter(Boolean).reduce((a, b) => (approvalsNeeded(b, reviewers) > approvalsNeeded(a, reviewers) ? b : a), "any_one_approves");
 }
 
+/**
+ * Throws when the workspace opens reviews under a rule that needs fewer
+ * approvals than `rule`. The workspace's rule is set when it is created, so
+ * a store created before chap.config.json named a stricter rule keeps the
+ * rule it was created with.
+ */
+export async function ruleHeld(client, rule) {
+  const held = (await client.call("workspace.describe", {})).review_rule ?? "any_one_approves";
+  if (approvalsNeeded(held, []) >= approvalsNeeded(rule, [])) return held;
+  throw new Error(`The workspace opens reviews under ${held} and chap.config.json asks for ${rule}. A workspace's review rule is set when it is created: start the gate on a new store (move the file chap.config.json names under "store" aside) to open reviews under ${rule}.`);
+}
+
 /** The human members other than this participant: who a review is addressed to by default. */
 export async function humanReviewers(client) {
   const ws = await client.call("workspace.describe", {});
@@ -393,20 +405,21 @@ export async function reviewerPresent(client) {
  * revision of a change the reviewer sent back goes to that task, named by
  * `taskId` or found by `revisionTarget`.
  *
- * Under the default rule the patch is submitted with task.complete, and the
- * review opens addressed to the human members. Under a rule that needs more
- * than one approval, each round is opened with review.request, so a round
- * starts with no decisions and approvals of an earlier version are not
- * counted for this one.
+ * The patch is submitted with task.complete, and the review opens under
+ * the workspace's review rule, addressed to the human members. A decision
+ * counts for the artefact it was made on, so approvals of an earlier
+ * version are not counted for a revision. The proposal is refused when the
+ * workspace's rule needs fewer approvals than chap.config.json asks for.
  *
  * Returns the task id, its state after this call, whether it was a
  * revision, and the digest the reviewers' decisions will carry.
  */
 export async function propose(client, artefact, { gate = null, taskId = null, review = reviewRule(gate) } = {}) {
+  await ruleHeld(client, review.rule);
   let target = taskId;
   if (!target && gate) target = (await revisionTarget(gate, client, artefact))?.task_id ?? null;
   const digest = await contentHash(artefact);
-  const submit = (id) => submitForReview(client, id, artefact, review);
+  const submit = (id) => submitForReview(client, id, artefact);
   if (target) return { task_id: target, state: await submit(target), revised: true, digest };
   const input = { summary: artefact.summary, repo: artefact.repo, branch: artefact.branch, base: artefact.base, files: artefact.files.map((f) => f.path) };
   if (artefact.requested_by) input.requested_by = artefact.requested_by;
@@ -419,15 +432,10 @@ export async function propose(client, artefact, { gate = null, taskId = null, re
 }
 
 /**
- * Submit an artefact to a task for review: with task.complete under the
- * default rule, or opening a round with review.request under a rule that
- * needs more than one approval. Returns the task's state after the call.
+ * Submit an artefact to a task for review. task.complete opens the review
+ * under the workspace's review rule. Returns the task's state after the call.
  */
-export async function submitForReview(client, taskId, artefact, review = { rule: "any_one_approves", to: null }) {
-  if (review.rule !== "any_one_approves") {
-    const to = review.to ?? (await humanReviewers(client));
-    return (await client.call("review.request", { task_id: taskId, artefact, to, rule: review.rule })).state;
-  }
+export async function submitForReview(client, taskId, artefact) {
   return (await client.call("task.complete", { task_id: taskId, output: artefact })).state;
 }
 

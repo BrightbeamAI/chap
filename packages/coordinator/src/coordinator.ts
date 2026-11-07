@@ -1089,6 +1089,7 @@ export class Coordinator {
       min_acr:      ws.min_acr,
       signature_policy: ws.signature_policy,
       join_policy:  ws.join_policy,
+      review_rule:  ws.review_rule,
       chain_head:   ws.chain_head,
       chain_enabled: ws.chain_enabled,
     };
@@ -1163,6 +1164,7 @@ export class Coordinator {
       // and one written before the join policy existed admitted anyone.
       signature_policy: w.signature_policy === "humans" ? "humans" : "all",
       join_policy: w.join_policy === "invite" ? "invite" : "open",
+      review_rule: typeof w.review_rule === "string" ? w.review_rule : undefined,
       members: this.newMap(),
       tasks: this.newMap(),
       overrides: this.newMap(),
@@ -1917,6 +1919,10 @@ export class Coordinator {
     if (joinPolicy !== "open" && joinPolicy !== "invite") {
       return { error: rpcError(E.PARAMS, "join_policy must be open or invite") };
     }
+    const reviewRule = p.review_rule ?? undefined;
+    if (reviewRule !== undefined && (typeof reviewRule !== "string" || !reviewRuleSupported(reviewRule))) {
+      return { error: rpcError(E.PARAMS, "review_rule must be any_one_approves, all_approve or quorum:<n>") };
+    }
     const id = (p.workspace as string) || this.ids.workspaceId();
     if (this.workspaces.has(id)) return { error: rpcError(E.PARAMS, `workspace already exists: ${id}`) };
     if (Array.isArray(p.profiles)) {
@@ -1956,6 +1962,7 @@ export class Coordinator {
       min_acr: (p.min_acr as string | null | undefined) ?? undefined,
       signature_policy: policy,
       join_policy: joinPolicy,
+      ...(reviewRule !== undefined ? { review_rule: reviewRule } : {}),
       members: this.newMap(),
       tasks: this.newMap(),
       overrides: this.newMap(),
@@ -1998,6 +2005,7 @@ export class Coordinator {
       step_up_window_sec: ws.step_up_window_sec,
       signature_policy: ws.signature_policy,
       join_policy: ws.join_policy,
+      review_rule: ws.review_rule ?? "any_one_approves",
       profiles: ws.profiles,
       members: Array.from(rawValues(ws.members)).map(memberToDict),
       audit_count: ws.audit.length,
@@ -2570,7 +2578,7 @@ export class Coordinator {
           return { error: rpcError(E.NOT_AUTHORISED,
             "Task requires review but has no eligible human reviewer (needs a human member other than its assignee and completer)") };
         }
-        task.review = { requested_at: now, requested_to: eligible as ParticipantUri[], rule: "any_one_approves",
+        task.review = { requested_at: now, requested_to: eligible as ParticipantUri[], rule: ws.review_rule ?? "any_one_approves",
                         decisions: [], authors, acknowledgements: [] };
       } else {
         // The task held a review already: it went back to in_progress through

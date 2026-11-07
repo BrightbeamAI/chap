@@ -180,7 +180,8 @@ def coordinator_options(config: Config) -> dict:
 # compared like any other call's.
 METHOD_PARAMS: dict[str, tuple[str, ...]] = {
     "workspace.create": ("profiles", "mode", "mode_ceiling", "routing_policy_uri",
-                         "step_up_window_sec", "min_acr", "signature_policy", "join_policy"),
+                         "step_up_window_sec", "min_acr", "signature_policy", "join_policy",
+                         "review_rule"),
     "workspace.describe": (),
     "workspace.set_profiles": ("profiles",),
     "workspace.invite": ("uri", "type", "role", "jwks", "oidc_sub"),
@@ -1008,6 +1009,7 @@ class Recorder:
             "mode": ["shadow", "trial", "production"],
             "new_ceiling": ["trial", "production"], "mode_ceiling": ["trial", "production"],
             "signature_policy": ["all", "humans"], "join_policy": ["open", "invite"],
+            "review_rule": ["any_one_approves", "quorum:2", "all_approve", "quorum:0"],
             "role": ["admin", "reviewer"],
         }
         if name in choices:
@@ -1163,7 +1165,7 @@ def _project_workspace(coord: Coordinator, workspace: str) -> dict | None:
     out: dict = _own({k: data[k] for k in (
         "id", "created", "state", "profiles", "mode", "mode_ceiling",
         "routing_policy_uri", "step_up_window_sec", "min_acr", "signature_policy",
-        "join_policy", "chain_head", "chain_enabled")})
+        "join_policy", "review_rule", "chain_head", "chain_enabled")})
     out["members"] = sorted((_shape("members", m) for m in data["members"].values()),
                             key=lambda m: str(m.get("uri")))
     tasks = []

@@ -1708,6 +1708,7 @@
           "step_up_window_sec": 300,
           "signature_policy": "all",
           "join_policy": "open",
+          "review_rule": "any_one_approves",
           "profiles": [
             "core/1.0",
             "review/1.0",
