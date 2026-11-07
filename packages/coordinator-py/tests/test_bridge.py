@@ -189,6 +189,7 @@ def test_a_review_opens_on_a_task_that_requires_one_and_a_desk_decision_is_read_
     task_id = agent.open({"reply": "refund 100"}, kind="draft")
     task = coord.workspaces[WS].tasks[task_id]
     assert (task.state, task.review_required, task.review.requested_to) == ("review_requested", True, [ALICE])
+    assert (task.input, task.pending_artefact) == ({}, {"reply": "refund 100"})
     assert [p.get("to") for p in entries(agent, "review.request")] == []
     threading.Timer(0.05, send, (coord, "decide.override", ALICE), {
         "task_id": task_id, "rationale": "cap", "tags": ["limit"],

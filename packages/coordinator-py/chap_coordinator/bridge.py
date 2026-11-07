@@ -492,7 +492,7 @@ class ReviewClient:
         if task_id is None:
             task_id = self.call("task.create", {
                 "assignee": self.agent, "kind": kind,
-                "input": artefact if input is None else input, "review_required": True,
+                "input": {} if input is None else input, "review_required": True,
             })["task_id"]
         self.call("task.complete", {"task_id": task_id, "output": artefact})
         return task_id
@@ -501,11 +501,11 @@ class ReviewClient:
              timeout: Optional[float] = None, poll_seconds: float = 2.0) -> str:
         """Put ``artefact`` under review, and return the task id.
 
-        The review opens on a new task of ``kind``, with ``input`` (the
-        artefact itself by default) as its input, which requires review, so
-        only a person's decision completes it. With ``task_id`` the artefact
-        is the next proposal on a task whose reviewer asked for another, or
-        whose review was withdrawn, and opens the review's next round.
+        The review opens on a new task of ``kind``, with ``input`` as its
+        input, which requires review, so only a person's decision completes
+        it. With ``task_id`` the artefact is the next proposal on a task
+        whose reviewer asked for another, or whose review was withdrawn, and
+        opens the review's next round.
 
         Where the workspace requires signatures, a person joins it from
         their own client, and until one has the review waits to open,
