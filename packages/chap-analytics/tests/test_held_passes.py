@@ -5,9 +5,9 @@ A completion on a task that has held a review opens a new pass from
 chap-coordinator 0.3.5, and completed the task before it. The replay holds
 such a pass until something shows which coordinator wrote the log. An
 acknowledgement shows it as a decision does, since a coordinator takes one
-only while a review is open: it was attached to the previous pass, whose
-time to decide came out negative, and a log read without state showed the
-open, acknowledged review as a completion that bypassed a rejection.
+only while a review is open: it belongs to the pass that completion opened,
+whose times to open and to decide count from there, and a log read without
+state shows the acknowledged review as open.
 """
 from __future__ import annotations
 

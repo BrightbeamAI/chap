@@ -4,9 +4,9 @@ bridge write.
 
 A framework bridge records a decision made in an interface outside CHAP in
 a person's name, marked via "bridge-record". Its time on the log measures
-no review, and the latency brief read it as instant human review; a
-decision unmarked and as quick went unremarked, and a long tail of quick
-decisions with nothing waiting was taken for stuck reviews to chase.
+no review, so the latency figures leave it out and the brief counts it
+apart. The brief points out unmarked decisions made too soon to have been
+read, and reads a long tail with nothing waiting as nothing to chase.
 """
 from __future__ import annotations
 
