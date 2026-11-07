@@ -368,7 +368,7 @@ def register_control(coord: "Coordinator") -> None:
             new_task.review_required = bool(new_spec["review_required"])
         # Whoever made the work it replaces is an author of the successor's
         # review too, so superseding does not make its author a reviewer of it.
-        new_task.prior_authors = _successor_authors(old)
+        new_task.prior_authors = _successor_authors(old, p.get("from"))
         ws.tasks[new_id] = new_task
 
         old.state = "superseded"

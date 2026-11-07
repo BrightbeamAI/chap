@@ -215,12 +215,14 @@ through the `identity-oidc` profile, a human member, or one bound to a
 token, needs a recent `auth_time`. Beyond that any member may call
 them: restricting them to a role is left to the deployment.
 
-One limit holds whatever the deployment adds. While a review a task
-requires is open, or paused while open, `control.cancel` and
-`control.supersede` from one of the review's authors MUST be refused with
-`-32011`, as a `task.update` taking the paused task to `cancelled` is: a
-required review ends with a decision, and the authors of the work may not
-end it with none ([review profile §3.1](./review.md#31-reviewrequest)).
+One limit holds whatever the deployment adds. From the moment a review a
+task requires opens until the task ends, unless a reviewer has rejected
+the round under review, `control.cancel` and `control.supersede` from one
+of the review's authors MUST be refused with `-32011`, as a `task.update`
+taking the paused task to `cancelled` is, whether the task is under review,
+paused, or taken back by its authors: the authors of the work may not end
+its required review with no decision
+([review profile §3.1](./review.md#31-reviewrequest)).
 
 ---
 

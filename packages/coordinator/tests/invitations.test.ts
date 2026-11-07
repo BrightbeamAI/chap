@@ -187,6 +187,34 @@ test("where a token verifier is configured, an invitation does not register a pe
   assert.deepEqual(ws().members.get("human:c")!.keys, []);
 });
 
+test("where a verifier is configured, an invitation pins no keys for a person, a member or not", () => {
+  // A join whose token or presentation binds no key would take up keys the
+  // admin pinned, and the admin could sign as the person; under a credential
+  // verifier as under a token verifier.
+  const token = (sub: string, uri: string) => `tok:${JSON.stringify({ sub, chap_participant_uri: uri })}`;
+  const oidc = ready({ verifyOidcToken: (t: string) => (t.startsWith("tok:") ? JSON.parse(t.slice(4)) : null) });
+  oidc.call("workspace.create", "human:a");
+  oidc.call("participant.join", "human:a", { type: "human", role: "admin", oidc_token: token("sub-a", "human:a") });
+  assert.deepEqual(oidc.call("workspace.invite", "human:a",
+    { uri: "human:q", type: "human", jwks: { keys: [keyOf("human:a#2")] } }).error,
+    { code: -32602, message: "human:q joins with a token that binds its key; an invitation does not register a person's keys here" });
+  assert.equal(oidc.ws().invitations.has("human:q"), false);
+  assert.deepEqual(oidc.call("workspace.invite", "human:a", { uri: "human:q", type: "human" }).result,
+    { invited: true, uri: "human:q" });
+
+  const vc = ready({ verifyVc: (vp: Record<string, unknown>) => (typeof vp.holder === "string" ? { holder: vp.holder } : null) });
+  vc.call("workspace.create", "human:a");
+  vc.call("participant.join", "human:a", { type: "human", role: "admin", vc_presentation: { holder: "did:a" } });
+  assert.equal(vc.call("participant.join", "human:p", { type: "human", vc_presentation: { holder: "did:p" } }).error, undefined);
+  assert.deepEqual(vc.call("workspace.invite", "human:a",
+    { uri: "human:p", type: "human", jwks: { keys: [keyOf("human:a#2")] } }).error,
+    { code: -32602, message: "human:p registers a new key by joining again with a token that binds it; "
+      + "an invitation does not register a person's keys here" });
+  assert.deepEqual(vc.ws().members.get("human:p")!.keys, []);
+  assert.equal(vc.call("workspace.invite", "human:a",
+    { uri: "human:q", type: "human", jwks: { keys: [keyOf("human:a#2")] } }).error.code, -32602);
+});
+
 test("an invitation and the join policy are kept by the store, and an invitation used up leaves it", () => {
   const store = new MemoryStore();
   const first = ready({ store, joinPolicy: "invite" });

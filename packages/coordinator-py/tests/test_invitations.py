@@ -214,6 +214,39 @@ def test_where_a_token_verifier_is_configured_an_invitation_does_not_register_a_
     assert r.ws.members["human:c"].keys == []
 
 
+def test_where_a_verifier_is_configured_an_invitation_pins_no_keys_for_a_person_a_member_or_not():
+    # A join whose token or presentation binds no key would take up keys the
+    # admin pinned, and the admin could sign as the person; under a
+    # credential verifier as under a token verifier.
+    def token(sub, uri):
+        return "tok:" + json.dumps({"sub": sub, "chap_participant_uri": uri})
+    oidc = _Ready(verify_oidc_token=lambda t: json.loads(t[4:]) if t.startswith("tok:") else None)
+    oidc.call("workspace.create", "human:a")
+    oidc.call("participant.join", "human:a", type="human", role="admin", oidc_token=token("sub-a", "human:a"))
+    assert oidc.call("workspace.invite", "human:a", uri="human:q", type="human",
+                     jwks={"keys": [key_of("human:a#2")]})["error"] == {
+        "code": -32602,
+        "message": "human:q joins with a token that binds its key; an invitation does not register "
+                   "a person's keys here"}
+    assert "human:q" not in oidc.ws.invitations
+    assert oidc.call("workspace.invite", "human:a", uri="human:q", type="human")["result"] == {
+        "invited": True, "uri": "human:q"}
+
+    vc = _Ready(verify_vc=lambda vp: {"holder": vp["holder"]} if isinstance(vp.get("holder"), str) else None)
+    vc.call("workspace.create", "human:a")
+    vc.call("participant.join", "human:a", type="human", role="admin", vc_presentation={"holder": "did:a"})
+    assert "error" not in vc.call("participant.join", "human:p", type="human",
+                                  vc_presentation={"holder": "did:p"})
+    assert vc.call("workspace.invite", "human:a", uri="human:p", type="human",
+                   jwks={"keys": [key_of("human:a#2")]})["error"] == {
+        "code": -32602,
+        "message": "human:p registers a new key by joining again with a token that binds it; "
+                   "an invitation does not register a person's keys here"}
+    assert vc.ws.members["human:p"].keys == []
+    assert vc.call("workspace.invite", "human:a", uri="human:q", type="human",
+                   jwks={"keys": [key_of("human:a#2")]})["error"]["code"] == -32602
+
+
 def test_an_invitation_and_the_join_policy_are_kept_by_the_store():
     store = MemoryStore()
     first = _Ready(store=store, join_policy="invite")

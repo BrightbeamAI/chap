@@ -112,6 +112,9 @@ _READ_ONLY_METHODS = frozenset({
 # of a recorded call and the two references handle differently.
 _MAX_NESTING = 64
 
+#: The largest integer both coordinators read the same, 2**53 - 1.
+_MAX_SAFE_INTEGER = 2**53 - 1
+
 
 def _within_nesting(value: Any, limit: int) -> bool:
     stack = [(value, 1)]
@@ -620,21 +623,31 @@ def _authors_of(task: Task, completer: Any) -> list[str]:
     return _union_of(authors, task.prior_authors if isinstance(task.prior_authors, list) else [])
 
 
-def _decision_completion(history: list, i: int) -> bool:
-    """Whether the history entry at ``i`` records a reviewer's decision
-    completing the task, as against a task.complete: an override says so,
-    and an approval follows the entry of the review it settles."""
-    entry = history[i]
-    return entry.state == "completed" and (
-        entry.note == "override applied"
-        or (i > 0 and history[i - 1].state == "review_requested"))
+def _state_before(history: list, i: int) -> str | None:
+    """The state a task was in before the history entry at ``i``, passing
+    over abstentions and pauses, which leave the work where it was."""
+    for j in range(i - 1, -1, -1):
+        if history[j].state not in ("abstained", "paused"):
+            return history[j].state
+    return None
+
+
+def _work_completion(history: list, i: int) -> bool:
+    """Whether the history entry at ``i`` records the work completed: the
+    task entering ``completed`` from any state but review. A reviewer's
+    decision completes a task out of review, and an entry a task already
+    completed takes, such as a route or a handoff of it, completes
+    nothing."""
+    if history[i].state != "completed":
+        return False
+    return _state_before(history, i) not in ("review_requested", "completed")
 
 
 def _last_completer(task: Task) -> str | None:
-    """The sender of the task's latest task.complete that completed it, if
-    it has one."""
+    """The sender of the task's latest completion of the work, if it has
+    one."""
     for i in range(len(task.history) - 1, -1, -1):
-        if task.history[i].state == "completed" and not _decision_completion(task.history, i):
+        if _work_completion(task.history, i):
             return task.history[i].from_
     return None
 
@@ -646,40 +659,73 @@ _NEW_ROUND_ON_COMPLETE = "a new round of the review; opened on task.complete"
 
 def _stored_authors(assignee: str, history: list, prior: Any = None) -> list[str]:
     """The authors of a review recorded before authors were kept, read from
-    the task's history: the assignee, and whoever completed the work, whether
-    the completion opened the review or came before a review.request. A
-    reviewer's decision that completed the task is not a completion of the
-    work."""
+    the task's history: the assignee, whoever completed the work, whether
+    the completion opened the review or came before a review.request, and
+    the member whose review.request opened the review, which supplied the
+    artefact under review. A reviewer's decision that completed the task is
+    not a completion of the work."""
     carried = prior if isinstance(prior, list) else []
+    requester: Any = None
+
+    def authors(completer: Any) -> list[str]:
+        made = [assignee]
+        if isinstance(completer, str) and completer != assignee:
+            made.append(completer)
+        return _union_of(made, carried, [requester] if isinstance(requester, str) else [])
+
     for i in range(len(history) - 1, -1, -1):
         entry = history[i]
-        if ((entry.state == "completed" and not _decision_completion(history, i))
-                or (entry.state == "review_requested"
-                    and entry.note in (_OPENED_ON_COMPLETE, _NEW_ROUND_ON_COMPLETE))):
-            authors = [assignee]
-            if isinstance(entry.from_, str) and entry.from_ != assignee:
-                authors.append(entry.from_)
-            return _union_of(authors, carried)
-    return _union_of([assignee], carried)
+        opens = entry.state == "review_requested" and _state_before(history, i) != "review_requested"
+        if opens and entry.note in (_OPENED_ON_COMPLETE, _NEW_ROUND_ON_COMPLETE):
+            return authors(entry.from_)
+        if opens and requester is None:
+            requester = entry.from_
+        if _work_completion(history, i):
+            return authors(entry.from_)
+    return authors(None)
+
+
+#: The states in which a task is over.
+_ENDED = ("completed", "declined", "cancelled", "superseded", "escalated")
 
 
 def _open_required_review_authors(ws: Workspace, task: Task) -> list[str]:
-    """The authors of a review a task requires that is open: under review,
-    or paused while under review. Empty when the task holds no such
-    review."""
+    """The authors a review the task requires holds to it: from the moment
+    the review opens until the task is over, unless a reviewer has rejected
+    the round under review. They may take the work back to revise it, and
+    hand it on with escalate.raise, which carries the review; they do not
+    end the task around a decision, under review or after taking the work
+    back. Once a reviewer rejects the work, its authors may give the task
+    up. Empty where the task holds no such review."""
     if task.review is None or not _review_required(ws, task):
         return []
-    under_review = task.state == "review_requested" or (
-        task.state == "paused" and task.paused_from == "review_requested")
-    return list(task.review.authors) if under_review else []
+    if task.state in _ENDED or any(d.get("kind") == "reject" for d in task.review.decisions):
+        return []
+    return list(task.review.authors)
 
 
-def _successor_authors(old: Task) -> list[str]:
+def _held_by(task: Task, mover: Any) -> list[str]:
+    """The task's assignee, as an author of its work, where it moves the
+    task on itself or has acted on it; otherwise nobody. A member another
+    member routed or escalated the task to, and who never acted on it, made
+    none of the work, so nobody can leave a person out of a review's
+    reviewers by passing the task through them."""
+    assignee = task.assignee
+    if mover == assignee or any(h.from_ == assignee for h in task.history):
+        return [assignee]
+    return []
+
+
+def _successor_authors(old: Task, mover: Any) -> list[str]:
     """The authors a successor carries from the task it replaces: that
-    task's review authors where it held a review, and otherwise its assignee
-    and completer, with whatever it carried itself."""
+    task's review authors where it held a review, its assignee where
+    _held_by counts it, whoever completed the work, and the authors it
+    carried itself."""
+    completer = _last_completer(old)
     return _union_of(old.review.authors if old.review is not None else [],
-                     _authors_of(old, _last_completer(old)))
+                     _held_by(old, mover),
+                     [completer] if completer is not None else [],
+                     old.prior_authors if isinstance(old.prior_authors, list) else [])
 
 
 def _is_scope(uri: Any) -> bool:
@@ -2121,7 +2167,8 @@ class Coordinator:
             # seconds, and nothing that is not a finite number.
             at = claims.get("auth_time")
             if (isinstance(at, (int, float)) and not isinstance(at, bool)
-                    and math.isfinite(at)):
+                    and -_MAX_SAFE_INTEGER <= at <= _MAX_SAFE_INTEGER
+                    and (isinstance(at, int) or math.isfinite(at))):
                 member.oidc_auth_time = math.floor(at)
             acr = claims.get("acr")
             member.oidc_acr = acr if isinstance(acr, str) else None
@@ -2301,8 +2348,10 @@ class Coordinator:
             # their token binds, and they register a new one by joining again
             # with it. Registered here, it would be a key the admin chose, and
             # the admin could revoke a person's keys and sign as them.
-            if (self.options.verify_oidc_token is not None
-                    and (member.type == "human" or member.oidc_sub is not None)):
+            if ((self.options.verify_oidc_token is not None
+                    and (member.type == "human" or member.oidc_sub is not None))
+                    or (self.options.verify_vc is not None
+                        and (member.type == "human" or member.vc_holder is not None))):
                 return {"error": rpc_error(
                     E.PARAMS, f"{uri} registers a new key by joining again with a token that "
                     "binds it; an invitation does not register a person's keys here")}
@@ -2320,6 +2369,15 @@ class Coordinator:
             for j in pinned:
                 member.keys.append(KeyRecord(jwk=j, kid=j["kid"], valid_from=now))
             return {"result": {"invited": True, "uri": uri, "registered": [j["kid"] for j in pinned]}}
+        # Where a token verifier is configured, a person's keys arrive with the
+        # token or presentation they join with. Pinned here, they would be keys
+        # the admin chose, which a join whose token binds no key would take
+        # up, and the admin could sign as the person.
+        if (pinned is not None and (kind == "human" or sub is not None)
+                and (self.options.verify_oidc_token is not None or self.options.verify_vc is not None)):
+            return {"error": rpc_error(
+                E.PARAMS, f"{uri} joins with a token that binds its key; an invitation does not "
+                "register a person's keys here")}
         ws.invitations[uri] = Invitation(
             uri=uri, type=kind, invited_by=p["from"], invited_at=now, role=role,
             jwks={"keys": pinned} if pinned is not None else None, oidc_sub=sub)
@@ -3101,7 +3159,7 @@ class Coordinator:
             new_task.review_required = True
         # Whoever made the work it carries on is an author of its review too,
         # so handing the work on does not make its author a reviewer of it.
-        new_task.prior_authors = _successor_authors(orig)
+        new_task.prior_authors = _successor_authors(orig, p.get("from"))
         ws.tasks[new_id] = new_task
         orig.state = "escalated"
         orig.updated_at = now

@@ -46,8 +46,9 @@ def test_a_rotation_to_a_key_under_a_kid_the_member_holds_is_refused():
 
 
 @pytest.mark.parametrize("claim, kept", [(1_700_000_000.75, 1_700_000_000), (True, None),
-                                         (1_700_000_001, 1_700_000_001)])
-def test_auth_time_is_kept_in_whole_seconds_and_a_boolean_is_no_auth_time(claim, kept):
+                                         (1_700_000_001, 1_700_000_001), (1e21, None),
+                                         (2**53 + 1, None), (10**400, None)])
+def test_auth_time_is_kept_in_whole_seconds_and_a_boolean_or_a_number_past_2_53_is_no_auth_time(claim, kept):
     c = Coordinator(CoordinatorOptions(
         deterministic_ids=True,
         verify_oidc_token=lambda t: {"sub": "s", "chap_participant_uri": "human:a",

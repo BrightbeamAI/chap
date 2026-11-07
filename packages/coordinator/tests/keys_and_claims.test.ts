@@ -34,8 +34,9 @@ test("a rotation to a key under a kid the member holds is refused", () => {
   assert.equal(signed("workspace.describe", "human:a", {}).error, undefined, "the member still signs");
 });
 
-test("auth_time is kept in whole seconds, and a boolean is no auth_time", () => {
-  for (const [claim, kept] of [[1_700_000_000.75, 1_700_000_000], [true, undefined], [1_700_000_001, 1_700_000_001]] as const) {
+test("auth_time is kept in whole seconds, and a boolean or a number past 2^53 is no auth_time", () => {
+  for (const [claim, kept] of [[1_700_000_000.75, 1_700_000_000], [true, undefined], [1_700_000_001, 1_700_000_001],
+                               [1e21, undefined], [Number.MAX_SAFE_INTEGER + 2, undefined]] as const) {
     const c = new Coordinator({
       deterministicIds: true,
       verifyOidcToken: () => ({ sub: "s", chap_participant_uri: "human:a", auth_time: claim }),

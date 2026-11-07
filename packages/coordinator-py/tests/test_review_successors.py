@@ -21,7 +21,7 @@ ENDS = "The authors of the work under review cannot end its review without a dec
 AUTHOR_DECIDES = "The author of the work under review cannot decide it"
 
 
-def _ready():
+def _ready(rule=None):
     c = Coordinator(CoordinatorOptions(default_profiles=PROFILES, deterministic_ids=True,
                                        deterministic_clock=True))
     n = [0]
@@ -31,7 +31,7 @@ def _ready():
         return c.dispatch({"jsonrpc": "2.0", "id": f"c{n[0]}", "method": method,
                            "params": {"workspace": "w", "from": actor, **params}})
 
-    send("workspace.create", profiles=PROFILES)
+    send("workspace.create", profiles=PROFILES, **({"review_rule": rule} if rule else {}))
     for uri, kind in (("human:a", "human"), ("human:c", "human"), ("human:h", "human"),
                       ("agent:b", "agent")):
         send("participant.join", actor=uri, type=kind)
@@ -67,6 +67,60 @@ def test_the_authors_cannot_cancel_or_supersede_a_required_review_or_cancel_it_o
     # Another member still pulls the brake.
     _ok(send("task.update", actor="human:a", task_id=tid, state="cancelled"))
     assert _task(c, tid).state == "cancelled"
+
+
+def test_authors_who_take_the_work_back_still_cannot_end_its_review_until_a_reviewer_rejects_it():
+    c, send = _ready()
+    tid = _under_review(send)
+    _ok(send("task.update", task_id=tid, state="in_progress"))
+    for method, params in (("control.cancel", {"task_id": tid}),
+                           ("control.supersede", {"task_id": tid, "successor_task": {"kind": "k"}})):
+        assert send(method, **params)["error"] == {"code": E.NOT_AUTHORISED, "message": ENDS}, method
+    _ok(send("control.pause", task_id=tid))
+    assert send("task.update", task_id=tid, state="cancelled")["error"] == {
+        "code": E.NOT_AUTHORISED, "message": ENDS}
+    _ok(send("control.resume", actor="human:a", task_id=tid))
+    _ok(send("task.complete", task_id=tid, output={"body": "v2"}))
+    _ok(send("decide.reject", actor="human:a", task_id=tid, request_revision=True))
+    _ok(send("control.cancel", task_id=tid))
+    assert _task(c, tid).state == "cancelled"
+
+
+def test_a_person_a_task_passes_through_who_never_acts_on_it_stays_among_its_reviewers():
+    c, send = _ready("all_approve")
+    routed = _ok(send("task.create", actor="human:a", kind="k", input={}, assignee="agent:b",
+                      review_required=True))["task_id"]
+    _ok(send("task.route", task_id=routed, candidates=["human:c"]))
+    _ok(send("task.route", task_id=routed, candidates=["agent:b"]))
+    assert _task(c, routed).prior_authors == ["agent:b"]
+    _ok(send("task.complete", task_id=routed, output={"body": "v1"}))
+    assert _task(c, routed).review.requested_to == ["human:a", "human:c", "human:h"]
+    first = _ok(send("task.create", actor="human:a", kind="k", input={}, assignee="agent:b",
+                     review_required=True))["task_id"]
+    second = _ok(send("escalate.raise", original_task_id=first,
+                      new_task={"kind": "k", "assignee": "human:c"}))["new_task_id"]
+    third = _ok(send("escalate.raise", original_task_id=second,
+                     new_task={"kind": "k", "assignee": "agent:b"}))["new_task_id"]
+    assert _task(c, third).prior_authors == ["agent:b"]
+    _ok(send("task.complete", task_id=third, output={"body": "v1"}))
+    assert _task(c, third).review.requested_to == ["human:a", "human:c", "human:h"]
+
+
+def test_a_route_of_a_completed_task_or_a_note_an_update_carries_does_not_hide_who_completed_it():
+    c, send = _ready()
+    send("participant.join", actor="agent:x", type="agent")
+    routed = _ok(send("task.create", actor="human:a", kind="k", input={}, assignee="agent:b"))["task_id"]
+    _ok(send("task.complete", actor="agent:x", task_id=routed, output={"body": "v1"}))
+    _ok(send("task.route", actor="human:a", task_id=routed, candidates=["agent:b"]))
+    noted = _ok(send("task.create", actor="human:a", kind="k", input={}, assignee="agent:b"))["task_id"]
+    _ok(send("task.update", actor="agent:x", task_id=noted, state="in_progress"))
+    _ok(send("task.update", actor="agent:x", task_id=noted, state="completed",
+             progress_note="override applied"))
+    for tid in (routed, noted):
+        _ok(send("review.request", actor="human:a", task_id=tid, artefact={"body": "v1"},
+                 to=["agent:x"]))
+        assert send("decide.approve", actor="agent:x", task_id=tid)["error"] == {
+            "code": E.NOT_AUTHORISED, "message": AUTHOR_DECIDES}
 
 
 def test_a_member_who_is_not_an_author_still_cancels_or_supersedes_a_required_review():

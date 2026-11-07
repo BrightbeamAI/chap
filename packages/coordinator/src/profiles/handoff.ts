@@ -9,7 +9,7 @@
  *   -32052 recipient not a workspace member
  */
 import type { Coordinator } from "../coordinator.js";
-import { unionOf } from "../coordinator.js";
+import { heldBy, unionOf } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
 import { paramsError } from "../params.js";
 import type { Handoff, HandoffTaskItem } from "../types.js";
@@ -155,9 +155,10 @@ export function registerHandoff(coord: Coordinator): void {
     const now = coord.now();
     for (const tid of acceptedIds) {
       const task = ws.tasks.get(tid)!;
-      // The proposer stays among the authors of the work (review/1.0 §3.1),
-      // so it cannot hand the work on and then review it.
-      if (acceptor !== task.assignee) task.prior_authors = unionOf(task.prior_authors ?? [], [task.assignee]);
+      // The proposer, which holds the task and hands it on, stays among the
+      // authors of the work (review/1.0 §3.1), so it cannot hand its work on
+      // and then review it.
+      if (acceptor !== task.assignee) task.prior_authors = unionOf(task.prior_authors ?? [], heldBy(task, ho.proposer));
       task.assignee = acceptor;
       task.updated_at = now;
       task.history.push({

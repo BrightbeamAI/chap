@@ -103,11 +103,11 @@ decision then reaches `completed`. Review is required when the task carries
 loaded `modes/1.0`.
 
 Nobody chose the reviewer set on this path, so the Coordinator picks it: the
-members of `type: "human"` who are neither the completer nor the task's
-assignee, under the workspace's `review_rule` (SPECIFICATION §6.2),
-`"any_one_approves"` where none was set. An author cannot open a review of
-their own review-required task, so the workspace's rule is how a deployment
-asks for more than one approval, and no author can ask for fewer.
+members of `type: "human"` who are not authors of the work (below), under
+the workspace's `review_rule` (SPECIFICATION §6.2), `"any_one_approves"`
+where none was set. Nobody opens a review of a review-required task with a
+request, so the workspace's rule is how a deployment asks for more than one
+approval, and no author can ask for fewer.
 
 Both exclusions serve the same rule: a `decide.approve` on the chain must
 mean a person looked. A review its own author can approve does not, and
@@ -137,11 +137,17 @@ The authors of the work go with it. A new round's authors are the earlier
 round's together with the new artefact's, whoever resubmits it. A task
 `escalate.raise` or `control.supersede` makes carries, as `prior_authors`,
 the authors of the task it replaces: that task's review authors where it
-held a review, and otherwise its assignee and completer, with whatever it
-carried itself. A task that `task.route` or `handoff.accept` moves to
-another member adds the member it leaves to its `prior_authors`. Without
-this a person who wrote the work could hand it on, or have it superseded,
-and then approve it as one of its reviewers.
+held a review, whoever completed its work, the authors it carried itself,
+and its assignee where the assignee held the work. A task that
+`task.route` or `handoff.accept` moves to another member adds the member it
+leaves to its `prior_authors` where that member held the work. A member
+held the work when it moves the task on itself, or has acted on the task:
+any call of its own is in the task's history. Without this a person who
+wrote the work could hand it on, or have it superseded, and then approve it
+as one of its reviewers. A member another member passed the task to, and
+who never acted on it, made none of the work, and stays a reviewer: were
+it counted, any member could leave a person out of a review, or leave
+nobody to decide it, by passing the task through them.
 
 A Coordinator MUST refuse with `-32011`, "The author of the work under review
 cannot decide it", a `decide.approve`, `decide.reject`, `decide.override`,
@@ -159,8 +165,9 @@ the authors is asked, and the authors do not choose who:
   `review_rule`. A `review.request` on a task whose review is not open MUST
   be refused with `-32011`, "This task requires a person's review, which
   opens on task.complete; review.request only adds reviewers to it once it
-  is open", whoever sends it and whatever state the task is in, `completed`
-  included. Opened by a request, the review would take an artefact, a rule
+  is open", whoever sends it, on a task created, in progress or
+  `completed`; a task cancelled, superseded or paused is answered with
+  `-32010` first. Opened by a request, the review would take an artefact, a rule
   and reviewers its requester chose: a member who is not an author could
   supply the work, name themselves and approve it, or reopen a task a
   review already completed.
@@ -269,16 +276,19 @@ decision. On any task that holds one:
   requires review (§3.5), and its review counts the original's authors
   among its own.
 
-On a task whose review is required, while the review is open, or paused
-while open:
+On a task whose review is required, from the moment the review opens until
+the task ends, unless a reviewer has rejected the round under review:
 
 - `control.cancel` and `control.supersede` from one of its authors MUST be
   refused with `-32011`, "The authors of the work under review cannot end
   its review without a decision", and so MUST a `task.update` from one of
-  them that takes the paused task to `cancelled`. Any other member may
-  still pull either brake ([control profile](./control.md)); a
-  `control.supersede` successor requires review and counts the original's
-  authors among its own.
+  them that takes the paused task to `cancelled`. This holds under review,
+  paused, and after the authors take the work back, which would otherwise
+  end the review in two calls. Any other member may still pull either
+  brake ([control profile](./control.md)); a `control.supersede` successor
+  requires review and counts the original's authors among its own. An
+  author hands the work on with `escalate.raise`, which carries the
+  review.
 
 ### 3.2 `decide.approve` · `decide.reject`
 

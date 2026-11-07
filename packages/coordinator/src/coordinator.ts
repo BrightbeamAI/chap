@@ -52,6 +52,7 @@ import type {
   SnapshotArtefact,
   Task,
   TaskId,
+  TaskState,
   Workspace,
   WorkspaceId,
 } from "./types.js";
@@ -502,19 +503,33 @@ export function authorsOf(task: Task, completer: unknown): ParticipantUri[] {
 }
 
 /**
- * Whether the history entry at `i` records a reviewer's decision completing
- * the task, as against a task.complete: an override says so, and an
- * approval follows the entry of the review it settles.
+ * The state a task was in before the history entry at `i`, passing over
+ * abstentions and pauses, which leave the work where it was.
  */
-function decisionCompletion(history: Task["history"], i: number): boolean {
-  const h = history[i];
-  return h.state === "completed" && (h.note === "override applied" || (i > 0 && history[i - 1].state === "review_requested"));
+function stateBefore(history: Task["history"], i: number): TaskState | undefined {
+  for (let j = i - 1; j >= 0; j--) {
+    const s = history[j].state;
+    if (s !== "abstained" && s !== "paused") return s;
+  }
+  return undefined;
 }
 
-/** The sender of the task's latest task.complete that completed it, if it has one. */
+/**
+ * Whether the history entry at `i` records the work completed: the task
+ * entering `completed` from any state but review. A reviewer's decision
+ * completes a task out of review, and an entry a task already completed
+ * takes, such as a route or a handoff of it, completes nothing.
+ */
+function workCompletion(history: Task["history"], i: number): boolean {
+  if (history[i].state !== "completed") return false;
+  const before = stateBefore(history, i);
+  return before !== "review_requested" && before !== "completed";
+}
+
+/** The sender of the task's latest completion of the work, if it has one. */
 function lastCompleter(task: Task): ParticipantUri | undefined {
   for (let i = task.history.length - 1; i >= 0; i--) {
-    if (task.history[i].state === "completed" && !decisionCompletion(task.history, i)) return task.history[i].from;
+    if (workCompletion(task.history, i)) return task.history[i].from;
   }
   return undefined;
 }
@@ -525,39 +540,65 @@ const NEW_ROUND_ON_COMPLETE = "a new round of the review; opened on task.complet
 
 /**
  * The authors of a review recorded before authors were kept, read from the
- * task's history: the assignee, and whoever completed the work, whether
- * the completion opened the review or came before a review.request. A
- * reviewer's decision that completed the task is not a completion of the
- * work.
+ * task's history: the assignee, whoever completed the work, whether the
+ * completion opened the review or came before a review.request, and the
+ * member whose review.request opened the review, which supplied the
+ * artefact under review. A reviewer's decision that completed the task is
+ * not a completion of the work.
  */
 function storedAuthors(task: Task): ParticipantUri[] {
+  let requester: ParticipantUri | undefined;
+  const withRequester = (authors: ParticipantUri[]) => unionOf(authors, requester !== undefined ? [requester] : []);
   for (let i = task.history.length - 1; i >= 0; i--) {
     const h = task.history[i];
-    if ((h.state === "completed" && !decisionCompletion(task.history, i))
-        || (h.state === "review_requested" && (h.note === OPENED_ON_COMPLETE || h.note === NEW_ROUND_ON_COMPLETE))) {
-      return authorsOf(task, h.from);
-    }
+    const opens = h.state === "review_requested" && stateBefore(task.history, i) !== "review_requested";
+    if (opens && (h.note === OPENED_ON_COMPLETE || h.note === NEW_ROUND_ON_COMPLETE)) return withRequester(authorsOf(task, h.from));
+    if (opens && requester === undefined) requester = h.from;
+    if (workCompletion(task.history, i)) return withRequester(authorsOf(task, h.from));
   }
-  return authorsOf(task, undefined);
+  return withRequester(authorsOf(task, undefined));
 }
 
+/** The states in which a task is over. */
+const ENDED: ReadonlyArray<TaskState> = ["completed", "declined", "cancelled", "superseded", "escalated"];
+
 /**
- * The authors of a review a task requires that is open: under review, or
- * paused while under review. Empty when the task holds no such review.
+ * The authors a review the task requires holds to it: from the moment the
+ * review opens until the task is over, unless a reviewer has rejected the
+ * round under review. They may take the work back to revise it, and hand
+ * it on with escalate.raise, which carries the review; they do not end the
+ * task around a decision, under review or after taking the work back. Once
+ * a reviewer rejects the work, its authors may give the task up. Empty
+ * where the task holds no such review.
  */
 export function openRequiredReviewAuthors(ws: Workspace, task: Task): ParticipantUri[] {
   if (!task.review || !reviewRequired(ws, task)) return [];
-  const underReview = task.state === "review_requested" || (task.state === "paused" && task.paused_from === "review_requested");
-  return underReview ? task.review.authors : [];
+  if (ENDED.includes(task.state) || task.review.decisions.some((d) => d.kind === "reject")) return [];
+  return task.review.authors;
+}
+
+/**
+ * The task's assignee, as an author of its work, where it moves the task on
+ * itself or has acted on it; otherwise nobody. A member another member
+ * routed or escalated the task to, and who never acted on it, made none of
+ * the work, so nobody can leave a person out of a review's reviewers by
+ * passing the task through them.
+ */
+export function heldBy(task: Task, mover: unknown): ParticipantUri[] {
+  const assignee = task.assignee;
+  return mover === assignee || task.history.some((h) => h.from === assignee) ? [assignee] : [];
 }
 
 /**
  * The authors a successor carries from the task it replaces: that task's
- * review authors where it held a review, and otherwise its assignee and
- * completer, with whatever it carried itself.
+ * review authors where it held a review, its assignee where heldBy counts
+ * it, whoever completed the work, and the authors it carried itself.
  */
-export function successorAuthors(old: Task): ParticipantUri[] {
-  return unionOf(old.review ? old.review.authors : [], authorsOf(old, lastCompleter(old)));
+export function successorAuthors(old: Task, mover: unknown): ParticipantUri[] {
+  const completer = lastCompleter(old);
+  return unionOf(old.review ? old.review.authors : [], heldBy(old, mover),
+                 completer !== undefined ? [completer] : [],
+                 Array.isArray(old.prior_authors) ? old.prior_authors : []);
 }
 
 /** Whether a URI is an address scope, which every member it covers answers to. */
@@ -2243,7 +2284,7 @@ export class Coordinator {
       // A NumericDate may carry a fraction; both coordinators keep whole
       // seconds, and nothing that is not a finite number.
       const at = claims.auth_time;
-      if (typeof at === "number" && Number.isFinite(at)) member.oidc_auth_time = Math.floor(at);
+      if (typeof at === "number" && Number.isFinite(at) && Math.abs(at) <= Number.MAX_SAFE_INTEGER) member.oidc_auth_time = Math.floor(at);
       member.oidc_acr = typeof claims.acr === "string" ? claims.acr : undefined;
       // The token binds the key in its cnf.jwk or, with none, the key whose
       // thumbprint is its nonce: a client that cannot have the key put in the
@@ -2412,7 +2453,8 @@ export class Coordinator {
       // token binds, and they register a new one by joining again with it.
       // Registered here, it would be a key the admin chose, and the admin
       // could revoke a person's keys and sign as them.
-      if (this.options.verifyOidcToken !== undefined && (member.type === "human" || member.oidc_sub !== undefined)) {
+      if ((this.options.verifyOidcToken !== undefined && (member.type === "human" || member.oidc_sub !== undefined))
+          || (this.options.verifyVc !== undefined && (member.type === "human" || member.vc_holder !== undefined))) {
         return { error: rpcError(E.PARAMS,
           `${uri} registers a new key by joining again with a token that binds it; an invitation does not register a person's keys here`) };
       }
@@ -2425,6 +2467,15 @@ export class Coordinator {
       if (reused) return { error: rpcError(E.PARAMS, `Key ${reused.kid} was ${uri}'s; a new key takes a new kid`) };
       for (const j of pinned) member.keys.push({ jwk: j, kid: j.kid, valid_from: now });
       return { result: { invited: true, uri, registered: pinned.map((j) => j.kid) } };
+    }
+    // Where a token verifier is configured, a person's keys arrive with the
+    // token or presentation they join with. Pinned here, they would be keys
+    // the admin chose, which a join whose token binds no key would take up,
+    // and the admin could sign as the person.
+    if (pinned && (type === "human" || sub !== undefined)
+        && (this.options.verifyOidcToken !== undefined || this.options.verifyVc !== undefined)) {
+      return { error: rpcError(E.PARAMS,
+        `${uri} joins with a token that binds its key; an invitation does not register a person's keys here`) };
     }
     const invitation: Invitation = {
       uri, type: type as Invitation["type"], invited_by: p.from as ParticipantUri, invited_at: now,
@@ -3138,7 +3189,7 @@ export class Coordinator {
     }
     // Whoever made the work it carries on is an author of its review too, so
     // handing the work on does not make its author a reviewer of it.
-    newTask.prior_authors = successorAuthors(orig);
+    newTask.prior_authors = successorAuthors(orig, p.from);
     ws.tasks.set(newId, newTask);
     orig.state = "escalated";
     orig.updated_at = now;

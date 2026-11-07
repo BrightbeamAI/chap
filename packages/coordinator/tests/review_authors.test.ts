@@ -240,6 +240,11 @@ test("a review restored without authors takes them from the task's history", () 
   ok(send("task.complete", { task_id: approved, output: DRAFT }, "agent:d"));
   ok(send("review.request", { task_id: approved, artefact: DRAFT, to: ["human:a"] }, "agent:d"));
   ok(send("decide.approve", { task_id: approved }, "human:a"));
+  // A review another member opened on work it did not do, with an artefact
+  // it supplied.
+  const supplied = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" })).task_id;
+  ok(send("task.complete", { task_id: supplied, output: DRAFT }));
+  ok(send("review.request", { task_id: supplied, artefact: DRAFT, to: ["human:a"] }, "agent:d"));
   const snapshot = JSON.parse(JSON.stringify(c.snapshot()));
   for (const t of snapshot[0].tasks) delete t.review?.authors;
   const again = new Coordinator({ defaultProfiles: ["core/1.0", "review/1.0"] });
@@ -249,6 +254,7 @@ test("a review restored without authors takes them from the task's history", () 
   assert.deepEqual(authors(implicit), ["agent:b"]);
   assert.deepEqual(authors(fresh), ["agent:b"]);
   assert.deepEqual(authors(approved), ["agent:b", "agent:d"]);
+  assert.deepEqual(authors(supplied), ["agent:b", "agent:d"]);
   const r = again.dispatch({ jsonrpc: "2.0", id: "x", method: "decide.approve",
                              params: { workspace: "w", from: "agent:d", task_id: explicit } });
   assert.equal(r.error?.code, E.NOT_AUTHORISED);

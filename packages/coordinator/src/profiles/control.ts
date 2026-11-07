@@ -297,7 +297,7 @@ export function registerControl(coord: Coordinator): void {
     }
     // Whoever made the work it replaces is an author of the successor's
     // review too, so superseding does not make its author a reviewer of it.
-    newTask.prior_authors = successorAuthors(old);
+    newTask.prior_authors = successorAuthors(old, p.from);
     ws.tasks.set(newId, newTask);
     old.state = "superseded";
     old.superseded_by = newId;

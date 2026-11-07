@@ -54,7 +54,9 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "Invite a participant to a workspace, as its admin. The invitation names the type and role the member " +
     "takes when it joins, and may pin its keys and its OIDC subject. A workspace whose join policy is " +
     "'invite' admits nobody else. For a member that holds no key in force, the call registers the keys it " +
-    "names at once, so a member whose keys were all revoked can sign again.",
+    "names at once, so a member whose keys were all revoked can sign again. Where a token or credential " +
+    "verifier is configured, an invitation names no keys for a person: their keys arrive with the token they " +
+    "join with (-32602).",
 
   "chap.participant.join":
     "Add a participant to a workspace. The type given, human, agent, service, group or workspace, decides " +
@@ -96,8 +98,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "chap.decide.reject, chap.decide.override or chap.abstain.declare, and may first say they have begun with " +
     "chap.review.acknowledge. Repeating the request with the same artefact adds reviewers to the open review. " +
     "A task marked review_required is reviewed through chap.task.complete, which opens its review under the " +
-    "workspace's rule; on such a task this tool only adds people to a review already open, and anything else " +
-    "is refused with -32011.",
+    "workspace's rule; on such a task this tool only adds people to a review already open, and before it " +
+    "opens is refused with -32011.",
 
   "chap.review.acknowledge":
     "Say that this reviewer has begun the open review on a task, before deciding it. The call is recorded, so " +
@@ -207,8 +209,9 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "can be assigned tasks again, a workspace returns to active.",
 
   "chap.control.cancel":
-    "Cancel a task. Cancelled is terminal, and a task that has already settled cannot be cancelled. While a " +
-    "review the task requires is open, the authors of the work under review cannot cancel it (-32011).",
+    "Cancel a task. Cancelled is terminal, and a task that has already settled cannot be cancelled. From the " +
+    "moment a review the task requires opens until a reviewer rejects the work, the authors of the work cannot " +
+    "cancel it, even once they take the work back (-32011).",
 
   "chap.control.snapshot":
     "Capture the workspace state as an artefact before a change you may want to undo. Returns a snapshot " +
@@ -225,8 +228,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "Replace a task with a successor in one call. The original moves to superseded and stays linked to its " +
     "replacement. The successor requires review when the original did, whatever its own review_required " +
     "says, and whoever made the original's work counts as an author of the successor's review. A paused " +
-    "assignee is refused with -32063, and while a review the original requires is open, the authors of the " +
-    "work under review cannot supersede it (-32011).",
+    "assignee is refused with -32063, and from the moment a review the original requires opens until a " +
+    "reviewer rejects the work, the authors of the work cannot supersede it (-32011).",
 
   "chap.control.set_mode_ceiling":
     "Set the highest operating mode tasks in this workspace may request. A task above the ceiling is refused.",

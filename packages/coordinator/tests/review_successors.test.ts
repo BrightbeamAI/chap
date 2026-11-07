@@ -19,12 +19,12 @@ import { E } from "../src/jsonrpc.js";
 
 const PROFILES = ["core/1.0", "review/1.0", "control/1.0", "handoff/1.0", "routing/1.0"];
 
-function ready() {
+function ready(rule?: string) {
   const c = new Coordinator({ defaultProfiles: PROFILES, deterministicIds: true, deterministicClock: true });
   let n = 0;
   const send = (method: string, params: Record<string, unknown> = {}, actor = "agent:b") =>
     c.dispatch({ jsonrpc: "2.0", id: `c${++n}`, method, params: { workspace: "w", from: actor, ...params } }) as any;
-  send("workspace.create", { profiles: PROFILES });
+  send("workspace.create", { profiles: PROFILES, ...(rule ? { review_rule: rule } : {}) });
   for (const [uri, type] of [["human:a", "human"], ["human:c", "human"], ["human:h", "human"], ["agent:b", "agent"]])
     send("participant.join", { type }, uri);
   return { c, send };
@@ -57,6 +57,58 @@ test("the authors cannot cancel or supersede a required review, or cancel it onc
   // Another member still pulls the brake.
   ok(send("task.update", { task_id: id, state: "cancelled" }, "human:a"));
   assert.equal(task(c, id).state, "cancelled");
+});
+
+test("authors who take the work back still cannot end its review; once a reviewer rejects it, they can", () => {
+  const { c, send } = ready();
+  const id = underReview(send);
+  ok(send("task.update", { task_id: id, state: "in_progress" }));
+  for (const [method, params] of [
+    ["control.cancel", { task_id: id }],
+    ["control.supersede", { task_id: id, successor_task: { kind: "k" } }],
+  ] as const) {
+    assert.deepEqual(send(method, params).error, { code: E.NOT_AUTHORISED, message: ENDS }, method);
+  }
+  ok(send("control.pause", { task_id: id }));
+  assert.deepEqual(send("task.update", { task_id: id, state: "cancelled" }).error,
+                   { code: E.NOT_AUTHORISED, message: ENDS });
+  ok(send("control.resume", { task_id: id }, "human:a"));
+  ok(send("task.complete", { task_id: id, output: { body: "v2" } }));
+  ok(send("decide.reject", { task_id: id, request_revision: true }, "human:a"));
+  ok(send("control.cancel", { task_id: id }));
+  assert.equal(task(c, id).state, "cancelled");
+});
+
+test("a person a task passes through, who never acts on it, stays among its reviewers", () => {
+  const { c, send } = ready("all_approve");
+  const routed = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b", review_required: true }, "human:a")).task_id;
+  ok(send("task.route", { task_id: routed, candidates: ["human:c"] }));
+  ok(send("task.route", { task_id: routed, candidates: ["agent:b"] }));
+  assert.deepEqual(task(c, routed).prior_authors, ["agent:b"]);
+  ok(send("task.complete", { task_id: routed, output: { body: "v1" } }));
+  assert.deepEqual(task(c, routed).review!.requested_to, ["human:a", "human:c", "human:h"]);
+  const first = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b", review_required: true }, "human:a")).task_id;
+  const second = ok(send("escalate.raise", { original_task_id: first, new_task: { kind: "k", assignee: "human:c" } })).new_task_id;
+  const third = ok(send("escalate.raise", { original_task_id: second, new_task: { kind: "k", assignee: "agent:b" } })).new_task_id;
+  assert.deepEqual(task(c, third).prior_authors, ["agent:b"]);
+  ok(send("task.complete", { task_id: third, output: { body: "v1" } }));
+  assert.deepEqual(task(c, third).review!.requested_to, ["human:a", "human:c", "human:h"]);
+});
+
+test("a route of a completed task, or a note an update carries, does not hide who completed the work", () => {
+  const { send } = ready();
+  send("participant.join", { type: "agent" }, "agent:x");
+  const routed = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" }, "human:a")).task_id;
+  ok(send("task.complete", { task_id: routed, output: { body: "v1" } }, "agent:x"));
+  ok(send("task.route", { task_id: routed, candidates: ["agent:b"] }, "human:a"));
+  const noted = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" }, "human:a")).task_id;
+  ok(send("task.update", { task_id: noted, state: "in_progress" }, "agent:x"));
+  ok(send("task.update", { task_id: noted, state: "completed", progress_note: "override applied" }, "agent:x"));
+  for (const id of [routed, noted]) {
+    ok(send("review.request", { task_id: id, artefact: { body: "v1" }, to: ["agent:x"] }, "human:a"));
+    assert.deepEqual(send("decide.approve", { task_id: id }, "agent:x").error,
+                     { code: E.NOT_AUTHORISED, message: AUTHOR_DECIDES });
+  }
 });
 
 test("a member who is not an author still cancels or supersedes a required review", () => {
