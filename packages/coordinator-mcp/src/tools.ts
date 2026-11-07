@@ -50,6 +50,12 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "it, which chap.audit.verify_chain then reports as not_evaluated. Prefer setting profiles at " +
     "chap.workspace.create, where no entries exist yet to strand.",
 
+  "chap.workspace.invite":
+    "Invite a participant to a workspace, as its admin. The invitation names the type and role the member " +
+    "takes when it joins, and may pin its keys and its OIDC subject. A workspace whose join policy is " +
+    "'invite' admits nobody else. For a member that holds no key in force, the call registers the keys it " +
+    "names at once, so a member whose keys were all revoked can sign again.",
+
   "chap.participant.join":
     "Add a participant to a workspace. The type given, human, agent, service, group or workspace, decides " +
     "whether they are eligible to review work that requires it.",
@@ -328,6 +334,7 @@ const TITLES: Record<string, string> = {
   "chap.workspace.create": "Create workspace",
   "chap.workspace.describe": "Describe workspace",
   "chap.workspace.set_profiles": "Replace workspace profiles",
+  "chap.workspace.invite": "Invite participant",
   "chap.participant.join": "Add participant",
   "chap.participant.leave": "Remove participant",
   "chap.task.create": "Create task",

@@ -214,6 +214,9 @@ const LEGACY_VIEW = `CREATE VIEW IF NOT EXISTS ${LEGACY_TABLE} AS SELECT m.works
   ].join(", ") +
   ") AS data, m.version AS version, m.updated_at AS updated_at FROM chap_meta AS m";
 
+/** The view's definition as SQLite records it, which leaves out IF NOT EXISTS. */
+const LEGACY_VIEW_RECORDED = LEGACY_VIEW.replace("CREATE VIEW IF NOT EXISTS ", "CREATE VIEW ");
+
 export class SqliteStore implements Store {
   readonly db: SqliteDatabase;
   private readonly stmt: Record<string, SqliteStatement>;
@@ -295,6 +298,11 @@ export class SqliteStore implements Store {
         // an error, which is better than starting with nothing loaded.
         this.db.exec("DROP INDEX IF EXISTS idx_chap_workspaces_updated_at");
       }
+      // The view assembles every collection. One a release with fewer
+      // collections made is replaced, so a script reading it sees them all.
+      const view = this.db.prepare("SELECT type, sql FROM sqlite_master WHERE name = ?")
+        .get(LEGACY_TABLE) as { type: string; sql: string } | undefined;
+      if (view?.type === "view" && view.sql !== LEGACY_VIEW_RECORDED) this.db.exec(`DROP VIEW ${LEGACY_TABLE}`);
       if (!this.stmt.hasName.get(LEGACY_TABLE)) this.db.exec(LEGACY_VIEW);
     }).immediate();
     for (const id of unreadable) {

@@ -48,6 +48,12 @@
       "default": "all",
       "description": "Which calls are verified where the workspace requires signatures (SPECIFICATION 5.2): every call, or every call except an unsigned one from a member whose type is not human."
     },
+    "join_policy": {
+      "type": "string",
+      "enum": ["open", "invite"],
+      "default": "open",
+      "description": "Who may join (SPECIFICATION 6.3.3): anyone, or only a participant an admin invited with workspace.invite, and the first member, who becomes the admin."
+    },
     "max_envelope_bytes": {
       "type": "integer",
       "minimum": 1024,

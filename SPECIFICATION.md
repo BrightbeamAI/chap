@@ -540,7 +540,8 @@ key. After acceptance:
 Keys are revoked with `participant.revoke_key`. A Participant MAY revoke
 its own key; revoking another member's key requires the `admin` role
 and is otherwise refused with `-32011`. Revocation is recorded in the
-evidence chain.
+evidence chain. A member whose keys are all revoked signs again once an
+admin registers a new key for it with `workspace.invite` (§6.3.3).
 
 ---
 
@@ -580,6 +581,7 @@ after `closed`, is likewise specified and not yet built.
   "max_envelope_bytes": 1048576,
   "step_up_window_sec": 300,
   "signature_policy": "all",
+  "join_policy": "open",
   "profiles": ["core/1.0", "review/1.0", "audit-scitt/1.0"],
   "members": [
     { "uri": "human:alice@example.org", "type": "human",
@@ -596,7 +598,8 @@ after `closed`, is likewise specified and not yet built.
 
 `evidence_head` appears only where the workspace keeps a chain, and
 `routing_policy_uri` only where set. `signature_policy` is always present,
-and matters where the workspace requires signatures (§5.2). Member entries
+and matters where the workspace requires signatures (§5.2); so is
+`join_policy` (§6.3.3). Member entries
 add `display_name`, `capabilities`, `scopes`, `jwks`, `key_history`,
 `paused`, `oidc_sub` and `vc_holder` when set.
 
@@ -615,17 +618,19 @@ All other role names are deployment-defined. The workspace's
 `policy_uri` describes which roles may invoke which methods.
 
 The admin role is granted, never claimed. The admin calls,
-`workspace.set_profiles` and revoking another member's key among them,
-govern what the workspace guarantees, so a role any joiner could name would
-hand those guarantees to whoever asked. A Coordinator MUST accept
-`role: "admin"` at `participant.join` only from the workspace's first
-member, the first participant to join it, and otherwise refuse it with
-`-32011`, "The admin role is granted by an admin". A workspace whose members
-have all left has had its first member. A join that asks for the role with a
-`type` other than `human` or `service` MUST be refused with `-32602`. A
-member joining again keeps its role, whatever role the join names (§6.3.2),
-and `control.rollback`, which any member may call, neither grants the role
-nor takes it away ([`profiles/control.md`](./profiles/control.md) §3).
+`workspace.set_profiles`, `workspace.invite` and revoking another member's
+key among them, govern what the workspace guarantees, so a role any joiner
+could name would hand those guarantees to whoever asked. A Coordinator MUST
+accept `role: "admin"` at `participant.join` only from the workspace's first
+member, the first participant to join it, or from a participant an admin's
+invitation names as admin (§6.3.3), and otherwise refuse it with `-32011`,
+"The admin role is granted by an admin". A workspace whose members have all
+left has had its first member. Only a `human` or a `service` holds the role:
+a join or an invitation that names it with another `type` MUST be refused
+with `-32602`. A member joining again keeps its role, whatever role the join
+names (§6.3.2), and `control.rollback`, which any member may call, neither
+grants the role nor takes it away
+([`profiles/control.md`](./profiles/control.md) §3).
 
 The `coordinator` role is specified and not yet built: neither
 reference assigns it, and the Coordinator is not a member (§2).
@@ -696,6 +701,71 @@ its sender holding a key the Coordinator does not accept, and where the
 sender is someone else, it is told the name is taken. A join with a key
 the member holds, or with no `jwks`, is answered as joined and changes
 nothing else.
+
+#### 6.3.3 Invitations and the join policy
+
+A workspace's `join_policy` says who may join. `"open"`, the default,
+admits anyone; `"invite"` admits a participant an admin has invited, and
+the workspace's first member. It is set by the `join_policy` param of
+`workspace.create`, falling back to the Coordinator's configuration, does
+not change afterwards, and `workspace.describe` returns it. A value other
+than these two is refused with `-32602`.
+
+Under `"invite"`, a `participant.join` from a participant with no
+invitation MUST be refused with `-32011`, "`<uri>` has no invitation to
+this workspace". The exception is the first member, which becomes the
+workspace's admin, since otherwise nobody could ever be invited: the first
+join MUST be of type `human` or `service`, else it is refused the same way,
+and one naming a role other than `admin` is refused with `-32602`.
+
+An admin invites with `workspace.invite`:
+
+```json
+{
+  "method": "workspace.invite",
+  "params": {
+    "workspace": "wsp_support_triage",
+    "from":      "service:operator@example.org",
+    "uri":       "human:alice@example.org",
+    "type":      "human",
+    "role":      "reviewer",
+    "jwks":      { "keys": [ { "kty": "OKP", "crv": "Ed25519", "kid": "alice-1", "x": "…" } ] },
+    "oidc_sub":  "248289761001"
+  }
+}
+```
+
+The call is privileged (§5.6), is verified like any other where the
+workspace requires signatures, and is recorded on the chain. A sender
+without the admin role is refused with `-32011`. `uri` and `type` meet a
+join's checks (§5.1), and `role: "admin"` the type rule above, each with
+`-32602`. Each key in `jwks` needs a `kid`, and `oidc_sub` needs a token
+verifier on the Coordinator; otherwise the call is refused with `-32602`.
+
+- **A participant that is not a member.** The call records an invitation,
+  replacing any earlier one for the same URI, and answers
+  `{"invited": true, "uri": "<uri>"}`. It applies under either join
+  policy, and is used up by the invitee's join. The member takes the
+  invitation's type, which the URI fixes, and its role where it names one,
+  whatever role the join names; a join naming `admin` where the invitation
+  names another role is refused with `-32011`. Where the invitation pins
+  keys, the join's keys and any key an identity profile binds MUST be among
+  them, compared by `kid` and RFC 7638 thumbprint, or the join is refused
+  with `-32011` and `data.kids` naming the others; the member holds the
+  pinned keys. Where it names `oidc_sub`, the join MUST carry an
+  `oidc_token` (`-32403`) whose verified `sub` it is (`-32404`).
+- **A member that holds no key in force**, none of its keys unrevoked and
+  unexpired. The call registers the keys `jwks` names and answers
+  `{"invited": true, "uri": "<uri>", "registered": ["<kid>", …]}`. This is
+  the way back for a member whose keys were all revoked, and for a member
+  with no key in a workspace that requires signatures: a join brings such
+  a member no new key (§6.3.2), and `participant.rotate_key` is signed with
+  a key it no longer has. The call needs `jwks` and changes nothing else:
+  a `role` or `oidc_sub` other than the member's is refused with `-32602`,
+  and so is a `kid` the member held before, since a signature naming a
+  revoked `kid` is refused whatever key holds it now.
+- **A member that holds a key in force.** The call is refused with
+  `-32602`: that member's keys change through `participant.rotate_key`.
 
 ### 6.4 Policy
 
@@ -1634,7 +1704,7 @@ Every method has:
 | `workspace.create`      | request      | no         | implemented | Create a new workspace.                    |
 | `workspace.describe`    | request      | no         | implemented | Return the workspace descriptor.           |
 | `workspace.set_profiles`| request      | yes        | implemented | Replace the advertised profile list. Admin only. |
-| `workspace.invite`      | request      | yes        | spec-only   | Invite a Participant.                      |
+| `workspace.invite`      | request      | yes        | implemented | Invite a Participant, or register keys for a member that holds none in force. Admin only (§6.3.3). |
 | `workspace.evict`       | request      | yes        | spec-only   | Remove a Participant.                      |
 | `workspace.set_mode`    | request      | yes (for promotions towards production) | spec-only | Change the workspace mode. |
 | `workspace.pause`       | request      | yes        | spec-only   | Suspend new task acceptance.               |

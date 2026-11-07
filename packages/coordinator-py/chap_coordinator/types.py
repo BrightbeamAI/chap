@@ -136,6 +136,22 @@ class Member:
         return out
 
 
+@dataclass
+class Invitation:
+    """An admin's invitation to join (workspace.invite), held until the
+    invitee joins. The member takes its type and role; where it pins keys,
+    the join's keys are among them and the member holds them; where it names
+    an OIDC subject, the invitee joins with a token for that subject."""
+
+    uri: str
+    type: ParticipantType
+    invited_by: str
+    invited_at: str
+    role: str | None = None
+    jwks: dict | None = None
+    oidc_sub: str | None = None
+
+
 # ============================================================
 #   Tasks and history
 # ============================================================
@@ -620,6 +636,9 @@ class Workspace:
     # Which calls are verified where the workspace requires signatures: "all",
     # or "humans", which takes an unsigned call from a member that is not human.
     signature_policy: str = "all"
+    # Who may join: anyone ("open"), or only a participant an admin invited,
+    # and the first member ("invite").
+    join_policy: str = "open"
     members: dict[str, Member] = field(default_factory=dict)
     tasks: dict[str, Task] = field(default_factory=dict)
     overrides: dict[str, OverrideArtefact] = field(default_factory=dict)
@@ -628,6 +647,8 @@ class Workspace:
     handoffs: dict[str, Handoff] = field(default_factory=dict)
     snapshots: dict[str, SnapshotArtefact] = field(default_factory=dict)
     route_decisions: dict[str, RouteDecisionArtefact] = field(default_factory=dict)
+    # Invitations not yet taken up, by the URI each admits.
+    invitations: dict[str, Invitation] = field(default_factory=dict)
     # task.create idempotency: caller-supplied key -> task_id, so a redelivered
     # create returns the original task instead of a duplicate.
     idempotency_keys: dict[str, str] = field(default_factory=dict)

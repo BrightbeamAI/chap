@@ -18,7 +18,7 @@ const call = (method: string, params: Record<string, unknown>): any =>
 function workspace(id: string, members: [string, string][]) {
   call("workspace.create", { workspace: id, from: members[0][0] });
   for (const [uri, type] of members) {
-    call("participant.join", { workspace: id, from: uri, type, role: "admin" });
+    call("participant.join", { workspace: id, from: uri, type });
   }
 }
 

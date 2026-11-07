@@ -52,6 +52,7 @@ from .types import (
     Deliberation,
     Handoff,
     HandoffTask,
+    Invitation,
     KeyRecord,
     Member,
     OverrideArtefact,
@@ -80,7 +81,7 @@ ScittReceiptVerifier = Callable[[dict], bool]  # receipt -> verified?
 PRIVILEGED_METHODS = frozenset({
     "control.pause", "control.resume", "control.cancel", "control.supersede",
     "control.snapshot", "control.rollback", "control.set_mode_ceiling",
-    "workspace.set_profiles",
+    "workspace.set_profiles", "workspace.invite",
     "participant.rotate_key", "participant.revoke_key",
 })
 
@@ -175,6 +176,11 @@ class CoordinatorOptions:
     "all" verifies every call, and "humans" takes an unsigned call from a
     member that is not human."""
 
+    join_policy: str = "open"
+    """The join policy of a workspace whose workspace.create names none:
+    "open" admits anyone, and "invite" admits only a participant an admin
+    invited, and the first member."""
+
     enforce_step_up: bool = False
     """Reject privileged methods when OIDC auth_time is stale."""
 
@@ -264,7 +270,8 @@ _log = logging.getLogger("chap_coordinator")
 
 #: The Workspace collections kept object by object, idempotency keys included.
 _TRACKED = ("members", "tasks", "overrides", "whispers", "deliberations",
-            "handoffs", "snapshots", "route_decisions", "idempotency_keys")
+            "handoffs", "snapshots", "route_decisions", "invitations",
+            "idempotency_keys")
 
 #: Workspace fields a store keeps as the workspace's own: all but these.
 _NOT_META = frozenset((*_TRACKED, "audit"))
@@ -317,7 +324,7 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     from .types import (
         Workspace, Member, Task, TaskHistoryEntry, KeyRecord, ReviewState,
         OverrideArtefact, WhisperPrompt, Deliberation, Handoff, HandoffTask,
-        SnapshotArtefact, RouteDecisionArtefact, AuditEntry,
+        SnapshotArtefact, RouteDecisionArtefact, AuditEntry, Invitation,
     )
 
     def _opt(cls, d):
@@ -405,6 +412,9 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
         k: _route_decision(v) if isinstance(v, dict) else v
         for k, v in (data.get("route_decisions") or {}).items()
     }
+    invitations = {
+        k: _build(Invitation, v) for k, v in (data.get("invitations") or {}).items()
+    }
 
     audit = [AuditEntry(**a) for a in (data.get("audit") or [])]
 
@@ -412,12 +422,15 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
         k: v for k, v in data.items()
         if k not in {"members", "tasks", "overrides", "whispers",
                      "deliberations", "handoffs", "snapshots",
-                     "route_decisions", "audit"}
+                     "route_decisions", "invitations", "audit"}
     }
     ws = Workspace(**ws_kwargs)
-    # A workspace written before the policy existed verified every call.
+    # A workspace written before the policy existed verified every call, and
+    # one written before the join policy existed admitted anyone.
     if ws.signature_policy != "humans":
         ws.signature_policy = "all"
+    if ws.join_policy != "invite":
+        ws.join_policy = "open"
     ws.members = members
     ws.tasks = tasks
     ws.overrides = overrides
@@ -426,6 +439,7 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
     ws.handoffs = handoffs
     ws.snapshots = snapshots
     ws.route_decisions = route_decisions
+    ws.invitations = invitations
     ws.audit = audit
     return ws
 
@@ -450,6 +464,36 @@ _PARTICIPANT_TYPES = ("human", "agent", "service", "group", "workspace")
 
 #: The types that may hold the admin role (SPECIFICATION 6.3).
 _ADMIN_TYPES = ("human", "service")
+
+
+def _participant_error(kind: str, uri: str, field: str) -> dict | None:
+    """Why ``uri`` cannot name a participant of this type, or None: the type
+    is one of the five, and the URI's scheme names it (SPECIFICATION 5.1).
+    ``field`` is the param that holds the URI."""
+    if kind not in _PARTICIPANT_TYPES:
+        return {"error": rpc_error(
+            E.PARAMS, "type must be human, agent, service, group or workspace")}
+    if not uri.startswith(f"{kind}:"):
+        return {"error": rpc_error(E.PARAMS, f'{field} must start with "{kind}:" for type {kind}')}
+    return None
+
+
+def _in_force(key: KeyRecord, now: str) -> bool:
+    """Whether a key may sign now: neither revoked nor past its validity."""
+    return (not (key.revoked_at is not None and now >= key.revoked_at)
+            and not (key.valid_until is not None and now >= key.valid_until))
+
+
+def _same_key(a: dict, b: dict) -> bool:
+    """Whether two JWKs are the same key: the same kid and the same RFC 7638
+    thumbprint."""
+    thumbprint = jwk_thumbprint(a)
+    return a.get("kid") == b.get("kid") and thumbprint is not None and thumbprint == jwk_thumbprint(b)
+
+
+def _raw_invitation(ws: Workspace, uri: str) -> "Invitation | None":
+    """An invitation, read without recording it as changed."""
+    return dict.get(ws.invitations, uri)
 
 
 def _awaits_first_member(ws: Workspace) -> bool:
@@ -1478,6 +1522,7 @@ class Coordinator:
             "workspace.create":       self._op_workspace_create,
             "workspace.describe":     self._op_workspace_describe,
             "workspace.set_profiles": self._op_workspace_set_profiles,
+            "workspace.invite":       self._op_workspace_invite,
             "participant.join":       self._op_participant_join,
             "participant.leave":      self._op_participant_leave,
             "task.create":            self._op_task_create,
@@ -1551,6 +1596,11 @@ class Coordinator:
             policy = self.options.signature_policy
         if policy not in ("all", "humans"):
             return None, {"error": rpc_error(E.PARAMS, "signature_policy must be all or humans")}
+        join_policy = p.get("join_policy")
+        if join_policy is None:
+            join_policy = self.options.join_policy
+        if join_policy not in ("open", "invite"):
+            return None, {"error": rpc_error(E.PARAMS, "join_policy must be open or invite")}
         ws_id = p.get("workspace") or self.ids.workspace_id()
         if ws_id in self.workspaces:
             return None, {"error": rpc_error(E.PARAMS, f"workspace already exists: {ws_id}")}
@@ -1589,6 +1639,7 @@ class Coordinator:
                                 else int(p["step_up_window_sec"])),
             min_acr=p.get("min_acr"),
             signature_policy=policy,
+            join_policy=join_policy,
         )
         if "audit-scitt/1.0" in profiles or self.options.enable_chain:
             ws.chain_enabled = True
@@ -1621,6 +1672,7 @@ class Coordinator:
             "max_envelope_bytes": self.options.max_envelope_bytes,
             "step_up_window_sec": ws.step_up_window_sec,
             "signature_policy": ws.signature_policy,
+            "join_policy": ws.join_policy,
             "profiles": ws.profiles,
             "members": [m.to_dict() for m in dict.values(ws.members)],
             "audit_count": len(ws.audit),
@@ -1684,11 +1736,9 @@ class Coordinator:
         # join as an agent, which the "humans" signature policy lets call
         # unsigned, and still read as a person on the log.
         kind = p["type"]
-        if kind not in _PARTICIPANT_TYPES:
-            return {"error": rpc_error(
-                E.PARAMS, "type must be human, agent, service, group or workspace")}
-        if not p["from"].startswith(f"{kind}:"):
-            return {"error": rpc_error(E.PARAMS, f'from must start with "{kind}:" for type {kind}')}
+        named = _participant_error(kind, p["from"], "from")
+        if named:
+            return named
         bad = params_error(p, [
             ("role", "string"), ("display_name", "string"), ("scopes", "strings"),
             ("capabilities", "object"), ("jwks", "object"), ("jwks.keys", "list"),
@@ -1713,12 +1763,35 @@ class Coordinator:
         existing = ws.members.get(uri)
         token_verified = False
 
-        # SPECIFICATION 6.3: the admin role is granted, never claimed. The
-        # first participant to join may take it. Taken by anyone who asked, it
-        # would let an agent drop the workspace's identity profile or revoke a
-        # person's key.
-        if existing is None and p.get("role") == "admin" and not _awaits_first_member(ws):
-            return {"error": rpc_error(E.NOT_AUTHORISED, "The admin role is granted by an admin")}
+        # SPECIFICATION 6.3: a newcomer joins in the role an admin's
+        # invitation names, else in the role it asks for. The admin role is
+        # granted, never claimed: by an invitation, or to the first member,
+        # who is the admin of a workspace that admits by invitation. Taken by
+        # anyone who asked, it would let an agent drop the workspace's
+        # identity profile or revoke a person's key.
+        invitation = None if existing is not None else _raw_invitation(ws, uri)
+        asked = p.get("role") or None
+        role = asked or "participant"
+        if existing is None:
+            first = _awaits_first_member(ws)
+            if (ws.join_policy == "invite" and invitation is None
+                    and not (first and kind in _ADMIN_TYPES)):
+                return {"error": rpc_error(
+                    E.NOT_AUTHORISED, f"{uri} has no invitation to this workspace")}
+            if invitation is not None and invitation.role is not None:
+                if asked == "admin" and invitation.role != "admin":
+                    return {"error": rpc_error(
+                        E.NOT_AUTHORISED, "The admin role is granted by an admin")}
+                role = invitation.role
+            elif first and ws.join_policy == "invite":
+                if asked is not None and asked != "admin":
+                    return {"error": rpc_error(
+                        E.PARAMS,
+                        "The first member of a workspace that admits by invitation is its admin")}
+                role = "admin"
+            elif asked == "admin" and not first:
+                return {"error": rpc_error(
+                    E.NOT_AUTHORISED, "The admin role is granted by an admin")}
 
         # identity-oidc/1.0 and identity-vc/1.0: where a verifier is
         # configured and the workspace advertises its profile, a person joins
@@ -1742,12 +1815,21 @@ class Coordinator:
         member = Member(
             uri=uri,
             type=kind,
-            role=p.get("role") or "participant",
+            role=role,
             joined=now,
             display_name=p.get("display_name"),
             capabilities=p.get("capabilities"),
             scopes=p.get("scopes"),
         )
+
+        # An invitation that names a token subject admits a join carrying a
+        # token for that subject, which only a configured verifier can check.
+        if invitation is not None and invitation.oidc_sub is not None and (
+                self.options.verify_oidc_token is None
+                or not isinstance(p.get("oidc_token"), str)):
+            return {"error": rpc_error(
+                E.OIDC_TOKEN_INVALID,
+                "An oidc_token is required: the invitation names a token subject")}
 
         # identity-oidc/1.0 binding
         if self.options.verify_oidc_token and isinstance(p.get("oidc_token"), str):
@@ -1766,6 +1848,10 @@ class Coordinator:
             if bound_uri is not None and bound_uri != uri:
                 return {"error": rpc_error(E.OIDC_CNF_MISMATCH,
                                            "OIDC token is bound to another participant")}
+            if invitation is not None and invitation.oidc_sub is not None \
+                    and sub != invitation.oidc_sub:
+                return {"error": rpc_error(E.OIDC_CNF_MISMATCH,
+                                           "OIDC token subject does not match the invitation")}
             if existing is not None:
                 if existing.oidc_sub is not None:
                     if sub != existing.oidc_sub:
@@ -1822,6 +1908,19 @@ class Coordinator:
                     jwk=vp_jwk, kid=vp_jwk["kid"], valid_from=now,
                 ))
 
+        # An invitation that pins keys names the keys the member signs with:
+        # the join's own keys, and a key an identity profile binds, are among
+        # them, and the member holds the pinned keys.
+        pinned = invitation.jwks["keys"] if invitation is not None and invitation.jwks else None
+        if pinned is not None:
+            strays = [j for j in [*_signing_keys(p.get("jwks")), *(k.jwk for k in member.keys)]
+                      if not any(_same_key(k, j) for k in pinned)]
+            if strays:
+                return {"error": rpc_error(
+                    E.NOT_AUTHORISED, f"{uri} joins with keys its invitation does not name",
+                    data={"kids": list(dict.fromkeys(j.get("kid") for j in strays))})}
+            member.keys = [KeyRecord(jwk=j, kid=j["kid"], valid_from=now) for j in pinned]
+
         attested = list(member.keys)
 
         # Self-asserted JWKs are ignored for an identity-bound participant: the
@@ -1859,7 +1958,84 @@ class Coordinator:
         if made:
             self._add_workspace(ws)
         ws.members[uri] = member
+        if invitation is not None:
+            del ws.invitations[uri]
         return {"result": {"joined": True, "as": uri}}
+
+    def _op_workspace_invite(self, p: dict) -> dict:
+        """SPECIFICATION 6.3.3: an admin invites a participant. For a URI that
+        is not a member it records an invitation, which the invitee's join
+        takes up. For a member that holds no key in force it registers the
+        invitation's keys: the way back for a member whose keys were all
+        revoked, or who joined a workspace that requires signatures with
+        none."""
+        miss = _missing(p, ["workspace", "from", "uri", "type"])
+        if miss:
+            return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
+        for f in ("uri", "type"):
+            if not isinstance(p[f], str):
+                return {"error": rpc_error(E.PARAMS, f"{f} must be a string")}
+        bad = params_error(p, [
+            ("role", "string"), ("jwks", "object"), ("jwks.keys", "list"), ("oidc_sub", "string"),
+        ])
+        if bad:
+            return bad
+        ws = self.workspaces.get(p["workspace"])
+        if not ws:
+            return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
+        not_member = self._require_member(ws, p["from"])
+        if not_member:
+            return not_member
+        if _raw_member(ws, p["from"]).role != "admin":
+            return {"error": rpc_error(E.NOT_AUTHORISED, "workspace.invite requires the admin role")}
+        uri = p["uri"]
+        kind = p["type"]
+        named = _participant_error(kind, uri, "uri")
+        if named:
+            return named
+        role = p.get("role") or None
+        if role == "admin" and kind not in _ADMIN_TYPES:
+            return {"error": rpc_error(E.PARAMS, "The admin role is held by a human or a service")}
+        sub = p.get("oidc_sub")
+        if sub is not None and self.options.verify_oidc_token is None:
+            return {"error": rpc_error(
+                E.PARAMS, "oidc_sub names a token subject, and this Coordinator has no token verifier")}
+        pinned = None
+        if p.get("jwks") is not None:
+            pinned = _signing_keys(p["jwks"])
+            if not pinned:
+                return {"error": rpc_error(E.PARAMS, "jwks names no key: each key needs a kid")}
+        now = self.now_iso()
+        member = ws.members.get(uri)
+        if member is not None:
+            # A member's keys otherwise change through participant.rotate_key,
+            # which a key it holds signs.
+            if any(_in_force(k, now) for k in member.keys):
+                return {"error": rpc_error(
+                    E.PARAMS, f"{uri} is a member and holds a key in force; its keys change "
+                    "through participant.rotate_key")}
+            if pinned is None:
+                return {"error": rpc_error(
+                    E.PARAMS, f"{uri} is a member; an invitation for a member registers the keys "
+                    "its jwks names")}
+            if ((role is not None and role != member.role)
+                    or (sub is not None and sub != member.oidc_sub)):
+                return {"error": rpc_error(
+                    E.PARAMS, f"{uri} is a member; an invitation for a member registers keys "
+                    "and changes nothing else")}
+            # A kid names one key for good: a signature naming a revoked kid is
+            # refused whatever key holds it now.
+            reused = next((j for j in pinned if any(k.kid == j["kid"] for k in member.keys)), None)
+            if reused is not None:
+                return {"error": rpc_error(
+                    E.PARAMS, f"Key {reused['kid']} was {uri}'s; a new key takes a new kid")}
+            for j in pinned:
+                member.keys.append(KeyRecord(jwk=j, kid=j["kid"], valid_from=now))
+            return {"result": {"invited": True, "uri": uri, "registered": [j["kid"] for j in pinned]}}
+        ws.invitations[uri] = Invitation(
+            uri=uri, type=kind, invited_by=p["from"], invited_at=now, role=role,
+            jwks={"keys": pinned} if pinned is not None else None, oidc_sub=sub)
+        return {"result": {"invited": True, "uri": uri}}
 
     def _op_participant_leave(self, p: dict) -> dict:
         # Self-removal: pops the caller's own `from`. Under require_signatures

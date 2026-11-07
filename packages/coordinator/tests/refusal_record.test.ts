@@ -354,7 +354,7 @@ test("a refused join is not recorded, even from a member's URI", () => {
 test("a method the catalogue lists but no coordinator implements is not recorded", () => {
   const { send, ws } = ready();
   const before = ws.audit.length;
-  assert.equal(send("workspace.invite", { invitee: "human:z" }).error.code, -32601);
+  assert.equal(send("workspace.evict", { target_uri: "human:z" }).error.code, -32601);
   assert.equal(ws.audit.length, before);
 });
 

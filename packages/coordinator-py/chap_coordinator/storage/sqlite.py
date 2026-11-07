@@ -110,6 +110,9 @@ _LEGACY_VIEW = (
     + ") AS data, m.version AS version, m.updated_at AS updated_at FROM chap_meta AS m"
 )
 
+#: The view's definition as SQLite records it, which leaves out IF NOT EXISTS.
+_LEGACY_VIEW_RECORDED = _LEGACY_VIEW.replace("CREATE VIEW IF NOT EXISTS ", "CREATE VIEW ", 1)
+
 
 def _dumps(value: Any) -> str:
     return json.dumps(value, sort_keys=True)
@@ -224,6 +227,14 @@ class SqliteStore:
                 self._conn.execute(
                     "DROP INDEX IF EXISTS idx_chap_workspaces_updated_at")
                 state["kept"] = kept
+            # The view assembles every collection. One a release with fewer
+            # collections made is replaced, so a script reading it sees them
+            # all.
+            view = self._conn.execute(
+                "SELECT type, sql FROM sqlite_master WHERE name = ?",
+                (_LEGACY_TABLE,)).fetchone()
+            if view is not None and view["type"] == "view" and view["sql"] != _LEGACY_VIEW_RECORDED:
+                self._conn.execute(f"DROP VIEW {_LEGACY_TABLE}")
             if not self._has_name(_LEGACY_TABLE):
                 self._conn.execute(_LEGACY_VIEW)
 

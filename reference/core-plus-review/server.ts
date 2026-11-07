@@ -1,9 +1,10 @@
 /**
  * CHAP Core + Review reference server.
  *
- * Implements the 7 Core methods plus the 6 review-profile methods:
- *   review.request, decide.approve, decide.reject, decide.override,
- *   abstain.declare, escalate.raise.
+ * Implements the 7 Core methods, workspace.create and workspace.invite, and
+ * the review-profile methods: review.request, review.acknowledge,
+ * decide.approve, decide.reject, decide.override, abstain.declare and
+ * escalate.raise.
  *
  * decide.override carries an RFC 6902 JSON Patch + rationale + tags +
  * policy_refs. This is where CHAP's structured-override-as-learning-
@@ -147,6 +148,10 @@ interface Workspace {
   profiles:  string[];
   /** Whether anyone has joined: only the first member may take the admin role (SPECIFICATION 6.3). */
   joined:    boolean;
+  /** Who may join: anyone, or only an invited participant and the first member (SPECIFICATION 6.3.3). */
+  join_policy: "open" | "invite";
+  /** Invitations not yet taken up, by the URI each admits. */
+  invitations: Map<ParticipantUri, { type: string; role?: string }>;
   /** Signed calls on the log by what their senders signed, with the seq each took, for SPECIFICATION 10.1. */
   signed:    { refused: Map<string, { seq: number; code: number }>; accepted: Map<string, number> };
 }
@@ -290,6 +295,8 @@ function ensureWorkspace(id: string): Workspace {
       audit:     [],
       profiles:  ["core/1.0", "review/1.0"],
       joined:    false,
+      join_policy: "open",
+      invitations: new Map(),
       signed:    { refused: new Map(), accepted: new Map() },
     };
     workspaces.set(id, ws);
@@ -425,6 +432,18 @@ const handlers: Record<string, Handler> = {
 
   // -------- Core --------
 
+  "workspace.create": (p) => {
+    const id = typeof p.workspace === "string" && p.workspace ? p.workspace : `wsp_${ulid()}`;
+    if (getWorkspace(id)) return { error: err(E.PARAMS, `workspace already exists: ${id}`) };
+    const policy = p.join_policy ?? "open";
+    if (policy !== "open" && policy !== "invite") {
+      return { error: err(E.PARAMS, "join_policy must be open or invite") };
+    }
+    const ws = ensureWorkspace(id);
+    ws.join_policy = policy;
+    return { result: { workspace: id, created: ws.created } };
+  },
+
   "workspace.describe": (p) => {
     const missing = requireFields(p, ["workspace"]);
     if (missing) return { error: err(E.PARAMS, `Missing field: ${missing}`) };
@@ -435,6 +454,7 @@ const handlers: Record<string, Handler> = {
         id:          ws.id,
         created:     ws.created,
         state:       ws.state,
+        join_policy: ws.join_policy,
         members:     Array.from(ws.members.values()),
         profiles:    ws.profiles,
         audit_count: ws.audit.length,
@@ -464,19 +484,66 @@ const handlers: Record<string, Handler> = {
     const uri  = p.from as string;
     // A member joining again keeps what it joined with (SPECIFICATION 6.3.2).
     if (ws.members.has(uri)) return { result: { joined: true, as: uri } };
-    if (p.role === "admin" && ws.joined) {
+    // A newcomer takes the role its invitation names, else the one it asks
+    // for; the admin role comes from an invitation or with being first.
+    const invitation = ws.invitations.get(uri);
+    const first = !ws.joined;
+    let role = typeof p.role === "string" && p.role ? p.role : "participant";
+    if (ws.join_policy === "invite" && !invitation && !(first && (type === "human" || type === "service"))) {
+      return { error: err(E.NOT_AUTHORISED, `${uri} has no invitation to this workspace`) };
+    }
+    if (invitation?.role !== undefined) {
+      if (p.role === "admin" && invitation.role !== "admin") {
+        return { error: err(E.NOT_AUTHORISED, "The admin role is granted by an admin") };
+      }
+      role = invitation.role;
+    } else if (first && ws.join_policy === "invite") {
+      if (typeof p.role === "string" && p.role && p.role !== "admin") {
+        return { error: err(E.PARAMS, "The first member of a workspace that admits by invitation is its admin") };
+      }
+      role = "admin";
+    } else if (p.role === "admin" && !first) {
       return { error: err(E.NOT_AUTHORISED, "The admin role is granted by an admin") };
     }
     ws.joined = true;
+    ws.invitations.delete(uri);
     ws.members.set(uri, {
       uri,
       type:         p.type as Member["type"],
-      role:         (p.role as string) ?? "participant",
+      role,
       joined:       new Date().toISOString(),
       display_name: p.display_name as string,
       capabilities: p.capabilities as Record<string, unknown>,
     });
     return { result: { joined: true, as: uri } };
+  },
+
+  // SPECIFICATION 6.3.3, without keys: this server holds none, so an
+  // invitation records the type and role a participant who is not yet a
+  // member joins with.
+  "workspace.invite": (p) => {
+    const missing = requireFields(p, ["workspace", "from", "uri", "type"]);
+    if (missing) return { error: err(E.PARAMS, `Missing field: ${missing}`) };
+    const ws = getWorkspace(p.workspace as string);
+    if (!ws) return { error: err(E.PARAMS, "Unknown workspace") };
+    const notMember = requireMember(ws, p.from);
+    if (notMember) return { error: notMember };
+    if (ws.members.get(p.from as string)!.role !== "admin") {
+      return { error: err(E.NOT_AUTHORISED, "workspace.invite requires the admin role") };
+    }
+    const type = p.type;
+    if (typeof type !== "string" || !["human", "agent", "service", "group", "workspace"].includes(type)) {
+      return { error: err(E.PARAMS, "type must be human, agent, service, group or workspace") };
+    }
+    if (typeof p.uri !== "string" || !p.uri.startsWith(`${type}:`)) {
+      return { error: err(E.PARAMS, `uri must start with "${type}:" for type ${type}`) };
+    }
+    if (p.role === "admin" && type !== "human" && type !== "service") {
+      return { error: err(E.PARAMS, "The admin role is held by a human or a service") };
+    }
+    if (ws.members.has(p.uri)) return { error: err(E.PARAMS, `${p.uri} is already a member`) };
+    ws.invitations.set(p.uri, { type, ...(typeof p.role === "string" && p.role ? { role: p.role } : {}) });
+    return { result: { invited: true, uri: p.uri } };
   },
 
   "participant.leave": (p) => {

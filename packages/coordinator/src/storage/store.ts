@@ -57,7 +57,7 @@
 /** The workspace maps a store keeps object by object. */
 export const COLLECTIONS = [
   "members", "tasks", "overrides", "whispers",
-  "deliberations", "handoffs", "snapshots", "route_decisions",
+  "deliberations", "handoffs", "snapshots", "route_decisions", "invitations",
 ] as const;
 
 /** task.create idempotency keys, kept as one more collection of key to task id. */

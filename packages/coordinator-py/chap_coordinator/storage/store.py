@@ -65,7 +65,7 @@ from typing import Any, Iterable, Protocol, runtime_checkable
 #: The workspace collections a store keeps object by object.
 COLLECTIONS = (
     "members", "tasks", "overrides", "whispers",
-    "deliberations", "handoffs", "snapshots", "route_decisions",
+    "deliberations", "handoffs", "snapshots", "route_decisions", "invitations",
 )
 
 #: task.create idempotency keys, kept as one more collection of key to task id.

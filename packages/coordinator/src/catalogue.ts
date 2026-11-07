@@ -51,6 +51,7 @@ export const OWNING_PROFILE: Readonly<Record<string, string>> = Object.freeze({
   "whisper.ask":             "whisper/1.0",
   "workspace.create":        "core/1.0",
   "workspace.describe":      "core/1.0",
+  "workspace.invite":        "core/1.0",
   "workspace.set_profiles":  "core/1.0",
 });
 

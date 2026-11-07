@@ -249,6 +249,28 @@
     "task_id": "tsk_01HF7YAT09002RZWT7GNWSWQ5X",
     "output": null
    }
+  },
+  {
+   "jsonrpc": "2.0",
+   "id": "s20",
+   "method": "workspace.invite",
+   "params": {
+    "workspace": "w",
+    "from": "human:a",
+    "uri": "human:d",
+    "type": "human",
+    "role": "reviewer",
+    "jwks": {
+     "keys": [
+      {
+       "kty": "OKP",
+       "crv": "Ed25519",
+       "kid": "k-d",
+       "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+      }
+     ]
+    }
+   }
   }
  ],
  "typescript": {
@@ -267,6 +289,7 @@
   "mode_ceiling": "production",
   "step_up_window_sec": 300,
   "signature_policy": "all",
+  "join_policy": "open",
   "members": [
    {
     "uri": "human:a",
@@ -508,6 +531,25 @@
       "reason_excluded": "not first eligible"
      }
     ]
+   }
+  ],
+  "invitations": [
+   {
+    "uri": "human:d",
+    "type": "human",
+    "invited_by": "human:a",
+    "invited_at": "2023-11-14T22:13:40.000Z",
+    "role": "reviewer",
+    "jwks": {
+     "keys": [
+      {
+       "kty": "OKP",
+       "crv": "Ed25519",
+       "kid": "k-d",
+       "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+      }
+     ]
+    }
    }
   ],
   "idempotency_keys": {},
@@ -855,9 +897,36 @@
      }
     },
     "prev_hash": "sha256:9ff585a991d97497d755c1c68f4677af98ad139d48278b98deb72e831cad0fc6"
+   },
+   {
+    "seq": 19,
+    "arrived": "2023-11-14T22:13:40.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s20",
+     "method": "workspace.invite",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "uri": "human:d",
+      "type": "human",
+      "role": "reviewer",
+      "jwks": {
+       "keys": [
+        {
+         "kty": "OKP",
+         "crv": "Ed25519",
+         "kid": "k-d",
+         "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+        }
+       ]
+      }
+     }
+    },
+    "prev_hash": "sha256:3371ef39de6fe4e59fc11036294cafd1d8035431df5ae15bfad6f1b51068e815"
    }
   ],
-  "chain_head": "sha256:3371ef39de6fe4e59fc11036294cafd1d8035431df5ae15bfad6f1b51068e815",
+  "chain_head": "sha256:9e019336ba1fc077dad46c7689ec9cb79ae8d7f6acaf95429c6aac4aa3d4b785",
   "chain_enabled": true
  },
  "python": {
@@ -878,6 +947,7 @@
   "step_up_window_sec": 300,
   "min_acr": null,
   "signature_policy": "all",
+  "join_policy": "open",
   "members": {
    "human:a": {
     "uri": "human:a",
@@ -1212,6 +1282,26 @@
     }
    }
   },
+  "invitations": {
+   "human:d": {
+    "uri": "human:d",
+    "type": "human",
+    "invited_by": "human:a",
+    "invited_at": "2023-11-14T22:13:40.000Z",
+    "role": "reviewer",
+    "jwks": {
+     "keys": [
+      {
+       "kty": "OKP",
+       "crv": "Ed25519",
+       "kid": "k-d",
+       "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+      }
+     ]
+    },
+    "oidc_sub": null
+   }
+  },
   "idempotency_keys": {},
   "audit": [
    {
@@ -1557,9 +1647,36 @@
      }
     },
     "prev_hash": "sha256:9ff585a991d97497d755c1c68f4677af98ad139d48278b98deb72e831cad0fc6"
+   },
+   {
+    "seq": 19,
+    "arrived": "2023-11-14T22:13:40.000Z",
+    "envelope": {
+     "jsonrpc": "2.0",
+     "id": "s20",
+     "method": "workspace.invite",
+     "params": {
+      "workspace": "w",
+      "from": "human:a",
+      "uri": "human:d",
+      "type": "human",
+      "role": "reviewer",
+      "jwks": {
+       "keys": [
+        {
+         "kty": "OKP",
+         "crv": "Ed25519",
+         "kid": "k-d",
+         "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
+        }
+       ]
+      }
+     }
+    },
+    "prev_hash": "sha256:3371ef39de6fe4e59fc11036294cafd1d8035431df5ae15bfad6f1b51068e815"
    }
   ],
-  "chain_head": "sha256:3371ef39de6fe4e59fc11036294cafd1d8035431df5ae15bfad6f1b51068e815",
+  "chain_head": "sha256:9e019336ba1fc077dad46c7689ec9cb79ae8d7f6acaf95429c6aac4aa3d4b785",
   "chain_enabled": true
  }
 }

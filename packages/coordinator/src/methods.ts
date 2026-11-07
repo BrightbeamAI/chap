@@ -19,7 +19,7 @@
  */
 
 import type {
-  ArtefactId, JsonPatchOp, ParticipantUri, TaskId,
+  ArtefactId, JoinPolicy, JsonPatchOp, ParticipantType, ParticipantUri, SignaturePolicy, TaskId,
   Workspace, WorkspaceId,
 } from "./types.js";
 
@@ -40,6 +40,8 @@ export interface WorkspaceCreateParams extends Partial<WorkspaceParam> {
   routing_policy_uri?: string;
   mode?:               "shadow" | "trial" | "production";
   mode_ceiling?:       "shadow" | "trial" | "production";
+  signature_policy?:   SignaturePolicy;
+  join_policy?:        JoinPolicy;
 }
 export interface WorkspaceCreateResult { workspace: WorkspaceId }
 
@@ -50,6 +52,20 @@ export interface WorkspaceSetProfilesParams extends WorkspaceParam, ActorParam {
   profiles: string[];
 }
 export type WorkspaceSetProfilesResult = OkResult;
+
+export interface WorkspaceInviteParams extends WorkspaceParam, ActorParam {
+  uri:       ParticipantUri;
+  type:      ParticipantType;
+  role?:     string;
+  jwks?:     { keys: Array<Record<string, unknown>> };
+  oidc_sub?: string;
+}
+export interface WorkspaceInviteResult {
+  invited: true;
+  uri: ParticipantUri;
+  /** The kids registered, where the invitation was for a member that held no key in force. */
+  registered?: string[];
+}
 
 // ============================================================
 //   participant.*
@@ -370,6 +386,7 @@ export interface MethodTable {
   "workspace.create":          { params: WorkspaceCreateParams,       result: WorkspaceCreateResult       };
   "workspace.describe":        { params: WorkspaceDescribeParams,     result: WorkspaceDescribeResult     };
   "workspace.set_profiles":    { params: WorkspaceSetProfilesParams,  result: WorkspaceSetProfilesResult  };
+  "workspace.invite":          { params: WorkspaceInviteParams,       result: WorkspaceInviteResult       };
 
   "participant.join":          { params: ParticipantJoinParams,       result: ParticipantJoinResult       };
   "participant.leave":         { params: ParticipantLeaveParams,      result: ParticipantLeaveResult      };

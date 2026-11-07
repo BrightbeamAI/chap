@@ -402,11 +402,14 @@ role_permissions:
   operator:   [control.*, workspace.*, participant.leave]
 ```
 
+A workspace whose `join_policy` is `"invite"` admits only the participants
+an admin invites with `workspace.invite`, each in the role its invitation
+names, and with the keys it pins. Under the default, `"open"`,
 `participant.join` admits a caller in the role it asks for, except the
-`admin` role, which only the workspace's first member may name. The only
-role checks are the admin role on `workspace.set_profiles` and on revoking
-another member's key. Until milestone 0.6, authenticate joins and enforce
-role policy in front of the coordinator.
+`admin` role, which only the first member or an admin's invitation grants.
+The only role checks are the admin role on `workspace.set_profiles`,
+`workspace.invite` and revoking another member's key. Until milestone 0.6,
+enforce any other role policy in front of the coordinator.
 
 ### 7.5 What the Coordinator enforces before your policy runs
 

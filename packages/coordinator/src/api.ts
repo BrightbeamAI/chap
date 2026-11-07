@@ -79,6 +79,7 @@ export function makeApi(coord: Coordinator) {
       create:       (p: MethodParams<"workspace.create">)       => c("workspace.create", p),
       describe:     (p: MethodParams<"workspace.describe">)     => c("workspace.describe", p),
       set_profiles: (p: MethodParams<"workspace.set_profiles">) => c("workspace.set_profiles", p),
+      invite:       (p: MethodParams<"workspace.invite">)       => c("workspace.invite", p),
     },
     participant: {
       join:       (p: MethodParams<"participant.join">)       => c("participant.join", p),

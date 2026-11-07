@@ -391,7 +391,7 @@ def test_a_refused_join_is_not_recorded_even_from_a_members_uri():
 def test_a_method_the_catalogue_lists_but_no_coordinator_implements_is_not_recorded():
     _, send, ws = _ready()
     before = len(ws.audit)
-    assert send("workspace.invite", {"invitee": "human:z"})["error"]["code"] == -32601
+    assert send("workspace.evict", {"target_uri": "human:z"})["error"]["code"] == -32601
     assert len(ws.audit) == before
 
 

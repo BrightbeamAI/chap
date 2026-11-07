@@ -33,11 +33,12 @@ control, deliberation, handoff and whisper method, and from 0.3.0 for
 design. See SPECIFICATION.md S6.3.1.
 
 **Admin (role).** [normative] A workspace role, held by a `human` or a
-`service`. Both coordinators require it for `workspace.set_profiles` and for
-revoking another member's key. It is granted, never claimed: only the
-workspace's first member may name it at `participant.join`. The
-specification also gives it inviting and evicting Participants and changing
-the mode, through methods not yet built. See SPECIFICATION.md S6.3.
+`service`. Both coordinators require it for `workspace.set_profiles`,
+`workspace.invite` and revoking another member's key. It is granted, never
+claimed: only the workspace's first member, or a participant an admin's
+invitation names as admin, may name it at `participant.join`. The
+specification also gives it evicting Participants and changing the mode,
+through methods not yet built. See SPECIFICATION.md S6.3.
 
 **Anchor.** An external publication of an evidence-chain head, for example
 to a transparency log, so that tampering can be shown outside the
@@ -196,6 +197,12 @@ Refusing a repeated `id` at acceptance is a deployment-level defence
 described in [SECURITY.md](./SECURITY.md#envelope-id-replay); neither
 reference implements it, so no error code is allocated for it.
 
+**Invitation.** [normative] An admin's `workspace.invite` for a participant
+that is not a member yet. It names the type and role the member takes, and
+may pin its keys and its OIDC subject; the invitee's join uses it up. For a
+member that holds no key in force, the same call registers new keys. See
+SPECIFICATION.md S6.3.3.
+
 **`instance_id`.** [normative] Optional artefact-descriptor field
 identifying the specific version of an artefact. When present, MUST
 equal the artefact's `content_hash` or be deterministically derived
@@ -212,6 +219,11 @@ See §9.4.
 ---
 
 ## J
+
+**Join policy.** [normative] A workspace's `join_policy`, set at
+`workspace.create`: `"open"` (the default) admits anyone, and `"invite"`
+admits only invited participants and the first member, which becomes the
+admin. See SPECIFICATION.md S6.3.3.
 
 **JCS.** [RFC 8785]. JSON Canonicalization Scheme. The deterministic JSON
 encoding used as the signing input under `security-signed/1.0`. The same
@@ -349,11 +361,11 @@ decision rule governs how many of the set must decide; the set governs
 who is eligible. See profiles/review.md S3.2.
 
 **Role.** A workspace-local label attached to each Participant entry in
-the workspace descriptor, taken from `participant.join` (default
-`participant`). The specification reserves `coordinator` and `admin`.
-Neither coordinator controls admission yet: `participant.join` admits any
-caller in the role it asks for. Until milestone 0.6, authenticate joins and
-enforce role policy in front of the coordinator.
+the workspace descriptor, taken from an admin's invitation where it names
+one, else from `participant.join` (default `participant`). The
+specification reserves `coordinator` and `admin`, and the admin role is
+granted, never claimed. Beyond it, the coordinators check no role: until
+milestone 0.6, enforce role policy in front of the coordinator.
 
 **Routing hints.** Optional `routing_hints` object on a Task or Artefact
 carrying runtime signals consumed by the `routing/1.0` profile. On a

@@ -87,6 +87,15 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "default": "production",
                 "description": "Highest mode a task in this workspace may request. A task.create above the ceiling is refused with -32040. The ceiling can be changed afterwards with chap.control.set_mode_ceiling.",
             },
+            "join_policy": {
+                "type": "string",
+                "enum": [
+                    "open",
+                    "invite",
+                ],
+                "default": "open",
+                "description": "Who may join. 'open' admits anyone. 'invite' admits only a participant an admin invited with chap.workspace.invite, and the workspace's first member, which becomes its admin; any other join is refused with -32011. It cannot be changed afterwards.",
+            },
         },
         "additionalProperties": False,
     },
@@ -125,6 +134,53 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         ],
     },
 
+    "chap.workspace.invite": {
+        "type": "object",
+        "properties": {
+            "workspace": {
+                "type": "string",
+                "description": "Workspace identifier, e.g. 'wsp_techcorp_support'.",
+            },
+            "from": {
+                "type": "string",
+                "description": "The admin who invites. Any other sender is refused with -32011.",
+            },
+            "uri": {
+                "type": "string",
+                "description": "The participant invited. Its scheme must name type, as at a join.",
+            },
+            "type": {
+                "type": "string",
+                "enum": [
+                    "human",
+                    "agent",
+                    "service",
+                    "group",
+                    "workspace",
+                ],
+                "description": "The kind of participant invited, which the scheme of uri must name. The member takes this type.",
+            },
+            "role": {
+                "type": "string",
+                "description": "The role the member takes when it joins, whatever role the join names. Only an invitation grants 'admin' after the first member, and only to a human or a service.",
+            },
+            "jwks": {
+                "type": "object",
+                "description": "Keys to pin, as {keys: [JWK, ...]}, each with a kid. The join's keys must be among them, and the member holds them. For a member that holds no key in force, the call registers these keys at once: the way back for a member whose keys were all revoked.",
+            },
+            "oidc_sub": {
+                "type": "string",
+                "description": "The OIDC subject whose token admits the invitee: the join must carry an oidc_token for it. Needs a token verifier on the coordinator.",
+            },
+        },
+        "required": [
+            "workspace",
+            "from",
+            "uri",
+            "type",
+        ],
+    },
+
     "chap.participant.join": {
         "type": "object",
         "properties": {
@@ -149,7 +205,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             },
             "role": {
                 "type": "string",
-                "description": "Operator-defined role, e.g. 'reviewer' or 'drafter'. One value is read by the coordinator: 'admin', which changes the profiles and revokes another member's key. It is granted, never claimed: only the workspace's first member may name it at a join, and any other join naming it is refused with -32011. Only a human or a service holds it.",
+                "description": "Operator-defined role, e.g. 'reviewer' or 'drafter'. One value is read by the coordinator: 'admin', which changes the profiles, invites, and revokes another member's key. It is granted, never claimed: only the workspace's first member, or a participant an admin's invitation names as admin, may name it at a join, and any other join naming it is refused with -32011. Only a human or a service holds it. An invitation's role replaces the one named here.",
             },
             "display_name": {
                 "type": "string",

@@ -32,6 +32,11 @@ export type Mode = "shadow" | "trial" | "production";
  * every call except an unsigned one from a member that is not human.
  */
 export type SignaturePolicy = "all" | "humans";
+/**
+ * Who may join a workspace: anyone ("open"), or only a participant an admin
+ * invited with workspace.invite, and the first member ("invite").
+ */
+export type JoinPolicy = "open" | "invite";
 export type WorkspaceState = "active" | "paused" | "closed";
 export type PauseScope = "task" | "participant" | "workspace";
 
@@ -90,6 +95,22 @@ export interface Member {
   oidc_auth_time?: number;        // unix seconds
   oidc_acr?:     string;
   vc_holder?:    string;
+}
+
+/**
+ * An admin's invitation to join (workspace.invite), held until the invitee
+ * joins. The member takes its type and role; where it pins keys, the join's
+ * keys are among them and the member holds them; where it names an OIDC
+ * subject, the invitee joins with a token for that subject.
+ */
+export interface Invitation {
+  uri:        ParticipantUri;
+  type:       ParticipantType;
+  role?:      string;
+  jwks?:      { keys: Jwk[] };
+  oidc_sub?:  string;
+  invited_by: ParticipantUri;
+  invited_at: string;
 }
 
 // ============================================================
@@ -378,7 +399,11 @@ export interface Workspace {
   min_acr?: string;
   /** Which calls are verified where the workspace requires signatures. */
   signature_policy: SignaturePolicy;
+  /** Who may join. */
+  join_policy:     JoinPolicy;
   members:         Map<ParticipantUri, Member>;
+  /** Invitations not yet taken up, by the URI each admits. */
+  invitations:     Map<ParticipantUri, Invitation>;
   tasks:           Map<TaskId, Task>;
   overrides:       Map<ArtefactId, OverrideArtefact>;
   whispers:        Map<string, WhisperPrompt>;

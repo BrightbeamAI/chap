@@ -24,6 +24,8 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Report the current state of a workspace: its members, enabled profiles, audit length, and task and override counts.",
     "chap.workspace.set_profiles":
         "Replace the whole set of profiles enabled on a workspace. The list is not merged: any profile absent from it is dropped, so send the complete set you want. Enabling audit-scitt/1.0 on a workspace that already has entries starts the chain from that point and leaves the earlier entries permanently outside it, which chap.audit.verify_chain then reports as not_evaluated. Prefer setting profiles at chap.workspace.create, where no entries exist yet to strand.",
+    "chap.workspace.invite":
+        "Invite a participant to a workspace, as its admin. The invitation names the type and role the member takes when it joins, and may pin its keys and its OIDC subject. A workspace whose join policy is 'invite' admits nobody else. For a member that holds no key in force, the call registers the keys it names at once, so a member whose keys were all revoked can sign again.",
     "chap.participant.join":
         "Add a participant to a workspace. The type given, human, agent, service, group or workspace, decides whether they are eligible to review work that requires it.",
     "chap.participant.leave":
@@ -122,6 +124,13 @@ TOOL_ANNOTATIONS: dict[str, dict[str, Any]] = {
         "title": "Replace workspace profiles",
         "readOnlyHint": False,
         "destructiveHint": True,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+    "chap.workspace.invite": {
+        "title": "Invite participant",
+        "readOnlyHint": False,
+        "destructiveHint": False,
         "idempotentHint": False,
         "openWorldHint": False,
     },

@@ -40,6 +40,9 @@ import type {
   AuditListener,
   Envelope,
   KeyRecord,
+  Invitation,
+  JoinPolicy,
+  Jwk,
   Member,
   Mode,
   OverrideArtefact,
@@ -87,7 +90,7 @@ export type EscalationPolicyFn = (task: Task, hints: Record<string, unknown>) =>
 export const PRIVILEGED_METHODS = new Set<string>([
   "control.pause", "control.resume", "control.cancel", "control.supersede",
   "control.snapshot", "control.rollback", "control.set_mode_ceiling",
-  "workspace.set_profiles",
+  "workspace.set_profiles", "workspace.invite",
   "participant.rotate_key", "participant.revoke_key",
 ]);
 
@@ -150,6 +153,12 @@ export interface CoordinatorOptions {
    * call from a member that is not human.
    */
   signaturePolicy?: SignaturePolicy;
+  /**
+   * The join policy of a workspace whose `workspace.create` names none:
+   * "open" (the default) admits anyone, and "invite" admits only a
+   * participant an admin invited, and the first member.
+   */
+  joinPolicy?: JoinPolicy;
   enforceStepUp?: boolean;
   requireReadMembership?: boolean;
   /** Largest envelope accepted (default 1 MiB), published in the descriptor. */
@@ -247,6 +256,38 @@ const PARTICIPANT_TYPES = ["human", "agent", "service", "group", "workspace"];
 
 /** The types that may hold the admin role (SPECIFICATION 6.3). */
 const ADMIN_TYPES = ["human", "service"];
+
+/**
+ * Why `uri` cannot name a participant of this type, or null: the type is one
+ * of the five, and the URI's scheme names it (SPECIFICATION 5.1). `field` is
+ * the param that holds the URI.
+ */
+function participantError(type: string, uri: string, field: string): { error: ReturnType<typeof rpcError> } | null {
+  if (!PARTICIPANT_TYPES.includes(type)) {
+    return { error: rpcError(E.PARAMS, "type must be human, agent, service, group or workspace") };
+  }
+  if (!uri.startsWith(`${type}:`)) {
+    return { error: rpcError(E.PARAMS, `${field} must start with "${type}:" for type ${type}`) };
+  }
+  return null;
+}
+
+/** Whether a key may sign now: neither revoked nor past its validity. */
+function inForce(key: KeyRecord, now: string): boolean {
+  return !(key.revoked_at !== undefined && now >= key.revoked_at)
+    && !(key.valid_until !== undefined && now >= key.valid_until);
+}
+
+/** Whether two JWKs are the same key: the same kid and the same RFC 7638 thumbprint. */
+function sameKey(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const thumbprint = jwkThumbprint(a);
+  return a.kid === b.kid && thumbprint !== undefined && thumbprint === jwkThumbprint(b);
+}
+
+/** An invitation, read without recording it as changed. */
+function rawInvitation(ws: Workspace, uri: string): Invitation | undefined {
+  return Map.prototype.get.call(ws.invitations, uri) as Invitation | undefined;
+}
 
 /**
  * Whether nobody has joined the workspace yet: it holds no member and its log
@@ -960,6 +1001,7 @@ export class Coordinator {
       step_up_window_sec: ws.step_up_window_sec,
       min_acr:      ws.min_acr,
       signature_policy: ws.signature_policy,
+      join_policy:  ws.join_policy,
       chain_head:   ws.chain_head,
       chain_enabled: ws.chain_enabled,
     };
@@ -978,6 +1020,7 @@ export class Coordinator {
       handoffs:        Array.from(rawValues(ws.handoffs)),
       snapshots:       Array.from(rawValues(ws.snapshots)),
       route_decisions: Array.from(rawValues(ws.route_decisions)),
+      invitations:     Array.from(rawValues(ws.invitations)),
       idempotency_keys: { ...ws.idempotency_keys },
       audit:           ws.audit,
       chain_head,
@@ -1023,8 +1066,10 @@ export class Coordinator {
       routing_policy_uri: w.routing_policy_uri as string | undefined,
       step_up_window_sec: (w.step_up_window_sec as number) ?? 300,
       min_acr: w.min_acr as string | undefined,
-      // A workspace written before the policy existed verified every call.
+      // A workspace written before the policy existed verified every call,
+      // and one written before the join policy existed admitted anyone.
       signature_policy: w.signature_policy === "humans" ? "humans" : "all",
+      join_policy: w.join_policy === "invite" ? "invite" : "open",
       members: this.newMap(),
       tasks: this.newMap(),
       overrides: this.newMap(),
@@ -1033,6 +1078,7 @@ export class Coordinator {
       handoffs: this.newMap(),
       snapshots: this.newMap(),
       route_decisions: this.newMap(),
+      invitations: this.newMap(),
       idempotency_keys: (w.idempotency_keys as Record<string, string>) ?? {},
       audit: (w.audit as AuditEntry[]) ?? [],
       chain_head: w.chain_head as string | undefined,
@@ -1100,6 +1146,7 @@ export class Coordinator {
     }
     for (const x of (w.route_decisions as Array<{ id: string } & Record<string, unknown>>) ?? [])
       ws.route_decisions.set(x.id, x as never);
+    for (const x of (w.invitations as Invitation[]) ?? []) ws.invitations.set(x.uri, x);
     return ws;
   }
 
@@ -1644,6 +1691,7 @@ export class Coordinator {
     this.handlers.set("workspace.create",       p => this.opWorkspaceCreate(p));
     this.handlers.set("workspace.describe",     p => this.opWorkspaceDescribe(p));
     this.handlers.set("workspace.set_profiles", p => this.opWorkspaceSetProfiles(p));
+    this.handlers.set("workspace.invite",       p => this.opWorkspaceInvite(p));
     this.handlers.set("participant.join",       p => this.opParticipantJoin(p));
     this.handlers.set("participant.leave",      p => this.opParticipantLeave(p));
     this.handlers.set("task.create",            p => this.opTaskCreate(p));
@@ -1703,6 +1751,10 @@ export class Coordinator {
     if (policy !== "all" && policy !== "humans") {
       return { error: rpcError(E.PARAMS, "signature_policy must be all or humans") };
     }
+    const joinPolicy = p.join_policy ?? this.options.joinPolicy ?? "open";
+    if (joinPolicy !== "open" && joinPolicy !== "invite") {
+      return { error: rpcError(E.PARAMS, "join_policy must be open or invite") };
+    }
     const id = (p.workspace as string) || this.ids.workspaceId();
     if (this.workspaces.has(id)) return { error: rpcError(E.PARAMS, `workspace already exists: ${id}`) };
     const profiles: string[] = Array.isArray(p.profiles) ? [...(p.profiles as string[])] : [...(this.options.defaultProfiles ?? ["core/1.0", "review/1.0"])];
@@ -1739,6 +1791,7 @@ export class Coordinator {
       step_up_window_sec: (p.step_up_window_sec as number | null | undefined) ?? 300,
       min_acr: (p.min_acr as string | null | undefined) ?? undefined,
       signature_policy: policy,
+      join_policy: joinPolicy,
       members: this.newMap(),
       tasks: this.newMap(),
       overrides: this.newMap(),
@@ -1747,6 +1800,7 @@ export class Coordinator {
       handoffs: this.newMap(),
       snapshots: this.newMap(),
       route_decisions: this.newMap(),
+      invitations: this.newMap(),
       idempotency_keys: {},
       audit: [],
       chain_enabled: chainEnabled,
@@ -1779,6 +1833,7 @@ export class Coordinator {
       max_envelope_bytes: this.options.maxEnvelopeBytes ?? DEFAULT_MAX_ENVELOPE_BYTES,
       step_up_window_sec: ws.step_up_window_sec,
       signature_policy: ws.signature_policy,
+      join_policy: ws.join_policy,
       profiles: ws.profiles,
       members: Array.from(rawValues(ws.members)).map(memberToDict),
       audit_count: ws.audit.length,
@@ -1836,12 +1891,8 @@ export class Coordinator {
     // agent, which the "humans" signature policy lets call unsigned, and
     // still read as a person on the log.
     const type = p.type as string;
-    if (!PARTICIPANT_TYPES.includes(type)) {
-      return { error: rpcError(E.PARAMS, "type must be human, agent, service, group or workspace") };
-    }
-    if (!(p.from as string).startsWith(`${type}:`)) {
-      return { error: rpcError(E.PARAMS, `from must start with "${type}:" for type ${type}`) };
-    }
+    const named = participantError(type, p.from as string, "from");
+    if (named) return named;
     const bad = paramsError(p, [
       ["role", "string"], ["display_name", "string"], ["scopes", "strings"],
       ["capabilities", "object"], ["jwks", "object"], ["jwks.keys", "list"],
@@ -1866,11 +1917,34 @@ export class Coordinator {
     const existing = ws.members.get(uri);
     let tokenVerified = false;
 
-    // SPECIFICATION 6.3: the admin role is granted, never claimed. The first
-    // participant to join may take it. Taken by anyone who asked, it would let
-    // an agent drop the workspace's identity profile or revoke a person's key.
-    if (!existing && p.role === "admin" && !awaitsFirstMember(ws)) {
-      return { error: rpcError(E.NOT_AUTHORISED, "The admin role is granted by an admin") };
+    // SPECIFICATION 6.3: a newcomer joins in the role an admin's invitation
+    // names, else in the role it asks for. The admin role is granted, never
+    // claimed: by an invitation, or to the first member, who is the admin of
+    // a workspace that admits by invitation. Taken by anyone who asked, it
+    // would let an agent drop the workspace's identity profile or revoke a
+    // person's key.
+    const invitation = existing ? undefined : rawInvitation(ws, uri);
+    const asked = typeof p.role === "string" && p.role !== "" ? p.role : undefined;
+    let role = asked ?? "participant";
+    if (!existing) {
+      const first = awaitsFirstMember(ws);
+      if (ws.join_policy === "invite" && !invitation && !(first && ADMIN_TYPES.includes(type))) {
+        return { error: rpcError(E.NOT_AUTHORISED, `${uri} has no invitation to this workspace`) };
+      }
+      if (invitation?.role !== undefined) {
+        if (asked === "admin" && invitation.role !== "admin") {
+          return { error: rpcError(E.NOT_AUTHORISED, "The admin role is granted by an admin") };
+        }
+        role = invitation.role;
+      } else if (first && ws.join_policy === "invite") {
+        if (asked !== undefined && asked !== "admin") {
+          return { error: rpcError(E.PARAMS,
+            "The first member of a workspace that admits by invitation is its admin") };
+        }
+        role = "admin";
+      } else if (asked === "admin" && !first) {
+        return { error: rpcError(E.NOT_AUTHORISED, "The admin role is granted by an admin") };
+      }
     }
 
     // identity-oidc/1.0 and identity-vc/1.0: where a verifier is configured
@@ -1894,7 +1968,7 @@ export class Coordinator {
     const member: Member = {
       uri,
       type: type as Member["type"],
-      role: (p.role as string) || "participant",
+      role,
       joined: now,
       display_name: p.display_name as string | undefined,
       capabilities: p.capabilities as Record<string, unknown> | undefined,
@@ -1902,6 +1976,13 @@ export class Coordinator {
       keys: [],
       paused: false,
     };
+
+    // An invitation that names a token subject admits a join carrying a token
+    // for that subject, which only a configured verifier can check.
+    if (invitation?.oidc_sub !== undefined
+        && (this.options.verifyOidcToken === undefined || typeof p.oidc_token !== "string")) {
+      return { error: rpcError(E.OIDC_TOKEN_INVALID, "An oidc_token is required: the invitation names a token subject") };
+    }
 
     // identity-oidc/1.0
     if (this.options.verifyOidcToken && typeof p.oidc_token === "string") {
@@ -1915,6 +1996,9 @@ export class Coordinator {
       const sub = typeof claims.sub === "string" && claims.sub !== "" ? claims.sub : undefined;
       if (boundUri != null && boundUri !== uri) {
         return { error: rpcError(E.OIDC_CNF_MISMATCH, "OIDC token is bound to another participant") };
+      }
+      if (invitation?.oidc_sub !== undefined && sub !== invitation.oidc_sub) {
+        return { error: rpcError(E.OIDC_CNF_MISMATCH, "OIDC token subject does not match the invitation") };
       }
       if (existing) {
         if (existing.oidc_sub != null) {
@@ -1964,6 +2048,20 @@ export class Coordinator {
       }
     }
 
+    // An invitation that pins keys names the keys the member signs with: the
+    // join's own keys, and a key an identity profile binds, are among them,
+    // and the member holds the pinned keys.
+    const pinned = invitation?.jwks?.keys;
+    if (pinned) {
+      const strays = [...signingKeys(p.jwks), ...member.keys.map((k) => k.jwk as unknown as Record<string, unknown>)]
+        .filter((j) => !pinned.some((k) => sameKey(k as unknown as Record<string, unknown>, j)));
+      if (strays.length) {
+        return { error: rpcError(E.NOT_AUTHORISED, `${uri} joins with keys its invitation does not name`,
+          { kids: [...new Set(strays.map((j) => j.kid))] }) };
+      }
+      member.keys = pinned.map((j) => ({ jwk: j, kid: j.kid, valid_from: now }));
+    }
+
     const attested = [...member.keys];
 
     // Self-asserted JWKs are ignored for an identity-bound participant: the
@@ -2002,7 +2100,81 @@ export class Coordinator {
     }
     if (made) this.addWorkspace(ws);
     ws.members.set(uri, member);
+    if (invitation) ws.invitations.delete(uri);
     return { result: { joined: true, as: uri } };
+  }
+
+  /**
+   * SPECIFICATION 6.3.3: an admin invites a participant. For a URI that is
+   * not a member it records an invitation, which the invitee's join takes
+   * up. For a member that holds no key in force it registers the
+   * invitation's keys: the way back for a member whose keys were all revoked,
+   * or who joined a workspace that requires signatures with none.
+   */
+  private opWorkspaceInvite(p: Record<string, unknown>): ReturnType<Handler> {
+    const miss = missing(p, ["workspace", "from", "uri", "type"]);
+    if (miss) return { error: rpcError(E.PARAMS, `Missing field: ${miss}`) };
+    for (const f of ["uri", "type"]) {
+      if (typeof p[f] !== "string") return { error: rpcError(E.PARAMS, `${f} must be a string`) };
+    }
+    const bad = paramsError(p, [
+      ["role", "string"], ["jwks", "object"], ["jwks.keys", "list"], ["oidc_sub", "string"],
+    ]);
+    if (bad) return bad;
+    const ws = this.workspaces.get(p.workspace as string);
+    if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
+    const notMember = this.requireMember(ws, p.from);
+    if (notMember) return notMember;
+    if (rawMember(ws, p.from)!.role !== "admin") {
+      return { error: rpcError(E.NOT_AUTHORISED, "workspace.invite requires the admin role") };
+    }
+    const uri = p.uri as ParticipantUri;
+    const type = p.type as string;
+    const named = participantError(type, uri, "uri");
+    if (named) return named;
+    const role = typeof p.role === "string" && p.role !== "" ? p.role : undefined;
+    if (role === "admin" && !ADMIN_TYPES.includes(type)) {
+      return { error: rpcError(E.PARAMS, "The admin role is held by a human or a service") };
+    }
+    const sub = typeof p.oidc_sub === "string" ? p.oidc_sub : undefined;
+    if (sub !== undefined && this.options.verifyOidcToken === undefined) {
+      return { error: rpcError(E.PARAMS, "oidc_sub names a token subject, and this Coordinator has no token verifier") };
+    }
+    let pinned: Array<Jwk & Record<string, unknown>> | undefined;
+    if (p.jwks != null) {
+      pinned = signingKeys(p.jwks) as unknown as Array<Jwk & Record<string, unknown>>;
+      if (pinned.length === 0) return { error: rpcError(E.PARAMS, "jwks names no key: each key needs a kid") };
+    }
+    const now = this.now();
+    const member = ws.members.get(uri);
+    if (member) {
+      // A member's keys otherwise change through participant.rotate_key,
+      // which a key it holds signs.
+      if (member.keys.some((k) => inForce(k, now))) {
+        return { error: rpcError(E.PARAMS,
+          `${uri} is a member and holds a key in force; its keys change through participant.rotate_key`) };
+      }
+      if (!pinned) {
+        return { error: rpcError(E.PARAMS, `${uri} is a member; an invitation for a member registers the keys its jwks names`) };
+      }
+      if ((role !== undefined && role !== member.role) || (sub !== undefined && sub !== member.oidc_sub)) {
+        return { error: rpcError(E.PARAMS, `${uri} is a member; an invitation for a member registers keys and changes nothing else`) };
+      }
+      // A kid names one key for good: a signature naming a revoked kid is
+      // refused whatever key holds it now.
+      const reused = pinned.find((j) => member.keys.some((k) => k.kid === j.kid));
+      if (reused) return { error: rpcError(E.PARAMS, `Key ${reused.kid} was ${uri}'s; a new key takes a new kid`) };
+      for (const j of pinned) member.keys.push({ jwk: j, kid: j.kid, valid_from: now });
+      return { result: { invited: true, uri, registered: pinned.map((j) => j.kid) } };
+    }
+    const invitation: Invitation = {
+      uri, type: type as Invitation["type"], invited_by: p.from as ParticipantUri, invited_at: now,
+    };
+    if (role !== undefined) invitation.role = role;
+    if (pinned) invitation.jwks = { keys: pinned };
+    if (sub !== undefined) invitation.oidc_sub = sub;
+    ws.invitations.set(uri, invitation);
+    return { result: { invited: true, uri } };
   }
 
   private opParticipantLeave(p: Record<string, unknown>): ReturnType<Handler> {

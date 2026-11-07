@@ -11,7 +11,7 @@ in the audit log, queryable for free.**
 
 | File                      | What it is                                                            |
 |---------------------------|-----------------------------------------------------------------------|
-| `server.ts`               | Core + Review server. All 13 methods, in-memory state, JSON-RPC 2.0.  |
+| `server.ts`               | Core + Review server: the Core methods, `workspace.create` and `workspace.invite`, and the review methods. In-memory state, JSON-RPC 2.0. |
 | `client.ts`               | Demo: workspace setup → draft → review request → override.            |
 | `analyze-overrides.ts`    | Reads the audit log and produces the learning-data report.            |
 | `patch.test.ts`           | JSON Patch safety: unsafe pointer segments are refused.               |

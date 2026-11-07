@@ -366,6 +366,35 @@ async function runCoreTests(client: HapClient, ws: string): Promise<void> {
     assert(!d.members.some((m: any) => m.uri === "human:mallory@example.org" || m.uri === "agent:admin-bot"),
       "a refused join adds no member");
   });
+
+  await test("Core methods", "cm-15", "a workspace that admits by invitation admits its admin's invitees alone", async () => {
+    const wi = `${ws}-invite`;
+    const call = (method: string, from: string, params: Record<string, unknown> = {}) =>
+      client.call(method, { workspace: wi, from, ts: new Date().toISOString(), ...params });
+    const { result: created } = await call("workspace.create", "human:owner@example.org", { join_policy: "invite" });
+    assertEq(created?.workspace, wi, "the workspace is made");
+    const { error: agent } = await call("participant.join", "agent:early-bot", { type: "agent" });
+    assertEq(agent?.code, -32011, "an agent with no invitation, even before anyone joined");
+    const { result: owner } = await call("participant.join", "human:owner@example.org", { type: "human" });
+    assertEq(owner?.joined, true, "the first member joins");
+    const { error: stranger } = await call("participant.join", "human:guest@example.org", { type: "human" });
+    assertEq(stranger?.code, -32011, "a participant with no invitation");
+    assertEq(stranger?.message, "human:guest@example.org has no invitation to this workspace", "the refusal names the URI");
+    const { result: invited } = await call("workspace.invite", "human:owner@example.org",
+      { uri: "human:guest@example.org", type: "human", role: "reviewer" });
+    assertEq(invited?.invited, true, "the admin invites");
+    const { result: guest } = await call("participant.join", "human:guest@example.org", { type: "human", role: "drafter" });
+    assertEq(guest?.joined, true, "the invitee joins");
+    const { error: notAdmin } = await call("workspace.invite", "human:guest@example.org",
+      { uri: "human:other@example.org", type: "human" });
+    assertEq(notAdmin?.code, -32011, "a member who is not an admin invites");
+    const { result: d } = await client.call("workspace.describe", { workspace: wi });
+    assertEq(d?.join_policy, "invite", "the descriptor names the join policy");
+    const roles = Object.fromEntries(d.members.map((m: any) => [m.uri, m.role]));
+    assertEq(roles["human:owner@example.org"], "admin", "the first member is the admin");
+    assertEq(roles["human:guest@example.org"], "reviewer", "the invitee takes the invitation's role");
+    assert(!("agent:early-bot" in roles), "a refused join adds no member");
+  });
 }
 
 // ============================================================

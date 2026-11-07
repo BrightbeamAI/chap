@@ -335,10 +335,13 @@ keys the member does not hold is refused with `-32011`: a member's keys
 change through `participant.rotate_key` (SPECIFICATION.md §6.3.2).
 
 The `admin` role is granted, never claimed. Only the workspace's first
-member may name it at a join; anyone else naming it is refused with
-`-32011`, "The admin role is granted by an admin". Only a `human` or a
-`service` holds it, and a join naming it with another `type` is refused
-with `-32602` (SPECIFICATION.md §6.3).
+member, or a participant an admin's invitation names as admin, may name it
+at a join; anyone else naming it is refused with `-32011`, "The admin role
+is granted by an admin". Only a `human` or a `service` holds it, and a join
+naming it with another `type` is refused with `-32602` (SPECIFICATION.md
+§6.3). A workspace whose `join_policy` is `"invite"` admits only the
+participants an admin invited with `workspace.invite`, and its first member;
+anyone else is refused with `-32011` (SPECIFICATION.md §6.3.3).
 
 ### 4.3 `participant.leave`
 
