@@ -25,6 +25,7 @@ from chap_ag2 import ChapBridgeError, ChapError, ChapTurnBridge, PersonRequired
 WS = "wsp_ag2_test"
 AGENT = "agent:assistant#v1"
 REVIEWER = "human:alice@example.org"
+ENROL = "TESTS-ENROL"
 
 
 def msg(content, name="assistant"):
@@ -166,6 +167,8 @@ def test_refusals_are_chap_errors_and_every_call_has_an_id_of_its_own(coord):
 def desk(tmp_path, monkeypatch):
     for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS"):
         monkeypatch.delenv(name, raising=False)
+    # A person's first join takes the code the desk server prints at start.
+    monkeypatch.setenv("CHAP_ENROLMENT_CODE", ENROL)
     path = tmp_path / "chap.config.json"
     path.write_text(json.dumps({
         "workspace": WS, "profiles": ["core/1.0", "review/1.0"], "store": ":memory:", "port": 0,
@@ -184,7 +187,8 @@ def desk(tmp_path, monkeypatch):
 
 def test_request_reply_against_a_desk_where_people_sign(desk, tmp_path):
     pytest.importorskip("cryptography")
-    alice = Participant(desk, WS, REVIEWER, Signer.load_or_create(REVIEWER, tmp_path / "keys"))
+    alice = Participant(desk, WS, REVIEWER, Signer.load_or_create(REVIEWER, tmp_path / "keys"),
+                        enrolment=ENROL)
     alice.join("human", "reviewer")
     for coord in (desk, Participant(desk, WS, AGENT)):
         bridge = ChapTurnBridge(coord, workspace=WS, agent=AGENT, reviewer=REVIEWER)
