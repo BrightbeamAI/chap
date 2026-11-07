@@ -5,8 +5,9 @@ not make its author a reviewer of it (review/1.0 S3.1, S3.5).
 The authors of the work under review could end a required review with no
 decision through control.cancel, control.supersede, or control.pause and
 then task.update to cancelled. A person who wrote the work could hand it on
-with escalate.raise or have it superseded, and then approve the successor as
-one of its eligible reviewers; and a later round, resubmitted by someone
+with escalate.raise, task.route or handoff.accept, or have it superseded,
+and then approve the work as one of its eligible reviewers; and a later
+round, resubmitted by someone
 else, dropped the earlier round's authors. A request after an approval named
 the approving reviewer as an author. Mirrors review_successors.test.ts.
 """
@@ -15,7 +16,7 @@ from __future__ import annotations
 from chap_coordinator import Coordinator, CoordinatorOptions
 from chap_coordinator.jsonrpc import E
 
-PROFILES = ["core/1.0", "review/1.0", "control/1.0", "handoff/1.0"]
+PROFILES = ["core/1.0", "review/1.0", "control/1.0", "handoff/1.0", "routing/1.0"]
 ENDS = "The authors of the work under review cannot end its review without a decision"
 AUTHOR_DECIDES = "The author of the work under review cannot decide it"
 
@@ -90,6 +91,25 @@ def test_the_person_who_wrote_the_work_cannot_approve_it_after_escalating_it():
     assert send("decide.approve", actor="human:h", task_id=new_id)["error"] == {
         "code": E.NOT_AUTHORISED, "message": AUTHOR_DECIDES}
     assert _ok(send("decide.approve", actor="human:a", task_id=new_id))["state"] == "completed"
+
+
+def test_the_person_who_held_the_work_cannot_approve_it_after_routing_it_or_handing_it_off():
+    c, send = _ready()
+    routed = _ok(send("task.create", actor="human:a", kind="k", input={}, assignee="human:h",
+                      review_required=True))["task_id"]
+    _ok(send("task.route", actor="human:h", task_id=routed, candidates=["agent:b"]))
+    handed = _ok(send("task.create", actor="human:a", kind="k", input={}, assignee="human:h",
+                      review_required=True))["task_id"]
+    handoff_id = _ok(send("handoff.propose", actor="human:h", to="agent:b",
+                          tasks=[{"task_id": handed, "summary": "yours"}]))["handoff_id"]
+    _ok(send("handoff.accept", handoff_id=handoff_id))
+    for tid in (routed, handed):
+        assert _task(c, tid).prior_authors == ["human:h"]
+        _ok(send("task.complete", task_id=tid, output={"body": "v1"}))
+        assert _task(c, tid).review.authors == ["agent:b", "human:h"]
+        assert send("decide.approve", actor="human:h", task_id=tid)["error"] == {
+            "code": E.NOT_AUTHORISED, "message": AUTHOR_DECIDES}
+        assert _ok(send("decide.approve", actor="human:a", task_id=tid))["state"] == "completed"
 
 
 def test_the_person_who_wrote_the_work_cannot_approve_its_successor_after_a_supersede():

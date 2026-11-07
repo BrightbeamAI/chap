@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..coordinator import _union_of
 from ..jsonrpc import E, rpc_error
 from ..params import lookup, params_error
 from ..types import Handoff, HandoffTask, TaskHistoryEntry
@@ -179,6 +180,10 @@ def register_handoff(coord: "Coordinator") -> None:
         now = coord.now_iso()
         for tid in accepted_ids:
             task = ws.tasks[tid]
+            # The proposer stays among the authors of the work (review/1.0
+            # S3.1), so it cannot hand the work on and then review it.
+            if acceptor != task.assignee:
+                task.prior_authors = _union_of(task.prior_authors or [], [task.assignee])
             task.assignee = acceptor
             task.updated_at = now
             task.history.append(TaskHistoryEntry(

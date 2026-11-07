@@ -79,7 +79,9 @@ out to the group.
 
 On accept, the Coordinator atomically:
 
-1. Updates each accepted task's `assignee` to the accepter.
+1. Updates each accepted task's `assignee` to the accepter, and adds the
+   proposer to the task's `prior_authors`, so it stays among the authors
+   of the work ([`review.md`](./review.md) §3.1).
 2. Records the assignee change in the audit log.
 
 Each accepted task MUST still be assigned to the proposer when the accept

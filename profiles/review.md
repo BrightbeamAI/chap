@@ -138,8 +138,10 @@ round's together with the new artefact's, whoever resubmits it. A task
 `escalate.raise` or `control.supersede` makes carries, as `prior_authors`,
 the authors of the task it replaces: that task's review authors where it
 held a review, and otherwise its assignee and completer, with whatever it
-carried itself. Without this a person who wrote the work could hand it on,
-or have it superseded, and then approve it as a reviewer of the successor.
+carried itself. A task that `task.route` or `handoff.accept` moves to
+another member adds the member it leaves to its `prior_authors`. Without
+this a person who wrote the work could hand it on, or have it superseded,
+and then approve it as one of its reviewers.
 
 A Coordinator MUST refuse with `-32011`, "The author of the work under review
 cannot decide it", a `decide.approve`, `decide.reject`, `decide.override`,

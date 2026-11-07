@@ -620,7 +620,7 @@ export function enrolmentCode(config) {
   let code = null;
   if (config.require_signatures && !config.oidc && config.enrolment !== false && (config.humans ?? []).length > 0) {
     const set = process.env.CHAP_ENROLMENT_CODE?.trim();
-    if (set) code = set;
+    if (set && codeLetters(set)) code = set;
     else {
       const letters = [...randomBytes(10)].map((b) => CODE_LETTERS[b % 32]).join("");
       code = `${letters.slice(0, 5)}-${letters.slice(5)}`;

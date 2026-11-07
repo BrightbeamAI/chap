@@ -29,7 +29,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMain, usage, wantsHelp } from "@brightbeamai/chap-server";
 import { makeProvider, modelName } from "@brightbeamai/chap-server/providers";
-import { agentClient, commitSigning, api, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "@brightbeamai/chap-code-gate/gate";
+import { agentClient, commitSigning, api, deskLink, describeChange, gateEnv, lastDecision, loadGate, propose, reviewersReady, reviewRule, sha256, task as readTask, waitForDecision } from "@brightbeamai/chap-code-gate/gate";
 import { applyToWorkingTree, commitAll, commitsWithApproval, currentBranch, git, head, patchApplies, repoRoot, workingTreePatch } from "@brightbeamai/chap-code-gate/git";
 import { syncOverride } from "@brightbeamai/chap-code-gate/propose";
 
@@ -350,7 +350,7 @@ export async function handleTask({ gate, client, provider, repo, task, log, poll
     const review = reviewRule(gate);
     let ready = await reviewersReady(client, review);
     if (!ready.ok) {
-      log(`${task.key}: drafted, and waiting for reviewers to join (${review.rule} needs ${ready.need}, ${ready.have} so far). Open the desk at ${gate.base}/ and the draft goes in then`);
+      log(`${task.key}: drafted, and waiting for reviewers to join (${review.rule} needs ${ready.need}, ${ready.have} so far). Open the desk at ${await deskLink(gate)} and the draft goes in then`);
       while (!(ready = await reviewersReady(client, review)).ok) await new Promise((r) => setTimeout(r, pollMs));
     }
     const r = await propose(client, artefact, { taskId: id, review });

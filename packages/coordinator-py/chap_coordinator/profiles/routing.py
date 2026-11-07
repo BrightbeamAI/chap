@@ -31,6 +31,7 @@ import json
 import re
 from typing import TYPE_CHECKING
 
+from ..coordinator import _union_of
 from ..jsonrpc import E, rpc_error
 from ..params import is_integer, lookup, params_error
 from ..types import RouteDecisionArtefact, TaskHistoryEntry
@@ -153,7 +154,11 @@ def register_routing(coord: "Coordinator") -> None:
             return {"error": rpc_error(E.CONTROL_WORKSPACE_PAUSED,
                                        f"Assignee {selected} is paused")}
 
-        # Update assignee per spec S3
+        # Update assignee per spec S3. The member the task leaves stays among
+        # the authors of its work (review/1.0 S3.1), so it cannot route the
+        # work on and then review it.
+        if selected != task.assignee:
+            task.prior_authors = _union_of(task.prior_authors or [], [task.assignee])
         task.assignee = selected
         task.updated_at = coord.now_iso()
         task.history.append(TaskHistoryEntry(

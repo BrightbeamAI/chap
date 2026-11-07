@@ -17,7 +17,7 @@
 // so a second run carries on where the first stopped.
 
 import { spawn, spawnSync } from "node:child_process";
-import { access, rm } from "node:fs/promises";
+import { access, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMain, loadConfig, usage, wantsHelp } from "@brightbeamai/chap-server";
@@ -51,8 +51,10 @@ export async function demo({ fresh = false, once = false, log = console.log } = 
     analytics.stderr.on("data", (d) => String(d).split("\n").filter(Boolean).forEach((l) => log(`analytics  ${l}`)));
   }
 
+  // The enrolment code the gate keeps beside its store, for a first join.
+  const code = config.store === ":memory:" ? "" : await readFile(join(dirname(config.store), "enrolment-code"), "utf8").then((s) => s.trim(), () => "");
   log("");
-  log(`  Open the desk at ${base}/`);
+  log(`  Open the desk at ${base}/${code ? `#enrol=${code}` : ""}`);
   log(`  The agent works in ${repo} on the branch agent/demo.`);
   log(`  Every change it wants to commit waits for you there as a diff.`);
   log(analytics ? "  chap-analytics writes its pages every minute; the desk's Insights view links them." : "  pip install chap-analytics to have its report and refinement page in the desk's Insights view.");

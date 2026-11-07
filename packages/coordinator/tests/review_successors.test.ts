@@ -5,8 +5,9 @@
  * The authors of the work under review could end a required review with no
  * decision through control.cancel, control.supersede, or control.pause and
  * then task.update to cancelled. A person who wrote the work could hand it
- * on with escalate.raise or have it superseded, and then approve the
- * successor as one of its eligible reviewers; and a later round, resubmitted
+ * on with escalate.raise, task.route or handoff.accept, or have it
+ * superseded, and then approve the work as one of its eligible reviewers;
+ * and a later round, resubmitted
  * by someone else, dropped the earlier round's authors. A request after an
  * approval named the approving reviewer as an author. Mirrors
  * packages/coordinator-py/tests/test_review_successors.py.
@@ -16,7 +17,7 @@ import assert from "node:assert/strict";
 import { Coordinator } from "../src/coordinator.js";
 import { E } from "../src/jsonrpc.js";
 
-const PROFILES = ["core/1.0", "review/1.0", "control/1.0", "handoff/1.0"];
+const PROFILES = ["core/1.0", "review/1.0", "control/1.0", "handoff/1.0", "routing/1.0"];
 
 function ready() {
   const c = new Coordinator({ defaultProfiles: PROFILES, deterministicIds: true, deterministicClock: true });
@@ -80,6 +81,23 @@ test("the person who wrote the work cannot approve it after escalating it", () =
   assert.deepEqual(send("decide.approve", { task_id: new_task_id }, "human:h").error,
                    { code: E.NOT_AUTHORISED, message: AUTHOR_DECIDES });
   assert.equal(ok(send("decide.approve", { task_id: new_task_id }, "human:a")).state, "completed");
+});
+
+test("the person who held the work cannot approve it after routing it or handing it off", () => {
+  const { c, send } = ready();
+  const routed = ok(send("task.create", { kind: "k", input: {}, assignee: "human:h", review_required: true }, "human:a")).task_id;
+  ok(send("task.route", { task_id: routed, candidates: ["agent:b"] }, "human:h"));
+  const handed = ok(send("task.create", { kind: "k", input: {}, assignee: "human:h", review_required: true }, "human:a")).task_id;
+  const { handoff_id } = ok(send("handoff.propose", { to: "agent:b", tasks: [{ task_id: handed, summary: "yours" }] }, "human:h"));
+  ok(send("handoff.accept", { handoff_id }));
+  for (const id of [routed, handed]) {
+    assert.deepEqual(task(c, id).prior_authors, ["human:h"]);
+    ok(send("task.complete", { task_id: id, output: { body: "v1" } }));
+    assert.deepEqual(task(c, id).review!.authors, ["agent:b", "human:h"]);
+    assert.deepEqual(send("decide.approve", { task_id: id }, "human:h").error,
+                     { code: E.NOT_AUTHORISED, message: AUTHOR_DECIDES });
+    assert.equal(ok(send("decide.approve", { task_id: id }, "human:a")).state, "completed");
+  }
 });
 
 test("the person who wrote the work cannot approve its successor after a supersede", () => {

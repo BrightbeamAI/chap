@@ -654,7 +654,7 @@ def enrolment_code(config: dict) -> Optional[str]:
         if (config.get("require_signatures") and not config.get("oidc")
                 and config.get("enrolment") is not False and config.get("humans")):
             code = (os.environ.get("CHAP_ENROLMENT_CODE") or "").strip() or None
-            if code is None:
+            if code is None or not _code_letters(code):
                 letters = "".join(_CODE_LETTERS[b % 32] for b in secrets.token_bytes(10))
                 code = f"{letters[:5]}-{letters[5:]}"
         config["_enrolment_code"] = code

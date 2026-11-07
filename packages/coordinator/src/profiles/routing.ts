@@ -14,6 +14,7 @@
  *   -32516 escalation target unavailable
  */
 import type { Coordinator } from "../coordinator.js";
+import { unionOf } from "../coordinator.js";
 import { E, rpcError } from "../jsonrpc.js";
 import { paramsError } from "../params.js";
 import type { RouteDecisionArtefact, Task } from "../types.js";
@@ -114,6 +115,9 @@ export function registerRouting(coord: Coordinator): void {
     if (ws.members.get(selected)!.paused) {
       return { error: rpcError(E.CONTROL_WORKSPACE_PAUSED, `Assignee ${selected} is paused`) };
     }
+    // The member the task leaves stays among the authors of its work
+    // (review/1.0 §3.1), so it cannot route the work on and then review it.
+    if (selected !== task.assignee) task.prior_authors = unionOf(task.prior_authors ?? [], [task.assignee]);
     task.assignee = selected;
     task.updated_at = coord.now();
     task.history.push({ ts: task.updated_at, from: "service:coordinator",
