@@ -1,16 +1,15 @@
 # chap-pydantic-ai
 
-Adapter between [Pydantic AI](https://ai.pydantic.dev) and the CHAP
-Coordinator. When a run pauses for tool approval, the adapter puts the
-proposed call in front of a person and waits for their decision, or
-records a decision your own code made. Either way the decision (approve,
-edit the arguments, or deny) becomes a hash-linked, replayable CHAP audit
-entry.
+Bridge between [Pydantic AI](https://ai.pydantic.dev) and the CHAP
+Coordinator. When a run pauses for tool approval, the bridge puts each
+proposed call in front of a person as a CHAP review, waits for their
+decision, made at a CHAP desk, and hands Pydantic AI the results that carry
+it out: the call as proposed, the call with the person's arguments, or
+nothing. Every step is a hash-linked entry on the workspace's audit log.
 
-The proposed tool call (tool name, validated args, `tool_call_id`) is
-the artefact under review; the resolution is the human's decision on it.
-An edited argument is recorded as an RFC 6902 diff, so the chain records
-what changed and why, beside the approval or denial.
+The proposed call, its tool name, arguments and `tool_call_id`, is the
+artefact under review. An edit of the arguments is an RFC 6902 patch on the
+log, so the chain records what changed and why.
 
 ## Install
 
@@ -28,14 +27,17 @@ pip install "chap-pydantic-ai[pydantic-ai]"
 
 ## Quick start
 
-Pydantic AI surfaces human-in-the-loop through deferred tools. A tool
-marked `requires_approval=True` ends the run with a `DeferredToolRequests`
-output; you resolve each pending call into a `DeferredToolResults` and
-feed it back via `deferred_tool_results=`. This runs offline: `TestModel`
-proposes the call, and your code resolves it.
+A tool marked `requires_approval=True` ends the run with a
+`DeferredToolRequests` output. `request_results` opens a review of each
+pending call and waits for the person's decisions; the run resumes with
+the `DeferredToolResults` it returns. This runs offline: `TestModel`
+proposes the call, and a thread stands in for Alice at her desk.
 
 ```python
-from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults, ToolApproved
+import threading
+import time
+
+from pydantic_ai import Agent, DeferredToolRequests
 from pydantic_ai.models.test import TestModel
 
 from chap_coordinator import Coordinator
@@ -57,112 +59,139 @@ bridge = ChapApprovalBridge(
     reviewer="human:alice@example.org",
 )
 
+
+def alice_at_her_desk() -> None:
+    """What a CHAP desk does for Alice: it shows her each call put to her,
+    and she decides it in her own name. Here she caps the amount."""
+    def call(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": method, "method": method, "params": {
+            "workspace": "wsp_payments", "from": "human:alice@example.org", **params}})
+
+    while not (submitted := call("audit.read", filter={"method": "task.complete"})["result"]["entries"]):
+        time.sleep(0.1)
+    review = submitted[0]["envelope"]["params"]
+    print("Alice is shown:", review["output"])
+    call("decide.override", task_id=review["task_id"], rationale="over the desk limit",
+         diff=[{"op": "replace", "path": "/args/amount", "value": 50}])
+
+
+threading.Thread(target=alice_at_her_desk).start()
 result = agent.run_sync("pay the invoice")
-requests = result.output
-
-# Your code resolves each pending approval: here, a capped amount.
-results = DeferredToolResults()
-call = requests.approvals[0]
-results.approvals[call.tool_call_id] = ToolApproved(
-    override_args={**call.args_as_dict(), "amount": 50},
-)
-
-# Record the decision, then let the agent finish.
-bridge.record_results(requests, results)
-result = agent.run_sync(
-    "pay the invoice",
-    message_history=result.all_messages(),
-    deferred_tool_results=results,
-)
+results = bridge.request_results(result.output)
+result = agent.run_sync("pay the invoice", message_history=result.all_messages(),
+                        deferred_tool_results=results)
 print(result.output)
-print([e["envelope"]["method"] for e in bridge.audit()])
 ```
 
-## Two ways to decide
-
-**`request_results(requests)` puts the call in front of a person.** It
-opens a review of each pending call, waits for the decisions, and returns
-the `DeferredToolResults` that carry them out:
+## What the person's decision does
 
 ```
-CHAP decision                     Pydantic AI resolution
----------------------------       ------------------------
-decide.approve                    ToolApproved()
-decide.override (the args)        ToolApproved(override_args=...)
-decide.reject, or no approval     ToolDenied(message=...)
+CHAP decision                        Pydantic AI resolution
+---------------------------------    ---------------------------------
+decide.approve                       ToolApproved()
+decide.override of the arguments     ToolApproved(override_args=...)
+anything else, or no decision        ToolDenied(message=...)
 ```
 
 Each call is reviewed on its own task, one that requires review, so only a
-person's decision completes it, and the person decides at a CHAP desk with
-their own key. An edit reaches the tool as `override_args`. A denial
-carries the reviewer's note to the model. An edit to anything other than
-the arguments, such as the tool name, is denied, because the run cannot
-apply it. Each result's metadata holds the CHAP task id and the reviewer,
-which the tool reads as `ctx.tool_call_metadata`.
+person's decision completes it. The run carries out exactly what was
+decided, or nothing:
 
-The reviews all open before the first wait, so the reviewer sees them
-together. The bridge reads each task every two seconds (`poll_seconds`)
-for as long as the reviewer takes, or until `timeout` seconds, when it
-raises `TimeoutError` and the reviews stay open. In async code, run it in a
-thread: `await asyncio.to_thread(bridge.request_results, requests)`.
+- an approval runs the call as proposed, and an override runs it with the
+  person's arguments, which Pydantic AI checks against the tool as it
+  checks the model's: arguments the tool cannot take run nothing, and the
+  model is told why;
+- a rejection denies the call, with the person's note as the message the
+  model reads;
+- an edit to anything but the arguments, such as the tool name, or one
+  that takes the arguments away, is denied: the run cannot carry it out;
+- a call sent back for another, a revision, is denied with the person's
+  note, and its task is declined: the model's next call is reviewed on a
+  task of its own.
 
-**`record_results(requests, results)` records a decision your own code
-made**, as in the quick start:
+Each result's metadata names the CHAP task, the reviewer and the
+`outcome` (approve, override, revise, reject, abstain, another ending, or
+`no decision`), and the tool reads it as `ctx.tool_call_metadata`. The
+reviews all open before the first wait, so the person sees them together.
+The review is addressed to every person in the workspace.
 
+## Waiting, timeouts and async code
+
+The bridge reads each task every two seconds (`poll_seconds`) for as long
+as the reviewer takes, or until `timeout` seconds have passed. A call
+nobody decided in time is denied, with a message saying so, and its review
+is withdrawn, so no decision lands later on a call that never ran; calls
+decided in time run as decided. Interrupted, the bridge withdraws every
+review still open before the interrupt propagates.
+
+In async code, await `request_results_async`:
+
+```python
+results = await bridge.request_results_async(result.output, timeout=600)
 ```
-Pydantic AI resolution            CHAP envelope
-------------------------          ---------------------------
-True / ToolApproved()             decide.approve
-ToolApproved(override_args=...)   decide.override   (diff of the args)
-False / ToolDenied(message=...)   decide.reject
-```
 
-It writes the agent's request and the decision together: `task.create`,
-`task.complete` and `review.request` from the agent, then the `decide.*`
-call in the reviewer's name. The chain holds what your code passed and
-nothing more: no signature from the reviewer, no sign that they saw the
-call, and no time between the request and the decision. Use it where your
-own interface is where people decide; use `request_results` to have the
-decision made in CHAP.
+It never holds up the event loop, and cancelling the awaiting task, as
+`asyncio.wait_for` does on its timeout, withdraws the reviews still open.
 
-## Request and wait over HTTP
+## At a desk, over HTTP
 
-With a desk from `create-chap-app`, the coordinator runs in the desk
-process. The templates' `chap_client.py` reaches it: `HttpCoordinator`
-answers `dispatch` and `Participant` reads a task with `task(task_id)`,
-which the bridge takes as `client` (a coordinator client with
-`task(task_id)` of its own needs none). In a project made with the
-support-desk template, with `python desk.py` running:
+A desk such as `chap-coordinator serve`, or a project from
+`create-chap-app --template support-desk`, keeps the coordinator in its own
+process. The bridge reaches it with `chap_coordinator.client`; with
+`python desk.py` running in a support-desk project:
 
 ```python
 import json
 
-from chap_client import HttpCoordinator, Participant
+from chap_coordinator.client import HttpCoordinator, Participant
 from chap_pydantic_ai import ChapApprovalBridge
 
 config = json.load(open("chap.config.json"))
-coord = HttpCoordinator(f"http://127.0.0.1:{config['port']}/chap")
 agent_uri = config["agent"]["uri"]
+http = HttpCoordinator(f"http://127.0.0.1:{config['port']}/chap")
 bridge = ChapApprovalBridge(
-    coord,
+    Participant(http, config["workspace"], agent_uri),
     workspace=config["workspace"],
     agent=agent_uri,
     reviewer=config["humans"][0]["uri"],
-    client=Participant(coord, config["workspace"], agent_uri),
 )
 results = bridge.request_results(requests)   # the reviews open in the desk
 ```
 
-The bridge joins the agent when it is made and joins nobody else, so the
-person joins at the desk with their own key. The agent's calls are
-unsigned, so a desk that requires signatures has to accept them from
-agents, as the signature policy `"humans"` does.
+The bridge joins the agent first, takes the desk's workspace as it is, and
+reads each task with the desk's `GET /api/tasks/<id>`. Under the
+template's `"require_signatures": "humans"` the agent calls unsigned and
+each person signs at the desk. Where every call is signed, give the
+`Participant` the agent's key, `Signer.load_or_create(agent_uri, "keys")`.
+Where people sign, the bridge joins nobody in a person's name and records
+no decision for them: the reviews open once a person has joined from the
+desk, and each decision is theirs, signed with their own key.
 
-## Recorded decisions
+## Recording a decision made elsewhere
 
-`record_results` walks `requests.approvals`, pairs each with its entry in
-`results.approvals`, and records one CHAP decision per call. The reviewer
-identity, rationale, tags, and the refine-vs-replace signal ride in
+Where people decide in your own interface, `record_results(requests,
+results)` records the resolutions your code made, one CHAP decision per
+call, in the reviewer's name:
+
+```
+Pydantic AI resolution               CHAP envelope
+---------------------------------    ---------------------------------
+True / ToolApproved()                decide.approve
+ToolApproved(override_args=...)      decide.override (a diff of the args)
+False / ToolDenied(message=...)      decide.reject
+```
+
+It writes the agent's `task.create` and `task.complete`, then the
+`decide.*` call in the reviewer's name. The coordinator holds that call and
+nothing more: no signature from the person, and no sign that they saw
+anything but what your code says. So each recorded decision carries
+`via: "bridge-record"`, which the log keeps and chap-analytics reads, and
+`approved_artefact_digest`, the digest of the call as proposed. Record the
+same results the run resumes with, so what is recorded is what runs. Where
+people sign, nothing is recorded: `record_results` raises
+`PersonRequired`, and they decide at the desk through `request_results`.
+
+The approver, rationale, tags and the refine-or-replace signal ride in
 `results.metadata[tool_call_id]`:
 
 ```python
@@ -170,62 +199,56 @@ results.metadata = {call.tool_call_id: {
     "approver":         "human:sam@example.org",
     "rationale":        "over the desk limit; capped to 50",
     "tags":             ["limit-exceeded"],
-    "intent_preserved": True,   # same decision, smaller amount
+    "intent_preserved": True,   # the same decision, a smaller amount
 }}
 ```
 
-To record a single decision directly, skip `record_results` and call
-`record_decision(call, resolution, **signal)`.
-
-Editing arguments defaults to a refining override (`intent_preserved=true`):
-the human kept the decision and changed the inputs. Sometimes an edit is a
-different decision in disguise, so the reviewer can set `intent_preserved`
-explicitly through the metadata channel and the adapter records what they
-say.
-
-## Approver identity
-
-A decision record is only useful if it names who decided. CHAP has no
-ambient actor: the decider is whatever `from` the envelope carries. The
-bridge records in its `reviewer`'s name by default, and a per-decision
-`approver` (set on the call or in `results.metadata`) overrides it. The
-adapter joins whoever it records for before the first decision in their
-name, with the participant type taken from the URI scheme.
+`record_decision(call, resolution, **signal)` records one. An edit of the
+arguments is a refining override (`intent_preserved=true`) by default: the
+person kept the decision and changed its inputs. An edit that is a
+different decision in disguise says so with `intent_preserved=False`. The
+approver is a person, a `human:` URI; the bridge's `reviewer` by default.
 
 ## What you get in the audit chain
 
-The quick start yields the following, with every entry carrying
-`prev_hash`:
+The quick start yields the following, every entry carrying `prev_hash`:
 
 ```
 seq=0  workspace.create
 seq=1  participant.join  agent:assistant#v1
 seq=2  participant.join  human:alice@example.org
-seq=3  task.create       agent:assistant#v1
-seq=4  task.complete     agent:assistant#v1
-seq=5  review.request    agent:assistant#v1    to=human:alice@example.org
-seq=6  decide.override   human:alice@example.org  diff=[{op:replace, path:/args/amount, value:50}]
+seq=3  task.create       agent:assistant#v1   kind=transfer  review_required=true
+seq=4  task.complete     agent:assistant#v1   the call; opens the review
+seq=5  decide.override   human:alice@example.org  diff=[{op:replace, path:/args/amount, value:50}]
 ```
 
-With `request_results`, the agent writes `task.create` (with
-`review_required`) and `review.request`, and the person's decision follows
-from the desk, whenever they make it. The chain verifies externally or
-anchors to a SCITT transparency service with the `audit-scitt/1.0`
-profile.
+The chain verifies externally, or anchors to a SCITT transparency service
+with the `audit-scitt/1.0` profile.
 
 ## Upgrading from 0.3.4
 
-The bridge no longer joins the reviewer when it is made. It joins them
-before the first decision it records in their name, so a reviewer who
-decides at a desk joins there with their own key.
+- Lead with the desk: `request_results` opens the reviews and waits for
+  the person's decisions, as the quick start shows. `record_results` is the
+  recording mode above, refused where people sign.
+- A recorded decision opens its review on a task that requires one, with
+  `task.create` then `task.complete`, and no `review.request`; it carries
+  `via: "bridge-record"` and the call's digest. The approver must be a
+  person, a `human:` URI.
+- The bridge joins the agent when it is made. Where nobody signs, the
+  reviewer joins when the first review opens; where people sign, the
+  bridge joins no person.
+- A refusal raises `chap_coordinator.client.ChapError`, exported here as
+  `ChapError`; `ChapBridgeError` names the same class. Its message reads
+  `<method>: <message> (<code>)`.
 
 ## Example
 
 `examples/01-approve-edit-deny.py` drives one approval-gated tool through
-all three decisions using Pydantic AI's `TestModel` (offline, no API key)
-and prints the resulting chain. `tests/test_agent.py` runs
-`request_results` with a real agent and a reviewer deciding at an
-in-process desk.
+a desk's decisions, an approval, two edits and a denial, using Pydantic
+AI's `TestModel` (offline, no API key), then records a decision made in the
+script's own interface, and prints the chain. `tests/test_agent.py` runs
+`request_results` with a real agent, against an in-process desk and a desk
+server where people sign.
 
 ## Compatibility
 
