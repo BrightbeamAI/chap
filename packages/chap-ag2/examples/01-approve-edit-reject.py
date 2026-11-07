@@ -1,20 +1,23 @@
 """
-Example: approve, edit, and reject an AG2 (AutoGen) agent's messages at
-the human-input turn, and read the CHAP audit chain that results.
+Example: an AG2 (AutoGen) agent's messages, decided at a CHAP desk at the
+human-input turn, and the CHAP audit chain that results.
 
 Run (needs the optional AG2 extra):
     pip install -e ".[ag2]"
     python3 examples/01-approve-edit-reject.py
 
-The assistant runs without an LLM (a fixed draft). A UserProxyAgent
-records each human turn through the bridge from inside get_human_input,
-where both the message under review and the reply are available, on a
-hash-linked chain. The decision is scripted here, standing in for a UI
-that captures the human's intent: AG2's reply text alone can't tell an
-edit from plain dialogue.
+The assistant runs without an LLM, answering each turn with a draft. A
+UserProxyAgent asks the bridge for the human's reply from inside
+get_human_input, and the bridge opens a review of the message and waits.
+Sam decides at a desk that shares the coordinator, where a thread stands in
+for the desk: an approval, an edit, a revision, and a rejection, which ends
+the chat. Last, a turn taken in this script's own interface is recorded in
+Sam's name, marked as recorded.
 """
 
 import sys
+import threading
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -23,61 +26,57 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "coordinator-py"))
 from autogen import ConversableAgent, UserProxyAgent
 
 from chap_coordinator import Coordinator
-from chap_ag2 import ChapTurnBridge
+from chap_ag2 import ChapTurnBridge, ReviewRejected
 
+WORKSPACE = "wsp_support"
+SAM = "human:sam@example.org"
 
-TURNS = [
-    {"reply": "", "decision": None},                     # empty -> approve
-    # Refining edit: same decision, smaller amount -> intent_preserved true.
-    {"reply": "refund $50 to Alice", "decision": "override",
-     "approver": "human:sam@example.org",
-     "rationale": "over the desk limit; capped to 50", "tags": ["limit-exceeded"]},
-    # Substituting edit: escalate instead of refunding, a different
-    # decision, so intent_preserved is false.
-    {"reply": "escalate to a supervisor instead of refunding", "decision": "override",
-     "approver": "human:sam@example.org",
-     "rationale": "not a refund call; escalating", "tags": ["substituted"],
-     "intent_preserved": False},
-    {"reply": "recipient is not on the allow-list", "decision": "reject"},
-    {"reply": "exit", "decision": None},                 # records nothing
+coord = Coordinator(enable_chain=True)
+bridge = ChapTurnBridge(coord, workspace=WORKSPACE, agent="agent:assistant#v1", reviewer=SAM)
+DECISIONS = [
+    ("decide.approve", {"comment": "fine"}),
+    ("decide.override", {"rationale": "over the desk limit; capped to 50", "tags": ["limit-exceeded"],
+                         "diff": [{"op": "replace", "path": "", "value": "Draft: refund $50 to Alice."}]}),
+    ("decide.reject", {"comment": "ask for the order number first", "request_revision": True}),
+    ("decide.reject", {"comment": "recipient is not on the allow-list"}),
 ]
 
 
-def build_user(bridge: ChapTurnBridge) -> UserProxyAgent:
-    script = list(TURNS)
+def sams_desk() -> None:
+    """Sam's desk: it decides each review in turn, in Sam's name."""
+    def call(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": f"desk-{method}", "method": method,
+                               "params": {"workspace": WORKSPACE, "from": SAM, **params}})
 
-    class RecordingUser(UserProxyAgent):
-        def get_human_input(self, prompt, **kw):
-            turn = script.pop(0) if script else {"reply": "exit", "decision": None}
-            bridge.record_turn(
-                self.last_message(), turn["reply"],
-                decision=turn.get("decision"),
-                approver=turn.get("approver"),
-                rationale=turn.get("rationale"),
-                tags=turn.get("tags"),
-                intent_preserved=turn.get("intent_preserved"),
-            )
-            return turn["reply"]
+    for done, (method, params) in enumerate(DECISIONS):
+        while len(submitted := call("audit.read", filter={"method": "task.complete"})["result"]["entries"]) <= done:
+            time.sleep(0.02)
+        review = submitted[done]["envelope"]["params"]
+        print(f"  Sam sees {review['output']!r} and decides {method}")
+        call(method, task_id=review["task_id"], **params)
 
-    return RecordingUser("user", human_input_mode="ALWAYS",
-                         code_execution_config=False, default_auto_reply="")
+
+class ReviewedUser(UserProxyAgent):
+    def get_human_input(self, prompt, **kw):
+        reply = bridge.request_reply(self.last_message(), poll_seconds=0.05)
+        print(f"  the reply to AG2 is {reply!r}")
+        return reply
 
 
 def main() -> None:
-    coord = Coordinator(enable_chain=True)
-    bridge = ChapTurnBridge(
-        coord,
-        workspace="wsp_support",
-        agent="agent:assistant#v1",
-        reviewer="human:alice@example.org",
-    )
+    desk = threading.Thread(target=sams_desk)
+    desk.start()
+    assistant = ConversableAgent("assistant", llm_config=False, default_auto_reply="Draft: refund $100 to Alice.")
+    user = ReviewedUser("user", human_input_mode="ALWAYS", code_execution_config=False, default_auto_reply="")
+    try:
+        user.initiate_chat(assistant, message="please draft a refund", max_turns=10, silent=True)
+    except ReviewRejected as rejected:
+        print(f"  the chat ends: {rejected}")
+    desk.join()
 
-    assistant = ConversableAgent(
-        "assistant", llm_config=False,
-        default_auto_reply="Draft: refund $100 to Alice.",
-    )
-    user = build_user(bridge)
-    user.initiate_chat(assistant, message="please draft a refund", max_turns=6)
+    # A turn taken in this script's own interface, recorded in Sam's name.
+    bridge.record_turn({"content": "Draft: refund $20 to Bob."}, "", rationale="approved on the phone")
+    print("  recorded: approved on the phone")
 
     print("\nAudit chain")
     print("===========")
@@ -85,18 +84,20 @@ def main() -> None:
         # A refused call is recorded under "request", with its outcome.
         env = entry.get("envelope") or entry["request"]
         params = env.get("params", {})
-        who = params.get("from", "")
         detail = ""
         if "outcome" in entry:
             detail = f"  refused {entry['outcome']['code']}"
         elif env["method"] == "decide.override":
-            detail = (f"  intent_preserved={params['intent_preserved']}"
-                      f" diff={params['diff']} tags={params['tags']}")
+            detail = f"  diff={params['diff']}"
         elif env["method"] in ("decide.approve", "decide.reject"):
             detail = f"  {params.get('comment', '')}"
-        print(f"  seq={entry['seq']:<2} {env['method']:<16} {who}{detail}")
+        elif env["method"] == "task.update":
+            detail = f"  {params['state']}: {params.get('progress_note', '')}"
+        if params.get("via"):
+            detail += f"  via={params['via']}"
+        print(f"  seq={entry['seq']:<2} {env['method']:<16} {params.get('from', '')}{detail}")
     verified = coord.dispatch({"jsonrpc": "2.0", "id": "v", "method": "audit.verify_chain",
-                               "params": {"workspace": "wsp_support"}})
+                               "params": {"workspace": WORKSPACE}})
     print(f"\nChain verified: {verified['result']['ok']}")
 
 

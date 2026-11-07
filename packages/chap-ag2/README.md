@@ -1,13 +1,12 @@
 # chap-ag2
 
-Adapter between [AG2](https://github.com/ag2ai/ag2) (AutoGen) and the CHAP
-Coordinator. At an AG2 human-input turn, the adapter puts the agent's
-message in front of a person and waits for their decision, or records a
-decision your own code took. Either way the decision (approve, edit, or
-reject) becomes a hash-linked, replayable CHAP audit entry.
-
-The agent message the human is responding to is the artefact under
-review; the human's reply is the decision on it.
+Bridge between [AG2](https://github.com/ag2ai/ag2) (AutoGen) and the CHAP
+Coordinator. At an AG2 human-input turn, the bridge puts the agent's
+message, its text and the tool calls it would make, in front of a person as
+a CHAP review, waits for their decision, made at a CHAP desk, and gives AG2
+the reply that carries it out. With AG2 1.x, a tool middleware puts each
+call of a tool in front of a person the same way. Every step is a
+hash-linked entry on the workspace's audit log.
 
 ## Install
 
@@ -15,18 +14,20 @@ review; the human's reply is the decision on it.
 pip install chap-ag2
 ```
 
-Depends on `chap-coordinator>=0.3.4`. AG2 is **optional**: the adapter
-reads the message and reply as plain values, so the bridge and its tests
-work without it installed. Install the extra to run a live conversation:
+Depends on `chap-coordinator>=0.3.4`. AG2 is optional: the bridge reads
+messages and replies as plain values. Install the extra to run a live
+conversation:
 
 ```bash
 pip install "chap-ag2[ag2]"
 ```
 
-The extra installs AG2 0.x. AG2 1.0 replaced the `autogen` package and
-its `get_human_input` hook, where the quick start connects, so the extra
-asks for `ag2>=0.9,<1`. With AG2 1.x, install it yourself and gate tools
-with `tool_approval`, below:
+The extra installs AG2 0.x, whose `autogen` package asks for human input
+through `get_human_input`, where `request_reply` works; it asks for
+`ag2>=0.9,<1`. AG2 1.0 replaced that package: it asks a person through its
+own hook (`ag2.hitl`), and its `approval_required()` tool middleware asks a
+yes or no through that hook. With AG2 1.x, install it yourself and gate
+tools with `tool_approval`, below:
 
 ```bash
 pip install chap-ag2 "ag2>=1.2,<2"
@@ -34,12 +35,16 @@ pip install chap-ag2 "ag2>=1.2,<2"
 
 ## Quick start
 
-The message under review and the reply meet inside `get_human_input`, so
-that is where the adapter works. `self.last_message()` gives the message;
-the return value is the reply. This runs offline: the assistant answers
-with a fixed draft, and your code takes the reviewer's reply.
+The message under review and the reply meet inside `get_human_input`:
+`self.last_message()` is the agent's message, and the return value is the
+human's reply. `request_reply` opens a review of the message and waits for
+the person's decision. This runs offline: the assistant answers with a
+fixed draft, and a thread stands in for Alice at her desk.
 
 ```python
+import threading
+import time
+
 from autogen import ConversableAgent, UserProxyAgent
 
 from chap_coordinator import Coordinator
@@ -50,81 +55,102 @@ bridge = ChapTurnBridge(coord, workspace="wsp_support",
                         agent="agent:assistant#v1", reviewer="human:alice@example.org")
 
 
-def capture_from_ui(prompt):
-    """Your interface supplies the reply and the intent behind it."""
-    return "refund $50 to Alice", "override"
-
-
-class RecordingUser(UserProxyAgent):
-    def get_human_input(self, prompt, **kw):
-        reply, decision = capture_from_ui(prompt)
-        bridge.record_turn(self.last_message(), reply, decision=decision)
-        return reply
-
-
-assistant = ConversableAgent("assistant", llm_config=False,
-                             default_auto_reply="Draft: refund $100 to Alice.")
-user = RecordingUser("user", human_input_mode="ALWAYS", code_execution_config=False)
-user.initiate_chat(assistant, message="please draft a refund", max_turns=2)
-print([e["envelope"]["method"] for e in bridge.audit()])
-```
-
-## Two ways to decide
-
-**`bridge.request_reply(message)` puts the message in front of a
-person.** Call it in `get_human_input`:
-
-```python
 class ReviewedUser(UserProxyAgent):
     def get_human_input(self, prompt, **kw):
         return bridge.request_reply(self.last_message())
+
+
+def alice_at_her_desk() -> None:
+    """What a CHAP desk does for Alice: it shows her the message put to her,
+    and she decides it in her own name. Here she lowers the refund."""
+    def call(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": method, "method": method, "params": {
+            "workspace": "wsp_support", "from": "human:alice@example.org", **params}})
+
+    while not (submitted := call("audit.read", filter={"method": "task.complete"})["result"]["entries"]):
+        time.sleep(0.1)
+    review = submitted[0]["envelope"]["params"]
+    print("Alice is shown:", review["output"])
+    call("decide.override", task_id=review["task_id"], rationale="over the desk limit",
+         diff=[{"op": "replace", "path": "", "value": "Draft: refund $50 to Alice."}])
+
+
+threading.Thread(target=alice_at_her_desk).start()
+assistant = ConversableAgent("assistant", llm_config=False,
+                             default_auto_reply="Draft: refund $100 to Alice.")
+user = ReviewedUser("user", human_input_mode="ALWAYS", code_execution_config=False)
+result = user.initiate_chat(assistant, message="please draft a refund", max_turns=2, silent=True)
+print([message["content"] for message in result.chat_history])
 ```
 
-It opens a review of the message on a task that requires review, so only
-a person's decision completes it, and the person decides at a CHAP desk
-with their own key. It waits for the decision and returns the reply that
-carries it out:
+## What the person's decision does
+
+The message is reviewed whole: its text, and every tool or function call
+it would make, with their arguments. A message with neither is refused with
+`ValueError`, since nobody can approve what they were not shown. The review
+is on a task that requires review, so only a person's decision completes
+it. The reply carries the decision out:
 
 ```
-CHAP decision                         reply to AG2
----------------------------           -----------------------------
-decide.approve                        "" (the chat carries on)
-decide.override                       the reviewer's version
-decide.reject, asking for a revision  the reviewer's note
-any other ending                      raises ReviewRejected
+CHAP decision                          reply to AG2
+-----------------------------------    ---------------------------------
+decide.approve                         "" (AG2 carries on: it runs the
+                                       message's tool calls as proposed)
+decide.override of a text message      the person's version
+decide.override of a tool call         a reply that refuses the call and
+                                       gives the person's version of it
+decide.reject, asking for another      the person's note
+any other ending                       raises ReviewRejected
 ```
 
-A rejection raises `ReviewRejected` from `get_human_input`, which ends the
-chat, so a message the person rejected is never taken for an approved one.
-The bridge reads the task every two seconds (`poll_seconds`) for as long as
-the reviewer takes, or until `timeout` seconds, when it raises
-`TimeoutError`. In an async chat, call it from `a_get_human_input` through
-`await asyncio.to_thread(bridge.request_reply, self.last_message())`.
+AG2 0.x runs a tool call only with the arguments the model wrote, and a
+non-empty human reply stops the calls of the message it answers. So an
+edit of a call is not run: the reply gives the agent the person's version,
+to make again, and that call is reviewed in its turn. A revision request
+sends the person's note, and its task is declined: the agent's next
+message is reviewed on a task of its own. A rejection raises
+`ReviewRejected` from `get_human_input`, which ends the chat, so nothing
+takes its last message for an approved one; its `outcome` says how the
+review ended.
 
-**`bridge.record_turn(message, reply, decision=...)` records a decision
-your own code took**, as in the quick start:
+## What a chat does with it
 
+An override of a text message reaches the agent as the human's reply: the
+chat carries the person's version as feedback, and the agent's next message
+is a message of its own, which is reviewed at the next human turn. A chat
+that ends on `max_turns` ends on a message nobody was asked about, since
+AG2 asks for no human input then: end the chat on the person's approval
+with `is_termination_msg`, or take what was approved from CHAP, where the
+task's output is the message as decided.
+
+In a group chat the person's agent talks to the `GroupChatManager`, and
+`self.last_message()` is the group's last message, whoever wrote it. The
+bridge records it as the work of its `agent`, so review in a group only
+where that agent spoke last, by its `name`.
+
+## Waiting, timeouts and async chats
+
+The bridge reads the task every two seconds (`poll_seconds`) for as long
+as the reviewer takes, or until `timeout` seconds have passed. It then
+withdraws the review, so no decision lands later on a message the chat did
+not wait for, and raises `TimeoutError`, which ends the chat.
+
+A chat started with `a_initiate_chat` asks `a_get_human_input`; await
+`request_reply_async` there. It never holds up the event loop, and
+cancelling the awaiting task withdraws the review:
+
+```python
+class ReviewedUser(UserProxyAgent):
+    async def a_get_human_input(self, prompt, **kw):
+        return await bridge.request_reply_async(self.last_message())
 ```
-decision      CHAP envelope
---------      ---------------------------
-approve       decide.approve
-override      decide.override   (message vs reply, as a diff)
-reject        decide.reject
-```
-
-It writes the agent's request and the decision together: `task.create`,
-`task.complete` and `review.request` from the agent, then the `decide.*`
-call in the approver's name. The chain holds what your code passed and
-nothing more: no signature from the approver, no sign that they saw the
-message, and no time between the request and the decision. Use it where
-your own interface is where people decide; use `request_reply` to have the
-decision made in CHAP.
 
 ## AG2 1.x: approve a tool call
 
-AG2 1.x gates a tool with middleware. `bridge.tool_approval()` returns one
-that puts each call of the tool in front of a person and runs it as they
-decide:
+AG2 1.x gates a tool with middleware. `bridge.tool_approval()` is a tool
+middleware of the same kind as AG2's own `approval_required()`: it puts
+each call of the tool in front of a person at a CHAP desk, where they can
+also change its arguments, and runs it as they decide:
 
 ```python
 from ag2 import Agent, tool
@@ -142,114 +168,126 @@ def transfer(amount: int, to: str) -> str:
     return f"sent {amount} to {to}"
 ```
 
-The call (tool name, arguments, call id) is the artefact under review, on
-a task that requires review, so only a person's decision completes it,
-made at a CHAP desk with their own key. An approval runs the call as the
-model made it; an override runs it with the reviewer's arguments. Anything
-else runs nothing and answers the model with the reviewer's note, and so
-does an edit to anything but the arguments, which the run cannot apply.
-The wait reads the task every two seconds (`poll_seconds`) for as long as
-the reviewer takes, or until `timeout` seconds, when `TimeoutError` ends
-the turn. Wire the bridge to a desk over HTTP as below.
+The call, its tool name, arguments and call id, is the artefact under
+review, on a task that requires review. An approval runs the call as the
+model made it, and an override of its arguments runs it with the person's.
+Anything else runs nothing and answers the model with the person's note: a
+rejection, an abstention, an edit to anything but the arguments, or a
+revision, whose task is then declined. The wait never holds up the event
+loop. A call nobody decided within `timeout` seconds runs nothing, the
+model is told so, and the review is withdrawn; a cancelled turn withdraws
+it too.
 
-## The decision is explicit
+## At a desk, over HTTP
 
-AG2's human turn is a weak signal: the same `get_human_input` loop carries
-plain dialogue, edits, approvals, and "exit". Inferring intent would write
-decisions the human never made, which is the one thing this record exists
-to avoid. So `record_turn` takes the decision explicitly, and makes only
-one inference:
-
-- an **empty reply** means "use the agent's output" -> `decide.approve`
-- any **non-empty reply with no explicit decision** records **nothing**:
-  ending a chat is not a rejection, and dialogue is not an edit
-
-```python
-bridge.record_turn(message, reply, decision="override",
-                   rationale="over the limit", tags=["capped"])
-```
-
-`intent_preserved` defaults to `true` on an override; set it `false` for a
-substituting edit, where the reviewer's version is a different decision.
-
-## Request and wait over HTTP
-
-With a desk from `create-chap-app`, the coordinator runs in the desk
-process. The templates' `chap_client.py` reaches it: `HttpCoordinator`
-answers `dispatch` and `Participant` reads a task with `task(task_id)`,
-which the bridge takes as `client` (a coordinator client with
-`task(task_id)` of its own needs none):
+A desk such as `chap-coordinator serve`, or a project from
+`create-chap-app --template support-desk`, keeps the coordinator in its own
+process. The bridge reaches it with `chap_coordinator.client`:
 
 ```python
 import json
 
-from chap_client import HttpCoordinator, Participant
+from chap_coordinator.client import HttpCoordinator, Participant
 from chap_ag2 import ChapTurnBridge
 
 config = json.load(open("chap.config.json"))
-coord = HttpCoordinator(f"http://127.0.0.1:{config['port']}/chap")
 agent_uri = config["agent"]["uri"]
+http = HttpCoordinator(f"http://127.0.0.1:{config['port']}/chap")
 bridge = ChapTurnBridge(
-    coord,
+    Participant(http, config["workspace"], agent_uri),
     workspace=config["workspace"],
     agent=agent_uri,
     reviewer=config["humans"][0]["uri"],
-    client=Participant(coord, config["workspace"], agent_uri),
 )
 ```
 
-The bridge joins the agent when it is made and joins nobody else, so the
-person joins at the desk with their own key. The agent's calls are
-unsigned, so a desk that requires signatures has to accept them from
-agents, as the signature policy `"humans"` does.
+The bridge joins the agent first, takes the desk's workspace as it is, and
+reads each task with the desk's `GET /api/tasks/<id>`. Under the template's
+`"require_signatures": "humans"` the agent calls unsigned and each person
+signs at the desk. Where every call is signed, give the `Participant` the
+agent's key, `Signer.load_or_create(agent_uri, "keys")`. Where people sign,
+the bridge joins nobody in a person's name and records no decision for
+them: the review opens once a person has joined from the desk, and each
+decision is theirs, signed with their own key.
 
-## Approver identity
+## Recording a decision made elsewhere
 
-CHAP has no ambient actor: the decider is whatever `from` the envelope
-carries. `record_turn` records in the bridge's `reviewer`'s name by
-default; pass a per-turn `approver` (a `human:` URI) to override it. The
-adapter joins whoever it records for before the first decision in their
-name, with the participant type taken from the URI scheme. Each turn is
-its own task whose review is addressed to that approver, so the record
-satisfies the Coordinator's authorisation rules.
+Where people decide in your own interface, `record_turn(message, reply,
+decision=...)` records the turn your code took, in the reviewer's name:
+
+```
+decision      CHAP envelope
+--------      ---------------------------
+approve       decide.approve
+override      decide.override   (message vs reply, as a diff)
+reject        decide.reject
+```
+
+AG2's human turn is a weak signal: the same loop carries plain dialogue,
+edits, approvals and "exit", and inferring intent would write decisions
+nobody made. So `decision` says which it was, and the one inference is
+that an empty reply approves: a non-empty reply with no `decision` records
+nothing. An edit of a tool call is refused with `ValueError`, since AG2
+0.x would not run it. An override is a refining edit
+(`intent_preserved=true`) by default; set it `false` for a substituting
+edit.
+
+It writes the agent's `task.create` and `task.complete`, then the
+`decide.*` call in the approver's name: a person's `human:` URI, the
+bridge's `reviewer` unless `approver` names another. The coordinator holds
+that call and nothing more: no signature from the person, and no sign
+that they saw anything but what your code says. So each recorded decision
+carries `via: "bridge-record"`, which the log keeps and chap-analytics
+reads, and `approved_artefact_digest`, the digest of the message. Where
+people sign, nothing is recorded: `record_turn` raises `PersonRequired`,
+and they decide at the desk through `request_reply`.
 
 ## What you get in the audit chain
 
-The quick start yields the following, with every entry carrying
-`prev_hash`:
+The quick start yields the following, every entry carrying `prev_hash`:
 
 ```
 seq=0  workspace.create
 seq=1  participant.join  agent:assistant#v1
 seq=2  participant.join  human:alice@example.org
-seq=3  task.create       agent:assistant#v1
-seq=4  task.complete     agent:assistant#v1
-seq=5  review.request    agent:assistant#v1   to=human:alice@example.org
-seq=6  decide.override   human:alice@example.org  diff=[{op:replace, path:, value:"refund $50 to Alice"}]
+seq=3  task.create       agent:assistant#v1   kind=agent_message  review_required=true
+seq=4  task.complete     agent:assistant#v1   the message; opens the review
+seq=5  decide.override   human:alice@example.org  diff=[{op:replace, path:, value:"Draft: refund $50 to Alice."}]
 ```
 
-With `request_reply`, the agent writes `task.create` (with
-`review_required`) and `review.request`, and the person's decision follows
-from the desk, whenever they make it. The chain verifies externally or
-anchors to a SCITT transparency service with the `audit-scitt/1.0`
-profile.
+The chain verifies externally, or anchors to a SCITT transparency service
+with the `audit-scitt/1.0` profile.
 
 ## Upgrading from 0.3.4
 
 - The `ag2` extra installs AG2 0.x (`ag2>=0.9,<1`). Under 0.3.4 it
   resolved to AG2 1.x, which has no `autogen` module.
-- The bridge no longer joins the reviewer when it is made. It joins them
-  before the first decision it records in their name, so a reviewer who
-  decides at a desk joins there with their own key.
+- Lead with the desk: `request_reply` opens the review and waits for the
+  person's decision, as the quick start shows. `record_turn` is the
+  recording mode above, refused where people sign.
+- A message is reviewed with its tool calls. Its content alone was
+  reviewed before, which for a tool-call message was nothing, and an
+  approval ran the call.
+- A recorded turn opens its review on a task that requires one, with
+  `task.create` then `task.complete`, and no `review.request`; it carries
+  `via: "bridge-record"` and the message's digest. The approver must be a
+  person, a `human:` URI.
+- The bridge joins the agent when it is made. Where nobody signs, the
+  reviewer joins when the first review opens; where people sign, the
+  bridge joins no person.
+- A refusal raises `chap_coordinator.client.ChapError`, exported here as
+  `ChapError`; `ChapBridgeError` names the same class. `ReviewRejected` is
+  a `RuntimeError`, with an `outcome`.
 
 ## Example
 
 `examples/01-approve-edit-reject.py` runs a real AG2 0.x conversation (no
-LLM needed) through approve, an edit, and a reject, and prints the
-resulting chain. `tests/test_conversation.py` runs `request_reply` in a
-real conversation, and `tests/test_tool_approval.py` runs `tool_approval`
-on an AG2 1.x agent with a scripted model, each with a reviewer deciding at
-an in-process desk.
+LLM needed) whose messages Sam decides at a desk, an approval, an edit, a
+revision and a rejection, then records a turn taken in the script's own
+interface, and prints the chain. `tests/test_conversation.py` runs
+`request_reply` in real conversations, tool calls included, and
+`tests/test_tool_approval.py` runs `tool_approval` on an AG2 1.x agent with
+a scripted model, each with a person deciding at a desk.
 
 ## Compatibility
 

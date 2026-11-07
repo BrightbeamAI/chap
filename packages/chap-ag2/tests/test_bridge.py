@@ -1,14 +1,12 @@
 """
-Tests for chap-ag2. They run without AG2 installed: the bridge reads the
-message and reply as plain values, so a dict message and a string reply
-stand in for a real AG2 turn.
-
-    1. An agent message under review -> task.create + complete + review.request.
-    2. A human turn -> decide.approve | decide.override | decide.reject
-       (or nothing, for plain dialogue).
-    3. The audit chain carries the whole trail, hash-linked.
+Tests for chap-ag2 that run without AG2: what a message puts in front of a
+person, recording a turn your own code took, which reads the message and
+reply as plain values, and the bridge made against a desk.
+tests/test_conversation.py runs request_reply in an AG2 0.x chat, and
+tests/test_tool_approval.py runs tool_approval with AG2 1.x.
 """
 
+import json
 import sys
 import threading
 from pathlib import Path
@@ -19,263 +17,187 @@ sys.path.insert(0, str(THIS.parents[2] / "coordinator-py"))
 
 import pytest
 
-from chap_coordinator import Coordinator, CoordinatorOptions
-from chap_ag2 import ChapTurnBridge, ChapBridgeError, Decision, ReviewRejected
+from chap_coordinator import Coordinator, CoordinatorOptions, content_hash
+from chap_coordinator.client import HttpCoordinator, Participant, Signer
+from chap_coordinator.server import load_config, make_coordinator, make_server
+from chap_ag2 import ChapBridgeError, ChapError, ChapTurnBridge, PersonRequired
+
+WS = "wsp_ag2_test"
+AGENT = "agent:assistant#v1"
+REVIEWER = "human:alice@example.org"
 
 
 def msg(content, name="assistant"):
     return {"content": content, "role": "user", "name": name}
 
 
+TOOL_CALL = {"content": None, "role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {
+    "name": "transfer", "arguments": json.dumps({"amount": 10000, "to": "Mallory"})}}]}
+
+
 @pytest.fixture
 def coord():
-    return Coordinator(CoordinatorOptions(
-        deterministic_ids=True, deterministic_clock=True, enable_chain=True,
-    ))
+    return Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True, enable_chain=True))
 
 
 @pytest.fixture
 def bridge(coord):
-    return ChapTurnBridge(
-        coord,
-        workspace="wsp_ag2_test",
-        agent="agent:assistant#v1",
-        reviewer="human:alice@example.org",
-    )
+    return ChapTurnBridge(coord, workspace=WS, agent=AGENT, reviewer=REVIEWER)
 
 
-def methods(bridge):
-    return [e["envelope"]["method"] for e in bridge.audit()]
+def calls(bridge, method):
+    return [e["envelope"]["params"] for e in bridge.audit()
+            if "envelope" in e and e["envelope"]["method"] == method]
 
 
-def last_params(bridge, method):
-    for entry in reversed(bridge.audit()):
-        if entry["envelope"]["method"] == method:
-            return entry["envelope"]["params"]
-    raise AssertionError(f"no {method} in audit")
+def test_the_bridge_joins_the_agent_and_nobody_else(coord, bridge):
+    assert set(coord.workspaces[WS].members) == {AGENT}
 
 
-# ---- setup ---------------------------------------------------------
+# ---- what the person is shown -----------------------------------------
 
 
-def test_bridge_joins_the_agent_and_the_reviewer_when_it_records(coord, bridge):
-    ws = coord.workspaces["wsp_ag2_test"]
-    assert "agent:assistant#v1" in ws.members
-    # A person who decides at a desk joins there, with their own key, so the
-    # bridge joins the reviewer only to record a decision in their name.
-    assert "human:alice@example.org" not in ws.members
-    bridge.record_turn(msg("draft"), "")
-    assert ws.members["human:alice@example.org"].type == "human"
+def test_a_tool_call_message_is_reviewed_with_its_calls(bridge):
+    bridge.record_turn(TOOL_CALL, "")
+    [completed] = calls(bridge, "task.complete")
+    assert completed["output"] == {"content": None, "tool_calls": [
+        {"id": "call_1", "name": "transfer", "arguments": {"amount": 10000, "to": "Mallory"}}]}
 
 
-def test_the_agent_cannot_review_its_own_messages(coord):
-    with pytest.raises(ValueError, match="cannot be the agent"):
-        ChapTurnBridge(coord, workspace="wsp_ag2_self",
-                       agent="human:alice@example.org", reviewer="human:alice@example.org")
+def test_a_function_call_message_is_reviewed_with_its_call(bridge):
+    bridge.record_turn({"content": "paying", "function_call": {"name": "transfer", "arguments": "{\"amount\": 5}"}}, "")
+    assert calls(bridge, "task.complete")[0]["output"] == {"content": "paying", "tool_calls": [
+        {"id": None, "name": "transfer", "arguments": {"amount": 5}}]}
 
 
-# ---- the safe fallback: only empty -> approve ----------------------
+def test_a_text_message_is_reviewed_as_its_text(bridge):
+    bridge.record_turn(msg("the draft body"), "", decision="approve")
+    assert calls(bridge, "task.complete")[0]["output"] == "the draft body"
 
 
-def test_empty_reply_infers_approve(bridge):
-    tid = bridge.record_turn(msg("draft"), "")
-    assert tid is not None
-    assert methods(bridge)[-1] == "decide.approve"
+def test_a_message_with_nothing_in_it_is_not_put_in_front_of_anyone(coord, bridge):
+    for empty in (msg(None), msg("  "), {"content": None, "tool_calls": []}):
+        with pytest.raises(ValueError, match="nothing to review"):
+            bridge.record_turn(empty, "", decision="approve")
+    assert coord.workspaces[WS].tasks == {}
 
 
-def test_non_empty_reply_without_decision_records_nothing(bridge):
-    tid = bridge.record_turn(msg("draft"), "what about the tax?")
-    assert tid is None
-    assert methods(bridge) == ["workspace.create", "participant.join"]
+# ---- recording a turn your own code took ----------------------------------
 
 
-def test_exit_is_not_a_reject(bridge):
-    tid = bridge.record_turn(msg("draft"), "exit")
-    assert tid is None
-    assert "decide.reject" not in methods(bridge)
+def test_an_empty_reply_is_taken_for_an_approval_and_nothing_else_is(bridge):
+    assert bridge.record_turn(msg("draft"), "") is not None
+    assert bridge.record_turn(msg("draft"), "what about the tax?") is None
+    assert bridge.record_turn(msg("draft"), "exit") is None
+    assert len(calls(bridge, "decide.approve")) == 1 and calls(bridge, "decide.reject") == []
 
 
-# ---- explicit decisions --------------------------------------------
-
-
-def test_explicit_approve(bridge):
+def test_a_recorded_approval_is_marked_and_bound_to_the_message(bridge):
     seen = []
     bridge.on_envelope = lambda m, p: seen.append(m)
     bridge.record_turn(msg("draft"), "", decision="approve")
-    assert seen == ["task.create", "task.complete", "review.request", "decide.approve"]
+    assert [m for m in seen if m.startswith(("task.", "review.", "decide."))] == [
+        "task.create", "task.complete", "decide.approve"]
+    [params] = calls(bridge, "decide.approve")
+    assert (params["from"], params["via"], params["approved_artefact_digest"]) == (
+        REVIEWER, "bridge-record", content_hash("draft"))
 
 
-def test_override_diffs_message_vs_reply(bridge):
-    bridge.record_turn(
-        msg("refund $100 to Alice"), "refund $50 to Alice",
-        decision="override", rationale="over the limit", tags=["capped"],
-    )
-    params = last_params(bridge, "decide.override")
+def test_an_override_diffs_the_message_against_the_reply(bridge):
+    bridge.record_turn(msg("refund $100 to Alice"), "refund $50 to Alice", decision="override",
+                       rationale="over the limit", tags=["capped"])
+    [params] = calls(bridge, "decide.override")
     assert params["diff"] == [{"op": "replace", "path": "", "value": "refund $50 to Alice"}]
-    assert params["rationale"] == "over the limit"
-    assert params["intent_preserved"] is True
+    assert (params["rationale"], params["intent_preserved"], params["via"]) == (
+        "over the limit", True, "bridge-record")
+    bridge.record_turn(msg("ship it"), "hold the release", decision="override", intent_preserved=False)
+    assert calls(bridge, "decide.override")[-1]["intent_preserved"] is False
 
 
-def test_override_intent_preserved_false(bridge):
-    bridge.record_turn(msg("ship it"), "hold the release",
-                       decision="override", intent_preserved=False)
-    assert last_params(bridge, "decide.override")["intent_preserved"] is False
-
-
-def test_override_with_no_change_is_an_approve(bridge):
+def test_an_override_that_changes_nothing_is_an_approval(bridge):
     bridge.record_turn(msg("keep as is"), "keep as is", decision="override")
-    assert methods(bridge)[-1] == "decide.approve"
+    assert (len(calls(bridge, "decide.approve")), calls(bridge, "decide.override")) == (1, [])
 
 
-def test_explicit_reject_uses_reply_as_note(bridge):
+def test_an_edit_of_a_tool_call_is_not_recorded_since_ag2_would_not_run_it(coord, bridge):
+    with pytest.raises(ValueError, match="never run"):
+        bridge.record_turn(TOOL_CALL, "transfer 100 to Alice", decision="override")
+    assert coord.workspaces[WS].tasks == {}
+
+
+def test_a_rejection_takes_its_note_from_the_reply(bridge):
     bridge.record_turn(msg("rude draft"), "tone is unacceptable", decision="reject")
-    assert last_params(bridge, "decide.reject")["comment"] == "tone is unacceptable"
+    assert calls(bridge, "decide.reject")[0]["comment"] == "tone is unacceptable"
 
 
-# ---- artefact and identity -----------------------------------------
+def test_a_turn_is_recorded_in_the_approvers_name(coord, bridge):
+    bridge.record_turn(msg("draft"), "", decision="approve", approver="human:bob@example.org")
+    assert calls(bridge, "decide.approve")[0]["from"] == "human:bob@example.org"
+    with pytest.raises(ValueError, match="'human:' URI"):
+        bridge.record_turn(msg("draft"), "", decision="approve", approver="service:autodeploy")
+    with pytest.raises(ValueError, match="decision must be"):
+        bridge.record_turn(msg("draft"), "", decision="maybe")
 
 
-def test_message_content_is_the_artefact(bridge):
-    bridge.record_turn(msg("the draft body"), "", decision="approve")
-    assert last_params(bridge, "review.request")["artefact"] == "the draft body"
+def test_nothing_is_recorded_in_a_persons_name_where_people_sign():
+    coord = Coordinator(CoordinatorOptions(enable_chain=True, require_signatures=True, signature_policy="humans"))
+    bridge = ChapTurnBridge(coord, workspace=WS, agent=AGENT, reviewer=REVIEWER)
+    with pytest.raises(PersonRequired):
+        bridge.record_turn(msg("draft"), "", decision="approve")
+    assert set(coord.workspaces[WS].members) == {AGENT} and coord.workspaces[WS].tasks == {}
 
 
-def test_per_turn_approver_from_uri_scheme(coord, bridge):
-    bridge.record_turn(msg("draft"), "", decision="approve",
-                       approver="service:autodeploy")
-    ws = coord.workspaces["wsp_ag2_test"]
-    assert ws.members["service:autodeploy"].type == "service"
-    assert last_params(bridge, "decide.approve")["from"] == "service:autodeploy"
-
-
-# ---- waiting for a decision made at a desk ---------------------------
-
-
-def desk_decides(coord, method, **params):
-    """A person at a desk sharing the coordinator: they join, and decide
-    the review that is open."""
-    coord.dispatch({"jsonrpc": "2.0", "id": "join", "method": "participant.join",
-                    "params": {"workspace": "wsp_ag2_test", "from": "human:alice@example.org",
-                               "type": "human"}})
-    for _ in range(500):
-        open_ = [t for t in coord.workspaces["wsp_ag2_test"].tasks.values()
-                 if t.state == "review_requested"]
-        if open_:
-            out = coord.dispatch({"jsonrpc": "2.0", "id": "desk", "method": method,
-                                  "params": {"workspace": "wsp_ag2_test",
-                                             "from": "human:alice@example.org",
-                                             "task_id": open_[0].id, **params}})
-            assert "error" not in out, out
-            return
-        threading.Event().wait(0.01)
-    raise AssertionError("no review reached the desk")
-
-
-def reply_after(bridge, coord, method, **params):
-    desk = threading.Thread(target=desk_decides, args=(coord, method), kwargs=params)
-    desk.start()
-    try:
-        return bridge.request_reply(msg("refund $100 to Alice"), timeout=5, poll_seconds=0.01)
-    finally:
-        desk.join()
-
-
-def test_request_reply_opens_a_review_the_task_requires(coord, bridge):
-    seen = []
-    bridge.on_envelope = lambda m, p: seen.append(m)
-    assert reply_after(bridge, coord, "decide.approve") == ""
-    assert seen == ["task.create", "review.request"]
-    (task,) = coord.workspaces["wsp_ag2_test"].tasks.values()
-    assert (task.review_required, task.state, task.output) == (
-        True, "completed", "refund $100 to Alice")
-
-
-def test_request_reply_returns_the_reviewers_version(coord, bridge):
-    reply = reply_after(bridge, coord, "decide.override",
-                        diff=[{"op": "replace", "path": "", "value": "refund $50 to Alice"}],
-                        rationale="over the limit")
-    assert reply == "refund $50 to Alice"
-
-
-def test_request_reply_returns_the_note_when_a_revision_is_asked_for(coord, bridge):
-    reply = reply_after(bridge, coord, "decide.reject",
-                        comment="ask for the order number first", request_revision=True)
-    assert reply == "ask for the order number first"
-
-
-def test_request_reply_raises_on_a_rejection(coord, bridge):
-    with pytest.raises(ReviewRejected) as raised:
-        reply_after(bridge, coord, "decide.reject", comment="not on the allow-list")
-    assert (raised.value.state, raised.value.rationale) == ("declined", "not on the allow-list")
-
-
-def test_wait_for_decision_reads_a_client_with_task(coord):
-    class DeskClient:
-        def task(self, task_id):
-            return {"task_id": task_id, "state": "completed", "output": "edited",
-                    "review": {"decisions": [{"reviewer": "human:alice@example.org",
-                                              "kind": "override", "rationale": "shorter"}]}}
-
-    bridge = ChapTurnBridge(coord, workspace="wsp_ag2_test", agent="agent:assistant#v1",
-                            reviewer="human:alice@example.org", client=DeskClient())
-    assert bridge.wait_for_decision("tsk_remote", timeout=1) == Decision(
-        task_id="tsk_remote", state="completed", kind="override",
-        reviewer="human:alice@example.org", output="edited", comment="shorter")
-
-
-def test_wait_for_decision_times_out(bridge):
-    with pytest.raises(TimeoutError):
-        bridge.request_reply(msg("draft"), timeout=0.05, poll_seconds=0.01)
-
-
-# ---- guards --------------------------------------------------------
-
-
-def test_unknown_decision_raises(bridge):
-    with pytest.raises(ValueError, match="approve"):
-        bridge.record_turn(msg("draft"), "x", decision="maybe")
-
-
-def test_chain_is_hash_linked(bridge):
-    bridge.record_turn(msg("a"), "", decision="approve")
-    bridge.record_turn(msg("b"), "no good", decision="reject")
-    audit = bridge.audit()
-    assert len(audit) >= 8
-    assert all("prev_hash" in e for e in audit)
-
-
-def test_coordinator_error_surfaces(bridge):
-    with pytest.raises(ChapBridgeError):
-        bridge._dispatch("decide.approve", {
-            "workspace": bridge.workspace,
-            "from": bridge.reviewer,
-            "task_id": "tsk_does_not_exist",
-        })
-
-
-def test_participant_type_rejects_unknown_scheme() -> None:
-    from chap_ag2 import _participant_type
-    assert _participant_type("human:alice") == "human"
-    assert _participant_type("agent:bot#v1") == "agent"
-    with pytest.raises(ValueError, match="known scheme"):
-        _participant_type("alice")
-
-
-def test_every_call_has_an_id_of_its_own(coord):
-    """A client that signs what the bridge sends signed two identical calls
-    alike under one id, and a coordinator takes a signed request once, so
-    the second was refused as a replay. Each call now has an id of its own."""
+def test_refusals_are_chap_errors_and_every_call_has_an_id_of_its_own(coord):
+    assert ChapBridgeError is ChapError
     ids = []
 
     class Recording:
-        workspaces = coord.workspaces
-
         def dispatch(self, envelope):
             ids.append(envelope["id"])
             return coord.dispatch(envelope)
 
-    bridge = ChapTurnBridge(Recording(), workspace="wsp_ag2_ids", agent="agent:bot#v1",
-                   reviewer="human:alice@example.org")
+    bridge = ChapTurnBridge(Recording(), workspace="wsp_ag2_ids", agent=AGENT, reviewer=REVIEWER)
     bridge.audit()
     bridge.audit()
     assert len(ids) == len(set(ids)) == 4
+
+
+@pytest.fixture
+def desk(tmp_path, monkeypatch):
+    for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS"):
+        monkeypatch.delenv(name, raising=False)
+    path = tmp_path / "chap.config.json"
+    path.write_text(json.dumps({
+        "workspace": WS, "profiles": ["core/1.0", "review/1.0"], "store": ":memory:", "port": 0,
+        "require_signatures": "humans", "chain": True,
+        "humans": [{"uri": REVIEWER, "display_name": "Alice", "role": "reviewer"}], "agent": {"uri": AGENT},
+    }), encoding="utf-8")
+    config = load_config(path)
+    server = make_server(config, make_coordinator(config))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield HttpCoordinator(f"http://127.0.0.1:{server.server_port}/chap")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_request_reply_against_a_desk_where_people_sign(desk, tmp_path):
+    pytest.importorskip("cryptography")
+    alice = Participant(desk, WS, REVIEWER, Signer.load_or_create(REVIEWER, tmp_path / "keys"))
+    alice.join("human", "reviewer")
+    for coord in (desk, Participant(desk, WS, AGENT)):
+        bridge = ChapTurnBridge(coord, workspace=WS, agent=AGENT, reviewer=REVIEWER)
+
+        def decide():
+            while not (reviews := desk.get("/api/reviews")["reviews"]):
+                pass
+            alice.call("decide.override", task_id=reviews[0]["task_id"], rationale="smaller",
+                       diff=[{"op": "replace", "path": "", "value": "Draft: refund $50."}])
+
+        person = threading.Thread(target=decide)
+        person.start()
+        assert bridge.request_reply(msg("Draft: refund $100."), timeout=5, poll_seconds=0.02) == "Draft: refund $50."
+        person.join()
+        with pytest.raises(PersonRequired):
+            bridge.record_turn(msg("draft"), "", decision="approve")

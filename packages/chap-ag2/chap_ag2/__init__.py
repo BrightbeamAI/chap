@@ -1,58 +1,49 @@
 """
-chap-ag2: put an AG2 (AutoGen) agent's message in front of a person at a
-human-input turn, or record a decision made elsewhere, as a CHAP decision.
+chap-ag2: put an AG2 (AutoGen) agent's message, or its tool call, in front
+of a person, as a CHAP review, and carry on with what they decide.
 
-AG2 collects human input through `get_human_input` on a UserProxyAgent /
-ConversableAgent running with `human_input_mode="ALWAYS"`. At that point
-the message under review is the agent's last message and the reply is the
-human's text. The adapter works at that turn in one of two ways.
-
+AG2 0.x asks for human input through ``get_human_input`` on a
+UserProxyAgent or ConversableAgent running with ``human_input_mode="ALWAYS"``.
+At that turn the message under review is the agent's last message, its text
+and the tool calls it would have run, and the reply is the human's.
 request_reply opens a review of the message, waits for the person's
 decision, made at a CHAP desk, and returns the reply that carries it out:
 
-    CHAP decision                         reply to AG2
-    ---------------------------           -----------------------------
-    decide.approve                        "" (the chat carries on)
-    decide.override                       the reviewer's version
-    decide.reject, asking for a revision  the reviewer's note
-    any other ending                      raises ReviewRejected
+    CHAP decision                          reply to AG2
+    -----------------------------------    ---------------------------------
+    decide.approve                         "" (AG2 carries on: it runs the
+                                           message's tool calls as proposed)
+    decide.override of a text message      the person's version, as the reply
+    decide.override of a tool call         a reply that refuses the call, and
+                                           gives the person's version of it
+    decide.reject, asking for another      the person's note
+    any other ending                       raises ReviewRejected
 
-record_turn records a reply your own code took, in the reviewer's name:
+AG2 1.x asks for human input through its own hook (``ag2.hitl``), and its
+``approval_required()`` tool middleware asks a yes or no through it.
+tool_approval is a tool middleware of the same kind: it puts each call of a
+tool in front of a person at a CHAP desk, where they can also change its
+arguments, and runs it as they decide.
 
-    decision      CHAP envelope
-    --------      ---------------------------
-    approve       decide.approve
-    override      decide.override  (message vs reply, as a diff)
-    reject        decide.reject
+record_turn records a reply your own code took, in the reviewer's name,
+marked as recorded, in a workspace where nobody signs.
 
-AG2 1.x has no such hook, and gates a tool with middleware: tool_approval
-returns a middleware that puts each call of the tool in front of a person,
-through the same review, and runs it as they decide.
-
-AG2's turn is a weak signal, since the same loop carries plain dialogue,
-so `decision` is authoritative. The only inference the adapter makes is
-that an empty reply means "use the agent's output", i.e. approve. A
-non-empty reply with no explicit decision records nothing: ending a chat
-is not a rejection, and dialogue is not an edit.
-
-The bridge depends only on chap-coordinator. AG2 is never imported here:
-the message and reply are read structurally, so the same code runs
-against real AG2 objects or plain values.
+The bridge depends on chap-coordinator alone: AG2 is imported only by the
+1.x middleware, to build the result of a call it does not run, and messages
+and replies are read as plain values.
 """
 
 from __future__ import annotations
 
 import asyncio
 import copy
-import dataclasses
 import json
-import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
-from uuid import uuid4
 
-from chap_coordinator import Coordinator
-
+from chap_coordinator.bridge import (
+    ChapError, Decision, PersonRequired, ReviewClient, ReviewRejected, decided_arguments, json_patch,
+)
 
 try:
     from importlib.metadata import version as _pkg_version, PackageNotFoundError
@@ -60,249 +51,168 @@ try:
 except PackageNotFoundError:  # running from a source checkout, not installed
     __version__ = "0.0.0+source"
 
+#: The name chap-ag2 0.3.4 gave the coordinator's refusals.
+ChapBridgeError = ChapError
 
-def _make_envelope(method: str, params: dict) -> dict:
-    """Build a JSON-RPC 2.0 envelope with an id of its own. A client that
-    signs what the bridge sends then signs two identical calls as two
-    requests, and the coordinator, which takes a signed request once,
-    takes each of them."""
-    return {
-        "jsonrpc": "2.0",
-        "id":      f"chap-ag2-{method}-{uuid4().hex}",
-        "method":  method,
-        "params":  params,
-    }
+_SENT_BACK = ("The reviewer asked for another proposal, so the agent's next one is reviewed on a task "
+              "of its own.")
 
 
-def _content(message: Any) -> Any:
-    """The reviewable substance of an AG2 message: its content if the
-    message is a dict, else the message itself."""
-    if isinstance(message, dict):
-        return message.get("content", message)
-    return message
+def _arguments(text: Any) -> Any:
+    """A tool call's arguments, JSON text in AG2 0.x, as the object they
+    name, so the person reads them; text that is not JSON stays text."""
+    if not isinstance(text, str):
+        return text
+    try:
+        return json.loads(text) if text.strip() else {}
+    except ValueError:
+        return text
+
+
+def _proposal(message: Any) -> Any:
+    """What an AG2 0.x message puts to the person: its text, and every tool
+    or function call it would have run, with their arguments. A message with
+    no calls is its text alone."""
+    if not isinstance(message, dict):
+        return message
+    calls = [(call.get("id"), call.get("function") or {}) for call in message.get("tool_calls") or []]
+    if message.get("function_call"):
+        calls.append((None, message["function_call"]))
+    if not calls:
+        return message.get("content")
+    return {"content": message.get("content"),
+            "tool_calls": [{"id": call_id, "name": function.get("name"),
+                            "arguments": _arguments(function.get("arguments"))}
+                           for call_id, function in calls]}
+
+
+def _makes_calls(proposal: Any) -> bool:
+    return isinstance(proposal, dict) and "tool_calls" in proposal
 
 
 def _is_empty(reply: Any) -> bool:
-    return not (reply or "").strip() if isinstance(reply, str) else not reply
+    return not reply.strip() if isinstance(reply, str) else not reply
 
 
-# ---- RFC 6902 diff (message -> reply, as a JSON Patch) ---------------
-
-
-def _escape(token: str) -> str:
-    return str(token).replace("~", "~0").replace("/", "~1")
-
-
-def _diff(before: Any, after: Any, path: str) -> list[dict]:
-    """Patch that turns `before` into `after`. Objects are walked
-    key-by-key; arrays and scalars are replaced whole. Keys are sorted so
-    the same edit always yields the same patch (it gets hashed into the
-    chain). Ported from the TypeScript coordinator's diffJsonPatch."""
-    if type(before) is not type(after) or not isinstance(before, dict):
-        return [] if before == after else [{"op": "replace", "path": path, "value": after}]
-    ops: list[dict] = []
-    for key in sorted(before.keys() | after.keys()):
-        at = f"{path}/{_escape(key)}"
-        if key not in after:
-            ops.append({"op": "remove", "path": at})
-        elif key not in before:
-            ops.append({"op": "add", "path": at, "value": after[key]})
-        else:
-            ops.extend(_diff(before[key], after[key], at))
-    return ops
-
-
-def _participant_type(uri: str) -> str:
-    scheme = uri.split(":", 1)[0]
-    if scheme not in ("human", "agent", "service", "group"):
-        raise ValueError(
-            "participant URI must use a known scheme "
-            f"(human/agent/service/group): {uri!r}"
-        )
-    return scheme
-
-
-# ============================================================
-#   Decisions read back from the coordinator
-# ============================================================
-
-
-# A task in these states still waits for its reviewer: under review, or
-# paused during its review.
-_UNDECIDED = ("review_requested", "paused")
-
-
-@dataclass(frozen=True)
-class Decision:
-    """A reviewer's decision on a review, as the coordinator recorded it.
-
-    `approved` is true when the task completed through an approval or an
-    override, and `output` is then the artefact as decided: the message as
-    the agent wrote it, or the reviewer's version. Any other ending, a
-    rejection, an abstention, or a review escalated or cancelled, approves
-    nothing, and `output` is None.
-    """
-
-    task_id:  str
-    state:    str
-    kind:     Optional[str] = None   # approve, override, reject or abstain
-    reviewer: Optional[str] = None
-    output:   Any = None
-    comment:  Optional[str] = None   # the reviewer's note, or an override's rationale
-    tags:     tuple = ()
-
-    @property
-    def approved(self) -> bool:
-        return self.state == "completed" and self.kind in ("approve", "override")
-
-    @property
-    def revision_requested(self) -> bool:
-        """The reviewer rejected the message and asked the agent for another."""
-        return self.kind == "reject" and self.state == "in_progress"
-
-
-def _read_task(source: Any, workspace: str, task_id: str) -> Optional[dict]:
-    """The task as GET /api/tasks/<id> shows it: its state, its output and
-    its review's decisions, or None when the task is unknown.
-
-    An in-process Coordinator is read directly. Any other source is read
-    with source.task(task_id), the call a desk client offers."""
-    if isinstance(source, Coordinator):
-        ws = source.workspaces.get(workspace)
-        task = ws.tasks.get(task_id) if ws is not None else None
-        if task is None:
-            return None
-        decisions = []
-        for decided in (task.review.decisions if task.review else []):
-            decided = dict(decided)
-            override = ws.overrides.get(decided.get("override_artefact_id") or "")
-            if override is not None:
-                decided["rationale"] = override.rationale
-            decisions.append(decided)
-        return {"state": task.state, "output": task.output,
-                "review": {"decisions": decisions}}
-    read = getattr(source, "task", None)
-    if not callable(read):
-        raise TypeError(
-            "waiting for a decision reads the task: give the bridge an "
-            "in-process Coordinator, or a client with task(task_id) as `client`"
-        )
-    return read(task_id)
-
-
-def _decision(task_id: str, view: dict) -> Decision:
-    """The decision that ended the review: the last one recorded on it."""
-    decisions = (view.get("review") or {}).get("decisions") or []
-    last = decisions[-1] if decisions else {}
-    decision = Decision(
-        task_id=task_id,
-        state=view.get("state"),
-        kind=last.get("kind"),
-        reviewer=last.get("reviewer"),
-        comment=last.get("comment") or last.get("rationale"),
-        tags=tuple(last.get("tags") or ()),
-    )
+def _reply(proposal: Any, decision: Decision) -> str:
+    """The human's reply that carries a decision out in AG2 0.x."""
+    if decision.kind == "approve" and decision.approved:
+        return ""
+    if decision.approved and _makes_calls(proposal):
+        decided = decision.output["tool_calls"] if _makes_calls(decision.output) else decision.output
+        return f"The reviewer changed this call, so it was not made. Make it as they set it: {json.dumps(decided)}"
     if decision.approved:
-        decision = dataclasses.replace(decision, output=view.get("output"))
-    return decision
+        return decision.output if isinstance(decision.output, str) else json.dumps(decision.output)
+    if decision.revision_requested:
+        return decision.comment or "The reviewer asked for another draft."
+    raise ReviewRejected.from_decision(decision)
 
 
-# ============================================================
-#   ChapTurnBridge
-# ============================================================
+def _why_not(decision: Decision) -> str:
+    """What the model is told about a call the reviewer did not let run."""
+    if decision.approved:
+        return ("The reviewer's edit changed the call itself, or took its arguments away, which this "
+                "run cannot carry out, so the call was not made.")
+    if decision.comment:
+        return decision.comment
+    if decision.outcome in ("reject", "revise"):
+        return "The reviewer rejected this call."
+    return f"The review ended without an approval ({decision.outcome}), so the call was not made."
 
 
 @dataclass
 class ChapTurnBridge:
-    """One bridge per workspace. Holds the Coordinator, the workspace it
-    writes into, the agent whose message is under review, and the default
-    approver. Share it across a conversation; pass a per-turn approver when
-    the decision belongs to someone else.
+    """The agent's side of the reviews in one workspace. Share it across a
+    conversation.
 
-    The bridge joins the agent when it is made. It joins an approver only
-    when it records a decision in their name, so a person who decides at a
-    desk joins there, with their own key.
+    ``coord`` is a Coordinator in this process, or a desk's, through
+    ``chap_coordinator.client``: an HttpCoordinator, or a Participant for the
+    agent, which signs the agent's calls with its key. The bridge joins the
+    agent when it is made. A review is addressed to every person in the
+    workspace; ``reviewer`` names the person a recorded decision is made in
+    by default, who joins when the first review opens where nobody signs.
+    Where people sign, each joins from the desk with their own key, and the
+    bridge joins nobody in their name.
+
+    ``on_envelope`` sees each call's method and params before it is sent.
+    ``client`` reads a task, for a coordinator that cannot: anything whose
+    ``task(task_id)`` returns the ``GET /api/tasks/<id>`` view.
     """
 
-    coord:     Coordinator
+    coord:     Any
     workspace: str
     agent:     str
     reviewer:  str
     profiles:  tuple = ("core/1.0", "review/1.0")
     on_envelope: Optional[Callable[[str, dict], None]] = None
-    # Reads a task for wait_for_decision: anything with task(task_id)
-    # returning the GET /api/tasks/<id> view. Leave it unset with an
-    # in-process Coordinator, which is read directly, or with a
-    # coordinator client that has task(task_id) itself.
     client: Any = None
-    _joined: set = field(default_factory=set, init=False, repr=False)
+    _review: ReviewClient = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        if self.reviewer == self.agent:
-            raise ValueError(
-                "the reviewer cannot be the agent whose messages are under review: "
-                f"{self.reviewer!r}"
-            )
-        _safe_dispatch(self.coord, "workspace.create", {
-            "workspace": self.workspace,
-            "profiles":  list(self.profiles),
-        })
-        self._join(self.agent)
+        self._review = ReviewClient(
+            self.coord, self.workspace, self.agent, self.reviewer, profiles=self.profiles,
+            client=self.client, on_envelope=self._seen, name="chap-ag2")
 
-    # ---- request and wait -----------------------------------------
+    def _seen(self, method: str, params: dict) -> None:
+        if self.on_envelope is not None:
+            self.on_envelope(method, params)
 
-    def request_reply(self, message: Any, *,
-                      timeout: Optional[float] = None,
+    # ---- AG2 0.x: a human-input turn ----------------------------------
+
+    def request_reply(self, message: Any, *, timeout: Optional[float] = None,
                       poll_seconds: float = 2.0) -> str:
-        """Open a review of the agent's message, wait for the reviewer's
+        """Open a review of the agent's message, wait for the person's
         decision, and return the reply for get_human_input to give AG2.
 
-        The review is on a task that requires review, so only a person's
-        decision completes it. An approval returns "", and AG2 carries on
-        with its auto-reply. An override returns the reviewer's version of
-        the message, as text. A rejection that asks for a revision returns
-        the reviewer's note, for the agent to act on. Anything else raises
-        ReviewRejected, which ends the chat: its last message was not
-        approved, so nothing should use the chat's result as if it were.
+        The message is reviewed whole: its text, and every tool or function
+        call it would have run, with their arguments. A message with neither
+        is refused with ValueError, since nobody can approve what they were
+        not shown. The review is on a task that requires review, so only a
+        person's decision completes it.
 
-        Raises TimeoutError after `timeout` seconds; None waits as long as
-        the reviewer takes.
+        An approval returns "", and AG2 carries on with its auto-reply,
+        which runs the message's calls as proposed. An override of a text
+        message returns the person's version, which AG2 sends the agent as
+        the human's reply. AG2 0.x runs a tool call only with the arguments
+        the model wrote, so an override of a tool call returns a reply that
+        refuses the call and gives the person's version, for the agent to
+        make again. A rejection that asks for another proposal returns the
+        person's note, and its task is declined: the agent's next message is
+        reviewed on a task of its own. Anything else raises ReviewRejected,
+        which ends the chat, so nothing takes its last message for an
+        approved one.
+
+        The task is read every ``poll_seconds``. After ``timeout`` seconds
+        the review is withdrawn, so no decision lands on it later, and
+        TimeoutError raised; None waits as long as the reviewer takes.
         """
-        if not self.reviewer.startswith("human:"):
-            raise ValueError(
-                "a review that waits for a person needs a 'human:' reviewer, "
-                f"got {self.reviewer!r}"
-            )
-        task_id = self._submit(_content(message), self.reviewer, review_required=True)
-        decision = self.wait_for_decision(task_id, timeout=timeout,
-                                          poll_seconds=poll_seconds)
-        if decision.kind == "approve" and decision.approved:
-            return ""
-        if decision.approved:
-            output = decision.output
-            return output if isinstance(output, str) else json.dumps(output)
+        proposal = _proposal(message)
+        decision = self._review.review(proposal, kind="agent_message", input=proposal,
+                                       timeout=timeout, poll_seconds=poll_seconds)
         if decision.revision_requested:
-            return decision.comment or "The reviewer asked for another draft."
-        raise ReviewRejected(task_id, decision.comment,
-                             reviewer=decision.reviewer, state=decision.state)
+            self._review.close(decision.task_id, _SENT_BACK)
+        return _reply(proposal, decision)
 
-    def wait_for_decision(self, task_id: str, *,
-                          timeout: Optional[float] = None,
+    async def request_reply_async(self, message: Any, *, timeout: Optional[float] = None,
+                                  poll_seconds: float = 2.0) -> str:
+        """:meth:`request_reply` for ``a_get_human_input``, which AG2 asks in
+        a chat started with ``a_initiate_chat``. The event loop is never held
+        up, and cancelling the awaiting task withdraws the review."""
+        proposal = _proposal(message)
+        decision = await self._review.review_async(proposal, kind="agent_message", input=proposal,
+                                                   timeout=timeout, poll_seconds=poll_seconds)
+        if decision.revision_requested:
+            await asyncio.to_thread(self._review.close, decision.task_id, _SENT_BACK)
+        return _reply(proposal, decision)
+
+    def wait_for_decision(self, task_id: str, *, timeout: Optional[float] = None,
                           poll_seconds: float = 2.0) -> Decision:
-        """Wait for the reviewer's decision on a review this bridge opened,
-        and return it. The task is read every `poll_seconds` until it is no
-        longer under review. Raises TimeoutError after `timeout` seconds;
-        None waits as long as the reviewer takes."""
-        started = time.monotonic()
-        while True:
-            decision = self._read_decision(task_id)
-            if decision is not None:
-                return decision
-            if timeout is not None and time.monotonic() - started >= timeout:
-                raise TimeoutError(f"No decision on {task_id} after {timeout} seconds")
-            time.sleep(poll_seconds)
+        """Wait for the decision on a review this bridge opened, and return
+        it. After ``timeout`` seconds the review is withdrawn and
+        TimeoutError raised; None waits as long as the reviewer takes."""
+        return self._review.wait(task_id, timeout=timeout, poll_seconds=poll_seconds)
 
-    # ---- AG2 1.x: approve a tool call ---------------------------------
+    # ---- AG2 1.x: a tool call -------------------------------------------
 
     def tool_approval(self, *, timeout: Optional[float] = None,
                       poll_seconds: float = 2.0) -> Callable:
@@ -312,254 +222,104 @@ class ChapTurnBridge:
             @tool(middleware=[bridge.tool_approval()])
             def transfer(amount: int, to: str) -> str: ...
 
-        The call (tool name, arguments, call id) is the artefact under
+        The call, its tool name, arguments and call id, is the artefact under
         review, on a task that requires review, so only a person's decision
         completes it. An approval runs the call as the model made it, and an
-        override runs it with the reviewer's arguments. Anything else, an
-        edit to anything but the arguments included, runs nothing and
-        answers the model with the reviewer's note. The wait reads the task
-        every `poll_seconds`; after `timeout` seconds it raises
-        TimeoutError, which ends the turn, and None waits as long as the
-        reviewer takes.
-        """
-        if not self.reviewer.startswith("human:"):
-            raise ValueError(
-                "a review that waits for a person needs a 'human:' reviewer, "
-                f"got {self.reviewer!r}"
-            )
+        override of its arguments runs it with the person's. Anything else
+        runs nothing and answers the model with the person's note: a
+        rejection, an abstention, an edit to anything but the arguments, or a
+        revision, whose task is then declined, as the model's next call is
+        reviewed on a task of its own.
 
+        The task is read every ``poll_seconds``, and the event loop is never
+        held up. A call nobody decided within ``timeout`` seconds runs
+        nothing, the model is told so, and the review is withdrawn, so no
+        decision lands on it later; None waits as long as the reviewer
+        takes. A cancelled turn withdraws the review too.
+        """
         async def middleware(call_next: Any, event: Any, context: Any) -> Any:
-            artefact = {"tool": event.name, "args": json.loads(event.arguments or "{}"),
-                        "tool_call_id": event.id}
-            task_id = self._submit(artefact, self.reviewer, review_required=True)
-            decision = await self._await_decision(task_id, timeout, poll_seconds)
-            output = decision.output if isinstance(decision.output, dict) else {}
-            if decision.approved and all(output.get(key) == artefact[key]
-                                         for key in ("tool", "tool_call_id")):
-                edited = output.get("args")
-                if isinstance(edited, dict) and edited != artefact["args"]:
-                    event = copy.copy(event)
-                    event.arguments = json.dumps(edited)
-                    event.serialized_arguments = edited
-                return await call_next(event, context)
             from ag2.events import ToolResultEvent
-            if decision.approved:
-                note = ("The reviewer's edit changed the call itself, which this run "
-                        "cannot apply, so the call was not made.")
-            else:
-                note = decision.comment or "The reviewer did not approve this call."
-            return ToolResultEvent.from_call(event, result=note)
+
+            proposed = {"tool": event.name, "args": json.loads(event.arguments or "{}"),
+                        "tool_call_id": event.id}
+            try:
+                decision = await self._review.review_async(
+                    proposed, kind=event.name or "tool_call", input=proposed,
+                    timeout=timeout, poll_seconds=poll_seconds)
+            except TimeoutError:
+                return ToolResultEvent.from_call(
+                    event, result=f"Nobody decided on this call within {timeout} seconds, so it was not made.")
+            args = decided_arguments(decision, proposed)
+            if args is not None:
+                if args != proposed["args"]:
+                    event = copy.copy(event)
+                    event.arguments = json.dumps(args)
+                    event.serialized_arguments = args
+                return await call_next(event, context)
+            if decision.revision_requested:
+                await asyncio.to_thread(self._review.close, decision.task_id, _SENT_BACK)
+            return ToolResultEvent.from_call(event, result=_why_not(decision))
 
         return middleware
-
-    async def _await_decision(self, task_id: str, timeout: Optional[float],
-                              poll_seconds: float) -> Decision:
-        started = time.monotonic()
-        while True:
-            decision = self._read_decision(task_id)
-            if decision is not None:
-                return decision
-            if timeout is not None and time.monotonic() - started >= timeout:
-                raise TimeoutError(f"No decision on {task_id} after {timeout} seconds")
-            await asyncio.sleep(poll_seconds)
-
-    def _read_decision(self, task_id: str) -> Optional[Decision]:
-        """The decision on the task, or None as long as it is under review."""
-        view = _read_task(self.client or self.coord, self.workspace, task_id)
-        if view is None:
-            raise KeyError(f"Unknown task: {task_id}")
-        if view.get("state") in _UNDECIDED:
-            return None
-        return _decision(task_id, view)
 
     # ---- record a decision made elsewhere --------------------------
 
     def record_turn(self, message: Any, reply: Any, *,
-                   decision: Optional[str] = None,
-                   approver: Optional[str] = None,
-                   rationale: Optional[str] = None,
-                   tags: Optional[list[str]] = None,
-                   intent_preserved: Optional[bool] = None) -> Optional[str]:
-        """Record one human turn and return the task id, or None if the
-        turn is not a decision.
+                    decision: Optional[str] = None,
+                    approver: Optional[str] = None,
+                    rationale: Optional[str] = None,
+                    tags: Optional[list[str]] = None,
+                    intent_preserved: Optional[bool] = None) -> Optional[str]:
+        """Record one human turn your own code took, and return the task id,
+        or None where the turn is not a decision.
 
-        `message` is the agent message the human responded to; `reply` is
-        their text. `decision` is authoritative. When it is omitted, only
-        an empty reply is inferred (approve); any other reply records
-        nothing, because AG2's loop also carries plain dialogue.
+        ``message`` is the agent message the person answered, and ``reply``
+        their reply. ``decision`` is approve, override or reject. Without
+        it, only an empty reply is taken for one, an approval; any other
+        reply records nothing, since AG2's loop carries plain dialogue too.
+        An override of a tool call is refused with ValueError: AG2 0.x runs
+        a call only with the arguments the model wrote, so the edit would be
+        on the log and never run.
 
-        The decision is recorded in the approver's name, and the approver
-        joins the workspace first if the bridge has not joined them yet.
+        The decision is recorded in the approver's name, a person's
+        ``human:`` URI (the bridge's reviewer by default), bound to the
+        digest of the message and marked ``via: "bridge-record"``. Where
+        people sign, PersonRequired is raised and nothing is recorded: they
+        decide at the desk, through request_reply.
         """
         if decision is None:
-            if _is_empty(reply):
-                decision = "approve"
-            else:
+            if not _is_empty(reply):
                 return None
-
-        approver = approver or self.reviewer
-        self._join(approver)
-
-        proposed = _content(message)
-        task_id = self._submit(proposed, approver)
-
+            decision = "approve"
+        if decision not in ("approve", "override", "reject"):
+            raise ValueError(f"decision must be 'approve', 'override', or 'reject': {decision!r}")
+        proposal = _proposal(message)
+        record = dict(task_kind="agent_message", input=proposal, reviewer=approver, tags=tags)
+        if decision == "override":
+            if _makes_calls(proposal):
+                raise ValueError("AG2 0.x runs a tool call only with the arguments the model wrote, so an "
+                                 "edit of one is not recorded: it would never run")
+            diff = json_patch(proposal, reply)
+            if diff:
+                return self._review.record(
+                    proposal, "override", comment=rationale or "reviewer edited the message", diff=diff,
+                    intent_preserved=True if intent_preserved is None else intent_preserved, **record).task_id
+            decision = "approve"
         if decision == "approve":
-            self._decide("decide.approve", approver, task_id, rationale, tags)
-        elif decision == "override":
-            diff = _diff(proposed, reply, "")
-            if not diff:
-                self._decide("decide.approve", approver, task_id, rationale, tags)
-                return task_id
-            self._dispatch("decide.override", {
-                "workspace": self.workspace,
-                "from":      approver,
-                "task_id":   task_id,
-                "diff":      diff,
-                "rationale": rationale or "reviewer edited the message",
-                "tags":      tags or [],
-                "intent_preserved": True if intent_preserved is None else intent_preserved,
-            })
-        elif decision == "reject":
-            note = rationale or (reply if not _is_empty(reply) else None)
-            self._decide("decide.reject", approver, task_id, note, tags)
-        else:
-            raise ValueError(
-                f"decision must be 'approve', 'override', or 'reject': {decision!r}"
-            )
-        return task_id
+            return self._review.record(proposal, "approve", comment=rationale, **record).task_id
+        note = rationale or (reply if isinstance(reply, str) and not _is_empty(reply) else None)
+        return self._review.record(proposal, "reject", comment=note, **record).task_id
 
     def audit(self) -> list[dict]:
-        env = self._dispatch("audit.read", {"workspace": self.workspace})
-        return env["result"]["entries"]
-
-    # ---- internal -------------------------------------------------
-
-    def _submit(self, artefact: Any, approver: str,
-                review_required: bool = False) -> str:
-        """Open the task and send the message for review, the agent's half
-        of the handshake. A task that requires review waits under review
-        until a person decides it; otherwise the message is first recorded
-        as the task's output."""
-        params: dict = {
-            "workspace": self.workspace,
-            "from":      self.agent,
-            "assignee":  self.agent,
-            "kind":      "agent_message",
-            "input":     artefact,
-        }
-        if review_required:
-            params["review_required"] = True
-        env = self._dispatch("task.create", params)
-        task_id = env["result"]["task_id"]
-        if not review_required:
-            self._dispatch("task.complete", {
-                "workspace": self.workspace,
-                "from":      self.agent,
-                "task_id":   task_id,
-                "output":    artefact,
-            })
-        self._dispatch("review.request", {
-            "workspace": self.workspace,
-            "from":      self.agent,
-            "task_id":   task_id,
-            "artefact":  artefact,
-            "to":        approver,
-        })
-        return task_id
-
-    def _decide(self, method: str, approver: str, task_id: str,
-                comment: Optional[str], tags: Optional[list[str]]) -> None:
-        # decide.approve / decide.reject record the reviewer's note as
-        # `comment` (decide.override is the one that takes `rationale`).
-        params: dict = {
-            "workspace": self.workspace,
-            "from":      approver,
-            "task_id":   task_id,
-        }
-        if comment:
-            params["comment"] = comment
-        if tags:
-            params["tags"] = tags
-        self._dispatch(method, params)
-
-    def _join(self, uri: str) -> None:
-        if uri in self._joined:
-            return
-        _safe_dispatch(self.coord, "participant.join", {
-            "workspace": self.workspace,
-            "from":      uri,
-            "type":      _participant_type(uri),
-        })
-        self._joined.add(uri)
-
-    def _dispatch(self, method: str, params: dict) -> dict:
-        if self.on_envelope is not None:
-            self.on_envelope(method, params)
-        out = self.coord.dispatch(_make_envelope(method, params))
-        if out.get("error"):
-            err = out["error"]
-            raise ChapBridgeError(err.get("code", 0), err.get("message", ""))
-        return out
-
-
-# ============================================================
-#   Errors and helpers
-# ============================================================
-
-
-class ChapBridgeError(RuntimeError):
-    """Raised when the Coordinator rejects an envelope."""
-
-    def __init__(self, code: int, message: str) -> None:
-        super().__init__(f"CHAP error {code}: {message}")
-        self.code = code
-        self.message = message
-
-
-class ReviewRejected(Exception):
-    """The reviewer did not approve the agent's message.
-
-    request_reply raises it from get_human_input, which ends the chat, so a
-    rejected message is never taken for an approved one. `state` is the
-    task's state: declined after a rejection, or the state an abstention,
-    an escalation or a cancellation left it in.
-    """
-
-    def __init__(self, task_id: str, rationale: Optional[str] = None, *,
-                 reviewer: Optional[str] = None, state: str = "declined") -> None:
-        detail = f": {rationale}" if rationale else ""
-        super().__init__(f"{task_id} was not approved ({state}){detail}")
-        self.task_id = task_id
-        self.rationale = rationale
-        self.reviewer = reviewer
-        self.state = state
-
-
-def _safe_dispatch(coord: Coordinator, method: str, params: dict) -> None:
-    """Dispatch, tolerating the errors that come from re-applying an
-    idempotent setup step (re-creating a workspace, re-joining a member).
-    Decide by checking the resulting state, not by matching the message;
-    anything else propagates."""
-    out = coord.dispatch(_make_envelope(method, params))
-    if not out.get("error"):
-        return
-
-    if method == "workspace.create":
-        ws_id = params.get("workspace")
-        if ws_id and ws_id in coord.workspaces:
-            return
-    elif method == "participant.join":
-        ws = coord.workspaces.get(params.get("workspace"))
-        if ws is not None and params.get("from") in ws.members:
-            return
-
-    raise ChapBridgeError(out["error"].get("code", 0),
-                          out["error"].get("message", ""))
+        """The workspace's audit log."""
+        return self._review.audit()
 
 
 __all__ = [
-    "ChapTurnBridge",
     "ChapBridgeError",
+    "ChapError",
+    "ChapTurnBridge",
     "Decision",
+    "PersonRequired",
     "ReviewRejected",
 ]
