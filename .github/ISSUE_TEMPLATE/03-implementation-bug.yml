@@ -37,7 +37,7 @@ body:
     id: runtime
     attributes:
       label: Runtime
-      description: Node or Python version, and OS. Node 20 is the floor; Python 3.10 is the floor.
+      description: Node or Python version, and OS. Node 22 is the floor; Python 3.10 is the floor.
       placeholder: Node 22.11.0, macOS 15
     validations:
       required: true

@@ -1,23 +1,40 @@
 name: Templates
 
-# Every template is generated, installed from the published packages it
-# pins, tested and run through diff-profiles, so a template never claims
-# something the released coordinators do not do. chap-analytics is installed
-# beside each, so the analytics script is tested on a store a template
-# wrote. The profile explorer is rebuilt the same way and must match the
-# committed file.
+# Every template is generated, installed, tested and run through
+# diff-profiles. On a push or a pull request a template installs the
+# packages on that commit, packed and built as they would be published, so
+# a release is tested before it is published. The weekly run installs the
+# published packages the templates pin, so a template never claims something
+# the released coordinators do not do. chap-analytics is installed beside
+# each, so the analytics script is tested on a store a template wrote. The
+# profile explorer is rebuilt from the coordinator on the commit and must
+# match the committed file.
 
 on:
   push:
     branches: [main]
     paths:
       - 'packages/create-chap-app/**'
+      - 'packages/chap-server/**'
+      - 'packages/chap-code-gate/**'
+      - 'packages/coordinator/**'
+      - 'packages/coordinator-mcp/**'
+      - 'packages/coordinator-a2a/**'
+      - 'packages/coordinator-py/**'
+      - 'packages/chap-analytics/**'
       - 'docs/profile-explorer.md'
       - '.github/workflows/templates.yml'
   pull_request:
     branches: [main]
     paths:
       - 'packages/create-chap-app/**'
+      - 'packages/chap-server/**'
+      - 'packages/chap-code-gate/**'
+      - 'packages/coordinator/**'
+      - 'packages/coordinator-mcp/**'
+      - 'packages/coordinator-a2a/**'
+      - 'packages/coordinator-py/**'
+      - 'packages/chap-analytics/**'
       - 'docs/profile-explorer.md'
       - '.github/workflows/templates.yml'
   schedule:
@@ -51,7 +68,7 @@ jobs:
       fail-fast: false
       matrix:
         template: [code-gate, mcp-gate, production]
-        node: ['20', '22', '24']
+        node: ['22', '24', '26']
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -61,7 +78,21 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install chap-analytics for the analytics test
-        run: python -m pip install chap-analytics
+        run: |
+          if [ "${{ github.event_name }}" = schedule ]; then
+            python -m pip install chap-analytics
+          else
+            python -m pip install ./packages/chap-analytics
+          fi
+      - name: Pack the packages on this commit
+        if: github.event_name != 'schedule'
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          mkdir -p "${RUNNER_TEMP}/packs"
+          for p in coordinator coordinator-mcp coordinator-a2a chap-server chap-code-gate; do
+            npm pack --silent --pack-destination "${RUNNER_TEMP}/packs" -w "packages/$p"
+          done
       - name: Git and OpenSSH for the code gate
         run: |
           git --version
@@ -70,9 +101,14 @@ jobs:
           git config --global user.email "templates-ci@example.invalid"
       - name: Generate
         run: node packages/create-chap-app/index.mjs "my-${{ matrix.template }}" --template "${{ matrix.template }}" --yes --dir "${RUNNER_TEMP}/project"
-      - name: Install the published packages
+      - name: Install the packages
         working-directory: ${{ runner.temp }}/project
-        run: npm install --no-audit --no-fund
+        run: |
+          if [ "${{ github.event_name }}" = schedule ]; then
+            npm install --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund "${RUNNER_TEMP}"/packs/*.tgz
+          fi
       - name: Test
         working-directory: ${{ runner.temp }}/project
         run: npm test
@@ -99,10 +135,14 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Generate
         run: node packages/create-chap-app/index.mjs "my-${{ matrix.template }}" --template "${{ matrix.template }}" --yes --dir "${RUNNER_TEMP}/project"
-      - name: Install the published package
+      - name: Install the package
         working-directory: ${{ runner.temp }}/project
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip build
+          if [ "${{ github.event_name }}" != schedule ]; then
+            python -m build --wheel --outdir "${RUNNER_TEMP}/wheels" "${GITHUB_WORKSPACE}/packages/coordinator-py"
+            python -m pip install "${RUNNER_TEMP}"/wheels/chap_coordinator-*.whl "${GITHUB_WORKSPACE}/packages/chap-analytics"
+          fi
           python -m pip install -r requirements.txt pytest chap-analytics
       - name: Prove the checkout is not on the import path
         working-directory: ${{ runner.temp }}/project
@@ -134,8 +174,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Install the published Python package
-        run: python -m pip install "chap-coordinator[crypto]>=0.3.0,<0.4"
+      - name: Install the Python coordinator on this commit
+        run: python -m pip install "./packages/coordinator-py[crypto]"
       - name: Rebuild and compare
         env:
           CHAP_EXPLORER_INSTALL: '1'

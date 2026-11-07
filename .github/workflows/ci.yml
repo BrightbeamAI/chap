@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['20', '22', '24']
+        node: ['22', '24', '26']
     steps:
       - uses: actions/checkout@v7
 
@@ -66,6 +66,12 @@ jobs:
       # specified as MUSTs and allocated in neither.
       - name: Every allocated error code exists in both references
         run: npm run check:error-codes
+
+      # The desk is served by @brightbeamai/chap-server and shipped again in
+      # the chap-coordinator wheel. One copy is edited; this fails when the
+      # other was not brought into step.
+      - name: The Python package's desk matches the Node one
+        run: node scripts/sync-desk-assets.mjs --check
 
       - name: Test all TS packages
         # The SQLite store suites skipped silently on every machine for months
@@ -137,6 +143,63 @@ jobs:
       - name: Test the starter
         run: python -m unittest discover -s start-here/tests -q
 
+  python-extras:
+    name: chap-coordinator[${{ matrix.extra }}] on its own
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        extra: [none, crypto, mcp, a2a]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      # Each extra installed alone, from a wheel, so an import that needs
+      # another extra's distribution fails here and not on a user's machine.
+      - name: Build and install the wheel with one extra
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir "${RUNNER_TEMP}/wheels" packages/coordinator-py
+          wheel=$(ls "${RUNNER_TEMP}"/wheels/chap_coordinator-*.whl)
+          if [ "${{ matrix.extra }}" = none ]; then
+            python -m pip install "$wheel"
+          else
+            python -m pip install "${wheel}[${{ matrix.extra }}]"
+          fi
+
+      - name: What the extra promises runs
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -c "import chap_coordinator, chap_coordinator.client, chap_coordinator.server, chap_coordinator.bridge"
+          chap-coordinator --help
+          case "${{ matrix.extra }}" in
+            crypto) python -c "from chap_coordinator.crypto import derive_private_key; derive_private_key('human:a@example.org')" ;;
+            mcp) chap-coordinator mcp --help ;;
+            a2a) chap-coordinator a2a --help ;;
+          esac
+
+  bridges:
+    name: Framework bridges with their frameworks
+    runs-on: ubuntu-latest
+    needs: python
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      # The python job runs the bridges' tests with no framework installed.
+      # This one installs each framework's current release beside its bridge
+      # and fails on a skipped test, so a framework release that breaks a
+      # bridge is seen here.
+      - name: Each bridge, its framework, its README's quick start
+        run: scripts/test-bridges.sh
+
   conformance:
     name: Cross-language conformance
     runs-on: ubuntu-latest
@@ -156,7 +219,7 @@ jobs:
       - name: Install everything
         run: |
           npm install --no-audit --no-fund
-          pip install -e ./packages/coordinator-py
+          pip install -e "./packages/coordinator-py[crypto]"
           cd conformance/harness && npm install --no-audit --no-fund
 
       - name: Build TS packages
