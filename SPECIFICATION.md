@@ -339,6 +339,19 @@ does not start with `<type>:`. A member's type decides what it may do,
 deciding a review that needs a person for one, and its URI is how the
 log names it, so the two cannot disagree.
 
+`group:` and `workspace:` URIs are address scopes: a review, whisper or
+handoff addressed to one reaches every member it covers (§6.3.1). A scope
+names no one who could act, and a member named `workspace:<id>` would stand
+in for the broadcast scope of its own workspace, so a `participant.join`
+or `workspace.invite` of type `group` or `workspace` MUST be refused with
+`-32602`, "group: and workspace: URIs name address scopes, which cannot
+join". Members are of type `human`, `agent` or `service`.
+
+A member's `type` is what its join declared, and the URI scheme confirms
+only that the two agree. A deployment that needs a person's type to stand
+for a verified person binds it with an identity profile (§5.4), or admits
+people only by invitation (§6.3.3).
+
 ### 5.2 Signing algorithm
 
 > **Note.** [`core/SPEC.md`](./core/SPEC.md) §2 describes the messages
@@ -358,11 +371,18 @@ set at `workspace.create` and `"all"` by default, says which calls:
 
 - `"all"`: every call.
 - `"humans"`: every call except one that carries no signature and names in
-  `from` an existing member whose `type` is not `human`. A signed call is
-  verified whoever sends it. This is how an agent on the server's own
-  transport, such as `/mcp`, works unsigned, and every decision a person
-  makes is still signed. It is safe only where the transport itself
-  establishes who the agent is.
+  `from` an existing member whose `type` is `agent`. People and services
+  sign, and a signed call is verified whoever sends it. This is how an
+  agent on the server's own transport, such as `/mcp`, works unsigned, and
+  every decision a person makes is still signed. It is safe only where the
+  transport itself establishes who the agent is.
+
+A participant that signs its calls under the workspace's policy joins a
+workspace that requires signatures with a key: one in the join's `jwks`,
+one an identity profile binds (§5.4), or the keys an invitation pins
+(§6.3.3). A Coordinator MUST refuse a join that brings none with `-32602`,
+"`<uri>` must sign in this workspace, and joins with no key". Admitted,
+such a member would hold a name it could never sign for.
 
 The signature algorithm is **Ed25519**
 ([RFC 8032]). The signed input is the **JCS canonicalisation**
@@ -798,9 +818,9 @@ entry means. §15.4's dispatch rule follows from it.
 | `handoff/1.0` | Admits `handoff.propose`, `handoff.accept` and `handoff.decline`. |
 | `routing/1.0` | Admits `task.route`, `review.depth` and `escalate.auto`. |
 | `audit-scitt/1.0` | Turns the hash-linked chain on, and admits `audit.submit_to_scitt`. The reads are never gated and are listed below. |
-| `security-signed/1.0` | Turns signature checks on (§5.2): every accepted call except `workspace.create` and `participant.join` carries a verified signature, apart from the unsigned calls of members who are not human under the `"humans"` policy. A Coordinator configured to require signatures MUST add this entry at `workspace.create`. Once advertised it MUST NOT be removed: `workspace.set_profiles` that leaves it out is refused with `-32011`. |
-| `identity-oidc/1.0` | States that a token verifier is configured. A Coordinator configured with one MUST add this entry at `workspace.create`, and MUST refuse a `workspace.create` carrying it where none is configured; `workspace.set_profiles` repeats neither check. Step-up freshness is a separate option. |
-| `identity-vc/1.0` | Informational: no reference checks it against its configuration. |
+| `security-signed/1.0` | Turns signature checks on (§5.2): every accepted call except `workspace.create` and `participant.join` carries a verified signature, apart from the unsigned calls of agent members under the `"humans"` policy. A Coordinator configured to require signatures MUST add this entry at `workspace.create`. Once advertised it MUST NOT be removed: `workspace.set_profiles` that leaves it out is refused with `-32011`. |
+| `identity-oidc/1.0` | States that a token verifier is configured, and a person joins with a token (§5.4). A Coordinator configured with one MUST add this entry at `workspace.create`, and MUST refuse a `workspace.create` or `workspace.set_profiles` carrying it where none is configured (`-32602`). Once advertised it MUST NOT be removed (`-32011`). Step-up freshness is a separate option. |
+| `identity-vc/1.0` | States that a presentation verifier is configured, and a person joins with a presentation (§5.4). The rules for `identity-oidc/1.0` apply to it, with its presentation verifier. |
 
 Two sets of methods are never refused for want of an entry, whichever profile
 owns them:
@@ -820,10 +840,20 @@ descriptor to decide what the chain is worth. Advertising `security-signed/1.0`
 also turns its checks on, so the descriptor never states a guarantee the
 Coordinator does not keep: a store reopened by a Coordinator not configured to
 require signatures, and a workspace an admin moved onto the profile with
-`workspace.set_profiles`, keep verifying. A workspace cannot move off it, for
-the same reason. `identity-oidc/1.0` needs a token verifier the Coordinator is
-configured with, so a `workspace.create` advertising it where none is
+`workspace.set_profiles`, keep verifying. A workspace cannot move off it, or
+off an identity profile, for the same reason: dropping
+`identity-oidc/1.0` would let a person join on nobody's word from then on.
+The identity profiles need the verifier the Coordinator is configured with, so
+a `workspace.create` or `workspace.set_profiles` advertising one where none is
 configured MUST be refused with `-32602`.
+
+Each entry is a profile id, `<name>/<major>.<minor>` in ASCII digits, naming
+a profile this table lists at its major version; a later minor version names
+the same profile (§15.4). A `workspace.create` or `workspace.set_profiles`
+naming anything else MUST be refused with `-32602`, so the descriptor never
+names a profile the specification does not describe, `security-signed/0.0-off`
+for one. The machine-readable catalogue lists the profiles and their versions
+([`schemas/profiles/chap-methods.schema.json`](./schemas/profiles/chap-methods.schema.json)).
 
 ---
 
@@ -2028,8 +2058,9 @@ advertises, or the deployment.
    workspace advertises the profile or the Coordinator is configured to
    require signatures. `workspace.create` and `participant.join` are exempt,
    since they run before the sender has a registered key, and so are the
-   unsigned calls of members who are not human where the workspace's
-   `signature_policy` is `"humans"` (§5.2). Refuse a
+   unsigned calls of agent members where the workspace's
+   `signature_policy` is `"humans"` (§5.2). Refuse a join that brings no
+   key from a participant that signs with `-32602` (§5.2), and a
    `workspace.set_profiles` that would stop advertising the profile with
    `-32011`.
 8. `identity-oidc/1.0`: verify the OIDC token a `participant.join`

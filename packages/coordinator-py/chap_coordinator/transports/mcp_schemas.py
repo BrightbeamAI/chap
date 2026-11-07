@@ -155,10 +155,8 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "human",
                     "agent",
                     "service",
-                    "group",
-                    "workspace",
                 ],
-                "description": "The kind of participant invited, which the scheme of uri must name. The member takes this type.",
+                "description": "The kind of participant invited, which the scheme of uri must name. The member takes this type. group: and workspace: URIs name address scopes, which cannot join, and are refused with -32602.",
             },
             "role": {
                 "type": "string",
@@ -198,10 +196,8 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                     "human",
                     "agent",
                     "service",
-                    "group",
-                    "workspace",
                 ],
-                "description": "The kind of participant, which the scheme of from must name: 'agent:' for an agent, and so on. Any other join is refused with -32602. Only members of type 'human' are eligible for the review that chap.task.complete opens on a task marked review_required, and a completion with no eligible human is refused with -32011.",
+                "description": "The kind of participant, which the scheme of from must name: 'agent:' for an agent, and so on. Any other join is refused with -32602, and so is a join of a group: or workspace: URI, which names an address scope. Only members of type 'human' are eligible for the review that chap.task.complete opens on a task marked review_required, and a completion with no eligible human is refused with -32011. In a workspace that requires signatures, a participant that signs joins with a key.",
             },
             "role": {
                 "type": "string",

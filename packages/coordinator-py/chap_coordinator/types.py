@@ -634,7 +634,7 @@ class Workspace:
     step_up_window_sec: int = 300  # identity-oidc/1.0 step-up window
     min_acr: str | None = None  # required OIDC acr for privileged methods
     # Which calls are verified where the workspace requires signatures: "all",
-    # or "humans", which takes an unsigned call from a member that is not human.
+    # or "humans", which takes an unsigned call from an agent member.
     signature_policy: str = "all"
     # Who may join: anyone ("open"), or only a participant an admin invited,
     # and the first member ("invite").

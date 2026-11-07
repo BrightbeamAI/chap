@@ -179,8 +179,9 @@ a workspace, roll back the mode ceiling and members' roles and scopes)
 `workspace.create` profiles or through the `requireSignatures` option
 (`require_signatures` in Python). Every call except `workspace.create`
 and `participant.join` then needs a client signature, or under
-`signature_policy: "humans"` every call a person makes, and the workspace
-cannot drop the profile later.
+`signature_policy: "humans"` every call but an agent's, and the workspace
+cannot drop the profile later. People and services join such a workspace
+with a key.
 
 **If regulatory audit matters** → add `audit-scitt`: the hash chain
 switches on, and `audit.submit_to_scitt` prepares statements for a

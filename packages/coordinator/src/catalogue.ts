@@ -69,3 +69,22 @@ export const ALWAYS_AVAILABLE: ReadonlySet<string> = new Set([
   "audit.verify_chain",
   "audit.verify_receipt",
 ]);
+
+/**
+ * The profiles a workspace may advertise, each at its current version. A
+ * profile id names one of them at its major version (SPECIFICATION 6.5).
+ */
+export const PROFILE_VERSIONS: Readonly<Record<string, string>> = Object.freeze({
+  "audit-scitt": "1.0",
+  "control": "1.0",
+  "core": "1.0",
+  "deliberation": "1.0",
+  "handoff": "1.0",
+  "identity-oidc": "1.0",
+  "identity-vc": "1.0",
+  "modes": "1.0",
+  "review": "1.0",
+  "routing": "1.0",
+  "security-signed": "1.0",
+  "whisper": "1.0",
+});

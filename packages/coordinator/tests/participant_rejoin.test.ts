@@ -205,9 +205,17 @@ test("a re-join with the same holder adds a key", () => {
 });
 
 test("a presentation cannot bind an unbound member", () => {
-  const { c, join } = vcReady();
-  join("human:alice", undefined, { jwks: { keys: [key("alice-self")] } });
-  const r = join("human:alice", "alice");
+  // The member joined with no presentation, before the coordinator had a
+  // verifier, so it has no holder to match.
+  const store = new MemoryStore();
+  const before = new Coordinator({ deterministicIds: true, store });
+  before.dispatch({ jsonrpc: "2.0", id: "c", method: "workspace.create", params: { workspace: "w" } } as never);
+  before.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join", params: { workspace: "w",
+    from: "human:alice", type: "human", jwks: { keys: [key("alice-self")] } } } as never);
+  const c = new Coordinator({ deterministicIds: true, store,
+    verifyVc: (vp: Record<string, unknown>) => (PRESENTATIONS[vp.who as string] as any) ?? null });
+  const r = c.dispatch({ jsonrpc: "2.0", id: "j2", method: "participant.join", params: { workspace: "w",
+    from: "human:alice", type: "human", vc_presentation: { who: "alice" } } } as never) as any;
   assert.equal(r.error.code, -32411);
   const m = memberOf(c);
   assert.equal(m.vc_holder, undefined);

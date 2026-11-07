@@ -227,9 +227,20 @@ def test_rejoin_with_the_same_holder_adds_a_key():
 
 
 def test_a_presentation_cannot_bind_an_unbound_member():
-    c, join = _vc_ready()
-    join("human:alice", jwks={"keys": [_key("alice-self")]})
-    r = join("human:alice", who="alice")
+    # The member joined with no presentation, before the coordinator had a
+    # verifier, so it has no holder to match.
+    store = MemoryStore()
+    before = Coordinator(CoordinatorOptions(deterministic_ids=True, store=store))
+    before.dispatch({"jsonrpc": "2.0", "id": "c", "method": "workspace.create",
+                     "params": {"workspace": "w"}})
+    before.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
+                     "params": {"workspace": "w", "from": "human:alice", "type": "human",
+                                "jwks": {"keys": [_key("alice-self")]}}})
+    c = Coordinator(CoordinatorOptions(deterministic_ids=True, store=store,
+                                       verify_vc=lambda vp: PRESENTATIONS.get(vp.get("who"))))
+    r = c.dispatch({"jsonrpc": "2.0", "id": "j2", "method": "participant.join",
+                    "params": {"workspace": "w", "from": "human:alice", "type": "human",
+                               "vc_presentation": {"who": "alice"}}})
     assert r["error"]["code"] == -32411
     m = _member(c)
     assert m.vc_holder is None

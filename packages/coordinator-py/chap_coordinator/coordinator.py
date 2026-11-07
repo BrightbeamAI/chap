@@ -27,6 +27,7 @@ import dataclasses
 import datetime as _dt
 import json
 import logging
+import re
 import sys
 import threading
 import traceback
@@ -43,7 +44,7 @@ from .crypto import (
 )
 from .ids import IdFactory
 from .tracked import Scope, TrackedDict
-from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE
+from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE, PROFILE_VERSIONS
 from .jsonrpc import E, is_valid_envelope, make_response, rpc_error
 from .params import lookup, params_error
 from .patch import PatchError, apply_json_patch
@@ -173,8 +174,8 @@ class CoordinatorOptions:
 
     signature_policy: str = "all"
     """The signature policy of a workspace whose workspace.create names none:
-    "all" verifies every call, and "humans" takes an unsigned call from a
-    member that is not human."""
+    "all" verifies every call, and "humans" takes an unsigned call from an
+    agent member."""
 
     join_policy: str = "open"
     """The join policy of a workspace whose workspace.create names none:
@@ -465,6 +466,34 @@ _PARTICIPANT_TYPES = ("human", "agent", "service", "group", "workspace")
 #: The types that may hold the admin role (SPECIFICATION 6.3).
 _ADMIN_TYPES = ("human", "service")
 
+#: A profile id: ``<name>/<major>.<minor>`` in ASCII digits.
+_PROFILE_ID = re.compile(r"([a-z][a-z0-9-]*)/(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+
+#: Profiles that cannot be removed once advertised: each states a guarantee
+#: about every later call.
+_LASTING_PROFILES = ("security-signed", "identity-oidc", "identity-vc")
+
+
+def _known_profile(profile_id: str) -> bool:
+    """Whether a profile id names a profile the catalogue lists, at its major
+    version (SPECIFICATION 6.5). A later minor version is the same profile
+    (SPECIFICATION 15.4)."""
+    m = _PROFILE_ID.fullmatch(profile_id)
+    if m is None or m.group(1) not in PROFILE_VERSIONS:
+        return False
+    return PROFILE_VERSIONS[m.group(1)].split(".")[0] == m.group(2)
+
+
+def _profiles_error(profiles: list[str]) -> dict | None:
+    """The refusal of a profile list naming a profile the catalogue does not
+    list, or None."""
+    unknown = next((x for x in profiles if not _known_profile(x)), None)
+    if unknown is None:
+        return None
+    return {"error": rpc_error(
+        E.PARAMS, f"Unknown profile {json.dumps(unknown)}: a profile id is "
+        "<name>/<major>.<minor> for a profile the catalogue lists")}
+
 
 def _participant_error(kind: str, uri: str, field: str) -> dict | None:
     """Why ``uri`` cannot name a participant of this type, or None: the type
@@ -475,6 +504,11 @@ def _participant_error(kind: str, uri: str, field: str) -> dict | None:
             E.PARAMS, "type must be human, agent, service, group or workspace")}
     if not uri.startswith(f"{kind}:"):
         return {"error": rpc_error(E.PARAMS, f'{field} must start with "{kind}:" for type {kind}')}
+    # A group: or workspace: URI addresses everyone it covers, as a review's
+    # `to` does, so it names no one who could join and act.
+    if kind in ("group", "workspace"):
+        return {"error": rpc_error(
+            E.PARAMS, "group: and workspace: URIs name address scopes, which cannot join")}
     return None
 
 
@@ -960,14 +994,12 @@ class Coordinator:
         # workspace.create are bootstrap operations that run before any
         # signing key is registered for the actor, so they cannot be
         # signature-verified. Under the "humans" policy a call that carries
-        # no signature is taken from a member that is not human, such as an
-        # agent on the server's own transport; every other call must verify.
+        # no signature is taken from an agent member, such as one on the
+        # server's own transport; people and services sign every call.
         sender = _raw_member(target, params.get("from")) if target is not None else None
-        exempt = (target is not None and target.signature_policy == "humans"
-                  and not is_signed(envelope) and sender is not None
-                  and sender.type != "human")
-        if ((self.options.require_signatures
-             or (target is not None and target.has_profile("security-signed")))
+        exempt = (target is not None and not is_signed(envelope)
+                  and not self._must_sign(target, sender.type if sender is not None else None))
+        if (self._requires_signatures(target)
                 and method not in ("participant.join", "workspace.create")
                 and not exempt):
             sig_err = self._verify_signature(envelope)
@@ -1476,6 +1508,39 @@ class Coordinator:
 
     # -- step-up check (identity-oidc/1.0) ----------------------------
 
+    def _requires_signatures(self, ws: Workspace | None) -> bool:
+        """Whether a workspace requires signatures: it advertises
+        security-signed/1.0, or this coordinator is configured to."""
+        return bool(self.options.require_signatures) or (
+            ws is not None and ws.has_profile("security-signed"))
+
+    @staticmethod
+    def _must_sign(ws: Workspace, kind: str | None) -> bool:
+        """Whether a participant of this type signs its calls in a workspace
+        that requires signatures: every participant under "all", and every
+        one but an agent under "humans". A non-member signs."""
+        return ws.signature_policy == "all" or kind != "agent"
+
+    def _unverified_identity(self, profiles: list[str]) -> dict | None:
+        """SPECIFICATION 6.5: an identity profile states that a verifier
+        checks people's credentials, so advertising one this coordinator has
+        no verifier for describes a guarantee it does not give."""
+        def named(name: str) -> bool:
+            return any(x == name or x.startswith(name + "/") for x in profiles)
+        if named("identity-oidc") and self.options.verify_oidc_token is None:
+            return rpc_error(
+                E.PARAMS,
+                "identity-oidc/1.0 is advertised but no token verifier is configured. "
+                "A workspace that advertises it and does not enforce it "
+                "describes a guarantee it does not give.")
+        if named("identity-vc") and self.options.verify_vc is None:
+            return rpc_error(
+                E.PARAMS,
+                "identity-vc/1.0 is advertised but no presentation verifier is configured. "
+                "A workspace that advertises it and does not enforce it "
+                "describes a guarantee it does not give.")
+        return None
+
     def _check_step_up(self, params: dict) -> dict | None:
         # A `from` or `workspace` that is not a string names no member to hold
         # to step-up; the membership check answers such a call.
@@ -1605,6 +1670,10 @@ class Coordinator:
         if ws_id in self.workspaces:
             return None, {"error": rpc_error(E.PARAMS, f"workspace already exists: {ws_id}")}
         requested = p.get("profiles")
+        if requested is not None:
+            unknown = _profiles_error(requested)
+            if unknown is not None:
+                return None, unknown
         profiles = list(requested if requested is not None else self.options.default_profiles)
 
         # SPECIFICATION 6.5: the descriptor and the enforcement agree.
@@ -1620,12 +1689,12 @@ class Coordinator:
         oidc = any(x == "identity-oidc" or x.startswith("identity-oidc/") for x in profiles)
         if self.options.verify_oidc_token is not None and not oidc:
             profiles.append("identity-oidc/1.0")
-        elif oidc and self.options.verify_oidc_token is None:
-            return None, {"error": rpc_error(
-                E.PARAMS,
-                "identity-oidc/1.0 is advertised but no token verifier is configured. "
-                "A workspace that advertises it and does not enforce it "
-                "describes a guarantee it does not give.")}
+        vc = any(x == "identity-vc" or x.startswith("identity-vc/") for x in profiles)
+        if self.options.verify_vc is not None and not vc:
+            profiles.append("identity-vc/1.0")
+        unverified = self._unverified_identity(profiles)
+        if unverified is not None:
+            return None, {"error": unverified}
 
         ws = Workspace(
             id=ws_id,
@@ -1694,6 +1763,9 @@ class Coordinator:
             return {"error": rpc_error(E.PARAMS, f"Missing field: {miss}")}
         if not isinstance(p["profiles"], list) or not all(isinstance(x, str) for x in p["profiles"]):
             return {"error": rpc_error(E.PARAMS, "profiles must be a list of strings")}
+        unknown = _profiles_error(p["profiles"])
+        if unknown is not None:
+            return unknown
         ws = self.workspaces.get(p["workspace"])
         if not ws:
             return {"error": rpc_error(E.PARAMS, "Unknown workspace")}
@@ -1704,15 +1776,20 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_AUTHORISED,
                 "workspace.set_profiles requires the admin role")}
-        # A workspace that requires signatures keeps requiring them. Removing
-        # the profile would turn the checks off for every call after this
+        # A workspace that requires signatures keeps requiring them, and one
+        # that says its people are verified keeps verifying them. Removing
+        # either profile would turn its checks off for every call after this
         # one, and the calls the log holds from then on would carry no
         # assurance of who sent them.
         new_profiles = list(p["profiles"])
-        if ws.has_profile("security-signed") and not any(
-                x == "security-signed" or x.startswith("security-signed/") for x in new_profiles):
-            return {"error": rpc_error(
-                E.NOT_AUTHORISED, "security-signed/1.0 cannot be removed once advertised")}
+        for name in _LASTING_PROFILES:
+            held = next((x for x in ws.profiles if x == name or x.startswith(name + "/")), None)
+            if held is not None and not any(x.startswith(name + "/") for x in new_profiles):
+                return {"error": rpc_error(
+                    E.NOT_AUTHORISED, f"{held} cannot be removed once advertised")}
+        unverified = self._unverified_identity(new_profiles)
+        if unverified is not None:
+            return {"error": unverified}
         if not any(prof.startswith("core/") for prof in new_profiles):
             new_profiles.append("core/1.0")
         ws.profiles = new_profiles
@@ -1955,6 +2032,12 @@ class Coordinator:
                 if not any(x.kid == k.kid for x in existing.keys):
                     existing.keys.append(k)
             return {"result": {"joined": True, "as": uri}}
+        # A participant that signs its calls joins with a key: without one it
+        # would hold a name it could never sign for. The key may be its own,
+        # or one an identity profile or an invitation binds.
+        if self._requires_signatures(ws) and self._must_sign(ws, kind) and not member.keys:
+            return {"error": rpc_error(
+                E.PARAMS, f"{uri} must sign in this workspace, and joins with no key")}
         if made:
             self._add_workspace(ws)
         ws.members[uri] = member

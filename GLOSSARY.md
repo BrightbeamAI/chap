@@ -166,10 +166,11 @@ revocation and expiry by its own clock.
 its `prev_hash` is `sha256:` followed by 64 zeros.
 
 **Group.** [normative] A Participant URI prefix (`group:`) naming a set of
-Participants. Neither coordinator models group membership: a review,
-whisper or handoff addressed to a `group:` URI can be answered by any
-workspace member. A deliberation's voter list is matched entry by entry, so
-a `group:` entry there does not expand to members.
+Participants. It is an address scope: it never joins a workspace itself.
+Neither coordinator models group membership: a review, whisper or handoff
+addressed to a `group:` URI can be answered by any workspace member. A
+deliberation's voter list is matched entry by entry, so a `group:` entry
+there does not expand to members.
 
 ---
 

@@ -475,6 +475,9 @@ const handlers: Record<string, Handler> = {
     if (typeof p.from !== "string" || !p.from.startsWith(`${type}:`)) {
       return { error: err(E.PARAMS, `from must start with "${type}:" for type ${type}`) };
     }
+    if (type === "group" || type === "workspace") {
+      return { error: err(E.PARAMS, "group: and workspace: URIs name address scopes, which cannot join") };
+    }
     // SPECIFICATION 6.3: the admin role is granted, never claimed. Only a
     // person or a service holds it, and only the first member may name it.
     if (p.role === "admin" && type !== "human" && type !== "service") {
@@ -537,6 +540,9 @@ const handlers: Record<string, Handler> = {
     }
     if (typeof p.uri !== "string" || !p.uri.startsWith(`${type}:`)) {
       return { error: err(E.PARAMS, `uri must start with "${type}:" for type ${type}`) };
+    }
+    if (type === "group" || type === "workspace") {
+      return { error: err(E.PARAMS, "group: and workspace: URIs name address scopes, which cannot join") };
     }
     if (p.role === "admin" && type !== "human" && type !== "service") {
       return { error: err(E.PARAMS, "The admin role is held by a human or a service") };

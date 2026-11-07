@@ -271,7 +271,8 @@ test("a from or workspace that is not a string is refused under signatures and s
     const send = (method: string, params: Record<string, unknown>, sig?: string) =>
       c.dispatch({ jsonrpc: "2.0", id: method, method, params, ...(sig ? { sig } : {}) } as never);
     send("workspace.create", { workspace: WS, profiles: ["core/1.0", "control/1.0"] });
-    send("participant.join", { workspace: WS, from: "human:alice", type: "human", role: "admin" });
+    send("participant.join", { workspace: WS, from: "human:alice", type: "human", role: "admin",
+      jwks: { keys: [{ kty: "OKP", crv: "Ed25519", kid: "k1", x: "AAAA" }] } });
     const sig = options.requireSignatures ? "ed25519:k1:AAAA" : undefined;
     const expected = options.requireSignatures
       ? { code: -32070, message: "Cannot verify signature: missing from/workspace" }

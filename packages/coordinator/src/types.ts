@@ -29,7 +29,7 @@ export type Mode = "shadow" | "trial" | "production";
 
 /**
  * Which calls a workspace that requires signatures verifies: every call, or
- * every call except an unsigned one from a member that is not human.
+ * every call except an unsigned one from an agent member.
  */
 export type SignaturePolicy = "all" | "humans";
 /**

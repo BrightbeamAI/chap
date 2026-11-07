@@ -395,6 +395,19 @@ async function runCoreTests(client: HapClient, ws: string): Promise<void> {
     assertEq(roles["human:guest@example.org"], "reviewer", "the invitee takes the invitation's role");
     assert(!("agent:early-bot" in roles), "a refused join adds no member");
   });
+
+  await test("Core methods", "cm-16", "group: and workspace: URIs name address scopes, which cannot join", async () => {
+    const join = (from: string, type: string) => client.call("participant.join", {
+      workspace: ws, from, to: "service:coordinator@example.org", ts: new Date().toISOString(), type,
+    });
+    for (const [from, type] of [[`workspace:${ws}`, "workspace"], ["group:reviewers@example.org", "group"]]) {
+      const { error } = await join(from, type);
+      assertEq(error?.code, -32602, `a ${type}: URI joining`);
+      assertEq(error?.message, "group: and workspace: URIs name address scopes, which cannot join", "the refusal says why");
+    }
+    const { result: d } = await client.call("workspace.describe", { workspace: ws });
+    assert(!d.members.some((m: any) => m.type === "group" || m.type === "workspace"), "no address scope is a member");
+  });
 }
 
 // ============================================================

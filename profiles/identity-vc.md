@@ -64,13 +64,19 @@ Client → Coordinator: CHAP messages signed with K (security-signed profile)
 The VP is the analogue of the OIDC ID token. The deployment's verifier
 checks the VP, and the Coordinator pins the key it returns.
 
-Where a verifier is configured (`verifyVc` or `verify_vc`) and the
-workspace advertises this profile, a join of type `human` MUST carry a
-`vc_presentation`, and is refused with `-32410` otherwise. Where
-`identity-oidc/1.0` also applies, a token in its place will do. The
-Coordinator records the join with `vc_presentation` replaced by
-`sha256:` and the hex SHA-256 of its JCS form, so a presentation never
-reaches the chain.
+A Coordinator configured with a verifier (`verifyVc` or `verify_vc`) adds
+this profile to every workspace it creates, and refuses a
+`workspace.create` or `workspace.set_profiles` naming it where none is
+configured (`-32602`). Once advertised, the profile is never removed
+(`-32011`): a workspace that says its people are verified keeps verifying
+them (SPECIFICATION §6.5).
+
+Where a verifier is configured and the workspace advertises this profile,
+a join of type `human` MUST carry a `vc_presentation`, and is refused with
+`-32410` otherwise. Where `identity-oidc/1.0` also applies, a token in its
+place will do. The Coordinator records the join with `vc_presentation`
+replaced by `sha256:` and the hex SHA-256 of its JCS form, so a
+presentation never reaches the chain.
 
 ---
 

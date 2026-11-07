@@ -16,6 +16,7 @@ import json
 from chap_coordinator import Coordinator, CoordinatorOptions
 from chap_coordinator.canonical import canonicalize
 from chap_coordinator.crypto import jwk_thumbprint
+from chap_coordinator.storage.store import MemoryStore
 
 RFC8037_KEY = {"kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}
 
@@ -50,15 +51,21 @@ def _keys_of(c, uri):
 
 def test_a_participant_is_one_of_five_types_and_its_uris_scheme_names_the_type():
     c, join = _coordinator()
-    for kind in ("human", "agent", "service", "group", "workspace"):
+    for kind in ("human", "agent", "service"):
         assert join(f"{kind}:x", kind)["result"] == {"joined": True, "as": f"{kind}:x"}
+    # group: and workspace: name address scopes, which a review's `to` uses;
+    # they do not join.
+    for kind in ("group", "workspace"):
+        assert join(f"{kind}:x", kind)["error"] == {
+            "code": -32602,
+            "message": "group: and workspace: URIs name address scopes, which cannot join"}
     assert join("bot:x", "bot")["error"] == {
         "code": -32602, "message": "type must be human, agent, service, group or workspace"}
     assert join("human:mallory", "agent")["error"] == {
         "code": -32602, "message": 'from must start with "agent:" for type agent'}
     assert join("alice", "human")["error"] == {
         "code": -32602, "message": 'from must start with "human:" for type human'}
-    assert len(c.workspaces["w"].members) == 5
+    assert len(c.workspaces["w"].members) == 3
 
 
 def test_a_credential_of_the_wrong_type_is_refused():
@@ -113,9 +120,30 @@ def test_where_both_apply_either_credential_admits_a_person():
     assert "error" not in join("human:bob", "human", oidc_token="bob")
 
 
+def test_a_presentation_verifier_makes_a_workspace_advertise_identity_vc_and_the_profile_needs_one():
+    c, join = _coordinator(verify_vc=_verify_vc)
+    assert join("human:carol", "human")["error"]["code"] == -32410
+    assert "error" not in join("human:carol", "human", vc_presentation={"who": "carol"})
+    assert "identity-vc/1.0" in c.workspaces["w"].profiles
+    bare = Coordinator(CoordinatorOptions())
+    assert bare.dispatch({"jsonrpc": "2.0", "id": "c", "method": "workspace.create",
+                          "params": {"workspace": "v",
+                                     "profiles": ["core/1.0", "identity-vc/1.0"]}})["error"] == {
+        "code": -32602,
+        "message": "identity-vc/1.0 is advertised but no presentation verifier is configured. "
+                   "A workspace that advertises it and does not enforce it describes a "
+                   "guarantee it does not give."}
+
+
 def test_a_workspace_that_does_not_advertise_the_profile_takes_a_person_without_one():
-    _, join = _coordinator(verify_vc=_verify_vc)
-    assert "error" not in join("human:carol", "human")
+    # Made before the coordinator had a verifier, it says nothing of its people.
+    store = MemoryStore()
+    Coordinator(CoordinatorOptions(store=store)).dispatch(
+        {"jsonrpc": "2.0", "id": "c", "method": "workspace.create", "params": {"workspace": "w"}})
+    c = Coordinator(CoordinatorOptions(store=store, verify_vc=_verify_vc))
+    r = c.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
+                    "params": {"workspace": "w", "from": "human:carol", "type": "human"}})
+    assert "error" not in r
 
 
 # ------------------------------------------------------- credentials off the chain

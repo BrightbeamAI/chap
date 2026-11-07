@@ -49,15 +49,21 @@ says which calls are verified, and `workspace.describe` returns it:
 | Policy | Verified |
 |---|---|
 | `"all"` (the default) | Every call except `workspace.create` and `participant.join`. |
-| `"humans"` | The same, except a call that carries no `sig` and names in `from` an existing member whose `type` is not `human`. |
+| `"humans"` | The same, except a call that carries no `sig` and names in `from` an existing member whose `type` is `agent`. |
 
-Under `"humans"` the people who decide sign, and an agent on the server's
+Under `"humans"` people and services sign, and an agent on the server's
 own transport, such as `/mcp`, works unsigned. A signed call is verified
 whoever sends it, and a call from a sender who is not a member is
 verified, so a person cannot be impersonated by leaving a signature off,
 and an unsigned call never decides a review that requires a person (review
 profile §3.1). The policy relies on the transport to establish who the
 agent is.
+
+A participant that signs its calls, every one under `"all"` and every one
+but an agent under `"humans"`, joins a workspace that requires signatures
+with a key: one in its `jwks`, one an identity profile binds, or keys an
+admin's invitation pins (SPECIFICATION §6.3.3). A join that brings none is
+refused with `-32602`, so no member holds a name it cannot sign for.
 
 ---
 

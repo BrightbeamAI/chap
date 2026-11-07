@@ -44,6 +44,7 @@ from starlette.testclient import TestClient
 
 from chap_coordinator import server as server_module
 from chap_coordinator.client import HttpCoordinator, Participant, Signer
+from chap_coordinator.crypto import public_jwk
 from chap_coordinator.server import (
     ANALYTICS_POLICY, MAX_BODY_BYTES, SECURITY_HEADERS, ChapDesk, desk_url, load_config, make_coordinator,
     make_server, public_config, read_desk, serve,
@@ -261,7 +262,8 @@ def test_under_humans_the_agent_calls_unsigned_and_a_person_does_not(desk_of):
     # A person's call is signed, whether or not they have joined.
     stranger = call(port, "task.create", **{"from": "human:stranger@local"}, kind="draft", input={})
     assert stranger["error"]["code"] == -32070
-    assert call(port, "participant.join", **{"from": HUMAN}, type="human", role="reviewer")["result"]["joined"]
+    assert call(port, "participant.join", **{"from": HUMAN}, type="human", role="reviewer",
+                jwks={"keys": [public_jwk(HUMAN)]})["result"]["joined"]
     assert call(port, "task.complete", **{"from": AGENT}, task_id=task["task_id"],
                 output={"body": "hello"})["result"]["state"] == "review_requested"
     assert call(port, "decide.approve", **{"from": HUMAN}, task_id=task["task_id"])["error"]["code"] == -32070

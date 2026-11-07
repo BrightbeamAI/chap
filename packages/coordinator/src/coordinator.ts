@@ -21,7 +21,7 @@
  */
 
 import { canonicalize, contentHash, sha256Hex, ZERO_HASH } from "./canonical.js";
-import { ALWAYS_AVAILABLE, OWNING_PROFILE } from "./catalogue.js";
+import { ALWAYS_AVAILABLE, OWNING_PROFILE, PROFILE_VERSIONS } from "./catalogue.js";
 import {
   isWebAuthnKey, jwkThumbprint, parseWebAuthnAssertion, publicKeyFromJwk, verifyEnvelope, webAuthnFailure,
 } from "./crypto.js";
@@ -150,7 +150,7 @@ export interface CoordinatorOptions {
   /**
    * The signature policy of a workspace whose `workspace.create` names none:
    * "all" (the default) verifies every call, and "humans" takes an unsigned
-   * call from a member that is not human.
+   * call from an agent member.
    */
   signaturePolicy?: SignaturePolicy;
   /**
@@ -248,6 +248,28 @@ function advertises(ws: Workspace, name: string): boolean {
   return ws.profiles.some((p) => p === name || p.startsWith(name + "/"));
 }
 
+/**
+ * Whether a profile id names a profile the catalogue lists, at its major
+ * version: `<name>/<major>.<minor>` in ASCII digits (SPECIFICATION 6.5). A
+ * later minor version is the same profile (SPECIFICATION 15.4).
+ */
+function knownProfile(id: string): boolean {
+  const m = /^([a-z][a-z0-9-]*)\/(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.exec(id);
+  if (!m || !Object.prototype.hasOwnProperty.call(PROFILE_VERSIONS, m[1])) return false;
+  return PROFILE_VERSIONS[m[1]].split(".")[0] === m[2];
+}
+
+/** Profiles that cannot be removed once advertised: each states a guarantee about every later call. */
+const LASTING_PROFILES = ["security-signed", "identity-oidc", "identity-vc"];
+
+/** The refusal of a profile list naming a profile the catalogue does not list, or null. */
+function profilesError(profiles: string[]): { error: ReturnType<typeof rpcError> } | null {
+  const unknown = profiles.find((x) => !knownProfile(x));
+  if (unknown === undefined) return null;
+  return { error: rpcError(E.PARAMS,
+    `Unknown profile ${JSON.stringify(unknown)}: a profile id is <name>/<major>.<minor> for a profile the catalogue lists`) };
+}
+
 /** Names a task.create idempotency key cannot take (SPECIFICATION 12.3). */
 const RESERVED_KEYS = ["__proto__", "constructor", "prototype"];
 
@@ -268,6 +290,11 @@ function participantError(type: string, uri: string, field: string): { error: Re
   }
   if (!uri.startsWith(`${type}:`)) {
     return { error: rpcError(E.PARAMS, `${field} must start with "${type}:" for type ${type}`) };
+  }
+  // A group: or workspace: URI addresses everyone it covers, as a review's
+  // `to` does, so it names no one who could join and act.
+  if (type === "group" || type === "workspace") {
+    return { error: rpcError(E.PARAMS, "group: and workspace: URIs name address scopes, which cannot join") };
   }
   return null;
 }
@@ -1333,14 +1360,13 @@ export class Coordinator {
     // workspace.create are bootstrap operations that run before any signing
     // key is registered for the actor, so they cannot be signature-verified.
     // Under the "humans" policy a call that carries no signature is taken
-    // from a member that is not human, such as an agent on the server's own
-    // transport; every other call must verify.
+    // from an agent member, such as one on the server's own transport;
+    // people and services sign every call.
     const target = typeof params.workspace === "string" ? this.workspaces.get(params.workspace) : undefined;
-    if ((this.options.requireSignatures || (target && advertises(target, "security-signed")))
+    if (this.requiresSignatures(target)
         && method !== "participant.join" && method !== "workspace.create"
-        && !(target?.signature_policy === "humans" && !isSigned(envelope)
-             && rawMember(target, params.from) !== undefined
-             && rawMember(target, params.from)!.type !== "human")) {
+        && !(!isSigned(envelope) && target !== undefined
+             && !this.mustSign(target, rawMember(target, params.from)?.type))) {
       const sigErr = this.verifySignature(envelope);
       if (sigErr) return reply(envelope, { error: sigErr });
       if (method === "participant.rotate_key") {
@@ -1611,6 +1637,42 @@ export class Coordinator {
     }
   }
 
+  /**
+   * SPECIFICATION 6.5: an identity profile states that a verifier checks
+   * people's credentials, so advertising one this coordinator has no
+   * verifier for describes a guarantee it does not give.
+   */
+  private unverifiedIdentity(profiles: string[]): ReturnType<typeof rpcError> | null {
+    const named = (name: string) => profiles.some((x) => x === name || x.startsWith(name + "/"));
+    if (named("identity-oidc") && this.options.verifyOidcToken === undefined) {
+      return rpcError(E.PARAMS,
+        "identity-oidc/1.0 is advertised but no token verifier is configured. " +
+        "A workspace that advertises it and does not enforce it " +
+        "describes a guarantee it does not give.");
+    }
+    if (named("identity-vc") && this.options.verifyVc === undefined) {
+      return rpcError(E.PARAMS,
+        "identity-vc/1.0 is advertised but no presentation verifier is configured. " +
+        "A workspace that advertises it and does not enforce it " +
+        "describes a guarantee it does not give.");
+    }
+    return null;
+  }
+
+  /** Whether a workspace requires signatures: it advertises security-signed/1.0, or this coordinator is configured to. */
+  private requiresSignatures(ws: Workspace | undefined): boolean {
+    return !!this.options.requireSignatures || (ws !== undefined && advertises(ws, "security-signed"));
+  }
+
+  /**
+   * Whether a participant of this type signs its calls in a workspace that
+   * requires signatures: every participant under "all", and every one but an
+   * agent under "humans". A non-member signs.
+   */
+  private mustSign(ws: Workspace, type: string | undefined): boolean {
+    return ws.signature_policy === "all" || type !== "agent";
+  }
+
   /** Lookup the key valid for a given participant at a given time. */
   lookupKey(member: Member, kid: string, ts: string): KeyRecord | null {
     for (const k of member.keys) {
@@ -1757,6 +1819,10 @@ export class Coordinator {
     }
     const id = (p.workspace as string) || this.ids.workspaceId();
     if (this.workspaces.has(id)) return { error: rpcError(E.PARAMS, `workspace already exists: ${id}`) };
+    if (Array.isArray(p.profiles)) {
+      const unknown = profilesError(p.profiles as string[]);
+      if (unknown) return unknown;
+    }
     const profiles: string[] = Array.isArray(p.profiles) ? [...(p.profiles as string[])] : [...(this.options.defaultProfiles ?? ["core/1.0", "review/1.0"])];
 
     // SPECIFICATION 6.5: the descriptor and the enforcement agree. Signatures
@@ -1770,12 +1836,10 @@ export class Coordinator {
     if (this.options.requireSignatures && !signed) profiles.push("security-signed/1.0");
     const oidc = profiles.some(x => x === "identity-oidc" || x.startsWith("identity-oidc/"));
     if (this.options.verifyOidcToken !== undefined && !oidc) profiles.push("identity-oidc/1.0");
-    else if (oidc && this.options.verifyOidcToken === undefined) {
-      return { error: rpcError(E.PARAMS,
-        "identity-oidc/1.0 is advertised but no token verifier is configured. " +
-        "A workspace that advertises it and does not enforce it " +
-        "describes a guarantee it does not give.") };
-    }
+    const vc = profiles.some(x => x === "identity-vc" || x.startsWith("identity-vc/"));
+    if (this.options.verifyVc !== undefined && !vc) profiles.push("identity-vc/1.0");
+    const unverified = this.unverifiedIdentity(profiles);
+    if (unverified) return { error: unverified };
 
     const chainEnabled = profiles.includes("audit-scitt/1.0") || !!this.options.enableChain;
     const ws: Workspace = {
@@ -1853,6 +1917,8 @@ export class Coordinator {
     if (!Array.isArray(p.profiles) || !p.profiles.every((x) => typeof x === "string")) {
       return { error: rpcError(E.PARAMS, "profiles must be a list of strings") };
     }
+    const unknown = profilesError(p.profiles as string[]);
+    if (unknown) return unknown;
     const ws = this.workspaces.get(p.workspace as string);
     if (!ws) return { error: rpcError(E.PARAMS, "Unknown workspace") };
     const notMember = this.requireMember(ws, p.from);
@@ -1860,15 +1926,20 @@ export class Coordinator {
     if (ws.members.get(p.from as string)!.role !== "admin") {
       return { error: rpcError(E.NOT_AUTHORISED, "workspace.set_profiles requires the admin role") };
     }
-    // A workspace that requires signatures keeps requiring them. Removing the
-    // profile would turn the checks off for every call after this one, and
+    // A workspace that requires signatures keeps requiring them, and one that
+    // says its people are verified keeps verifying them. Removing either
+    // profile would turn its checks off for every call after this one, and
     // the calls the log holds from then on would carry no assurance of who
     // sent them.
     const newProfiles = [...(p.profiles as string[])];
-    if (advertises(ws, "security-signed")
-        && !newProfiles.some(x => x === "security-signed" || x.startsWith("security-signed/"))) {
-      return { error: rpcError(E.NOT_AUTHORISED, "security-signed/1.0 cannot be removed once advertised") };
+    for (const name of LASTING_PROFILES) {
+      const held = ws.profiles.find((x) => x === name || x.startsWith(name + "/"));
+      if (held !== undefined && !newProfiles.some((x) => x.startsWith(name + "/"))) {
+        return { error: rpcError(E.NOT_AUTHORISED, `${held} cannot be removed once advertised`) };
+      }
     }
+    const unverified = this.unverifiedIdentity(newProfiles);
+    if (unverified) return { error: unverified };
     if (!newProfiles.some(pr => pr.startsWith("core/"))) newProfiles.push("core/1.0");
     ws.profiles = newProfiles;
     if (newProfiles.includes("audit-scitt/1.0") && !ws.chain_enabled) {
@@ -2097,6 +2168,12 @@ export class Coordinator {
         if (!existing.keys.some(x => x.kid === k.kid)) existing.keys.push(k);
       }
       return { result: { joined: true, as: uri } };
+    }
+    // A participant that signs its calls joins with a key: without one it
+    // would hold a name it could never sign for. The key may be its own, or
+    // one an identity profile or an invitation binds.
+    if (this.requiresSignatures(ws) && this.mustSign(ws, type) && member.keys.length === 0) {
+      return { error: rpcError(E.PARAMS, `${uri} must sign in this workspace, and joins with no key`) };
     }
     if (made) this.addWorkspace(ws);
     ws.members.set(uri, member);

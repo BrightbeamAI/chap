@@ -49,7 +49,6 @@ test("only a person or a service holds the admin role", () => {
   call("workspace.create", {});
   const held = { code: -32602, message: "The admin role is held by a human or a service" };
   assert.deepEqual(join("agent:bot", "agent", { role: "admin" }).error, held);
-  assert.deepEqual(join("group:ops", "group", { role: "admin" }).error, held);
 });
 
 test("an agent that asks for the role cannot then change the profiles or revoke a person's key", () => {

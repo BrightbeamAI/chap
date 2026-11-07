@@ -159,8 +159,8 @@ export const SCHEMAS: Record<string, JsonSchema> = {
       uri:       { ...PARTICIPANT_URI, description: "The participant invited. Its scheme must name type, as at a join." },
       type: {
         type: "string",
-        enum: ["human", "agent", "service", "group", "workspace"],
-        description: "The kind of participant invited, which the scheme of uri must name. The member takes this type.",
+        enum: ["human", "agent", "service"],
+        description: "The kind of participant invited, which the scheme of uri must name. The member takes this type. group: and workspace: URIs name address scopes, which cannot join, and are refused with -32602.",
       },
       role:      { type: "string", description: "The role the member takes when it joins, whatever role the join names. Only an invitation grants 'admin' after the first member, and only to a human or a service." },
       jwks: {
@@ -179,8 +179,8 @@ export const SCHEMAS: Record<string, JsonSchema> = {
       from:      PARTICIPANT_URI,
       type: {
         type: "string",
-        enum: ["human", "agent", "service", "group", "workspace"],
-        description: "The kind of participant, which the scheme of from must name: 'agent:' for an agent, and so on. Any other join is refused with -32602. Only members of type 'human' are eligible for the review that chap.task.complete opens on a task marked review_required, and a completion with no eligible human is refused with -32011.",
+        enum: ["human", "agent", "service"],
+        description: "The kind of participant, which the scheme of from must name: 'agent:' for an agent, and so on. Any other join is refused with -32602, and so is a join of a group: or workspace: URI, which names an address scope. Only members of type 'human' are eligible for the review that chap.task.complete opens on a task marked review_required, and a completion with no eligible human is refused with -32011. In a workspace that requires signatures, a participant that signs joins with a key.",
       },
       role:      { type: "string", description: "Operator-defined role, e.g. 'reviewer' or 'drafter'. One value is read by the coordinator: 'admin', which changes the profiles, invites, and revokes another member's key. It is granted, never claimed: only the workspace's first member, or a participant an admin's invitation names as admin, may name it at a join, and any other join naming it is refused with -32011. Only a human or a service holds it. An invitation's role replaces the one named here." },
       display_name: { type: "string", description: "Human-readable name for interfaces. Not used in authorisation." },

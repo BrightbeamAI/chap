@@ -55,6 +55,9 @@ CHAP conformance.
 
 - [ ] `workspace.describe` returns `id`, `created`, `state`, `members`, `profiles`, `audit_count`.
 - [ ] `participant.join` adds the participant to `members`; rejects with `-32602` for missing fields, for a `type` other than `human`, `agent`, `service`, `group` and `workspace`, and for a `from` whose scheme is not its `type` (SPECIFICATION.md §5.1). Verified by harness vector `cm-13`.
+- [ ] `participant.join` and `workspace.invite` refuse `group:` and `workspace:` URIs, which name address scopes, with `-32602` (SPECIFICATION.md §5.1). Verified by harness vector `cm-16`.
+- [ ] `role: "admin"` at a join is accepted only from the workspace's first member or a participant an admin's invitation names as admin, else refused with `-32011`, and only for a `human` or a `service` (`-32602`); a member joining again keeps its role (SPECIFICATION.md §6.3). Verified by harness vector `cm-14`.
+- [ ] Under `join_policy: "invite"`, a join with no invitation is refused with `-32011`, except the first member, which becomes the admin; `workspace.invite` is admin only, and the member takes the invitation's role and pinned keys (SPECIFICATION.md §6.3.3). Verified by harness vector `cm-15`.
 - [ ] A `participant.join` naming an existing member changes none of its type, role, scopes or keys, and one that carries only keys the member does not hold and binds none through an identity profile is refused with `-32011`, with `data.kids` (SPECIFICATION.md §6.3.2).
 - [ ] `participant.leave` removes the caller, who must be a current member; a second leave is refused with `-32011` and changes nothing.
 - [ ] `task.create` validates that the assignee is a current member; returns `task_id` and `state: "created"`.
@@ -82,8 +85,9 @@ CHAP conformance.
 ### C6 · Profile discovery
 
 - [ ] `workspace.describe`'s `profiles` array lists every active profile as `<name>/<version>`.
-- [ ] `core/1.0` is in the default profile set, and `workspace.set_profiles` adds it when missing. `workspace.create` advertises an explicit `profiles` list as given, adding `security-signed/1.0` or `identity-oidc/1.0` when the Coordinator enforces it, and refuses `identity-oidc/1.0` with `-32602` where no token verifier is configured.
-- [ ] A workspace advertising `security-signed/1.0` verifies signatures whatever the Coordinator's options, under its `signature_policy` (`"all"` or `"humans"`), and `workspace.set_profiles` that would drop the profile is refused with `-32011`.
+- [ ] `core/1.0` is in the default profile set, and `workspace.set_profiles` adds it when missing. `workspace.create` advertises an explicit `profiles` list as given, adding `security-signed/1.0`, `identity-oidc/1.0` or `identity-vc/1.0` when the Coordinator enforces it, and `workspace.create` and `workspace.set_profiles` refuse an identity profile with `-32602` where its verifier is not configured.
+- [ ] `workspace.create` and `workspace.set_profiles` refuse with `-32602` a profile id other than `<name>/<major>.<minor>` for a catalogued profile at its major version.
+- [ ] A workspace advertising `security-signed/1.0` verifies signatures whatever the Coordinator's options, under its `signature_policy` (`"all"`, or `"humans"`, where only agents call unsigned); a participant that signs joins it with a key (`-32602`); and `workspace.set_profiles` that would drop the profile, or an identity profile, is refused with `-32011`.
 
 ---
 

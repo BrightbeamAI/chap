@@ -289,7 +289,9 @@ def test_a_from_or_workspace_that_is_not_a_string_is_refused_under_signatures_an
 
         send("workspace.create", {"workspace": WS, "profiles": ["core/1.0", "control/1.0"]})
         send("participant.join", {"workspace": WS, "from": "human:alice",
-                                  "type": "human", "role": "admin"})
+                                  "type": "human", "role": "admin",
+                                  "jwks": {"keys": [{"kty": "OKP", "crv": "Ed25519",
+                                                     "kid": "k1", "x": "AAAA"}]}})
         sig = "ed25519:k1:AAAA" if signed else None
         expected = ((-32070, "Cannot verify signature: missing from/workspace") if signed
                     else (-32011, "Not a workspace member: from is not a participant URI"))

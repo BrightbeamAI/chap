@@ -46,7 +46,7 @@
       "type": "string",
       "enum": ["all", "humans"],
       "default": "all",
-      "description": "Which calls are verified where the workspace requires signatures (SPECIFICATION 5.2): every call, or every call except an unsigned one from a member whose type is not human."
+      "description": "Which calls are verified where the workspace requires signatures (SPECIFICATION 5.2): every call, or every call except an unsigned one from a member whose type is agent."
     },
     "join_policy": {
       "type": "string",

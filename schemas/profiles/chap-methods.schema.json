@@ -4,9 +4,14 @@
   "title": "CHAP Method Catalogue",
   "description": "Authoritative catalogue of methods defined by CHAP 0.3 across Core and the profile suite. Every method declares `since` (the layer that introduces it: `core/1.0` or `<profile>/<version>`) and `implementation_status` (`implemented` if present in at least one reference implementation under `reference/`, `reserved` if named by the specification and provided by none, otherwise `spec-only`). `task.create`, `task.update` and `task.complete` are the task methods CHAP 0.3 implements and the ones SPECIFICATION.md §8.1 is written in terms of. `task.assign`, `task.accept`, `task.decline`, `task.start`, `task.progress` and `task.describe` are `reserved`: named for a finer-grained assignment lifecycle and provided by no implementation.",
   "type": "object",
-  "required": ["version", "methods"],
+  "required": ["version", "methods", "profiles"],
   "properties": {
     "version": { "const": "0.3" },
+    "profiles": {
+      "type": "object",
+      "description": "The profiles a workspace may advertise, each with its current `major.minor` version. A profile id is `<name>/<major>.<minor>`, for a name listed here at its major version: SPECIFICATION.md §6.5.",
+      "additionalProperties": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" }
+    },
     "methods": {
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/MethodSpec" }
@@ -40,6 +45,11 @@
   "examples": [
     {
       "version": "0.3",
+      "profiles": {
+        "core": "1.0", "review": "1.0", "modes": "1.0", "control": "1.0", "whisper": "1.0", "deliberation": "1.0",
+        "handoff": "1.0", "routing": "1.0", "audit-scitt": "1.0", "security-signed": "1.0", "identity-oidc": "1.0",
+        "identity-vc": "1.0"
+      },
       "methods": {
         "workspace.create":       { "namespace": "workspace",   "type": "request",      "summary": "Create a new workspace.",                              "required_scope": ["workspace.admin"], "privileged": false, "since": "core/1.0",     "implementation_status": "implemented" },
         "workspace.describe":     { "namespace": "workspace",   "type": "request",      "summary": "Return the workspace descriptor.",                     "required_scope": [],                  "privileged": false, "since": "core/1.0",     "implementation_status": "implemented" },

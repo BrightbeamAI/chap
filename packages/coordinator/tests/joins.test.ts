@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { Coordinator, type CoordinatorOptions } from "../src/coordinator.js";
 import { canonicalize } from "../src/canonical.js";
 import { jwkThumbprint } from "../src/crypto.js";
+import { MemoryStore } from "../src/storage/store.js";
 
 const RFC8037_KEY = { kty: "OKP", crv: "Ed25519", x: "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo" };
 const key = (kid: string, x = kid.toUpperCase()) => ({ kty: "OKP", crv: "Ed25519", kid, x });
@@ -36,8 +37,14 @@ const keysOf = (c: Coordinator, uri: string) =>
 
 test("a participant is one of five types, and its URI's scheme names the type", () => {
   const { c, join } = coordinator();
-  for (const type of ["human", "agent", "service", "group", "workspace"]) {
+  for (const type of ["human", "agent", "service"]) {
     assert.deepEqual(join(`${type}:x`, type).result, { joined: true, as: `${type}:x` });
+  }
+  // group: and workspace: name address scopes, which a review's `to` uses;
+  // they do not join.
+  for (const type of ["group", "workspace"]) {
+    assert.deepEqual(join(`${type}:x`, type).error,
+      { code: -32602, message: "group: and workspace: URIs name address scopes, which cannot join" });
   }
   assert.deepEqual(join("bot:x", "bot").error,
     { code: -32602, message: "type must be human, agent, service, group or workspace" });
@@ -45,7 +52,7 @@ test("a participant is one of five types, and its URI's scheme names the type", 
     { code: -32602, message: 'from must start with "agent:" for type agent' });
   assert.deepEqual(join("alice", "human").error,
     { code: -32602, message: 'from must start with "human:" for type human' });
-  assert.equal(c.workspaces.get("w")!.members.size, 5);
+  assert.equal(c.workspaces.get("w")!.members.size, 3);
 });
 
 test("a credential of the wrong type is refused", () => {
@@ -96,9 +103,27 @@ test("where both apply, either credential admits a person", () => {
   assert.equal(join("human:bob", "human", { oidc_token: "bob" }).error, undefined);
 });
 
+test("a presentation verifier makes a workspace advertise identity-vc/1.0, and the profile needs one", () => {
+  const { c, join } = coordinator({ verifyVc });
+  assert.equal(join("human:carol", "human").error.code, -32410);
+  assert.equal(join("human:carol", "human", { vc_presentation: { who: "carol" } }).error, undefined);
+  assert.ok(c.workspaces.get("w")!.profiles.includes("identity-vc/1.0"));
+  const bare = new Coordinator({});
+  assert.deepEqual((bare.dispatch({ jsonrpc: "2.0", id: "c", method: "workspace.create",
+    params: { workspace: "v", profiles: ["core/1.0", "identity-vc/1.0"] } }) as any).error, { code: -32602,
+    message: "identity-vc/1.0 is advertised but no presentation verifier is configured. " +
+      "A workspace that advertises it and does not enforce it describes a guarantee it does not give." });
+});
+
 test("a workspace that does not advertise the profile takes a person without one", () => {
-  const { join } = coordinator({ verifyVc });
-  assert.equal(join("human:carol", "human").error, undefined);
+  // Made before the coordinator had a verifier, it says nothing of its people.
+  const store = new MemoryStore();
+  new Coordinator({ store }).dispatch({ jsonrpc: "2.0", id: "c", method: "workspace.create",
+    params: { workspace: "w" } });
+  const c = new Coordinator({ store, verifyVc });
+  const r = c.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
+    params: { workspace: "w", from: "human:carol", type: "human" } }) as any;
+  assert.equal(r.error, undefined);
 });
 
 // ----------------------------------------------------------- credentials off the chain

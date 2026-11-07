@@ -74,7 +74,10 @@ a join of type `human` MUST carry an `oidc_token`, and is refused with
 `-32403` otherwise; a person who joined with no token would sit in a
 workspace that says its people are verified. Where `identity-vc/1.0`
 also applies, a presentation in its place will do. Agents and services
-join without one.
+join without one. Once advertised, the profile is never removed:
+`workspace.set_profiles` that leaves it out is refused with `-32011`, and
+one that adds it where no verifier is configured with `-32602`
+(SPECIFICATION §6.5).
 
 A token binds only to the participant it belongs to:
 

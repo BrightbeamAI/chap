@@ -40,7 +40,10 @@ const ALWAYS_AVAILABLE = [
   "audit.verify_receipt",
 ];
 
-const methods = JSON.parse(readFileSync(CATALOGUE, "utf-8")).examples[0].methods;
+const catalogue = JSON.parse(readFileSync(CATALOGUE, "utf-8")).examples[0];
+const methods = catalogue.methods;
+const profiles = Object.entries(catalogue.profiles)
+  .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
 const owners = Object.entries(methods)
   .filter(([, m]) => m.implementation_status === "implemented")
   .map(([name, m]) => [name, m.since])
@@ -49,6 +52,12 @@ const owners = Object.entries(methods)
 for (const name of ALWAYS_AVAILABLE) {
   if (!owners.some(([m]) => m === name)) {
     console.error(`ALWAYS_AVAILABLE names ${name}, which the catalogue does not implement`);
+    process.exit(2);
+  }
+}
+for (const [method, since] of Object.entries(methods).map(([m, s]) => [m, s.since])) {
+  if (catalogue.profiles[since.split("/")[0]] !== since.split("/")[1]) {
+    console.error(`${method} is owned by ${since}, which the catalogue's profiles do not list`);
     process.exit(2);
   }
 }
@@ -114,6 +123,14 @@ ${owners.map(([m, p]) => `  ${`"${m}":`.padEnd(pad)}"${p}",`).join("\n")}
 export const ALWAYS_AVAILABLE: ReadonlySet<string> = new Set([
 ${ALWAYS_AVAILABLE.map((m) => `  "${m}",`).join("\n")}
 ]);
+
+/**
+ * The profiles a workspace may advertise, each at its current version. A
+ * profile id names one of them at its major version (SPECIFICATION 6.5).
+ */
+export const PROFILE_VERSIONS: Readonly<Record<string, string>> = Object.freeze({
+${profiles.map(([n, v]) => `  "${n}": "${v}",`).join("\n")}
+});
 `;
 
 const pyPad = Math.max(...owners.map(([m]) => m.length)) + 3;
@@ -140,6 +157,12 @@ ${owners.map(([m, p]) => `    ${`"${m}":`.padEnd(pyPad)}"${p}",`).join("\n")}
 ALWAYS_AVAILABLE: frozenset[str] = frozenset({
 ${ALWAYS_AVAILABLE.map((m) => `    "${m}",`).join("\n")}
 })
+
+#: The profiles a workspace may advertise, each at its current version. A
+#: profile id names one of them at its major version (SPECIFICATION 6.5).
+PROFILE_VERSIONS: dict[str, str] = {
+${profiles.map(([n, v]) => `    "${n}": "${v}",`).join("\n")}
+}
 `;
 
 const check = process.argv.includes("--check");

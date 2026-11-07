@@ -58,7 +58,7 @@ def test_only_a_person_or_a_service_holds_the_admin_role():
     call("workspace.create")
     held = {"code": -32602, "message": "The admin role is held by a human or a service"}
     assert join("agent:bot", "agent", role="admin")["error"] == held
-    assert join("group:ops", "group", role="admin")["error"] == held
+
 
 
 def test_an_agent_that_asks_for_the_role_cannot_then_change_the_profiles_or_revoke_a_key():
