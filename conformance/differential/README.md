@@ -77,9 +77,11 @@ python conformance/differential/fuzz.py --seeds 20 --config signed   # one confi
 python conformance/differential/fuzz.py --first 100 --seeds 50       # seeds 100..149
 ```
 
-Requires `chap_coordinator` installed (`pip install -e packages/coordinator-py`)
-and `npx tsx` on the path. CI runs a small fixed seed set in the
-cross-language conformance job; use a larger `--seeds` sweep locally and nightly.
+Requires `chap_coordinator` installed with its crypto extra
+(`pip install -e 'packages/coordinator-py[crypto]'`), since the signed
+configurations sign with real keys, and `npx tsx` on the path. CI runs a
+small fixed seed set in the cross-language conformance job; use a larger
+`--seeds` sweep locally and nightly.
 
 A failure prints the seed, the envelope index, and the two differing responses
 (or the two chain heads), which is enough to reproduce and minimise by hand.
