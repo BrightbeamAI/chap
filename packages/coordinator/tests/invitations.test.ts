@@ -168,6 +168,25 @@ test("an invitation for a member that holds no key in force registers new keys",
   assert.equal(ws().invitations.size, 0);
 });
 
+test("where a token verifier is configured, an invitation does not register a person's keys", () => {
+  // The admin could otherwise revoke a person's keys, invite them with a key
+  // the admin holds, and sign as them. The person joins again with a token
+  // that binds a new key.
+  const verifyOidcToken = (t: string) => (t.startsWith("tok:") ? JSON.parse(t.slice(4)) : null);
+  const { call, ws } = ready({ verifyOidcToken });
+  call("workspace.create", "human:a");
+  const token = (sub: string, uri: string) => `tok:${JSON.stringify({ sub, chap_participant_uri: uri })}`;
+  assert.equal(call("participant.join", "human:a", { type: "human", role: "admin",
+    oidc_token: token("sub-a", "human:a") }).error, undefined);
+  assert.equal(call("participant.join", "human:c", { type: "human",
+    oidc_token: token("sub-c", "human:c") }).error, undefined);
+  assert.deepEqual(call("workspace.invite", "human:a",
+    { uri: "human:c", type: "human", jwks: { keys: [keyOf("human:a#2")] } }).error,
+    { code: -32602, message: "human:c registers a new key by joining again with a token that binds it; "
+      + "an invitation does not register a person's keys here" });
+  assert.deepEqual(ws().members.get("human:c")!.keys, []);
+});
+
 test("an invitation and the join policy are kept by the store, and an invitation used up leaves it", () => {
   const store = new MemoryStore();
   const first = ready({ store, joinPolicy: "invite" });

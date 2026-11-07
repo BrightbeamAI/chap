@@ -8,6 +8,8 @@ than the workspace sets. Mirrors review_rule.test.ts.
 """
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from chap_coordinator import Coordinator, CoordinatorOptions
@@ -64,3 +66,14 @@ def test_the_rule_survives_a_restart():
         "workspace.create", "human:a@x", review_rule="all_approve")
     again = ready(Coordinator(CoordinatorOptions(store=store)))
     assert again("workspace.describe", "human:a@x")["result"]["review_rule"] == "all_approve"
+
+
+def test_a_stored_rule_this_release_does_not_support_is_read_as_none():
+    store = MemoryStore()
+    ready(Coordinator(CoordinatorOptions(store=store, deterministic_ids=True,
+                                         deterministic_clock=True)))(
+        "workspace.create", "human:a@x", review_rule="quorum:2")
+    record = store.load_one("w")
+    store.save(dataclasses.replace(record, data={**record.data, "review_rule": "quorum:٢"}))
+    again = ready(Coordinator(CoordinatorOptions(store=store)))
+    assert again("workspace.describe", "human:a@x")["result"]["review_rule"] == "any_one_approves"

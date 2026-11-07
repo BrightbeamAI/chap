@@ -1060,7 +1060,8 @@
     ],
     "pending_artefact": {
      "draft": 1
-    }
+    },
+    "prior_authors": null
    },
    "tsk_01HF7YAT03000XN9KD5HYXYX1Z": {
     "id": "tsk_01HF7YAT03000XN9KD5HYXYX1Z",
@@ -1097,7 +1098,8 @@
       "note": "routed to agent:b"
      }
     ],
-    "pending_artefact": null
+    "pending_artefact": null,
+    "prior_authors": null
    },
    "tsk_01HF7YAT09002RZWT7GNWSWQ5X": {
     "id": "tsk_01HF7YAT09002RZWT7GNWSWQ5X",
@@ -1140,7 +1142,8 @@
       "note": null
      }
     ],
-    "pending_artefact": null
+    "pending_artefact": null,
+    "prior_authors": null
    }
   },
   "overrides": {},

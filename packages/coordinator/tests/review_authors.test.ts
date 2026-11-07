@@ -57,14 +57,31 @@ test("the agent cannot add itself, or anyone, to its own required review, or app
   assert.equal(task(c, id).state, "review_requested");
 });
 
-test("before completing, the agent cannot open a required review, and a person cannot name it", () => {
+/** The refusal of a review.request that would open a required review. */
+const OPENS_ON_COMPLETE = "This task requires a person's review, which opens on task.complete; "
+  + "review.request only adds reviewers to it once it is open";
+
+test("before completing, nobody opens a required review with review.request", () => {
   const { c, send } = ready();
   const id = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b", review_required: true })).task_id;
-  refused(send("review.request", { task_id: id, artefact: DRAFT, to: ["human:a"] }),
-          "The author of the work under review cannot request its review");
-  refused(send("review.request", { task_id: id, artefact: DRAFT, to: ["agent:b"] }, "human:a"),
-          "The author of the work under review cannot review it: agent:b");
+  refused(send("review.request", { task_id: id, artefact: DRAFT, to: ["human:a"] }), OPENS_ON_COMPLETE);
+  refused(send("review.request", { task_id: id, artefact: DRAFT, to: ["agent:b"] }, "human:a"), OPENS_ON_COMPLETE);
+  // A person who is not an author cannot open it either, with an artefact
+  // they supplied and themselves as its reviewer, and approve it.
+  refused(send("review.request", { task_id: id, artefact: { by: "a" }, to: ["human:a"] }, "human:a"),
+          OPENS_ON_COMPLETE);
   assert.equal(task(c, id).review, undefined);
+  assert.equal(task(c, id).state, "created");
+});
+
+test("a completed required review cannot be reopened with review.request", () => {
+  const { c, send, id } = requiredUnderReview();
+  ok(send("decide.approve", { task_id: id }, "human:a"));
+  assert.equal(task(c, id).state, "completed");
+  refused(send("review.request", { task_id: id, artefact: { by: "c" }, to: ["human:c"] }, "human:c"),
+          OPENS_ON_COMPLETE);
+  assert.equal(task(c, id).state, "completed");
+  assert.deepEqual(task(c, id).output, DRAFT);
 });
 
 test("another agent cannot be added to a required review", () => {
@@ -217,6 +234,12 @@ test("a review restored without authors takes them from the task's history", () 
   ok(send("task.complete", { task_id: implicit, output: DRAFT }));
   const fresh = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" })).task_id;
   ok(send("review.request", { task_id: fresh, artefact: DRAFT, to: ["group:any"] }));
+  // A review a person approved: the approval completed the task, and is not
+  // a completion of the work.
+  const approved = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b" })).task_id;
+  ok(send("task.complete", { task_id: approved, output: DRAFT }, "agent:d"));
+  ok(send("review.request", { task_id: approved, artefact: DRAFT, to: ["human:a"] }, "agent:d"));
+  ok(send("decide.approve", { task_id: approved }, "human:a"));
   const snapshot = JSON.parse(JSON.stringify(c.snapshot()));
   for (const t of snapshot[0].tasks) delete t.review?.authors;
   const again = new Coordinator({ defaultProfiles: ["core/1.0", "review/1.0"] });
@@ -225,6 +248,7 @@ test("a review restored without authors takes them from the task's history", () 
   assert.deepEqual(authors(explicit), ["agent:b", "agent:d"]);
   assert.deepEqual(authors(implicit), ["agent:b"]);
   assert.deepEqual(authors(fresh), ["agent:b"]);
+  assert.deepEqual(authors(approved), ["agent:b", "agent:d"]);
   const r = again.dispatch({ jsonrpc: "2.0", id: "x", method: "decide.approve",
                              params: { workspace: "w", from: "agent:d", task_id: explicit } });
   assert.equal(r.error?.code, E.NOT_AUTHORISED);

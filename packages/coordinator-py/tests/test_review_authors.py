@@ -73,15 +73,34 @@ def test_the_agent_cannot_add_itself_or_anyone_to_its_own_required_review_or_app
     assert _task(c, tid).state == "review_requested"
 
 
-def test_before_completing_the_agent_cannot_open_a_required_review_and_a_person_cannot_name_it():
+#: The refusal of a review.request that would open a required review.
+OPENS_ON_COMPLETE = ("This task requires a person's review, which opens on task.complete; "
+                     "review.request only adds reviewers to it once it is open")
+
+
+def test_before_completing_nobody_opens_a_required_review_with_review_request():
     c, send = _ready()
     tid = _ok(send("task.create", kind="k", input={}, assignee="agent:b",
                    review_required=True))["task_id"]
-    _refused(send("review.request", task_id=tid, artefact=DRAFT, to=["human:a"]),
-             "The author of the work under review cannot request its review")
+    _refused(send("review.request", task_id=tid, artefact=DRAFT, to=["human:a"]), OPENS_ON_COMPLETE)
     _refused(send("review.request", actor="human:a", task_id=tid, artefact=DRAFT, to=["agent:b"]),
-             "The author of the work under review cannot review it: agent:b")
+             OPENS_ON_COMPLETE)
+    # A person who is not an author cannot open it either, with an artefact
+    # they supplied and themselves as its reviewer, and approve it.
+    _refused(send("review.request", actor="human:a", task_id=tid, artefact={"by": "a"},
+                  to=["human:a"]), OPENS_ON_COMPLETE)
     assert _task(c, tid).review is None
+    assert _task(c, tid).state == "created"
+
+
+def test_a_completed_required_review_cannot_be_reopened_with_review_request():
+    c, send, tid = _required_under_review()
+    _ok(send("decide.approve", actor="human:a", task_id=tid))
+    assert _task(c, tid).state == "completed"
+    _refused(send("review.request", actor="human:c", task_id=tid, artefact={"by": "c"},
+                  to=["human:c"]), OPENS_ON_COMPLETE)
+    assert _task(c, tid).state == "completed"
+    assert _task(c, tid).output == DRAFT
 
 
 def test_another_agent_cannot_be_added_to_a_required_review():
@@ -241,9 +260,15 @@ def test_a_review_restored_without_authors_takes_them_from_the_tasks_history():
     _ok(send("task.complete", task_id=implicit, output=DRAFT))
     fresh = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
     _ok(send("review.request", task_id=fresh, artefact=DRAFT, to=["group:any"]))
+    # A review a person approved: the approval completed the task, and is not
+    # a completion of the work.
+    approved = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
+    _ok(send("task.complete", actor="agent:d", task_id=approved, output=DRAFT))
+    _ok(send("review.request", actor="agent:d", task_id=approved, artefact=DRAFT, to=["human:a"]))
+    _ok(send("decide.approve", actor="human:a", task_id=approved))
     # Rewrite the stored tasks as a release before authors wrote them.
     held = store._held["w"]["objects"]["tasks"]
-    for tid in (explicit, implicit, fresh):
+    for tid in (explicit, implicit, fresh, approved):
         stored = json.loads(held[tid])
         del stored["review"]["authors"]
         held[tid] = json.dumps(stored)
@@ -252,6 +277,7 @@ def test_a_review_restored_without_authors_takes_them_from_the_tasks_history():
     assert tasks[explicit].review.authors == ["agent:b", "agent:d"]
     assert tasks[implicit].review.authors == ["agent:b"]
     assert tasks[fresh].review.authors == ["agent:b"]
+    assert tasks[approved].review.authors == ["agent:b", "agent:d"]
     r = again.dispatch({"jsonrpc": "2.0", "id": "x", "method": "decide.approve",
                         "params": {"workspace": "w", "from": "agent:d", "task_id": explicit}})
     assert r["error"]["code"] == E.NOT_AUTHORISED

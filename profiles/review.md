@@ -59,7 +59,9 @@ Open a review on a task. Issued either explicitly, most often by whoever
 produced the draft, or implicitly when `task.complete` is called on a task
 whose review is required. Refused with `-32010` on a task that has been
 cancelled, superseded or paused, so that a review cannot revive stopped work
-or step around a pause.
+or step around a pause. On a task whose review is required, the review
+opens only on `task.complete`, and `review.request` only adds reviewers to
+it once it is open (below).
 
 ```json
 {
@@ -120,13 +122,24 @@ misconfiguration, and the operator needs told.
 #### The authors of the work
 
 An open review records `authors`: the task's assignee, then the member that
-completed the work under review, once each. On the implicit review and on a
-new round (below), the completer is the `from` of the `task.complete` that
+completed the work under review, then the authors the task carries from a
+task it replaces (below), once each. On the implicit review and on a new
+round (below), the completer is the `from` of the `task.complete` that
 submitted the artefact. On an explicit `review.request`, it is the `from` of
-the task's latest `completed` history entry, where there is one. A review
-recorded before authors were kept takes them from the task's history in the
-same way: the assignee, and the sender of the latest completion, or of the
-`task.complete` that opened the review.
+the task's latest `task.complete` that completed it, where there is one; a
+reviewer's decision that completed the task is not a completion of the work,
+and where the task held a review before, that review's authors stay
+authors. A review recorded before authors were kept takes them from the
+task's history in the same way: the assignee, and the sender of the latest
+`task.complete` that completed the task or opened its review.
+
+The authors of the work go with it. A new round's authors are the earlier
+round's together with the new artefact's, whoever resubmits it. A task
+`escalate.raise` or `control.supersede` makes carries, as `prior_authors`,
+the authors of the task it replaces: that task's review authors where it
+held a review, and otherwise its assignee and completer, with whatever it
+carried itself. Without this a person who wrote the work could hand it on,
+or have it superseded, and then approve it as a reviewer of the successor.
 
 A Coordinator MUST refuse with `-32011`, "The author of the work under review
 cannot decide it", a `decide.approve`, `decide.reject`, `decide.override`,
@@ -140,8 +153,17 @@ the authors is asked, and the authors do not choose who:
 
 - A decision from a member whose `type` is not `human` MUST be refused with
   `-32011`.
-- A `review.request`, opening the review or amending it, from an author
-  MUST be refused with `-32011`, "The author of the work under review cannot
+- The review opens on `task.complete` (below), under the workspace's
+  `review_rule`. A `review.request` on a task whose review is not open MUST
+  be refused with `-32011`, "This task requires a person's review, which
+  opens on task.complete; review.request only adds reviewers to it once it
+  is open", whoever sends it and whatever state the task is in, `completed`
+  included. Opened by a request, the review would take an artefact, a rule
+  and reviewers its requester chose: a member who is not an author could
+  supply the work, name themselves and approve it, or reopen a task a
+  review already completed.
+- A `review.request` amending the open review from an author MUST be
+  refused with `-32011`, "The author of the work under review cannot
   request its review". Without this the agent whose work the review holds
   could add a person it had just joined, and that person's approval would
   read as oversight.
@@ -217,9 +239,10 @@ and counts in the round it arrives in; a decision that carries
 `approved_artefact_digest` (§3.2) is refused against any artefact other
 than the one it names, so a client that needs its decision tied to one
 artefact sends the digest. And `review.request` still adds reviewers to an
-open review, as described above, and opens a review with new reviewers and
-a new rule on a task back in progress; on a task that requires review
-either names only people other than the authors.
+open review, as described above, and, on a task that does not require
+review, opens a review with new reviewers and a new rule on a task back in
+progress. On a task that requires review it only adds people other than the
+authors to the open round.
 
 **Completing round the review.** `task.update` reaches `completed` by
 another route and carries no output, so a task requiring review, or one
@@ -230,8 +253,8 @@ recorded and no `decide.*` on the chain, which is the single failure a
 review exists to prevent. See
 [SPECIFICATION.md §8.1](../SPECIFICATION.md#81-lifecycle).
 
-**No way round a review.** Three more routes would end a review with no
-decision, on any task that holds one:
+**No way round a review.** More routes would end a review with no
+decision. On any task that holds one:
 
 - `task.update` from `review_requested` to `in_progress` takes the work
   back to revise it, and only its authors may: from anyone else it MUST be
@@ -241,7 +264,19 @@ decision, on any task that holds one:
   `-32602`. Once a reviewer has rejected the work, its author may give the
   task up.
 - `escalate.raise` hands the work on with its review: the successor
-  requires review (§3.5).
+  requires review (§3.5), and its review counts the original's authors
+  among its own.
+
+On a task whose review is required, while the review is open, or paused
+while open:
+
+- `control.cancel` and `control.supersede` from one of its authors MUST be
+  refused with `-32011`, "The authors of the work under review cannot end
+  its review without a decision", and so MUST a `task.update` from one of
+  them that takes the paused task to `cancelled`. Any other member may
+  still pull either brake ([control profile](./control.md)); a
+  `control.supersede` successor requires review and counts the original's
+  authors among its own.
 
 ### 3.2 `decide.approve` · `decide.reject`
 

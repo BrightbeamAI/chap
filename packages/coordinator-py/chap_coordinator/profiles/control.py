@@ -27,7 +27,7 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING
 
-from ..coordinator import mode_le
+from ..coordinator import _open_required_review_authors, _successor_authors, mode_le
 from ..canonical import content_hash
 from ..jsonrpc import E, rpc_error
 from ..params import lookup, params_error
@@ -149,6 +149,13 @@ def register_control(coord: "Coordinator") -> None:
         if task.state in ("completed", "declined", "cancelled", "superseded"):
             return {"error": rpc_error(E.CONTROL_NOT_AUTHORISED,
                                        f"Cannot cancel {task.state} task")}
+        # A review a task requires ends with a decision. Its authors pulling
+        # the emergency brake on it would end it with none; other members
+        # still can.
+        if p.get("from") in _open_required_review_authors(ws, task):
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED,
+                "The authors of the work under review cannot end its review without a decision")}
         task.state = "cancelled"
         task.updated_at = coord.now_iso()
         task.history.append(TaskHistoryEntry(
@@ -284,6 +291,10 @@ def register_control(coord: "Coordinator") -> None:
         if not old:
             return {"error": rpc_error(E.PARAMS, "Unknown task")}
 
+        if p.get("from") in _open_required_review_authors(ws, old):
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED,
+                "The authors of the work under review cannot end its review without a decision")}
         # successor_task is an object describing the new task; the Coordinator
         # creates it as part of the supersede operation (per spec).
         new_spec = p.get("successor_task") or {}
@@ -350,6 +361,9 @@ def register_control(coord: "Coordinator") -> None:
             new_task.review_required = True
         elif "review_required" in new_spec:
             new_task.review_required = bool(new_spec["review_required"])
+        # Whoever made the work it replaces is an author of the successor's
+        # review too, so superseding does not make its author a reviewer of it.
+        new_task.prior_authors = _successor_authors(old)
         ws.tasks[new_id] = new_task
 
         old.state = "superseded"

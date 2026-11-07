@@ -475,7 +475,7 @@ function shapeSnapshot(w: Record<string, unknown>): Record<string, unknown> {
  * Whether a task's work must be decided by a person: it carries
  * review_required, or it runs in trial on a workspace advertising modes/1.0.
  */
-function reviewRequired(ws: Workspace, task: Task): boolean {
+export function reviewRequired(ws: Workspace, task: Task): boolean {
   return task.review_required === true || (task.mode === "trial" && advertises(ws, "modes"));
 }
 
@@ -484,37 +484,80 @@ function rawMember(ws: Workspace, uri: unknown): Member | undefined {
   return typeof uri === "string" ? Map.prototype.get.call(ws.members, uri) as Member | undefined : undefined;
 }
 
-/** Who made the work: the task's assignee, then whoever completed it, once each. */
-function authorsOf(task: Task, completer: unknown): ParticipantUri[] {
-  const authors: ParticipantUri[] = [task.assignee];
-  if (typeof completer === "string" && completer !== task.assignee) authors.push(completer);
-  return authors;
+/** The members of the lists in order, each once. */
+export function unionOf(...lists: ReadonlyArray<ParticipantUri>[]): ParticipantUri[] {
+  const out: ParticipantUri[] = [];
+  for (const list of lists) for (const uri of list) if (!out.includes(uri)) out.push(uri);
+  return out;
 }
 
-/** The sender of the task's latest completion, if it has one. */
+/**
+ * Who made the work: the task's assignee, then whoever completed it, then
+ * the authors it carries from a task it replaces, once each.
+ */
+export function authorsOf(task: Task, completer: unknown): ParticipantUri[] {
+  const authors: ParticipantUri[] = [task.assignee];
+  if (typeof completer === "string" && completer !== task.assignee) authors.push(completer);
+  return unionOf(authors, Array.isArray(task.prior_authors) ? task.prior_authors : []);
+}
+
+/**
+ * Whether the history entry at `i` records a reviewer's decision completing
+ * the task, as against a task.complete: an override says so, and an
+ * approval follows the entry of the review it settles.
+ */
+function decisionCompletion(history: Task["history"], i: number): boolean {
+  const h = history[i];
+  return h.state === "completed" && (h.note === "override applied" || (i > 0 && history[i - 1].state === "review_requested"));
+}
+
+/** The sender of the task's latest task.complete that completed it, if it has one. */
 function lastCompleter(task: Task): ParticipantUri | undefined {
   for (let i = task.history.length - 1; i >= 0; i--) {
-    if (task.history[i].state === "completed") return task.history[i].from;
+    if (task.history[i].state === "completed" && !decisionCompletion(task.history, i)) return task.history[i].from;
   }
   return undefined;
 }
 
-/** The note on the history entry of a review task.complete opened. */
+/** The notes on the history entries of the reviews task.complete opened. */
 const OPENED_ON_COMPLETE = "review required; opened on task.complete";
+const NEW_ROUND_ON_COMPLETE = "a new round of the review; opened on task.complete";
 
 /**
  * The authors of a review recorded before authors were kept, read from the
  * task's history: the assignee, and whoever completed the work, whether
- * the completion opened the review or came before a review.request.
+ * the completion opened the review or came before a review.request. A
+ * reviewer's decision that completed the task is not a completion of the
+ * work.
  */
 function storedAuthors(task: Task): ParticipantUri[] {
   for (let i = task.history.length - 1; i >= 0; i--) {
     const h = task.history[i];
-    if (h.state === "completed" || (h.state === "review_requested" && h.note === OPENED_ON_COMPLETE)) {
+    if ((h.state === "completed" && !decisionCompletion(task.history, i))
+        || (h.state === "review_requested" && (h.note === OPENED_ON_COMPLETE || h.note === NEW_ROUND_ON_COMPLETE))) {
       return authorsOf(task, h.from);
     }
   }
-  return [task.assignee];
+  return authorsOf(task, undefined);
+}
+
+/**
+ * The authors of a review a task requires that is open: under review, or
+ * paused while under review. Empty when the task holds no such review.
+ */
+export function openRequiredReviewAuthors(ws: Workspace, task: Task): ParticipantUri[] {
+  if (!task.review || !reviewRequired(ws, task)) return [];
+  const underReview = task.state === "review_requested" || (task.state === "paused" && task.paused_from === "review_requested");
+  return underReview ? task.review.authors : [];
+}
+
+/**
+ * The authors a successor carries from the task it replaces: that task's
+ * review authors where it held a review, and otherwise its assignee and
+ * completer, with whatever it carried itself.
+ */
+export function successorAuthors(old: Task): ParticipantUri[] {
+  return unionOf(old.review ? old.review.authors : [], authorsOf(old, lastCompleter(old)));
 }
 
 /** Whether a URI is an address scope, which every member it covers answers to. */
@@ -1164,7 +1207,7 @@ export class Coordinator {
       // and one written before the join policy existed admitted anyone.
       signature_policy: w.signature_policy === "humans" ? "humans" : "all",
       join_policy: w.join_policy === "invite" ? "invite" : "open",
-      review_rule: typeof w.review_rule === "string" ? w.review_rule : undefined,
+      review_rule: typeof w.review_rule === "string" && reviewRuleSupported(w.review_rule) ? w.review_rule : undefined,
       members: this.newMap(),
       tasks: this.newMap(),
       overrides: this.newMap(),
@@ -2197,8 +2240,10 @@ export class Coordinator {
       }
       member.oidc_sub = sub;
       tokenVerified = true;
+      // A NumericDate may carry a fraction; both coordinators keep whole
+      // seconds, and nothing that is not a finite number.
       const at = claims.auth_time;
-      if (typeof at === "number") member.oidc_auth_time = at;
+      if (typeof at === "number" && Number.isFinite(at)) member.oidc_auth_time = Math.floor(at);
       member.oidc_acr = typeof claims.acr === "string" ? claims.acr : undefined;
       // The token binds the key in its cnf.jwk or, with none, the key whose
       // thumbprint is its nonce: a client that cannot have the key put in the
@@ -2363,6 +2408,14 @@ export class Coordinator {
       if (!pinned) {
         return { error: rpcError(E.PARAMS, `${uri} is a member; an invitation for a member registers the keys its jwks names`) };
       }
+      // Where a token verifier is configured, a person's key is the one their
+      // token binds, and they register a new one by joining again with it.
+      // Registered here, it would be a key the admin chose, and the admin
+      // could revoke a person's keys and sign as them.
+      if (this.options.verifyOidcToken !== undefined && (member.type === "human" || member.oidc_sub !== undefined)) {
+        return { error: rpcError(E.PARAMS,
+          `${uri} registers a new key by joining again with a token that binds it; an invitation does not register a person's keys here`) };
+      }
       if ((role !== undefined && role !== member.role) || (sub !== undefined && sub !== member.oidc_sub)) {
         return { error: rpcError(E.PARAMS, `${uri} is a member; an invitation for a member registers keys and changes nothing else`) };
       }
@@ -2511,6 +2564,10 @@ export class Coordinator {
       return { error: rpcError(E.NOT_AUTHORISED,
         "Only the authors of the work under review take it back from review") };
     }
+    if (newState === "cancelled" && openRequiredReviewAuthors(ws, task).includes(p.from as ParticipantUri)) {
+      return { error: rpcError(E.NOT_AUTHORISED,
+        "The authors of the work under review cannot end its review without a decision") };
+    }
     if (newState === "declined" && task.review && !task.review.decisions.some((d) => d.kind === "reject")) {
       return { error: rpcError(E.PARAMS,
         "This task holds a review no decision has closed; a reviewer's decision ends it") };
@@ -2590,15 +2647,18 @@ export class Coordinator {
         // weaken the review. The authors of the new artefact are left out of
         // the reviewers, and so is any member who is not a person where the
         // review is required; where nobody remains, the completion is refused.
-        const reviewers = task.review.requested_to.filter((r) => !authors.includes(r)
+        // The authors of the earlier rounds stay authors of this one: the work
+        // is theirs as well, whoever resubmits it.
+        const roundAuthors = unionOf(task.review.authors, authors);
+        const reviewers = task.review.requested_to.filter((r) => !roundAuthors.includes(r)
           && !(required && rawMember(ws, r) !== undefined && rawMember(ws, r)!.type !== "human"));
         if (reviewers.length === 0) {
           return { error: rpcError(E.NOT_AUTHORISED,
             "No reviewer of this task remains once the authors of the work are left out") };
         }
-        task.review = { ...task.review, requested_at: now, requested_to: reviewers, decisions: [], authors,
-                        acknowledgements: [] };
-        note = "a new round of the review; opened on task.complete";
+        task.review = { ...task.review, requested_at: now, requested_to: reviewers, decisions: [],
+                        authors: roundAuthors, acknowledgements: [] };
+        note = NEW_ROUND_ON_COMPLETE;
       }
       task.pending_artefact = p.output;
       task.state = "review_requested";
@@ -2750,8 +2810,18 @@ export class Coordinator {
     // and approve its own work. An explicit review of a task that does not
     // require one keeps its own `to`, so a deliberate agent-reviews-agent
     // flow is still available.
-    const authors = open ? open.authors : authorsOf(task, lastCompleter(task));
+    const authors = open ? open.authors
+      : unionOf(task.review ? task.review.authors : [], authorsOf(task, lastCompleter(task)));
     if (reviewRequired(ws, task)) {
+      // The review a task requires opens on task.complete, from the assignee,
+      // under the workspace's rule. Opened here, by anyone, it would take an
+      // artefact, a rule and reviewers its requester chose, and a requester
+      // who is not an author could approve work it supplied itself, or reopen
+      // a task a review already completed.
+      if (!open) {
+        return { error: rpcError(E.NOT_AUTHORISED,
+          "This task requires a person's review, which opens on task.complete; review.request only adds reviewers to it once it is open") };
+      }
       if (authors.includes(p.from as ParticipantUri)) {
         return { error: rpcError(E.NOT_AUTHORISED, "The author of the work under review cannot request its review") };
       }
@@ -3061,6 +3131,9 @@ export class Coordinator {
         || (ws.profiles.some(pr => pr.startsWith("modes/")) && newTask.mode === "trial")) {
       newTask.review_required = true;
     }
+    // Whoever made the work it carries on is an author of its review too, so
+    // handing the work on does not make its author a reviewer of it.
+    newTask.prior_authors = successorAuthors(orig);
     ws.tasks.set(newId, newTask);
     orig.state = "escalated";
     orig.updated_at = now;

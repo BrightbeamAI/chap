@@ -812,7 +812,13 @@ verifier on the Coordinator; otherwise the call is refused with `-32602`.
   a key it no longer has. The call needs `jwks` and changes nothing else:
   a `role` or `oidc_sub` other than the member's is refused with `-32602`,
   and so is a `kid` the member held before, since a signature naming a
-  revoked `kid` is refused whatever key holds it now.
+  revoked `kid` is refused whatever key holds it now. Where a token
+  verifier is configured, an invitation for a member of type `human`, or
+  one bound to a token subject, MUST be refused with `-32602`: their key is
+  the one their token binds, and they register a new one by joining again
+  with a token that binds it (§5.4). Registered by an invitation, it would
+  be a key the admin chose, and an admin could revoke a person's keys and
+  sign as them.
 - **A member that holds a key in force.** The call is refused with
   `-32602`: that member's keys change through `participant.rotate_key`.
 

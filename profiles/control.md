@@ -202,17 +202,25 @@ is created with `supersedes` linkage. The successor requires review when
 the old task did, or when it is a `trial` task on a workspace that
 advertises `modes/1.0`, whatever `successor_task.review_required` says, so
 superseding never removes a required review. Otherwise its own
-`review_required` applies.
+`review_required` applies. The successor carries the old task's authors
+as `prior_authors`, and any review of it counts them among its own
+([review profile §3.1](./review.md#31-reviewrequest)).
 
 ---
 
 ## 5. Privilege
 
-Every `control.*` method is privileged. Implementations SHOULD
-require step-up authentication (recent `auth_time`) via the
-`identity-oidc` profile. Without `identity-oidc`, the requirement
-reduces to "the caller has the admin role", protocol-level
-enforcement is left to the deployment.
+Every `control.*` method is privileged. Where step-up is enforced
+through the `identity-oidc` profile, a human member, or one bound to a
+token, needs a recent `auth_time`. Beyond that any member may call
+them: restricting them to a role is left to the deployment.
+
+One limit holds whatever the deployment adds. While a review a task
+requires is open, or paused while open, `control.cancel` and
+`control.supersede` from one of the review's authors MUST be refused with
+`-32011`, as a `task.update` taking the paused task to `cancelled` is: a
+required review ends with a decision, and the authors of the work may not
+end it with none ([review profile §3.1](./review.md#31-reviewrequest)).
 
 ---
 
@@ -221,7 +229,7 @@ enforcement is left to the deployment.
 | Code      | Meaning                                                  |
 |-----------|----------------------------------------------------------|
 | `-32060`  | Allocated for a stale step-up. The Coordinator answers that condition with `-32402` from `identity-oidc`, so this code is not returned. |
-| `-32061`  | `control.pause` or `control.cancel` on a `completed`, `declined`, `cancelled` or `superseded` task, or `control.resume` on a task that is not paused. A caller who is not a workspace member is refused with `-32011`. |
+| `-32061`  | `control.pause` or `control.cancel` on a `completed`, `declined`, `cancelled` or `superseded` task, or `control.resume` on a task that is not paused. A caller who is not a workspace member is refused with `-32011`, and so is an author of an open required review who cancels or supersedes its task (§5). |
 | `-32062`  | Snapshot artefact not found.                             |
 | `-32063`  | The workspace is paused, or the participant a call would assign a task to is paused: the assignee of `task.create`, `control.supersede` or `escalate.raise`, the acceptor of `handoff.accept`, or the participant a `task.route` policy picks. |
 

@@ -26,6 +26,7 @@ import copy
 import dataclasses
 import datetime as _dt
 import logging
+import math
 import re
 import sys
 import threading
@@ -386,7 +387,8 @@ def _rehydrate_workspace(data: dict) -> "Workspace":
             # A review written before authors were recorded takes them from
             # the task's history.
             if not isinstance(review.get("authors"), list):
-                review["authors"] = _stored_authors(v.get("assignee"), v["history"])
+                review["authors"] = _stored_authors(v.get("assignee"), v["history"],
+                                                    v.get("prior_authors"))
             # and one written before acknowledgements were kept has none.
             if not isinstance(review.get("acknowledgements"), list):
                 review["acknowledgements"] = []
@@ -599,39 +601,85 @@ def _recorded_form(envelope: dict) -> dict:
     return {**envelope, "params": params}
 
 
+def _union_of(*lists: Any) -> list[str]:
+    """The members of the lists in order, each once."""
+    out: list[str] = []
+    for items in lists:
+        for uri in items:
+            if uri not in out:
+                out.append(uri)
+    return out
+
+
 def _authors_of(task: Task, completer: Any) -> list[str]:
     """Who made the work: the task's assignee, then whoever completed it,
-    once each."""
+    then the authors it carries from a task it replaces, once each."""
     authors = [task.assignee]
     if isinstance(completer, str) and completer != task.assignee:
         authors.append(completer)
-    return authors
+    return _union_of(authors, task.prior_authors if isinstance(task.prior_authors, list) else [])
+
+
+def _decision_completion(history: list, i: int) -> bool:
+    """Whether the history entry at ``i`` records a reviewer's decision
+    completing the task, as against a task.complete: an override says so,
+    and an approval follows the entry of the review it settles."""
+    entry = history[i]
+    return entry.state == "completed" and (
+        entry.note == "override applied"
+        or (i > 0 and history[i - 1].state == "review_requested"))
 
 
 def _last_completer(task: Task) -> str | None:
-    """The sender of the task's latest completion, if it has one."""
-    for entry in reversed(task.history):
-        if entry.state == "completed":
-            return entry.from_
+    """The sender of the task's latest task.complete that completed it, if
+    it has one."""
+    for i in range(len(task.history) - 1, -1, -1):
+        if task.history[i].state == "completed" and not _decision_completion(task.history, i):
+            return task.history[i].from_
     return None
 
 
-#: The note on the history entry of a review task.complete opened.
+#: The notes on the history entries of the reviews task.complete opened.
 _OPENED_ON_COMPLETE = "review required; opened on task.complete"
+_NEW_ROUND_ON_COMPLETE = "a new round of the review; opened on task.complete"
 
 
-def _stored_authors(assignee: str, history: list) -> list[str]:
+def _stored_authors(assignee: str, history: list, prior: Any = None) -> list[str]:
     """The authors of a review recorded before authors were kept, read from
     the task's history: the assignee, and whoever completed the work, whether
-    the completion opened the review or came before a review.request."""
-    for entry in reversed(history):
-        if entry.state == "completed" or (entry.state == "review_requested"
-                                          and entry.note == _OPENED_ON_COMPLETE):
+    the completion opened the review or came before a review.request. A
+    reviewer's decision that completed the task is not a completion of the
+    work."""
+    carried = prior if isinstance(prior, list) else []
+    for i in range(len(history) - 1, -1, -1):
+        entry = history[i]
+        if ((entry.state == "completed" and not _decision_completion(history, i))
+                or (entry.state == "review_requested"
+                    and entry.note in (_OPENED_ON_COMPLETE, _NEW_ROUND_ON_COMPLETE))):
             authors = [assignee]
             if isinstance(entry.from_, str) and entry.from_ != assignee:
                 authors.append(entry.from_)
-            return authors
-    return [assignee]
+            return _union_of(authors, carried)
+    return _union_of([assignee], carried)
+
+
+def _open_required_review_authors(ws: Workspace, task: Task) -> list[str]:
+    """The authors of a review a task requires that is open: under review,
+    or paused while under review. Empty when the task holds no such
+    review."""
+    if task.review is None or not _review_required(ws, task):
+        return []
+    under_review = task.state == "review_requested" or (
+        task.state == "paused" and task.paused_from == "review_requested")
+    return list(task.review.authors) if under_review else []
+
+
+def _successor_authors(old: Task) -> list[str]:
+    """The authors a successor carries from the task it replaces: that
+    task's review authors where it held a review, and otherwise its assignee
+    and completer, with whatever it carried itself."""
+    return _union_of(old.review.authors if old.review is not None else [],
+                     _authors_of(old, _last_completer(old)))
 
 
 def _is_scope(uri: Any) -> bool:
@@ -2069,9 +2117,12 @@ class Coordinator:
                                            "OIDC token does not name this participant")}
             member.oidc_sub = sub
             token_verified = True
+            # A NumericDate may carry a fraction; both coordinators keep whole
+            # seconds, and nothing that is not a finite number.
             at = claims.get("auth_time")
-            if isinstance(at, (int, float)):
-                member.oidc_auth_time = int(at)
+            if (isinstance(at, (int, float)) and not isinstance(at, bool)
+                    and math.isfinite(at)):
+                member.oidc_auth_time = math.floor(at)
             acr = claims.get("acr")
             member.oidc_acr = acr if isinstance(acr, str) else None
             # The token binds the key in its cnf.jwk or, with none, the key
@@ -2246,6 +2297,15 @@ class Coordinator:
                 return {"error": rpc_error(
                     E.PARAMS, f"{uri} is a member; an invitation for a member registers the keys "
                     "its jwks names")}
+            # Where a token verifier is configured, a person's key is the one
+            # their token binds, and they register a new one by joining again
+            # with it. Registered here, it would be a key the admin chose, and
+            # the admin could revoke a person's keys and sign as them.
+            if (self.options.verify_oidc_token is not None
+                    and (member.type == "human" or member.oidc_sub is not None)):
+                return {"error": rpc_error(
+                    E.PARAMS, f"{uri} registers a new key by joining again with a token that "
+                    "binds it; an invitation does not register a person's keys here")}
             if ((role is not None and role != member.role)
                     or (sub is not None and sub != member.oidc_sub)):
                 return {"error": rpc_error(
@@ -2402,6 +2462,10 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_AUTHORISED,
                 "Only the authors of the work under review take it back from review")}
+        if new_state == "cancelled" and p.get("from") in _open_required_review_authors(ws, task):
+            return {"error": rpc_error(
+                E.NOT_AUTHORISED,
+                "The authors of the work under review cannot end its review without a decision")}
         if (new_state == "declined" and task.review is not None
                 and not any(d.get("kind") == "reject" for d in task.review.decisions)):
             return {"error": rpc_error(
@@ -2489,9 +2553,13 @@ class Coordinator:
                 # authors of the new artefact are left out of the reviewers,
                 # and so is any member who is not a person where the review is
                 # required; where nobody remains, the completion is refused.
+                # The authors of the earlier rounds stay authors of this one:
+                # the work is theirs as well, whoever resubmits it.
+                round_authors = _union_of(task.review.authors, authors)
+
                 def keeps(r: str) -> bool:
                     member = _raw_member(ws, r)
-                    return r not in authors and not (
+                    return r not in round_authors and not (
                         required and member is not None and member.type != "human")
                 reviewers = [r for r in task.review.requested_to if keeps(r)]
                 if not reviewers:
@@ -2501,8 +2569,8 @@ class Coordinator:
                         "are left out")}
                 task.review = dataclasses.replace(
                     task.review, requested_at=now, requested_to=reviewers, decisions=[],
-                    authors=authors, acknowledgements=[])
-                note = "a new round of the review; opened on task.complete"
+                    authors=round_authors, acknowledgements=[])
+                note = _NEW_ROUND_ON_COMPLETE
             task.pending_artefact = p.get("output")
             task.state = "review_requested"
             task.updated_at = now
@@ -2665,8 +2733,19 @@ class Coordinator:
         # review of a task that does not require one keeps its own `to`, so a
         # deliberate agent-reviews-agent flow is still available.
         authors = (open_review.authors if open_review is not None
-                   else _authors_of(task, _last_completer(task)))
+                   else _union_of(task.review.authors if task.review is not None else [],
+                                  _authors_of(task, _last_completer(task))))
         if _review_required(ws, task):
+            # The review a task requires opens on task.complete, from the
+            # assignee, under the workspace's rule. Opened here, by anyone, it
+            # would take an artefact, a rule and reviewers its requester
+            # chose, and a requester who is not an author could approve work
+            # it supplied itself, or reopen a task a review already completed.
+            if open_review is None:
+                return {"error": rpc_error(
+                    E.NOT_AUTHORISED,
+                    "This task requires a person's review, which opens on task.complete; "
+                    "review.request only adds reviewers to it once it is open")}
             if p.get("from") in authors:
                 return {"error": rpc_error(
                     E.NOT_AUTHORISED, "The author of the work under review cannot request its review")}
@@ -3014,6 +3093,9 @@ class Coordinator:
         if (orig.review_required or orig.review is not None
                 or (ws.has_profile("modes") and new_task.mode == "trial")):
             new_task.review_required = True
+        # Whoever made the work it carries on is an author of its review too,
+        # so handing the work on does not make its author a reviewer of it.
+        new_task.prior_authors = _successor_authors(orig)
         ws.tasks[new_id] = new_task
         orig.state = "escalated"
         orig.updated_at = now

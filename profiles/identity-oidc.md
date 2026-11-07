@@ -59,6 +59,8 @@ checks signature, expiry and audience and returns the claims; a
 rejected token refuses the join with `-32403`. The Coordinator keeps
 `sub`, `auth_time` and `acr`, and pins `cnf.jwk` as the participant's
 key, under its `kid` or, where it has none, its RFC 7638 thumbprint.
+`auth_time` is kept in whole seconds, rounded down; a value that is not a
+finite number, `true` included, is no `auth_time`.
 
 An identity provider that cannot put the key in `cnf.jwk` can still
 attest it through the nonce. The client asks for the token with `nonce`

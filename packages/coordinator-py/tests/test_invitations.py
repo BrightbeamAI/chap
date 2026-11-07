@@ -193,6 +193,27 @@ def test_an_invitation_for_a_member_that_holds_no_key_in_force_registers_new_key
     assert len(r.ws.invitations) == 0
 
 
+def test_where_a_token_verifier_is_configured_an_invitation_does_not_register_a_persons_keys():
+    # The admin could otherwise revoke a person's keys, invite them with a key
+    # the admin holds, and sign as them. The person joins again with a token
+    # that binds a new key.
+    r = _Ready(verify_oidc_token=lambda t: json.loads(t[4:]) if t.startswith("tok:") else None)
+    r.call("workspace.create", "human:a")
+
+    def token(sub, uri):
+        return "tok:" + json.dumps({"sub": sub, "chap_participant_uri": uri})
+    assert "error" not in r.call("participant.join", "human:a", type="human", role="admin",
+                                 oidc_token=token("sub-a", "human:a"))
+    assert "error" not in r.call("participant.join", "human:c", type="human",
+                                 oidc_token=token("sub-c", "human:c"))
+    assert r.call("workspace.invite", "human:a", uri="human:c", type="human",
+                  jwks={"keys": [key_of("human:a#2")]})["error"] == {
+        "code": -32602,
+        "message": "human:c registers a new key by joining again with a token that binds it; "
+                   "an invitation does not register a person's keys here"}
+    assert r.ws.members["human:c"].keys == []
+
+
 def test_an_invitation_and_the_join_policy_are_kept_by_the_store():
     store = MemoryStore()
     first = _Ready(store=store, join_policy="invite")

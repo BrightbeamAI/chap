@@ -94,7 +94,10 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   "chap.review.request":
     "Open a review on a task and address it to one or more reviewers. They then call chap.decide.approve, " +
     "chap.decide.reject, chap.decide.override or chap.abstain.declare, and may first say they have begun with " +
-    "chap.review.acknowledge. Repeating the request with the same artefact adds reviewers to the open review.",
+    "chap.review.acknowledge. Repeating the request with the same artefact adds reviewers to the open review. " +
+    "A task marked review_required is reviewed through chap.task.complete, which opens its review under the " +
+    "workspace's rule; on such a task this tool only adds people to a review already open, and anything else " +
+    "is refused with -32011.",
 
   "chap.review.acknowledge":
     "Say that this reviewer has begun the open review on a task, before deciding it. The call is recorded, so " +
@@ -134,9 +137,10 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "sideways without that link, and chap.control.supersede to replace a task outright. The successor starts " +
     "with an empty input unless one is supplied, so restate whatever the new assignee needs. A completed, " +
     "cancelled or superseded task cannot be escalated. The successor takes the mode new_task.mode names, or " +
-    "else the original's, and requires review when the original did, or when it is a trial task under " +
-    "modes/1.0. A paused assignee is refused with -32063, and a mode above the workspace's current ceiling " +
-    "with -32040; after the ceiling is lowered, name a mode within it.",
+    "else the original's, and requires review when the original did or held a review, or when it is a trial " +
+    "task under modes/1.0. Whoever made the original's work counts as an author of the successor's review. A " +
+    "paused assignee is refused with -32063, and a mode above the workspace's current ceiling with -32040; " +
+    "after the ceiling is lowered, name a mode within it.",
 
   // whisper/1.0
   "chap.whisper.ask":
@@ -203,7 +207,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "can be assigned tasks again, a workspace returns to active.",
 
   "chap.control.cancel":
-    "Cancel a task. Cancelled is terminal, and a task that has already settled cannot be cancelled.",
+    "Cancel a task. Cancelled is terminal, and a task that has already settled cannot be cancelled. While a " +
+    "review the task requires is open, the authors of the work under review cannot cancel it (-32011).",
 
   "chap.control.snapshot":
     "Capture the workspace state as an artefact before a change you may want to undo. Returns a snapshot " +
@@ -219,7 +224,9 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   "chap.control.supersede":
     "Replace a task with a successor in one call. The original moves to superseded and stays linked to its " +
     "replacement. The successor requires review when the original did, whatever its own review_required " +
-    "says, and a paused assignee is refused with -32063.",
+    "says, and whoever made the original's work counts as an author of the successor's review. A paused " +
+    "assignee is refused with -32063, and while a review the original requires is open, the authors of the " +
+    "work under review cannot supersede it (-32011).",
 
   "chap.control.set_mode_ceiling":
     "Set the highest operating mode tasks in this workspace may request. A task above the ceiling is refused.",

@@ -57,3 +57,13 @@ test("the rule survives a restart", () => {
   const restarted = ready(new Coordinator({ store } as never));
   assert.equal(restarted.call("workspace.describe", "human:a@x").result.review_rule, "all_approve");
 });
+
+test("a stored rule this release does not support is read as none", () => {
+  const store = new MemoryStore();
+  ready(new Coordinator({ store, deterministicIds: true, deterministicClock: true } as never))
+    .call("workspace.create", "human:a@x", { review_rule: "quorum:2" });
+  const record = store.loadOne("w")!;
+  store.save({ ...record, data: { ...(record.data as Record<string, unknown>), review_rule: "quorum:٢" } });
+  const restarted = ready(new Coordinator({ store } as never));
+  assert.equal(restarted.call("workspace.describe", "human:a@x").result.review_rule, "any_one_approves");
+});

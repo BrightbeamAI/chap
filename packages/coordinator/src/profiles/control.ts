@@ -15,6 +15,7 @@ import { paramsError } from "../params.js";
 import { contentHash } from "../canonical.js";
 import { rawValues } from "../tracked.js";
 import { modeLE } from "../types.js";
+import { openRequiredReviewAuthors, successorAuthors } from "../coordinator.js";
 import type { Mode, SnapshotArtefact, Task, TaskState } from "../types.js";
 
 const VALID_MODES = new Set<Mode>(["shadow", "trial", "production"]);
@@ -103,6 +104,12 @@ export function registerControl(coord: Coordinator): void {
     if (!task) return { error: rpcError(E.PARAMS, "Unknown task") };
     if (task.state === "completed" || task.state === "declined" || task.state === "cancelled" || task.state === "superseded") {
       return { error: rpcError(E.CONTROL_NOT_AUTHORISED, `Cannot cancel ${task.state} task`) };
+    }
+    // A review a task requires ends with a decision. Its authors pulling the
+    // emergency brake on it would end it with none; other members still can.
+    if (openRequiredReviewAuthors(ws, task).includes(p.from as string)) {
+      return { error: rpcError(E.NOT_AUTHORISED,
+        "The authors of the work under review cannot end its review without a decision") };
     }
     task.state = "cancelled";
     task.updated_at = coord.now();
@@ -223,6 +230,10 @@ export function registerControl(coord: Coordinator): void {
     const oldId = p.task_id as string;
     const old = ws.tasks.get(oldId);
     if (!old) return { error: rpcError(E.PARAMS, "Unknown task") };
+    if (openRequiredReviewAuthors(ws, old).includes(p.from as string)) {
+      return { error: rpcError(E.NOT_AUTHORISED,
+        "The authors of the work under review cannot end its review without a decision") };
+    }
     const newSpec = (p.successor_task as Record<string, unknown>) ?? {};
     if (typeof newSpec.kind !== "string" || !newSpec.kind) {
       return { error: rpcError(E.PARAMS, "successor_task must include kind") };
@@ -281,6 +292,9 @@ export function registerControl(coord: Coordinator): void {
     } else if ("review_required" in newSpec) {
       newTask.review_required = !!newSpec.review_required;
     }
+    // Whoever made the work it replaces is an author of the successor's
+    // review too, so superseding does not make its author a reviewer of it.
+    newTask.prior_authors = successorAuthors(old);
     ws.tasks.set(newId, newTask);
     old.state = "superseded";
     old.superseded_by = newId;

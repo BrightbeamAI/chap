@@ -36,6 +36,11 @@ export function registerSecuritySigned(coord: Coordinator): void {
     if (!newJwk || typeof newJwk.kid !== "string") {
       return { error: rpcError(E.PARAMS, "new_jwk must include kid") };
     }
+    // Keys are found by kid, so a new key under a kid the member holds would
+    // be closed with the old one, or shadowed by it.
+    if (member.keys.some((k) => k.kid === newJwk.kid)) {
+      return { error: rpcError(E.PARAMS, `${p.from} already holds a key ${newJwk.kid}; a new key takes a kid of its own`) };
+    }
     const now = coord.now();
     oldKey.valid_until = now;
     member.keys.push({

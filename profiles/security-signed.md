@@ -267,7 +267,10 @@ signature requirement.
 
 The rotation message MUST be signed with the **old** key. The
 Coordinator sets the old key's `valid_until` and the new key's
-`valid_from` to its own clock.
+`valid_from` to its own clock. The new key takes a `kid` of its own: a
+`new_jwk` whose `kid` the member already holds, the old key's included,
+MUST be refused with `-32602`, since keys are found by `kid` and the new key
+would be closed with the old one.
 
 ---
 

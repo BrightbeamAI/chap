@@ -64,6 +64,12 @@ def register_security_signed(coord: "Coordinator") -> None:
         new_jwk = p["new_jwk"]
         if not isinstance(new_jwk, dict) or not isinstance(new_jwk.get("kid"), str):
             return {"error": rpc_error(E.PARAMS, "new_jwk must include kid")}
+        # Keys are found by kid, so a new key under a kid the member holds
+        # would be closed with the old one, or shadowed by it.
+        if any(k.kid == new_jwk["kid"] for k in member.keys):
+            return {"error": rpc_error(
+                E.PARAMS,
+                f"{p['from']} already holds a key {new_jwk['kid']}; a new key takes a kid of its own")}
 
         now = coord.now_iso()
         # Close the old key's validity window at the rotation timestamp.

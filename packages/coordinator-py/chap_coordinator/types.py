@@ -225,6 +225,11 @@ class Task:
     paused_from: str | None = None
     history: list[TaskHistoryEntry] = field(default_factory=list)
     pending_artefact: Any = None  # transient: stored for override base
+    # The authors of the work a successor carries on: the assignee, the
+    # completer and the earlier authors of the task it replaces, through
+    # escalate.raise or control.supersede. They count among the authors of
+    # any review of this task.
+    prior_authors: list[str] | None = None
 
     def to_dict(self) -> dict:
         out: dict[str, Any] = {
@@ -259,6 +264,8 @@ class Task:
             out["parent"] = self.parent
         if self.paused_from:
             out["paused_from"] = self.paused_from
+        if self.prior_authors:
+            out["prior_authors"] = list(self.prior_authors)
         return out
 
 
