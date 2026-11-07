@@ -168,10 +168,10 @@ def register_whisper(coord: "Coordinator") -> None:
         return the list of notifications emitted. Called by deployments
         on a timer; called by the test suite directly to advance state.
         """
-        # A timer's check and a call can arrive together; the coordinator
-        # handles one at a time.
-        with coord._lock:
-            return _check_lapses(workspace_id, now)
+        # A check runs outside any call, under the rules a call keeps: one at
+        # a time with calls, waiting for a held workspace, and a lapse whose
+        # write fails is undone and reported to nobody.
+        return coord._outside_call(workspace_id, lambda: _check_lapses(workspace_id, now))
 
     def _check_lapses(workspace_id: str, now: str | None) -> list[dict]:
         ws = coord.workspaces.get(workspace_id)
@@ -179,7 +179,7 @@ def register_whisper(coord: "Coordinator") -> None:
             return []
         cutoff = _parse_iso(now or coord.now_iso())
         emitted: list[dict] = []
-        for prompt in ws.whispers.values():
+        for prompt in dict.values(ws.whispers):
             if prompt.state != "pending":
                 continue
             asked = _parse_iso(prompt.asked_at)
@@ -188,8 +188,8 @@ def register_whisper(coord: "Coordinator") -> None:
                 continue
             prompt.state = "lapsed"
             prompt.default_applied = prompt.default_if_lapsed
-            # Set again so the change is written: a lapse check runs outside
-            # any call, where reading the prompt records nothing.
+            # The prompts are read without being recorded, so each that lapses
+            # is set again to be written.
             ws.whispers[prompt.id] = prompt
             notify = {
                 "jsonrpc": "2.0",

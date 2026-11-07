@@ -18,6 +18,7 @@ import type { Coordinator } from "../coordinator.js";
 import { canonicalize } from "../canonical.js";
 import { E, rpcError } from "../jsonrpc.js";
 import { paramsError } from "../params.js";
+import { rawValues } from "../tracked.js";
 import type { WhisperPrompt, Envelope } from "../types.js";
 
 // Names a supplied id cannot take: JavaScript gives them special meaning as
@@ -145,21 +146,26 @@ export function registerWhisper(coord: Coordinator): void {
     return { result: { answered: true, whisper_id: prompt.id, task_id: prompt.task_id } };
   });
 
-  // Expose the lapse-check function on the coordinator instance.
-  coord.checkWhisperLapses = (workspaceId: string, now?: string): Envelope[] => {
+  // Expose the lapse-check function on the coordinator instance. A check runs
+  // outside any call, under the rules a call keeps: it waits for a held
+  // workspace, and a lapse whose write fails is undone and reported to nobody.
+  coord.checkWhisperLapses = (workspaceId: string, now?: string): Envelope[] =>
+    coord.outsideCall(workspaceId, () => lapse(workspaceId, now));
+
+  function lapse(workspaceId: string, now?: string): Envelope[] {
     const ws = coord.workspaces.get(workspaceId);
     if (!ws) return [];
     const cutoff = parseIso(now ?? coord.now());
     const emitted: Envelope[] = [];
-    for (const prompt of ws.whispers.values()) {
+    for (const prompt of rawValues(ws.whispers)) {
       if (prompt.state !== "pending") continue;
       const asked = parseIso(prompt.asked_at);
       const deadline = asked + prompt.deadline_ms;
       if (cutoff < deadline) continue;
       prompt.state = "lapsed";
       prompt.default_applied = prompt.default_if_lapsed;
-      // Set again so the change is written: a lapse check runs outside any
-      // call, where reading the prompt records nothing.
+      // The prompts are read without being recorded, so each that lapses is
+      // set again to be written.
       ws.whispers.set(prompt.id, prompt);
       const notify: Envelope = {
         jsonrpc: "2.0",
@@ -183,5 +189,5 @@ export function registerWhisper(coord: Coordinator): void {
       emitted.push(notify);
     }
     return emitted;
-  };
+  }
 }

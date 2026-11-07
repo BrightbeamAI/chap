@@ -102,6 +102,22 @@ def test_an_open_review_can_still_be_widened():
     assert set(c.get_workspace("w").tasks[tid].review.requested_to) == {"human:a", "human:c"}
 
 
+def test_a_review_of_a_null_artefact_or_of_none_is_widened_like_any_other():
+    # The TypeScript coordinator compared an artefact left out as undefined,
+    # which has no content hash, and answered with an internal error.
+    c, s = _ready()
+    none = s("task.create", kind="k", input={}, assignee="agent:b")["result"]["task_id"]
+    s("review.request", task_id=none, artefact=None, to="human:a")
+    assert s("review.request", task_id=none, artefact=None,
+             to="human:c")["result"]["amended"] is True
+    left = s("task.create", kind="k", input={}, assignee="agent:b")["result"]["task_id"]
+    s("task.complete", task_id=left)
+    s("review.request", task_id=left, artefact=None, to="human:a")
+    assert s("review.request", task_id=left, artefact=None,
+             to="human:c")["result"]["amended"] is True
+    assert set(c.get_workspace("w").tasks[left].review.requested_to) == {"human:a", "human:c"}
+
+
 @pytest.mark.parametrize("state", ["cancelled", "superseded", "paused"])
 def test_a_stopped_task_cannot_be_pulled_back_into_review(state):
     c, s = _ready()

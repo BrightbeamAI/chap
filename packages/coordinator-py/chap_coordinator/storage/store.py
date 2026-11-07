@@ -119,10 +119,10 @@ class StoreConflictError(Exception):
         super().__init__(
             f"The store holds {held} audit entries for workspace {workspace} "
             f"and this write expected {base}, so nothing was written. Another "
-            f"coordinator may be writing to this workspace, the store may have "
-            f"been changed outside this coordinator, or this coordinator could "
-            f"not load the workspace when it started. Restart this coordinator "
-            f"to reload.")
+            f"coordinator may be writing to this workspace, or the store may "
+            f"have been changed outside this coordinator. A coordinator "
+            f"reloads the workspace and answers the call as failed, and the "
+            f"call may be sent again.")
         self.workspace = workspace
         self.held = held
         self.base = base

@@ -16,7 +16,7 @@ npm install @brightbeamai/chap-coordinator
 Node 20+ required. No required runtime dependencies; uses Node's built-in
 `crypto` for Ed25519 and JCS. `SqliteStore` uses `better-sqlite3`, an
 optional dependency, where it is installed, and Node's built-in
-`node:sqlite` (Node 22.5 and later) where it is not.
+`node:sqlite` (Node 22.13 and later) where it is not.
 
 ## Companion packages
 

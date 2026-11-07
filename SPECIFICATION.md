@@ -1622,19 +1622,29 @@ reference stores do, a Coordinator keeps up with other writers. Before each
 call it compares that number with the entries it last wrote for the call's
 workspace, and reloads the workspace when they differ, so instances that
 share a store take turns. A write that another instance got to first,
-between the check and the write, is refused by the store: the Python
-Coordinator reloads the workspace and runs the call once more, and the
-TypeScript Coordinator answers the call as a failed write and reloads.
+between the check and the write, is refused by the store. The Coordinator
+reloads the workspace and answers the call with `-32603` and
+`data: {"reason": "store"}`, and the caller MAY send the call again. It is
+not run again on the caller's behalf: a call's handler may have reached
+outside the workspace, a token verifier or a policy hook, and a second run
+would reach it twice. The reference SQLite stores wait up to five seconds
+for another process's lock before a write fails.
 
 A synchronous write that fails MUST NOT be answered as if it took effect.
 The call is answered with `-32603` and `data: {"reason": "store"}`, the
 workspace goes back to what the store holds, and while the store cannot be
 read the calls on that workspace are refused the same way. The audit
-listeners hear of an entry once it is written. The Python Coordinator's
-`store_errors="log"` keeps the behaviour of earlier releases: the failure
-is reported, the call answered as it was, and the next write carries its
-change. An asynchronous write that fails after its call was answered is
-reported, and the next write carries its change.
+listeners hear of an entry once it is written, and the Python Coordinator
+calls them after it lets its lock go, so a listener may wait on a call
+from another thread. Work a Coordinator does outside any call, a whisper
+lapse check for one, keeps the same rules: it waits for a workspace held
+after a failed write, and where its own write fails, nothing it did stands
+or is announced. A Coordinator configured with `storeErrors: "log"`
+(`store_errors="log"` in Python) keeps the behaviour of earlier releases:
+the failure is reported, the call answered as it was, and the next write
+carries its change; a write another instance got to first is still
+answered as failed. An asynchronous write that fails after its call was
+answered is reported, and the next write carries its change.
 
 A store that implements only `Store.save` makes no such check: `save`
 replaces the stored workspace wholesale. With such a store a stale

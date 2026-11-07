@@ -233,6 +233,63 @@ describe("failed writes", () => {
     assert.deepEqual(plain(new Coordinator({ ...OPTIONS, store })), plain(c));
   });
 
+  test("under storeErrors log the call stands, and the next write carries what a failed one did not", () => {
+    const store = new Flaky();
+    const seen: Array<{ id: string; version: number }> = [];
+    const heard: number[] = [];
+    const c = new Coordinator({ ...OPTIONS, store, storeErrors: "log", onStoreError: (_e, r) => { seen.push(r); },
+                                onAudit: (_ws, entry) => { heard.push(entry.seq); } });
+    const send = driver(c);
+    ok(send("workspace.create", "human:a"));
+    ok(send("participant.join", "human:a", { type: "human" }));
+    store.failures = 2;
+    ok(send("participant.join", "agent:b", { type: "agent" }));
+    ok(send("task.create", "human:a", { kind: "k", input: {}, assignee: "agent:b" }));
+    assert.equal(seen.length, 2);
+    assert.deepEqual(heard, [0, 1]);
+    ok(send("participant.join", "human:c", { type: "human" }));
+    assert.deepEqual(heard, [0, 1, 2, 3, 4]);
+    assert.deepEqual(plain(new Coordinator({ ...OPTIONS, store })), plain(c));
+  });
+
+  test("a lapse check after a failed write writes nothing the call did, and reports nothing it did not write", () => {
+    // The check skipped the reload a held workspace waits for, so it wrote a
+    // change the call had been answered as failing, and announced it.
+    class Unreadable extends Flaky {
+      loadFailures = 0;
+      override loadOne(id: string) {
+        if (this.loadFailures > 0) {
+          this.loadFailures--;
+          throw new Error("database is locked");
+        }
+        return super.loadOne(id);
+      }
+    }
+    const store = new Unreadable();
+    const heard: string[] = [];
+    const c = new Coordinator({ ...OPTIONS, store, onStoreError: () => {},
+      onAudit: (_ws, e) => { heard.push((e.envelope ?? e.request)!.method as string); } });
+    const send = driver(c);
+    ok(send("workspace.create", "human:h", { profiles: PROFILES }));
+    ok(send("participant.join", "human:h", { type: "human" }));
+    ok(send("participant.join", "agent:a", { type: "agent" }));
+    const task = ok(send("task.create", "human:h", { kind: "k", input: {}, assignee: "agent:a", review_required: true })).task_id;
+    ok(send("task.complete", "agent:a", { task_id: task, output: { x: 1 } }));
+    ok(send("whisper.ask", "agent:a", { to: "human:h", task_id: task, question: "q?", deadline_ms: 1, default_if_lapsed: "yes" }));
+    // The write fails, and so do the next two reads of the store.
+    store.failures = 1;
+    store.loadFailures = 2;
+    assert.equal(send("decide.reject", "human:h", { task_id: task }).error.data.reason, "store");
+    heard.length = 0;
+    assert.deepEqual(c.checkWhisperLapses!("w", "2099-01-01T00:00:00.000Z"), []);
+    assert.deepEqual(heard, []);
+    assert.equal(new Coordinator({ ...OPTIONS, store }).workspaces.get("w")!.tasks.get(task)!.state, "review_requested");
+    // Once the store reads again, the check lapses the whisper, and only that.
+    assert.equal(c.checkWhisperLapses!("w", "2099-01-01T00:00:00.000Z").length, 1);
+    assert.deepEqual(heard, ["notify.message"]);
+    assert.equal(c.workspaces.get("w")!.tasks.get(task)!.state, "review_requested");
+  });
+
   test("a workspace whose store cannot be read again is refused until it can", () => {
     const store = new Flaky();
     const c = new Coordinator({ ...OPTIONS, store, onStoreError: () => {} });

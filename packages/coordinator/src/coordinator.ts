@@ -32,7 +32,7 @@ import { paramsError } from "./params.js";
 import { entryCall, entryRecord, isSigned, linkHash, refusalIsRecorded, signedDigest } from "./audit.js";
 import { applyJsonPatch } from "./patch.js";
 import type { Store, StoreChange, WorkspaceRecord } from "./storage/store.js";
-import { COLLECTIONS, IDEMPOTENCY_KEYS, MemoryStore } from "./storage/store.js";
+import { COLLECTIONS, IDEMPOTENCY_KEYS, MemoryStore, StoreConflictError } from "./storage/store.js";
 import { TrackedMap, rawEntries, rawValues, type Tracker } from "./tracked.js";
 import { makeApi, type CoordinatorApi } from "./api.js";
 import type {
@@ -170,12 +170,20 @@ export interface CoordinatorOptions {
   /**
    * Called when a write to the store fails, with the workspace and the
    * version the write would have reached. When unset, the failure is written
-   * to stderr. A synchronous write's call is answered with -32603 and
-   * `data: { reason: "store" }`, and the workspace goes back to what the
-   * store holds; an asynchronous write's call was answered already, and the
-   * next write to the workspace carries what this one did not.
+   * to stderr. What happens to the call is `storeErrors`'s to say.
    */
   onStoreError?: (err: unknown, record: { id: string; version: number }) => void;
+  /**
+   * What a failed synchronous write does to the call that made it. "raise"
+   * (the default): the call is answered with -32603 and
+   * `data: { reason: "store" }`, and the workspace goes back to what the
+   * store holds. "log": the call is answered as it was, and the next write
+   * carries its change again. A write another writer got to first is
+   * answered as "raise" says under either, and the call may be sent again.
+   * An asynchronous write's call was answered already, and the next write
+   * to the workspace carries what this one did not.
+   */
+  storeErrors?: "raise" | "log";
   /**
    * Called when a handler throws, with the error and the call's method and
    * workspace. The caller is answered with -32603 and no detail. When unset,
@@ -387,7 +395,7 @@ function targetOf(envelope: unknown): WorkspaceId | undefined {
  * The fields that keep a null. A whisper's default_if_lapsed is required, and
  * null is the default a lapse applies and records.
  */
-const NULL_VALUES: Readonly<Record<string, readonly string[]>> = { whispers: ["default_if_lapsed"] };
+const KEPT_NULLS: Readonly<Record<string, readonly string[]>> = { whispers: ["default_if_lapsed"] };
 
 /** Deletes the fields of `o` that hold null, but those named in `keep`. */
 function dropNulls(o: Record<string, unknown>, keep: readonly string[] = []): void {
@@ -395,24 +403,25 @@ function dropNulls(o: Record<string, unknown>, keep: readonly string[] = []): vo
 }
 
 /**
- * Puts one object of a workspace's collection in this coordinator's shape,
- * in place, whichever coordinator made it. A field with no value is left
- * out: the Python coordinator writes it as null, and a call that gives a
- * param as null gives it no value, as both coordinators read params. The
- * Python coordinator also names a history entry's sender `from_` and keeps a
- * route decision's fields of its kind in `extra`; this one names the sender
- * `from` and keeps those fields beside `kind`. What an input, an output or
- * an artefact holds is kept as it is. Putting an object in shape twice
- * changes nothing more.
+ * Puts one object of a workspace's collection in the shape this coordinator
+ * stores and restores, in place, whichever coordinator made it. Called on
+ * copies only: the objects a workspace holds keep what its handlers put in
+ * them, and every read treats a field holding null as one left out. A field
+ * with no value is left out: the Python coordinator writes it as null, and a
+ * call that gives a param as null gives it no value, as both coordinators
+ * read params. The Python coordinator also names a history entry's sender
+ * `from_` and keeps a route decision's fields of its kind in `extra`; this
+ * one names the sender `from` and keeps those fields beside `kind`. What an
+ * input, an output or an artefact holds is kept as it is.
  */
-function inShape(name: string, item: Record<string, unknown>): Record<string, unknown> {
+function shapeObject(name: string, item: Record<string, unknown>): Record<string, unknown> {
   if (name === "route_decisions") {
     const extra = item.extra;
     delete item.extra;
     if (isObject(extra)) Object.assign(item, extra);
     item.kind = "route_decision";
   }
-  dropNulls(item, NULL_VALUES[name]);
+  dropNulls(item, KEPT_NULLS[name]);
   const each = (o: Record<string, unknown>, field: string, f?: (x: Record<string, unknown>) => void) => {
     if (!Array.isArray(o[field])) return;
     for (const x of o[field] as unknown[]) {
@@ -441,17 +450,22 @@ function inShape(name: string, item: Record<string, unknown>): Record<string, un
   return item;
 }
 
+/** A copy of one object of a collection, in the shape this coordinator stores. */
+function storedCopy(name: string, item: Record<string, unknown>): Record<string, unknown> {
+  return shapeObject(name, structuredClone(item));
+}
+
 /**
  * A workspace snapshot in this coordinator's shape, whichever coordinator
  * wrote it: its own fields with no value left out, and a copy of each object
  * of its collections put in shape. The snapshot itself is not changed.
  */
-function inThisShape(w: Record<string, unknown>): Record<string, unknown> {
+function shapeSnapshot(w: Record<string, unknown>): Record<string, unknown> {
   const out = { ...w };
   dropNulls(out);
   for (const name of COLLECTIONS) {
     if (Array.isArray(out[name])) {
-      out[name] = (out[name] as unknown[]).map((x) => (isObject(x) ? inShape(name, structuredClone(x)) : x));
+      out[name] = (out[name] as unknown[]).map((x) => (isObject(x) ? storedCopy(name, x) : x));
     }
   }
   return out;
@@ -510,8 +524,8 @@ function isScope(uri: unknown): boolean {
 
 function reply(env: Envelope, body: { result?: unknown; error?: { code: number; message: string; data?: unknown } }): Envelope {
   // JSON-RPC answers with a null id where the request carries none, or is
-  // not an object at all, as the Python reference does. Reading `id` from
-  // null threw, so dispatch(null) never answered.
+  // not an object at all, as the Python reference does, so dispatch(null)
+  // is answered too.
   const sent = env !== null && typeof env === "object" && !Array.isArray(env) ? env.id : undefined;
   const out = { jsonrpc: "2.0", id: sent ?? null } as Envelope;
   if (body.error !== undefined) out.error = body.error;
@@ -772,7 +786,7 @@ export class Coordinator {
     } catch (err) {
       // What was taken is unknown, so the next write carries the whole workspace.
       p.replace = true;
-      this.held.add(ws.id);
+      if (this.options.storeErrors !== "log") this.held.add(ws.id);
       this.reportStoreError(err, { id: ws.id, version: ws.audit.length });
       return;
     }
@@ -792,8 +806,10 @@ export class Coordinator {
       result = this.store.apply!(taken);
     } catch (err) {
       // The call that made this change is answered as failed, and the
-      // workspace is reloaded from the store before it is used again.
-      this.held.add(ws.id);
+      // workspace is reloaded from the store before it is used again; under
+      // "log" the call stands, and the next write carries the change. A
+      // write another writer got to first fails its call under either.
+      if (err instanceof StoreConflictError || this.options.storeErrors !== "log") this.held.add(ws.id);
       failed(err);
       return;
     }
@@ -816,8 +832,9 @@ export class Coordinator {
 
   /**
    * The change since the last write, taking the recorded keys with it. Each
-   * object written is put in the shape a restore gives back, and held in it,
-   * so a coordinator restarted on the store holds what this one holds.
+   * object is written as a copy in the shape a restore gives back, so a
+   * coordinator restarted on the store holds what this one holds, and the
+   * workspace's own objects are left as they are.
    */
   private takeChange(ws: Workspace, p: Persisted): StoreChange | undefined {
     const replace = p.replace;
@@ -827,14 +844,14 @@ export class Coordinator {
       if (replace) {
         const all: Record<string, unknown> = {};
         for (const [key, value] of Map.prototype.entries.call(map) as IterableIterator<[string, Record<string, unknown>]>) {
-          all[key] = inShape(name, value);
+          all[key] = storedCopy(name, value);
         }
         objects[name] = all;
       } else if (map.dirty.size) {
         const changed: Record<string, unknown> = {};
         for (const key of map.dirty) {
           const value = map.peek(key);
-          changed[key] = value === undefined ? null : inShape(name, value);
+          changed[key] = value === undefined ? null : storedCopy(name, value);
         }
         objects[name] = changed;
       }
@@ -882,13 +899,6 @@ export class Coordinator {
   private persistSnapshot(ws: Workspace): void {
     const next = (this.wsVersions.get(ws.id) ?? 0) + 1;
     this.wsVersions.set(ws.id, next);
-    // As takeChange: each object is written, and held, in the shape a
-    // restore gives back.
-    for (const name of COLLECTIONS) {
-      for (const value of rawValues(ws[name] as unknown as TrackedMap<string, Record<string, unknown>>)) {
-        inShape(name, value);
-      }
-    }
     let record: WorkspaceRecord;
     try {
       record = { id: ws.id, data: this.snapshotOf(ws), version: next, updated_at: this.now() };
@@ -908,7 +918,7 @@ export class Coordinator {
     try {
       result = this.store.save(record);
     } catch (err) {
-      this.held.add(ws.id);
+      if (this.options.storeErrors !== "log") this.held.add(ws.id);
       this.reportStoreError(err, record);
       return;
     }
@@ -952,7 +962,11 @@ export class Coordinator {
       return;
     }
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`chap coordinator: writing workspace ${record.id} to the store failed: ${message}`);
+    const line = `chap coordinator: writing workspace ${record.id} to the store failed: ${message}`;
+    // Another writer having written first is handled: the workspace is
+    // reloaded, and the call may be sent again.
+    if (err instanceof StoreConflictError) console.warn(line);
+    else console.error(line);
   }
 
   async drainSaves(): Promise<void> {
@@ -1080,20 +1094,26 @@ export class Coordinator {
     };
   }
 
-  /** One workspace as `snapshot()` holds it. Reads nothing as a change. */
+  /**
+   * One workspace as `snapshot()` holds it: each object of its collections a
+   * copy in the shape the store keeps. Reads nothing as a change.
+   */
   private snapshotOf(ws: Workspace): Record<string, unknown> {
     const { chain_head, chain_enabled, ...own } = this.metaOf(ws);
+    const stored = (name: (typeof COLLECTIONS)[number]) =>
+      Array.from(rawValues(ws[name] as unknown as TrackedMap<string, Record<string, unknown>>))
+        .map((v) => storedCopy(name, v));
     return {
       ...own,
-      members:         Array.from(rawValues(ws.members)),
-      tasks:           Array.from(rawValues(ws.tasks)),
-      overrides:       Array.from(rawValues(ws.overrides)),
-      whispers:        Array.from(rawValues(ws.whispers)),
-      deliberations:   Array.from(rawValues(ws.deliberations)),
-      handoffs:        Array.from(rawValues(ws.handoffs)),
-      snapshots:       Array.from(rawValues(ws.snapshots)),
-      route_decisions: Array.from(rawValues(ws.route_decisions)),
-      invitations:     Array.from(rawValues(ws.invitations)),
+      members:         stored("members"),
+      tasks:           stored("tasks"),
+      overrides:       stored("overrides"),
+      whispers:        stored("whispers"),
+      deliberations:   stored("deliberations"),
+      handoffs:        stored("handoffs"),
+      snapshots:       stored("snapshots"),
+      route_decisions: stored("route_decisions"),
+      invitations:     stored("invitations"),
       idempotency_keys: { ...ws.idempotency_keys },
       audit:           ws.audit,
       chain_head,
@@ -1128,7 +1148,7 @@ export class Coordinator {
 
   /** One workspace from a snapshot entry, its maps tracked. */
   private rebuild(snapshot: Record<string, unknown>): Workspace {
-    const w = inThisShape(snapshot);
+    const w = shapeSnapshot(snapshot);
     const ws: Workspace = {
       id: w.id as WorkspaceId,
       created: w.created as string,
@@ -1266,6 +1286,31 @@ export class Coordinator {
   }
 
   /**
+   * Work that changes a workspace outside any call, a whisper lapse check
+   * for one, kept to the rules a call keeps (SPECIFICATION 10.3): the
+   * workspace is first brought up to date with the store, and left alone
+   * as long as it is held; what the work changed is written once, when it ends;
+   * and where that write fails, the workspace goes back to what the store
+   * holds and the work's results are dropped, since none took effect.
+   */
+  outsideCall<T>(id: WorkspaceId, work: () => T[]): T[] {
+    if (this.tracker.depth > 0) return work();
+    if (this.keepUp(id)) return [];
+    this.tracker.depth++;
+    let out: T[];
+    try {
+      out = work();
+    } finally {
+      if (--this.tracker.depth === 0) this.flushUnflushed();
+    }
+    if (this.held.has(id)) {
+      this.reload(id);
+      return [];
+    }
+    return out;
+  }
+
+  /**
    * Before a call on a workspace: where the store holds a different number of
    * audit entries for it than this instance last wrote, another writer has
    * written it, and it is reloaded. A workspace held after a failed write is
@@ -1369,10 +1414,9 @@ export class Coordinator {
       const msg = canonicalError instanceof Error ? canonicalError.message : String(canonicalError);
       return reply(envelope, { error: rpcError(E.PARAMS, msg) });
     }
-    // A workspace is named by a non-empty string. A list or an object in its
-    // place named no workspace here and broke the Python lookup, and an empty
-    // one made participant.join create a workspace it then could not find, so
-    // both references refuse either before any lookup.
+    // A workspace is named by a non-empty string. A list or an object names
+    // none, and an empty string is no id participant.join could make a
+    // workspace under, so both references refuse either before any lookup.
     if (params.workspace !== undefined && (typeof params.workspace !== "string" || !params.workspace)) {
       return reply(envelope, { error: rpcError(E.PARAMS, "workspace must be a non-empty string") });
     }
@@ -2668,7 +2712,9 @@ export class Coordinator {
     // and preserves what has been decided so far.
     const open = task.state === "review_requested" ? task.review : undefined;
     if (open) {
-      if (contentHash(task.pending_artefact) !== contentHash(p.artefact)) {
+      // An artefact left out reads as null, as it does in Python and in a
+      // store's copy.
+      if (contentHash(task.pending_artefact ?? null) !== contentHash(p.artefact ?? null)) {
         return { error: rpcError(
           E.REVIEW_ALREADY_OPEN,
           "A review is already open on this task with different content. " +

@@ -276,6 +276,69 @@ def test_under_log_the_call_stands_and_the_next_write_carries_what_a_failed_one_
     assert plain(coordinator(store)) == plain(c)
 
 
+def test_a_lapse_check_after_a_failed_write_writes_nothing_the_call_did():
+    # The check took the lock and nothing else, so it wrote a change the call
+    # had been answered as failing, and announced it.
+    class Unreadable(Flaky):
+        def __init__(self):
+            super().__init__()
+            self.load_failures = 0
+
+        def load_one(self, ws_id):
+            if self.load_failures > 0:
+                self.load_failures -= 1
+                raise RuntimeError("database is locked")
+            return super().load_one(ws_id)
+
+    store, heard = Unreadable(), []
+    c = coordinator(store, on_store_error=lambda err, rec: None,
+                    on_audit=lambda ws_id, e: heard.append((e.envelope or e.request)["method"]))
+    send = driver(c)
+    ok(send("workspace.create", "human:h", profiles=PROFILES))
+    ok(send("participant.join", "human:h", type="human"))
+    ok(send("participant.join", "agent:a", type="agent"))
+    task = ok(send("task.create", "human:h", kind="k", input={}, assignee="agent:a",
+                   review_required=True))["task_id"]
+    ok(send("task.complete", "agent:a", task_id=task, output={"x": 1}))
+    ok(send("whisper.ask", "agent:a", to="human:h", task_id=task, question="q?",
+            deadline_ms=1, default_if_lapsed="yes"))
+    # The write fails, and so do the next two reads of the store.
+    store.failures = 1
+    store.load_failures = 2
+    assert send("decide.reject", "human:h", task_id=task)["error"]["data"] == {"reason": "store"}
+    heard.clear()
+    assert c.check_whisper_lapses("w", "2099-01-01T00:00:00.000Z") == []
+    assert heard == []
+    assert coordinator(store).workspaces["w"].tasks[task].state == "review_requested"
+    # Once the store reads again, the check lapses the whisper, and only that.
+    assert len(c.check_whisper_lapses("w", "2099-01-01T00:00:00.000Z")) == 1
+    assert heard == ["notify.message"]
+    assert c.workspaces["w"].tasks[task].state == "review_requested"
+
+
+def test_a_listener_may_wait_on_a_call_from_another_thread():
+    # The listeners were called with the coordinator's lock held, so one that
+    # handed work to another thread and waited for it waited for ever.
+    import concurrent.futures
+    c = coordinator(MemoryStore())
+    got = []
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+    def listener(ws_id, entry):
+        if entry.seq != 1:
+            return
+        future = pool.submit(c.dispatch, {"jsonrpc": "2.0", "id": "d", "method": "workspace.describe",
+                                          "params": {"workspace": ws_id}})
+        got.append(future.result(timeout=5)["result"]["audit_count"])
+
+    c.add_audit_listener(listener)
+    send = driver(c)
+    ok(send("workspace.create", "human:a"))
+    ok(send("participant.join", "human:a", type="human"))
+    pool.shutdown()
+    assert got == [2]
+
+
 def test_a_workspace_whose_store_cannot_be_read_again_is_refused_until_it_can():
     store = Flaky()
     c = coordinator(store, on_store_error=lambda err, rec: None)

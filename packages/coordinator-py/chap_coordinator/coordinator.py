@@ -43,6 +43,7 @@ from .crypto import (
     parse_webauthn_assertion, strict_base64, webauthn_failure,
 )
 from .ids import IdFactory
+from .storage.store import StoreChange, StoreConflictError, WorkspaceRecord
 from .tracked import Scope, TrackedDict
 from .catalogue import ALWAYS_AVAILABLE, OWNING_PROFILE, PROFILE_VERSIONS
 from .jsonrpc import E, is_valid_envelope, make_response, rpc_error
@@ -252,7 +253,8 @@ class CoordinatorOptions:
     call is answered with -32603 and ``data: {"reason": "store"}``, and the
     workspace goes back to what the store holds. ``"log"``: the call is
     answered as it was, and the next write carries its change again. A write
-    another writer got to first runs the call once more under either."""
+    another writer got to first is answered as ``"raise"`` says under either,
+    and the call may be sent again."""
 
 
 # ============================================================
@@ -642,8 +644,10 @@ def _review_rule_supported(rule: str) -> bool:
     if rule in ("any_one_approves", "all_approve"):
         return True
     if rule.startswith("quorum:"):
+        # ASCII digits only: str.isdigit() also takes other scripts' digits,
+        # which TypeScript refuses and int() may not read.
         arg = rule.split(":", 1)[1]
-        return arg.isdigit() and int(arg) >= 1
+        return re.fullmatch(r"[0-9]+", arg) is not None and int(arg) >= 1
     return False
 
 
@@ -716,6 +720,12 @@ class Coordinator:
         self._unflushed: dict[int, Workspace] = {}
         # One call at a time: a call reads and writes state across many steps.
         self._lock = threading.RLock()
+        # Calls under way on the thread that holds the lock, and the entries
+        # the store took that the audit listeners have yet to hear of. The
+        # listeners hear of them once the outermost call has let the lock go,
+        # so a listener may wait on a call from another thread.
+        self._calls = 0
+        self._heard: list[tuple[str, AuditEntry]] = []
         # Workspaces whose store copy may differ from memory after a failed
         # write: each is reloaded before the next call on it, which is
         # refused while that fails.
@@ -845,16 +855,65 @@ class Coordinator:
 
     def dispatch(self, envelope: dict) -> dict:
         """Process one JSON-RPC envelope; return the response."""
+        return self._serially(lambda: self._dispatch_once(envelope))
+
+    def _dispatch_once(self, envelope: Any) -> dict:
+        response, failure = self._run(envelope)
+        if failure is not None:
+            # The store does not hold what the call did, whether a write
+            # failed or another writer wrote the workspace first. The
+            # workspace is what the store holds again, and the caller may send
+            # the call again (SPECIFICATION 10.3).
+            env_id = envelope.get("id") if isinstance(envelope, dict) else None
+            return make_response(env_id, error=_store_failed())
+        return response
+
+    def _serially(self, run: Callable[[], Any]) -> Any:
+        """Run under the lock, one call at a time, then tell the audit
+        listeners of the entries the store took, with the lock released."""
         with self._lock:
-            response, failure = self._run(envelope)
-            if failure == "conflict":
-                # Another writer wrote the workspace first. The workspace now
-                # holds what the store holds, and the call runs once more on it.
-                response, failure = self._run(envelope)
-            if failure is not None:
-                env_id = envelope.get("id") if isinstance(envelope, dict) else None
-                return make_response(env_id, error=_store_failed())
-            return response
+            self._calls += 1
+            try:
+                result = run()
+            finally:
+                self._calls -= 1
+                heard: list[tuple[str, AuditEntry]] = []
+                if self._calls == 0:
+                    heard, self._heard = self._heard, []
+        for ws_id, entry in heard:
+            for listener in self._audit_listeners:
+                try:
+                    listener(ws_id, entry)
+                except Exception:
+                    pass
+        return result
+
+    def _outside_call(self, ws_id: str, work: Callable[[], list]) -> list:
+        """Work that changes a workspace outside any call, a whisper lapse
+        check for one, kept to the rules a call keeps (SPECIFICATION 10.3):
+        the workspace is first brought up to date with the store, and left
+        alone as long as it is held; what the work changed is written once,
+        when it ends; and where that write fails, the workspace goes back to what
+        the store holds and the work's results are dropped, since none took
+        effect."""
+        def run() -> list:
+            if self._scope.depth > 0:
+                return work()
+            if self._keep_up(ws_id) is not None:
+                return []
+            self._scope.depth += 1
+            self._write_failures.clear()
+            try:
+                out = work()
+            finally:
+                self._scope.depth -= 1
+                if self._scope.depth == 0 and self._unflushed:
+                    self._flush_unflushed()
+            if self._write_failures.pop(ws_id, None) is not None:
+                self._reload(ws_id)
+                return []
+            return out
+        return self._serially(run)
 
     def _run(self, envelope: Any) -> tuple[dict, str | None]:
         """One attempt at a call, its write included. The second value is how
@@ -1264,21 +1323,16 @@ class Coordinator:
         self._announce(ws, len(ws.audit))
 
     def _announce(self, ws: Workspace, up_to: int) -> None:
-        """Tell the audit listeners of the entries now written, up to ``up_to``."""
+        """Queue the entries now written, up to ``up_to``, for the audit
+        listeners, who hear of them once the call lets the lock go."""
         queued = getattr(ws, "_unannounced", None) or []
-        now = [e for e in queued if e.seq < up_to]
+        self._heard.extend((ws.id, e) for e in queued if e.seq < up_to)
         object.__setattr__(ws, "_unannounced", [e for e in queued if e.seq >= up_to])
-        for entry in now:
-            for listener in self._audit_listeners:
-                try:
-                    listener(ws.id, entry)
-                except Exception:
-                    pass
 
     def _write_failed(self, ws: Workspace, err: Exception, version: int) -> None:
         """A write that did not reach the store: reported, and the call that
-        made it answered as ``store_errors`` says."""
-        from .storage.store import StoreConflictError
+        made it answered as ``store_errors`` says. A write another writer got
+        to first fails its call under either."""
         self._report_store_error(err, ws.id, version)
         if isinstance(err, StoreConflictError):
             self._write_failures[ws.id] = "conflict"
@@ -1308,7 +1362,10 @@ class Coordinator:
             except Exception:
                 pass
             return
-        _log.error("writing workspace %s to the store failed: %s", ws_id, err)
+        # Another writer having written first is handled: the workspace is
+        # reloaded, and the call may be sent again.
+        level = logging.WARNING if isinstance(err, StoreConflictError) else logging.ERROR
+        _log.log(level, "writing workspace %s to the store failed: %s", ws_id, err)
 
     # -- change tracking, for a store that implements `apply` -----------
 
@@ -1369,7 +1426,6 @@ class Coordinator:
 
     def _take_change(self, ws: Workspace, p: _Persisted):
         """The change since the last write, taking the recorded keys with it."""
-        from .storage.store import StoreChange
         replace = p.replace
         objects: dict[str, dict] = {}
         for name in _TRACKED:
@@ -1404,9 +1460,7 @@ class Coordinator:
 
     def _snapshot_workspace(self, ws: Workspace) -> "WorkspaceRecord":
         """JSON-safe snapshot of one workspace, plus a version counter."""
-        from dataclasses import asdict
-        from .storage.store import WorkspaceRecord
-        data = asdict(ws)
+        data = dataclasses.asdict(ws)
         # Entries are stored in their wire shape, so an accepted entry carries
         # no null request or outcome, and a refusal no null envelope.
         data["audit"] = [copy.deepcopy(e.to_dict()) for e in ws.audit]

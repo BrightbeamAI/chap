@@ -221,7 +221,10 @@ def test_a_coordinator_reloads_what_another_wrote_before_its_next_call():
     assert r["result"]["ok"] is True
 
 
-def test_a_write_another_writer_got_to_first_runs_once_more_on_what_the_store_holds():
+def test_a_write_another_writer_got_to_first_is_answered_as_failed_and_may_be_sent_again():
+    # The call ran a second time on its own, so whatever it did outside the
+    # workspace, a verifier it called or a hook, happened twice, and the
+    # TypeScript coordinator answered the same race as failed.
     from chap_coordinator.storage.store import StoreConflictError
     store, errors = MemoryStore(), []
     coord = _pair(store, errors)
@@ -239,12 +242,17 @@ def test_a_write_another_writer_got_to_first_runs_once_more_on_what_the_store_ho
         _join(b, 3, "human:bob")
         return held
     store.version = racing
-    assert "result" in _join(a, 4, "human:carol")
+    assert _join(a, 4, "human:carol")["error"] == {
+        "code": -32603, "message": "Internal error", "data": {"reason": "store"}}
     assert len(errors) == 1
     err, rec = errors[0]
     assert isinstance(err, StoreConflictError)
     assert (err.held, err.base) == (3, 2)
     assert rec == {"id": "w", "version": 3}
+    # A holds what the store holds, Bob included, and the call sent again
+    # takes effect.
+    assert "human:bob" in a.get_workspace("w").members
+    assert "result" in _join(a, 5, "human:carol")
     survivor = coord().get_workspace("w")
     assert {"human:bob", "human:carol"} <= set(survivor.members)
     assert len(survivor.audit) == 4

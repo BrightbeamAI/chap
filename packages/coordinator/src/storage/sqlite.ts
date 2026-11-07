@@ -1,6 +1,6 @@
 /**
  * SQLite-backed store, through better-sqlite3 where it is installed and
- * through Node's built-in node:sqlite (Node 22.5 and later) where it is not.
+ * through Node's built-in node:sqlite (Node 22.13 and later) where it is not.
  *
  * Schema, shared with the Python SqliteStore. Both write these tables, and
  * the same audit entries for the same calls. Each writes the objects in its
@@ -58,7 +58,8 @@
  *
  * better-sqlite3 is declared as an optionalDependency. Where its binary
  * cannot be built (rare on Linux/macOS, common on locked-down CI), the store
- * opens the file through node:sqlite, which Node 22.5 and later ship; both
+ * opens the file through node:sqlite, which Node 22.13 and later ship
+ * without a flag; both
  * write the same file. With neither, constructing a SqliteStore throws with
  * a clear message, and applications can fall back to MemoryStore.
  */
@@ -149,14 +150,10 @@ function openDatabase(path: string, driver: SqliteStoreOptions["driver"]): Sqlit
   const load = <T>(name: string): T | undefined => {
     try {
       // Resolved at construction so the dependency stays optional: importing
-      // this module costs nothing if you never build a SqliteStore.
-      //
-      // createRequire, since a bare require() is undefined in an ES module:
-      // from source it threw ReferenceError, and the dependency was reported
-      // missing when it was installed. The bundled build masked it by
-      // shimming require, which is why it went unnoticed. The CommonJS build
-      // has no import.meta.url, and resolves from __filename, which an ES
-      // module does not define.
+      // this module costs nothing if you never build a SqliteStore. An ES
+      // module has no bare require(), so one is made from import.meta.url,
+      // and the CommonJS build, which has no import.meta.url, makes it from
+      // __filename.
       return createRequire(typeof __filename === "string" ? __filename : import.meta.url)(name) as T;
     } catch (err) {
       failures.push(`${name}: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
@@ -172,7 +169,7 @@ function openDatabase(path: string, driver: SqliteStoreOptions["driver"]): Sqlit
     if (sqlite) return fromNodeSqlite(new sqlite.DatabaseSync(path));
   }
   throw new Error(
-    "SqliteStore needs the `better-sqlite3` package, or Node 22.5 or later for node:sqlite. " +
+    "SqliteStore needs the `better-sqlite3` package, or Node 22.13 or later for node:sqlite. " +
     "Install it with `npm install better-sqlite3` " +
     `or use MemoryStore for non-persistent workloads (${failures.join("; ")})`,
   );
@@ -225,6 +222,11 @@ export class SqliteStore implements Store {
 
   constructor(path: string, options: SqliteStoreOptions = {}) {
     this.db = openDatabase(path, options.driver);
+    // Wait up to five seconds for another process's lock, as better-sqlite3
+    // and Python's sqlite3 do by default; node:sqlite waits for none. It is
+    // set first, so the WAL switch below waits too when two processes open
+    // a new file together.
+    this.db.pragma("busy_timeout = 5000");
     if (path !== ":memory:" && options.wal !== false) {
       this.db.pragma("journal_mode = WAL");
     }

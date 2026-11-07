@@ -108,6 +108,21 @@ test("an open review can still be widened", () => {
   assert.deepEqual([...task(c, id).review.requested_to].sort(), ["human:a", "human:c"]);
 });
 
+test("a review of a null artefact, or of none, is widened like any other", () => {
+  // The artefact left out compared as undefined, which has no content hash,
+  // and the widening was answered with an internal error.
+  const { c, send } = ready();
+  const none = send("task.create", { kind: "k", input: {}, assignee: "agent:b" }).result.task_id;
+  send("review.request", { task_id: none, artefact: null, to: "human:a" });
+  const amended = send("review.request", { task_id: none, artefact: null, to: "human:c" });
+  assert.equal(amended.result?.amended, true, JSON.stringify(amended.error));
+  const left = send("task.create", { kind: "k", input: {}, assignee: "agent:b" }).result.task_id;
+  send("task.complete", { task_id: left });
+  send("review.request", { task_id: left, artefact: null, to: "human:a" });
+  assert.equal(send("review.request", { task_id: left, artefact: null, to: "human:c" }).result?.amended, true);
+  assert.deepEqual([...task(c, left).review.requested_to].sort(), ["human:a", "human:c"]);
+});
+
 for (const state of ["cancelled", "superseded", "paused"]) {
   test(`a ${state} task cannot be pulled back into review`, () => {
     const { c, send } = ready();

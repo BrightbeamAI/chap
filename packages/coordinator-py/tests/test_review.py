@@ -188,6 +188,18 @@ def test_review_request_rejects_unhonorable_rule():
     assert r["error"]["code"] == -32602  # PARAMS: rule review/1.0 can't honor
 
 
+def test_a_quorum_is_counted_in_ascii_digits():
+    # Other scripts' digits passed str.isdigit(): quorum:١ opened a review the
+    # TypeScript coordinator refused, and quorum:² failed in int() with an
+    # internal error.
+    for rule in ("quorum:١", "quorum:²", "quorum:２"):
+        coord, send, tid = _rule_coord()
+        r = send("review.request", workspace="w",
+                 **{"from": "agent:bot", "to": ["human:a"]},
+                 task_id=tid, artefact={"x": 1}, rule=rule)
+        assert r["error"]["code"] == -32602, rule
+
+
 def test_task_complete_refusal_mutates_nothing():
     coord = Coordinator(CoordinatorOptions(deterministic_ids=True, deterministic_clock=True))
 

@@ -1,12 +1,12 @@
 /**
  * Type checks for the params a method reads.
  *
- * A param of the wrong type reached code written for the right one, and the
- * two references then did different things with it: JavaScript reads `[]`
- * and `{}` as true where Python reads them as false, a Python dict cannot be
- * looked up with a list, and a value written into a message reads one way in
- * each language. Checking the type first gives both the same refusal.
- * packages/coordinator-py/chap_coordinator/params.py is the mirror.
+ * A param of the wrong type would reach code written for the right one, and
+ * the two references would do different things with it: JavaScript reads
+ * `[]` and `{}` as true where Python reads them as false, a Python dict
+ * cannot be looked up with a list, and a value written into a message reads
+ * one way in each language. Checking the type first gives both the same
+ * refusal. packages/coordinator-py/chap_coordinator/params.py is the mirror.
  */
 import { E, rpcError } from "./jsonrpc.js";
 

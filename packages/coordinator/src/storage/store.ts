@@ -123,9 +123,10 @@ export class StoreConflictError extends Error {
     super(
       `The store holds ${held} audit entries for workspace ${workspace} and ` +
       `this write expected ${base}, so nothing was written. Another ` +
-      `coordinator may be writing to this workspace, the store may have been ` +
-      `changed outside this coordinator, or this coordinator could not load ` +
-      `the workspace when it started. Restart this coordinator to reload.`,
+      `coordinator may be writing to this workspace, or the store may have ` +
+      `been changed outside this coordinator. A coordinator reloads the ` +
+      `workspace and answers the call as failed, and the call may be sent ` +
+      `again.`,
     );
     this.name = "StoreConflictError";
     this.workspace = workspace;

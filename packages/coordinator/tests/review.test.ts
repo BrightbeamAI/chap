@@ -156,6 +156,17 @@ test("review.request rejects a rule review/1.0 cannot honor", () => {
   assert.equal(r.error?.code, -32602);
 });
 
+test("a quorum is counted in ASCII digits", () => {
+  // Python read other scripts' digits, opening a quorum:١ review that
+  // TypeScript refused, and quorum:² failed inside it with an internal error.
+  for (const rule of ["quorum:١", "quorum:²", "quorum:２"]) {
+    const { send, tid } = ruleSetup();
+    const r = send("review.request", { workspace: "w", from: "agent:bot",
+      to: ["human:a"], task_id: tid, artefact: { x: 1 }, rule });
+    assert.equal(r.error?.code, -32602, rule);
+  }
+});
+
 test("task.complete refusal mutates nothing", () => {
   const c = new Coordinator({ deterministicIds: true, deterministicClock: true });
   const send = (m: string, p: Record<string, unknown>) =>

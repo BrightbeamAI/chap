@@ -1,5 +1,5 @@
 /**
- * SqliteStore through node:sqlite, the binding Node 22.5 and later ship,
+ * SqliteStore through node:sqlite, the binding Node 22.13 and later ship,
  * where better-sqlite3 is not installed. The same file reads the same through
  * either binding, and every write the store makes goes through the calls the
  * two have in common, with `pragma` and `transaction` written over them for
@@ -10,6 +10,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -101,6 +103,28 @@ test("node:sqlite", { skip: !nodeSqlite }, async (t) => {
       assert.deepEqual(plain(new Coordinator({ ...OPTIONS, store })), plain(source));
       const kept = store.db.prepare("SELECT id FROM chap_workspaces_v1").all() as Array<{ id: string }>;
       assert.deepEqual(kept.map((r) => r.id), ["w"]);
+      store.close();
+    });
+
+    await t.test("a write waits for another process's lock, as better-sqlite3's does", async () => {
+      // node:sqlite waits for no lock unless told to, so a write that met
+      // another process's transaction failed at once.
+      const path = join(tmp, "busy.db");
+      const store = new SqliteStore(path, { driver: "node:sqlite" });
+      const c = new Coordinator({ ...OPTIONS, store });
+      c.dispatch({ jsonrpc: "2.0", id: "c", method: "workspace.create", params: { workspace: "w" } });
+      const holder = spawn(process.execPath, ["-e", `
+        const { DatabaseSync } = require("node:sqlite");
+        const db = new DatabaseSync(${JSON.stringify(path)});
+        db.exec("BEGIN IMMEDIATE");
+        process.stdout.write("held\\n");
+        setTimeout(() => { db.exec("COMMIT"); db.close(); }, 400);
+      `], { stdio: ["ignore", "pipe", "inherit"] });
+      await once(holder.stdout!, "data");
+      const r = c.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
+                             params: { workspace: "w", from: "agent:a", type: "agent" } }) as any;
+      await once(holder, "exit");
+      assert.deepEqual(r.result, { joined: true, as: "agent:a" });
       store.close();
     });
   } finally {
