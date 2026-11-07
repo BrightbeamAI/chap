@@ -206,6 +206,21 @@ def test_a_review_opens_on_a_task_that_requires_one_and_a_desk_decision_is_read_
     assert decision == Decision(task_id, "completed", "override", ALICE, {"reply": "refund 50"}, "cap", ("limit",))
 
 
+def test_a_revision_goes_round_again_on_the_task_or_closes_it(coord, agent):
+    task_id = agent.open({"reply": "refund 100"}, kind="draft")
+    send(coord, "decide.reject", ALICE, task_id=task_id, comment="say sorry first", request_revision=True)
+    decision = agent.wait(task_id, timeout=5, poll_seconds=0.01)
+    assert (decision.state, decision.outcome, decision.revision_requested) == ("in_progress", "revise", True)
+    # The next proposal opens the review's next round on the same task.
+    assert agent.open({"reply": "sorry; refund 100"}, kind="draft", task_id=task_id) == task_id
+    send(coord, "decide.reject", ALICE, task_id=task_id, comment="shorter", request_revision=True)
+    assert agent.wait(task_id, timeout=5, poll_seconds=0.01).revision_requested
+    # Where the next proposal is reviewed on a task of its own, this one is closed.
+    agent.close(task_id, "The next proposal is reviewed on a task of its own.")
+    task = coord.workspaces[WS].tasks[task_id]
+    assert (task.state, task.history[-1].note) == ("declined", "The next proposal is reviewed on a task of its own.")
+
+
 def test_an_empty_artefact_is_not_put_in_front_of_anyone(agent):
     for empty in (None, "", "  ", {}, []):
         with pytest.raises(ValueError, match="nothing to review"):
