@@ -1,15 +1,13 @@
 """
 chap_coordinator.bridge: the CHAP half the five framework bridges share.
 
-Each bridge carried its own copy of this code. The copies read a task
-straight from the coordinator's memory, so a decision another process wrote
-to the store was never seen; they read the workspace with an unsigned
-workspace.describe from nobody before the agent had joined, so none could
-be made against a desk that requires signatures; they joined a person
-without a key to record a decision in that person's name, which locked the
-person out of their own name at a signed desk; and a wait that timed out
-left its review open, so a later approval was recorded for work that never
-ran. Here the one module is held to each of those.
+It reads a task through the coordinator's dispatch or a client, so it sees
+a decision another process wrote to the store. It joins the agent before it
+reads the workspace, so it works against a desk that requires signatures.
+It joins no person without a key, and records no decision in a person's
+name where people sign. A wait that ends without a decision withdraws its
+review, so no later approval lands on work that never ran; and an async
+wait leaves the event loop free, for a desk served on the same loop.
 """
 from __future__ import annotations
 
@@ -27,7 +25,7 @@ from chap_coordinator.bridge import (
 )
 from chap_coordinator.client import HttpCoordinator, Participant, Signer
 from chap_coordinator.client import wait_for_decision as client_wait_for_decision
-from chap_coordinator.server import load_config, make_coordinator, make_server
+from chap_coordinator.server import ChapDesk, load_config, make_coordinator, make_server
 from chap_coordinator.storage.sqlite import SqliteStore
 
 WS = "wsp_bridge"
@@ -395,19 +393,24 @@ def test_nobody_is_recorded_or_joined_in_a_persons_name_where_signatures_are_req
 
 # -- over HTTP, against a desk that requires signatures ------------------------
 
-@pytest.fixture
-def desk(tmp_path, monkeypatch):
-    """A desk server as chap-coordinator serve makes one, people signing."""
+def desk_config(tmp_path, monkeypatch, signatures):
+    """A desk's configuration as chap-coordinator serve reads it."""
     for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS"):
         monkeypatch.delenv(name, raising=False)
     path = tmp_path / "chap.config.json"
     path.write_text(json.dumps({
         "workspace": WS, "profiles": ["core/1.0", "review/1.0"], "store": ":memory:", "port": 0,
-        "require_signatures": "humans", "chain": True,
+        "require_signatures": signatures, "chain": True,
         "humans": [{"uri": ALICE, "display_name": "Alice", "role": "reviewer"}],
         "agent": {"uri": AGENT},
     }), encoding="utf-8")
-    config = load_config(path)
+    return load_config(path)
+
+
+@pytest.fixture
+def desk(tmp_path, monkeypatch):
+    """A desk server as chap-coordinator serve makes one, people signing."""
+    config = desk_config(tmp_path, monkeypatch, "humans")
     server = make_server(config, make_coordinator(config))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
@@ -435,3 +438,33 @@ def test_request_and_wait_against_a_desk_where_people_sign(desk, tmp_path):
     # Alice's own name is still hers: the bridge joined nobody in it.
     assert alice.call("participant.join", type="human", role="reviewer",
                       jwks={"keys": [alice.signer.public_jwk]}) == {"joined": True, "as": ALICE}
+
+
+def test_an_async_wait_leaves_the_loop_free_for_a_desk_served_on_it(tmp_path, monkeypatch):
+    """The desk and the agent on one event loop, as in one ASGI app: each
+    read the agent makes over HTTP is answered by that loop, and so is the
+    person's decision."""
+    uvicorn = pytest.importorskip("uvicorn")
+    config = desk_config(tmp_path, monkeypatch, False)
+    server = uvicorn.Server(uvicorn.Config(ChapDesk(config, make_coordinator(config)), host="127.0.0.1",
+                                           port=0, log_level="warning", lifespan="off"))
+
+    async def main():
+        serving = asyncio.ensure_future(server.serve())
+        while not server.started:
+            await asyncio.sleep(0.01)
+        url = f"http://127.0.0.1:{server.servers[0].sockets[0].getsockname()[1]}/chap"
+        try:
+            agent = await asyncio.to_thread(ReviewClient, HttpCoordinator(url, timeout=3), WS, AGENT, ALICE)
+            task_id = await agent.open_async({"reply": "refund 100"}, kind="draft", timeout=5, poll_seconds=0.05)
+            alice = Participant(HttpCoordinator(url, timeout=3), WS, ALICE)
+            deciding = asyncio.ensure_future(asyncio.to_thread(alice.call, "decide.approve", task_id=task_id))
+            decision = await agent.wait_async(task_id, timeout=5, poll_seconds=0.05)
+            await deciding
+            return decision
+        finally:
+            server.should_exit = True
+            await serving
+
+    decision = asyncio.run(main())
+    assert (decision.outcome, decision.reviewer, decision.output) == ("approve", ALICE, {"reply": "refund 100"})
