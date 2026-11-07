@@ -1,10 +1,8 @@
 """
-The tool filter decides what the server offers, and ``participant`` makes
-every call as one member.
-
-Before, ``tool_filter`` only left tools out of ``tools/list``: a client that
-called an excluded tool by name still ran it. And every call named its own
-``from``, so a connection meant for one agent could act in any member's name.
+The tool filter decides what the server offers: a tool it excludes is
+refused when called by name, as well as left out of ``tools/list``. And
+``participant`` makes every call as one member, so a connection meant for
+one agent cannot act in any other member's name, nor in a person's.
 
 Mirrors packages/coordinator-mcp/tests/filter_and_participant.test.ts.
 """
@@ -90,6 +88,13 @@ async def test_with_participant_the_tools_list_from_as_optional_and_say_whose_na
         assert "from" not in update.input_schema["required"]
         assert "task_id" in update.input_schema["required"]
         assert "acts as agent:b" in update.input_schema["properties"]["from"]["description"]
+
+
+def test_a_person_cannot_be_the_participant():
+    """A server is a connection for an agent; a person decides in a desk."""
+    with pytest.raises(ValueError, match="participant human:a names a person"):
+        make_chap_mcp_server(Coordinator(), participant="human:a")
+    make_chap_mcp_server(Coordinator(), participant="agent:b")
 
 
 class _Awaiting:

@@ -3,7 +3,7 @@
  *
  * Wraps a CHAP Coordinator and exposes every CHAP method as an MCP tool
  * over stdio, with every call made as one participant: the agent named by
- * CHAP_PARTICIPANT, `agent:assistant@local` when it is unset. A call that
+ * CHAP_PARTICIPANT, `agent:assistant` when it is unset. A call that
  * names another `from` is refused, so the assistant cannot act in a
  * person's name. A person's decisions belong in a desk: the published
  * `chap-mcp-server --url` forwards an assistant's calls to a desk server.
@@ -40,7 +40,7 @@ const PROFILES = [
   "routing/1.0", "modes/1.0", "audit-scitt/1.0",
 ];
 
-const participant = process.env.CHAP_PARTICIPANT?.trim() || "agent:assistant@local";
+const participant = process.env.CHAP_PARTICIPANT?.trim() || "agent:assistant";
 if (participant.startsWith("human:")) {
   process.stderr.write(`CHAP_PARTICIPANT ${participant} names a person; this server acts for an assistant.\n`);
   process.exit(2);

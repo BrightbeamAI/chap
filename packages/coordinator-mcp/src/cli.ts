@@ -3,11 +3,12 @@
  * CHAP MCP server (stdio).
  *
  * Serves CHAP to one MCP client as one participant: every call is made as
- * that member, by default the agent `agent:assistant@local`, with the tools
- * an agent's own work needs. A person decides in a desk, so this server
- * never acts as a `human:` participant.
+ * that member, by default the agent `agent:assistant`, as the mcp-gate
+ * template names its agent, with the tools an agent's own work needs. A
+ * person decides in a desk, so this server never acts as a `human:`
+ * participant.
  *
- *   npx @brightbeamai/chap-coordinator-mcp --url http://127.0.0.1:8787/chap --as agent:assistant
+ *   npx @brightbeamai/chap-coordinator-mcp --url http://127.0.0.1:8792/chap --as agent:assistant
  *
  * With --url it forwards every call to a running CHAP server's JSON-RPC
  * endpoint, such as a desk server's POST /chap, so the assistant's work
@@ -19,7 +20,7 @@
  *   { "mcpServers": { "chap": {
  *       "command": "npx",
  *       "args": ["-y", "@brightbeamai/chap-coordinator-mcp",
- *                "--url", "http://127.0.0.1:8787/chap", "--as", "agent:assistant"] } } }
+ *                "--url", "http://127.0.0.1:8792/chap", "--as", "agent:assistant"] } } }
  *
  * The options are in USAGE below. CHAP_PARTICIPANT, CHAP_DB_PATH and
  * CHAP_PROFILES stand in for --as, --db and --profiles; an empty one counts
@@ -60,7 +61,7 @@ const DEFAULT_PROFILES = [
   "audit-scitt/1.0",
 ];
 
-const DEFAULT_PARTICIPANT = "agent:assistant@local";
+const DEFAULT_PARTICIPANT = "agent:assistant";
 
 const USAGE = `Usage: chap-mcp-server [options]
 
@@ -73,7 +74,7 @@ Options:
   --tools agent|all   agent, the default: the tools an agent's own work needs,
                       listed below; all: every CHAP method
   --url <endpoint>    forward every call to a running CHAP server's JSON-RPC
-                      endpoint, such as http://127.0.0.1:8787/chap, which
+                      endpoint, such as http://127.0.0.1:8792/chap, which
                       keeps the workspaces
   --db <path>         keep the workspaces in this SQLite file (CHAP_DB_PATH);
                       a leading ~ is the home directory. Without --db or
@@ -136,7 +137,7 @@ function parseArgs(argv: string[]): Options {
   if (participant.startsWith("human:")) {
     throw new UsageError(
       `${participantFrom} ${participant} names a person. This server acts for an assistant, and a person ` +
-      "decides in a desk; give the assistant's own URI, such as agent:assistant@local.",
+      "decides in a desk; give the assistant's own URI, such as agent:assistant.",
     );
   }
 
@@ -148,7 +149,7 @@ function parseArgs(argv: string[]): Options {
     let parsed: URL | undefined;
     try { parsed = new URL(given["--url"]); } catch { parsed = undefined; }
     if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) {
-      throw new UsageError(`--url takes the http or https address of a CHAP JSON-RPC endpoint, such as http://127.0.0.1:8787/chap; ${given["--url"]} is not one`);
+      throw new UsageError(`--url takes the http or https address of a CHAP JSON-RPC endpoint, such as http://127.0.0.1:8792/chap; ${given["--url"]} is not one`);
     }
     url = parsed.href;
   }

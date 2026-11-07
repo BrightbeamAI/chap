@@ -136,11 +136,25 @@ export interface ChapMcpOptions {
    * and a call that names another `from` is refused. Use it where the server
    * is one participant's connection, such as an agent's, so the connection
    * cannot act in anyone else's name. The tools then list `from` as optional,
-   * with this URI in its description. Default: each call names its own `from`.
+   * with this URI in its description. A `human:` URI is refused: a person
+   * decides in a desk, never through a connection made for an agent.
+   * Default: each call names its own `from`.
    */
   participant?: string;
   /** Optional id generator for the envelopes emitted by tool calls. */
   envelopeIdFactory?: () => string | number;
+}
+
+/**
+ * Refuse a `human:` participant, as the commands refuse one: a server that
+ * makes every call as one member is a connection for an agent, and a
+ * person decides in a desk.
+ */
+function refusePerson(participant: string | undefined): void {
+  if (participant?.startsWith("human:")) {
+    throw new Error(`participant ${participant} names a person. This server acts for an agent, and a person ` +
+      "decides in a desk; give the agent's own URI, such as agent:assistant.");
+  }
 }
 
 /**
@@ -170,6 +184,7 @@ function pinnedSchema(schema: JsonSchema, participant: string): JsonSchema {
  * start serving.
  */
 export function makeChapMcpServer(coord: ChapDispatcher, options: ChapMcpOptions = {}): Server {
+  refusePerson(options.participant);
   const serverInfo = {
     name:    options.name    ?? "chap",
     version: options.version ?? "0.3.4",
@@ -451,6 +466,7 @@ export function chapMcpHttpHandler(coord: ChapDispatcher, options: ChapMcpHttpOp
     allowedOrigins = [],
     ...serverOptions
   } = options;
+  refusePerson(serverOptions.participant);
   return mcpHttpHandler({
     makeServer: () => makeChapMcpServer(coord, serverOptions),
     maxBodyBytes,

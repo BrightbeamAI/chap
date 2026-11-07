@@ -1,12 +1,10 @@
 /**
  * The chap-mcp-server command, run as an MCP client runs it.
  *
- * It read only CHAP_PROFILES and CHAP_DB_PATH and built the server with no
- * participant and no tool filter, so one client could join as a person and
- * decide in their name, and the log credited the person. It now acts as one
- * participant, an agent by default, offers the agent's tools, refuses to act
- * as a human, expands `~` in CHAP_DB_PATH, and with --url forwards every call
- * to a running CHAP server, whose people decide in its desk.
+ * It acts as one participant, the mcp-gate template's agent by default,
+ * offers the agent's tools, refuses to act as a person, expands `~` in
+ * CHAP_DB_PATH, and with --url forwards every call to a running CHAP
+ * server, whose people decide in its desk.
  *
  * Each test starts the command the way Claude Desktop does: a child process
  * speaking MCP on stdio.
@@ -15,7 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createServer, type Server as HttpServer } from "node:http";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -68,15 +66,17 @@ async function connect(args: string[], env: Record<string, string> = {}) {
 // Who the server acts as, and what it offers
 // ------------------------------------------------------------------
 
-test("by default it acts as agent:assistant@local and offers the agent tools", async () => {
+test("by default it acts as agent:assistant, the mcp-gate template's agent, and offers the agent tools", async () => {
+  const template = JSON.parse(readFileSync(join(PKG, "..", "create-chap-app", "templates", "mcp-gate", "template.json"), "utf8"));
+  assert.equal(template.defaults.agent_uri, "agent:assistant");
   const s = await connect([]);
   try {
     const { tools } = await s.client.listTools();
     assert.deepEqual(tools.map((t) => t.name).sort(), [...AGENT_MCP_TOOLS].sort());
     const create = tools.find((t) => t.name === "chap.task.create")!;
     assert.ok(!(create.inputSchema.required ?? []).includes("from"), "from is filled in, so not required");
-    assert.match(String((create.inputSchema.properties as any).from.description), /acts as agent:assistant@local/);
-    assert.match(await s.stderrMatching(/acting as/), /acting as agent:assistant@local with the agent tools/);
+    assert.match(String((create.inputSchema.properties as any).from.description), /acts as agent:assistant/);
+    assert.match(await s.stderrMatching(/acting as/), /acting as agent:assistant with the agent tools/);
   } finally {
     await s.close();
   }
@@ -101,11 +101,11 @@ test("with every tool, a call naming a person is still refused, and the log cred
     assert.equal(made.isError, false, made.text);
     const asHuman = await s.call("chap.participant.join", { workspace: "w", from: "human:me@local", type: "human" });
     assert.equal(asHuman.isError, true);
-    assert.match(asHuman.text, /acts as agent:assistant@local; a call cannot name another from \("human:me@local"\)/);
+    assert.match(asHuman.text, /acts as agent:assistant; a call cannot name another from \("human:me@local"\)/);
     const joined = await s.call("chap.participant.join", { workspace: "w", type: "agent" });
     assert.equal(joined.isError, false, joined.text);
     const log = JSON.parse((await s.call("chap.audit.read", { workspace: "w" })).text);
-    assert.deepEqual(log.entries.map((e: any) => e.envelope.params.from), ["agent:assistant@local", "agent:assistant@local"]);
+    assert.deepEqual(log.entries.map((e: any) => e.envelope.params.from), ["agent:assistant", "agent:assistant"]);
   } finally {
     await s.close();
   }
@@ -250,6 +250,19 @@ test("--url forwards each call as the participant, and the person decides at the
     const log = JSON.parse((await s.call("chap.audit.read", { workspace: "w", filter: { task_id: taskId } })).text);
     const decisions = log.entries.filter((e: any) => e.envelope?.method === "decide.approve");
     assert.deepEqual(decisions.map((e: any) => e.envelope.params.from), ["human:you@local"]);
+  } finally {
+    await s.close();
+    await desk.close();
+  }
+});
+
+test("--url with no --as acts as the agent a desk made from the mcp-gate template joins", async () => {
+  const desk = await deskServer();
+  const s = await connect(["--url", desk.url]);
+  try {
+    const made = await s.call("chap.task.create", { workspace: "w", kind: "draft", assignee: "agent:assistant", input: {} });
+    assert.equal(made.isError, false, made.text);
+    assert.equal(desk.coord.getWorkspace("w")!.tasks.get(JSON.parse(made.text).task_id)!.delegator, "agent:assistant");
   } finally {
     await s.close();
     await desk.close();

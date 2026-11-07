@@ -33,7 +33,7 @@ npm start
 You should see, on stderr:
 
 ```
-CHAP MCP reference server starting on stdio, acting as agent:assistant@local.
+CHAP MCP reference server starting on stdio, acting as agent:assistant.
 Profiles enabled: core/1.0, review/1.0, whisper/1.0, deliberation/1.0, handoff/1.0, control/1.0, routing/1.0, modes/1.0, audit-scitt/1.0.
 ```
 
@@ -41,7 +41,7 @@ The server then waits for MCP protocol messages on stdin and writes
 responses to stdout. Kill it with Ctrl+C.
 
 `CHAP_PARTICIPANT` names the participant every call is made as; unset, it is
-`agent:assistant@local`. A `human:` URI is refused at start: a person decides
+`agent:assistant`. A `human:` URI is refused at start: a person decides
 in a desk, never through the assistant.
 
 ## Wire into Claude Desktop

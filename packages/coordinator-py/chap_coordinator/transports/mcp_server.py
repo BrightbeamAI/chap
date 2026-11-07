@@ -46,7 +46,7 @@ and offers the agent's tools::
 
     server = make_chap_mcp_server(
         coord,
-        participant="agent:assistant@local",
+        participant="agent:assistant",
         tool_filter=lambda name: name in AGENT_MCP_TOOLS,
     )
 
@@ -181,6 +181,16 @@ def _pinned_schema(schema: dict[str, Any], participant: str) -> dict[str, Any]:
     }
 
 
+def _refuse_person(participant: Optional[str]) -> None:
+    """Refuse a ``human:`` participant, as the commands refuse one: a server
+    that makes every call as one member is a connection for an agent, and a
+    person decides in a desk."""
+    if participant is not None and participant.startswith("human:"):
+        raise ValueError(f"participant {participant} names a person. This server acts for an agent, "
+                         "and a person decides in a desk; give the agent's own URI, such as "
+                         "agent:assistant.")
+
+
 def make_chap_mcp_server(
     coord: ChapDispatcher,
     *,
@@ -217,12 +227,15 @@ def make_chap_mcp_server(
         call, and a call that names another ``from`` is refused. Use it where
         the server is one participant's connection, such as an agent's, so
         the connection cannot act in anyone else's name. The tools then list
-        ``from`` as optional, with this URI in its description. Default: each
-        call names its own ``from``.
+        ``from`` as optional, with this URI in its description. A ``human:``
+        URI is refused with ``ValueError``: a person decides in a desk, never
+        through a connection made for an agent. Default: each call names its
+        own ``from``.
 
     ``AGENT_MCP_TOOLS`` is the tool set such a connection offers an agent:
     pass ``tool_filter=lambda name: name in AGENT_MCP_TOOLS``.
     """
+    _refuse_person(participant)
     if envelope_id_factory is None:
         counter = count(1)
 

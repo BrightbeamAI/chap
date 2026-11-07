@@ -47,8 +47,8 @@ export interface ChapAgentExecutorOptions {
    * and a call that names another `from` is refused with -32011. Use it
    * where the server is one participant's connection, such as an
    * orchestrator's, so the connection cannot act in anyone else's name, as
-   * `participant` does for the MCP server. Default: each call names its own
-   * `from`.
+   * `participant` does for the MCP server. A `human:` URI is refused: a
+   * person decides in a desk. Default: each call names its own `from`.
    */
   participant?: string;
 }
@@ -62,6 +62,7 @@ export class ChapAgentExecutor implements AgentExecutor {
     private readonly coord: Coordinator,
     options: ChapAgentExecutorOptions = {},
   ) {
+    refusePerson(options.participant);
     let counter = 0;
     this.nextEnvelopeId = options.envelopeIdFactory ?? (() => `a2a-${++counter}`);
     this.skillFilter = options.skillFilter ?? (() => true);
@@ -161,7 +162,10 @@ export interface DispatchA2aMessageOptions {
   envelopeId?: string | number;
   /** Refuse a skill the filter excludes, with -32601. */
   skillFilter?: (skillId: string) => boolean;
-  /** Make the call as this participant, and refuse one that names another `from`, with -32011. */
+  /**
+   * Make the call as this participant, and refuse one that names another
+   * `from`, with -32011. A `human:` URI is refused.
+   */
   participant?: string;
 }
 
@@ -175,6 +179,7 @@ export function dispatchA2aMessage(
   message: Message,
   options: DispatchA2aMessageOptions = {},
 ): Envelope {
+  refusePerson(options.participant);
   const id = options.envelopeId ?? "a2a-call";
   const { skillId, params } = extractSkillAndParams(message);
   const method = skillId ? methodForTool(skillId) : null;
@@ -224,6 +229,18 @@ export function dispatchA2aMessage(
 // ============================================================
 //   Internals
 // ============================================================
+
+/**
+ * Refuse a `human:` participant, as the commands refuse one: a server that
+ * makes every call as one member is a connection for an agent, and a
+ * person decides in a desk.
+ */
+function refusePerson(participant: string | undefined): void {
+  if (participant?.startsWith("human:")) {
+    throw new Error(`participant ${participant} names a person. This server acts for an agent, and a person ` +
+      "decides in a desk; give the agent's own URI, such as agent:orchestrator.");
+  }
+}
 
 /** A part carrying JSON, with the media type the card names for every skill. */
 function dataPart(data: unknown): Part {

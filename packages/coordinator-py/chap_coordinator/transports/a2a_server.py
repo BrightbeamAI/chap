@@ -183,10 +183,12 @@ def dispatch_a2a_message(
     ``metadata`` under key ``skill`` (which the A2A SDK populates from
     the requested skill id) and the params in the first data part.
     With ``participant`` the call is made as that member, and one that
-    names another ``from`` is refused with -32011.
+    names another ``from`` is refused with -32011. A ``human:`` participant
+    is refused with ``ValueError``.
 
     Returns the CHAP response envelope.
     """
+    _refuse_person(participant)
     counter = envelope_id_factory or _default_id_factory()
     skill_id, params = _extract_skill_and_params(message)
     method = method_for_tool(skill_id) if isinstance(skill_id, str) else None
@@ -233,6 +235,16 @@ def dispatch_a2a_message(
         "method": method,
         "params": args,
     })
+
+
+def _refuse_person(participant: str | None) -> None:
+    """Refuse a ``human:`` participant, as the commands refuse one: a server
+    that makes every call as one member is a connection for an agent, and a
+    person decides in a desk."""
+    if participant is not None and participant.startswith("human:"):
+        raise ValueError(f"participant {participant} names a person. This server acts for an agent, "
+                         "and a person decides in a desk; give the agent's own URI, such as "
+                         "agent:orchestrator.")
 
 
 def _default_id_factory() -> Callable[[], str]:
@@ -290,6 +302,7 @@ class ChapAgentExecutor(AgentExecutor):
         skill_filter: Callable[[str], bool] | None = None,
         participant: str | None = None,
     ) -> None:
+        _refuse_person(participant)
         self._coord = coord
         self._next_id = envelope_id_factory or _default_id_factory()
         # The card only lists skills; the executor is what runs them, so it
@@ -370,8 +383,9 @@ def make_chap_agent_executor(
     only lists skills, and the executor refuses the ones the filter excludes.
     ``participant`` makes every call as that member: ``from`` is filled in,
     and a call that names another is refused with -32011. Use it where the
-    server is one participant's connection, such as an orchestrator's.
-    Default: each call names its own ``from``.
+    server is one participant's connection, such as an orchestrator's. A
+    ``human:`` URI is refused with ``ValueError``: a person decides in a
+    desk. Default: each call names its own ``from``.
     """
     return ChapAgentExecutor(coord, envelope_id_factory=envelope_id_factory,
                              skill_filter=skill_filter, participant=participant)

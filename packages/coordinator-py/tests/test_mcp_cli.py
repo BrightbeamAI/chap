@@ -1,12 +1,11 @@
 """
 The Python MCP server as a command, run as an MCP client runs it.
 
-The Python package had no MCP command: the reference server took no options,
-named no participant, and a client of it could join as a person and decide
-in their name. ``python -m chap_coordinator.transports.mcp_cli`` acts as one
-participant, an agent by default, offers the agent's tools, refuses to act as
-a human, expands ``~`` in CHAP_DB_PATH, and with ``--url`` forwards every call
-to a running CHAP server, whose people decide in its desk.
+``python -m chap_coordinator.transports.mcp_cli`` acts as one participant,
+the mcp-gate template's agent by default, offers the agent's tools, refuses
+to act as a person, expands ``~`` in CHAP_DB_PATH, and with ``--url``
+forwards every call to a running CHAP server, whose people decide in its
+desk.
 
 Mirrors packages/coordinator-mcp/tests/cli.test.ts.
 """
@@ -66,12 +65,12 @@ async def test_by_default_it_acts_as_the_assistant_and_offers_the_agent_tools():
         assert sorted(t.name for t in tools) == sorted(AGENT_MCP_TOOLS)
         create = next(t for t in tools if t.name == "chap.task.create")
         assert "from" not in create.input_schema.get("required", [])
-        assert "acts as agent:assistant@local" in create.input_schema["properties"]["from"]["description"]
+        assert "acts as agent:assistant" in create.input_schema["properties"]["from"]["description"]
         hidden = await client.call_tool("chap.participant.join",
                                         {"workspace": "w", "from": "human:me@local", "type": "human"})
         assert hidden.is_error
         assert "not offered by this server: chap.participant.join" in _text(hidden)
-        assert "acting as agent:assistant@local with the agent tools" in stderr()
+        assert "acting as agent:assistant with the agent tools" in stderr()
 
 
 @pytest.mark.asyncio
@@ -82,10 +81,10 @@ async def test_with_every_tool_a_call_naming_a_person_is_refused_and_the_log_cre
         as_human = await client.call_tool("chap.participant.join",
                                           {"workspace": "w", "from": "human:me@local", "type": "human"})
         assert as_human.is_error
-        assert 'acts as agent:assistant@local; a call cannot name another from ("human:me@local")' in _text(as_human)
+        assert 'acts as agent:assistant; a call cannot name another from ("human:me@local")' in _text(as_human)
         assert not (await client.call_tool("chap.participant.join", {"workspace": "w", "type": "agent"})).is_error
         log = json.loads(_text(await client.call_tool("chap.audit.read", {"workspace": "w"})))
-        assert [e["envelope"]["params"]["from"] for e in log["entries"]] == ["agent:assistant@local"] * 2
+        assert [e["envelope"]["params"]["from"] for e in log["entries"]] == ["agent:assistant"] * 2
 
 
 @pytest.mark.asyncio
@@ -225,6 +224,23 @@ async def test_url_forwards_each_call_as_the_participant_and_the_person_decides_
                        if (e.get("envelope") or {}).get("method") == "decide.approve"]
             assert decided == ["human:you@local"]
             assert f"Forwarding every call to {desk.url}" in stderr()
+    finally:
+        desk.close()
+
+
+@pytest.mark.asyncio
+async def test_url_with_no_as_acts_as_the_agent_a_desk_made_from_the_mcp_gate_template_joins():
+    template = json.loads((Path(__file__).resolve().parents[2] / "create-chap-app" / "templates" / "mcp-gate"
+                           / "template.json").read_text())
+    assert template["defaults"]["agent_uri"] == "agent:assistant"
+    desk = _Desk()
+    try:
+        async with _serve("--url", desk.url) as (client, _):
+            made = await client.call_tool("chap.task.create", {
+                "workspace": "w", "kind": "draft", "assignee": "agent:assistant", "input": {}})
+            assert not made.is_error, _text(made)
+            task = desk.coord.get_workspace("w").tasks[json.loads(_text(made))["task_id"]]
+            assert task.delegator == "agent:assistant"
     finally:
         desk.close()
 

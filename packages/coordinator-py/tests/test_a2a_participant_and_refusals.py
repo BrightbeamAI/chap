@@ -1,12 +1,7 @@
 """
-The executor pins ``from`` to one participant, and a refusal is a failure in
-A2A's terms.
-
-The executor had no participant option, so an A2A connection meant for one
-agent could act in any member's name, a person's included. A refusal came
-back as a successful message carrying ``chap_error``, so a client reading
-A2A states saw every refused call succeed; and an exception was answered
-with ``repr(exc)``. A refusal is now a task the agent rejected, and a fault
+The executor pins ``from`` to one participant, so an A2A connection meant
+for one agent cannot act in any other member's name, nor in a person's. A
+refusal is a failure in A2A's terms: a task the agent rejected, and a fault
 in the server a task that failed, without the exception's text.
 
 Mirrors packages/coordinator-a2a/tests/participant_and_refusals.test.ts.
@@ -162,7 +157,16 @@ async def test_with_participant_a_call_naming_a_person_is_refused_and_nothing_ru
     assert "human:ceo@corp.example" not in coord.get_workspace("w").members
 
 
-def test_without_participant_each_call_names_its_own_from_as_before():
+def test_a_person_cannot_be_the_participant():
+    """The executor is a connection for an agent; a person decides in a desk."""
+    coord = _coord()
+    with pytest.raises(ValueError, match="participant human:alice names a person"):
+        make_chap_agent_executor(coord, participant="human:alice")
+    with pytest.raises(ValueError, match="participant human:alice names a person"):
+        dispatch_a2a_message(coord, _message("chap.workspace.describe", {"workspace": "w"}), participant="human:alice")
+
+
+def test_without_participant_each_call_names_its_own_from():
     coord = _coord()
     reply = dispatch_a2a_message(coord, _message("chap.task.create", {
         "workspace": "w", "from": "human:alice", "kind": "k", "input": {}, "assignee": "agent:orchestrator"}))

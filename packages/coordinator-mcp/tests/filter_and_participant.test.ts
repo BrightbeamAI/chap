@@ -1,10 +1,8 @@
 /**
- * The tool filter decides what the server offers, and `participant` makes
- * every call as one member.
- *
- * Before, `toolFilter` only left tools out of `tools/list`: a client that
- * called an excluded tool by name still ran it. And every call named its own
- * `from`, so a connection meant for one agent could act in any member's name.
+ * The tool filter decides what the server offers: a tool it excludes is
+ * refused when called by name, as well as left out of `tools/list`. And
+ * `participant` makes every call as one member, so a connection meant for
+ * one agent cannot act in any other member's name, nor in a person's.
  *
  * Mirrors packages/coordinator-py/tests/test_mcp_filter_and_participant.py.
  */
@@ -15,7 +13,7 @@ import { Coordinator } from "@brightbeamai/chap-coordinator";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import { makeChapMcpServer, type ChapMcpOptions } from "../src/index.js";
+import { chapMcpHttpHandler, makeChapMcpServer, type ChapMcpOptions } from "../src/index.js";
 
 async function connect(options: ChapMcpOptions) {
   const coord = new Coordinator({ deterministicIds: true, defaultProfiles: ["core/1.0", "review/1.0"] });
@@ -81,6 +79,14 @@ test("with participant, the tools list from as optional and say whose name it ca
   assert.ok(schema.required.includes("task_id"));
   assert.match(schema.properties.from.description, /acts as agent:b/);
   await close();
+});
+
+test("a person cannot be the participant: a server is a connection for an agent", () => {
+  const coord = new Coordinator({ deterministicIds: true });
+  for (const make of [makeChapMcpServer, chapMcpHttpHandler]) {
+    assert.throws(() => make(coord, { participant: "human:a" }), /participant human:a names a person/);
+  }
+  makeChapMcpServer(coord, { participant: "agent:b" });
 });
 
 test("a dispatcher that answers with a promise is awaited", async () => {

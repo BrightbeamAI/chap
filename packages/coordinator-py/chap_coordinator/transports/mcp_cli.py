@@ -4,15 +4,16 @@ chap_coordinator.transports.mcp_cli
 
 The CHAP MCP server on stdio, as a command::
 
-    python -m chap_coordinator.transports.mcp_cli --url http://127.0.0.1:8787/chap --as agent:assistant
+    python -m chap_coordinator.transports.mcp_cli --url http://127.0.0.1:8792/chap --as agent:assistant
 
 It serves CHAP to one MCP client as one participant: every call is made as
-that member, by default the agent ``agent:assistant@local``, with the tools
-an agent's own work needs. A person decides in a desk, so it never acts as a
-``human:`` participant. With ``--url`` it forwards every call to a running
-CHAP server's JSON-RPC endpoint, such as a desk server's ``POST /chap``, so
-the assistant's work waits for the person at that desk. Without it, it runs
-its own coordinator, in memory or on a SQLite file.
+that member, by default the agent ``agent:assistant``, as the mcp-gate
+template names its agent, with the tools an agent's own work needs. A person
+decides in a desk, so it never acts as a ``human:`` participant. With
+``--url`` it forwards every call to a running CHAP server's JSON-RPC
+endpoint, such as a desk server's ``POST /chap``, so the assistant's work
+waits for the person at that desk. Without it, it runs its own coordinator,
+in memory or on a SQLite file.
 
 Options, each with the environment variable that stands in for it (an empty
 one counts as unset):
@@ -57,7 +58,7 @@ from .remote import RemoteDispatcher
 
 __all__ = ["main", "DEFAULT_PARTICIPANT", "DEFAULT_PROFILES"]
 
-DEFAULT_PARTICIPANT = "agent:assistant@local"
+DEFAULT_PARTICIPANT = "agent:assistant"
 
 #: Every profile, audit-scitt/1.0 among them, so the chain is on from a
 #: workspace's first entry. The same set as the TypeScript command.
@@ -100,7 +101,7 @@ def _parser() -> argparse.ArgumentParser:
                              "below; all: every CHAP method")
     parser.add_argument("--url", metavar="ENDPOINT",
                         help="forward every call to a running CHAP server's JSON-RPC endpoint, such "
-                             "as http://127.0.0.1:8787/chap, which keeps the workspaces")
+                             "as http://127.0.0.1:8792/chap, which keeps the workspaces")
     parser.add_argument("--db", metavar="PATH",
                         help="keep the workspaces in this SQLite file (CHAP_DB_PATH); a leading ~ is "
                              "the home directory. Without --db or --url, state is in memory only")
@@ -124,7 +125,7 @@ def _options(args: argparse.Namespace) -> dict[str, Any]:
     if participant.startswith("human:"):
         raise _UsageError(f"{participant_from} {participant} names a person. This server acts for an "
                           "assistant, and a person decides in a desk; give the assistant's own URI, "
-                          "such as agent:assistant@local.")
+                          "such as agent:assistant.")
 
     url = None
     if args.url is not None:
@@ -135,7 +136,7 @@ def _options(args: argparse.Namespace) -> dict[str, Any]:
             parts = None
         if parts is None or parts.scheme not in ("http", "https") or not parts.netloc:
             raise _UsageError("--url takes the http or https address of a CHAP JSON-RPC endpoint, "
-                              f"such as http://127.0.0.1:8787/chap; {args.url} is not one")
+                              f"such as http://127.0.0.1:8792/chap; {args.url} is not one")
         url = args.url
 
     db, db_from = (args.db, "--db") if args.db is not None else (_env("CHAP_DB_PATH"), "CHAP_DB_PATH")

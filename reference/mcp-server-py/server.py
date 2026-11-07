@@ -3,7 +3,7 @@ CHAP MCP reference server (Python, stdio).
 
 Wraps a CHAP Coordinator and exposes every CHAP method as an MCP tool over
 stdio, with every call made as one participant: the agent named by
-CHAP_PARTICIPANT, ``agent:assistant@local`` when it is unset. A call that
+CHAP_PARTICIPANT, ``agent:assistant`` when it is unset. A call that
 names another ``from`` is refused, so the assistant cannot act in a
 person's name. A person's decisions belong in a desk: the package's command,
 ``python -m chap_coordinator.transports.mcp_cli --url ...``, forwards an
@@ -67,7 +67,7 @@ async def serve(participant: str) -> None:
 
 
 def main() -> int:
-    participant = (os.environ.get("CHAP_PARTICIPANT") or "").strip() or "agent:assistant@local"
+    participant = (os.environ.get("CHAP_PARTICIPANT") or "").strip() or "agent:assistant"
     if participant.startswith("human:"):
         print(f"CHAP_PARTICIPANT {participant} names a person; this server acts for an assistant.",
               file=sys.stderr)
