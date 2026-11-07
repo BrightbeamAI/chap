@@ -1,7 +1,7 @@
 {
   "name": "@brightbeamai/chap-coordinator-a2a",
   "version": "0.3.4",
-  "description": "A2A server adapter for the CHAP Coordinator. Exposes every CHAP method as an A2A AgentSkill.",
+  "description": "A2A server adapter for the CHAP Coordinator. Exposes CHAP methods as A2A AgentSkills, an agent's by default.",
   "license": "Apache-2.0",
   "author": "Brightbeam AI <oss@brightbeam.com>",
   "homepage": "https://github.com/BrightbeamAI/chap",

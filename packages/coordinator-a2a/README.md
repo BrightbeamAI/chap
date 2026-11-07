@@ -1,11 +1,12 @@
 # @brightbeamai/chap-coordinator-a2a
 
 A2A server adapter for the CHAP Coordinator. Wraps a `Coordinator`
-instance and exposes every CHAP method as an
-[A2A](https://a2a-protocol.org) `AgentSkill` on the Agent Card, so
-any A2A-aware orchestrator (Azure AI Foundry, Amazon Bedrock
-AgentCore, Google ADK, custom multi-agent systems) can register the
-coordinator by URL and delegate work to it.
+instance and exposes CHAP methods as [A2A](https://a2a-protocol.org)
+`AgentSkill`s on the Agent Card, an agent's methods by default and every
+method where the server asks for them, so any A2A-aware orchestrator
+(Azure AI Foundry, Amazon Bedrock AgentCore, Google ADK, custom
+multi-agent systems) can register the coordinator by URL and delegate work
+to it.
 
 Spec target: **A2A 1.0**, through `@a2a-js/sdk` 1.x, serving A2A 0.3
 clients as well. CHAP 0.3.
