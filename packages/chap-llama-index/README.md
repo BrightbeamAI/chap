@@ -1,16 +1,16 @@
 # chap-llama-index
 
-Adapter between [LlamaIndex Workflows](https://developers.llamaindex.ai/python/framework/understanding/workflows/)
+Bridge between [LlamaIndex Workflows](https://developers.llamaindex.ai/python/framework/understanding/workflows/)
 and the CHAP Coordinator. When a workflow step pauses for human input, the
-adapter puts the proposed output in front of a person and waits for their
-decision, or records a decision your own code made. Either way the
-decision (approve, edit, or reject) becomes a hash-linked, replayable CHAP
-audit entry.
+bridge puts the proposed output in front of a person as a CHAP review,
+waits for their decision, made at a CHAP desk, and answers the workflow
+with what they decided. Every step is a hash-linked entry on the
+workspace's audit log.
 
 The proposed output on the `InputRequiredEvent` is the artefact under
-review; the `HumanResponseEvent` that answers it carries the decision. An
-edit is recorded as an RFC 6902 diff, so the chain records what changed and
-why, beside the approval or rejection.
+review; the `HumanResponseEvent` the bridge returns carries the decision.
+An edit is an RFC 6902 patch on the log, so the chain records what changed
+and why.
 
 ## Install
 
@@ -27,10 +27,11 @@ pip install "chap-llama-index[llama-index]"
 
 ## Quick start
 
-Workflows surface human-in-the-loop as events: a step returns an
-`InputRequiredEvent` and waits; a second step consumes the matching
-`HumanResponseEvent`. The driver that answers the pause is where both
-events meet. This runs offline, with your code making the decision:
+A step returns an `InputRequiredEvent` and waits; a second step consumes
+the `HumanResponseEvent` that answers it. The driver that streams the
+workflow's events hands each pause to `request_response`, which opens a
+review of the proposed output and waits for the person's decision. This
+runs offline: a task on the event loop stands in for Alice at her desk.
 
 ```python
 import asyncio
@@ -41,71 +42,136 @@ from workflows.events import HumanResponseEvent, InputRequiredEvent, StartEvent,
 from chap_coordinator import Coordinator
 from chap_llama_index import ChapHitlBridge
 
+coord = Coordinator(enable_chain=True)
+bridge = ChapHitlBridge(
+    coord,
+    workspace="wsp_payments",
+    agent="agent:writer#v1",
+    reviewer="human:alice@example.org",
+)
+
 
 class PaymentReview(Workflow):
     @step
     async def propose(self, ctx: Context, ev: StartEvent) -> InputRequiredEvent:
-        return InputRequiredEvent(prefix="approve payment? ",
-                                  proposed={"amount": 100, "to": "acct-9"})
+        return InputRequiredEvent(prefix="approve payment? ", proposed={"amount": 100, "to": "acct-9"})
 
     @step
     async def pay(self, ctx: Context, ev: HumanResponseEvent) -> StopEvent:
-        return StopEvent(result=ev.get("response"))
+        if ev.get("decision") in ("approve", "override"):
+            return StopEvent(result=f"paid {ev.get('response')}")
+        return StopEvent(result=f"not paid: {ev.get('response')}")
+
+
+async def alice_at_her_desk() -> None:
+    """What a CHAP desk does for Alice: it shows her the output put to her,
+    and she decides it in her own name. Here she caps the amount."""
+    def call(method, **params):
+        return coord.dispatch({"jsonrpc": "2.0", "id": method, "method": method, "params": {
+            "workspace": "wsp_payments", "from": "human:alice@example.org", **params}})
+
+    while not (submitted := call("audit.read", filter={"method": "task.complete"})["result"]["entries"]):
+        await asyncio.sleep(0.1)
+    review = submitted[0]["envelope"]["params"]
+    print("Alice is shown:", review["output"])
+    call("decide.override", task_id=review["task_id"], rationale="over the desk limit",
+         diff=[{"op": "replace", "path": "/amount", "value": 50}])
 
 
 async def main() -> None:
-    coord = Coordinator(enable_chain=True)
-    bridge = ChapHitlBridge(
-        coord,
-        workspace="wsp_payments",
-        agent="agent:writer#v1",
-        reviewer="human:alice@example.org",
-    )
+    desk = asyncio.create_task(alice_at_her_desk())
     handler = PaymentReview(timeout=None).run()
     async for event in handler.stream_events():
         if isinstance(event, InputRequiredEvent):
-            response = HumanResponseEvent(
-                response={"amount": 50, "to": "acct-9"},   # the edited output
-                decision="override",
-                user_name="human:sam@example.org",
-                rationale="over the desk limit; capped to 50",
-                tags=["limit-exceeded"],
-            )
-            bridge.record_decision(event, response, decision=response.get("decision"))
-            handler.ctx.send_event(response)
+            handler.ctx.send_event(await bridge.request_response(event))
     print(await handler)
-    print([e["envelope"]["method"] for e in bridge.audit()])
+    await desk
 
 
 asyncio.run(main())
 ```
 
-## Two ways to decide
+## What the response carries
 
-**`await bridge.request_response(event)` puts the output in front of a
-person.** It opens a review of the proposed output, waits for the decision,
-and returns the `HumanResponseEvent` to send back:
+The review is on a task that requires review, so only a person's decision
+completes it. The `HumanResponseEvent` carries:
+
+- `response`: the output as decided, the person's version after an edit;
+  or their note when nothing was approved;
+- `decision`: `approve`, `override`, `revise` (sent back for another),
+  `reject`, `abstain`, or another ending of the review;
+- `user_name`, `rationale` and `tags`: who decided, their note and tags;
+- `chap_task_id`: the CHAP task;
+- every other field of the `InputRequiredEvent`, so a step that waits with
+  `ctx.wait_for_event(HumanResponseEvent, requirements={"request_id": rid})`
+  receives the response to its own request.
+
+A workflow's own timeout, 45 seconds by default, counts the time the
+person takes to decide: give it `timeout=None`, or one long enough.
+
+## A revision
+
+When the person sends the output back for another, `decision` is
+`revise`. Propose the next output on the same task by passing the
+response's `chap_task_id` back, and it opens the next round of the same
+review:
 
 ```python
 async for event in handler.stream_events():
     if isinstance(event, InputRequiredEvent):
-        handler.ctx.send_event(await bridge.request_response(event))
+        response = await bridge.request_response(event, task_id=event.get("chap_task_id"))
+        handler.ctx.send_event(response)
 ```
 
-The review is on a task that requires review, so only a person's decision
-completes it, and the person decides at a CHAP desk with their own key. The
-event carries `response`, the output as decided (the reviewer's version
-after an edit), or the reviewer's note when nothing was approved;
-`decision`, which is `approve`, `override` or `reject` (a review that ends
-any other way reads as `reject`); `user_name`, the reviewer; and
-`rationale`, `tags` and `chap_task_id`. The bridge reads the task every two
-seconds (`poll_seconds`) for as long as the reviewer takes, or until
-`timeout` seconds, when it raises `TimeoutError`. The workflow's own
-timeout, 45 seconds by default, counts the time the person takes to decide,
-so give the workflow `timeout=None` or one long enough.
+where the step that proposes again copies `chap_task_id` from the
+`revise` response onto its new `InputRequiredEvent`.
 
-**`bridge.record_decision(event, response, decision=...)` records a
-decision your own code made**, as in the quick start:
+## Waiting, timeouts and cancellation
+
+The bridge reads the task every two seconds (`poll_seconds`) for as long
+as the reviewer takes, or until `timeout` seconds have passed, and never
+holds up the event loop. After the timeout it withdraws the review, so no
+decision lands later on output the workflow did not use, and raises
+`TimeoutError`. Cancelling the awaiting task withdraws the review the same
+way.
+
+## At a desk, over HTTP
+
+A desk such as `chap-coordinator serve`, or a project from
+`create-chap-app --template support-desk`, keeps the coordinator in its own
+process. The bridge reaches it with `chap_coordinator.client`:
+
+```python
+import json
+
+from chap_coordinator.client import HttpCoordinator, Participant
+from chap_llama_index import ChapHitlBridge
+
+config = json.load(open("chap.config.json"))
+agent_uri = config["agent"]["uri"]
+http = HttpCoordinator(f"http://127.0.0.1:{config['port']}/chap")
+bridge = ChapHitlBridge(
+    Participant(http, config["workspace"], agent_uri),
+    workspace=config["workspace"],
+    agent=agent_uri,
+    reviewer=config["humans"][0]["uri"],
+)
+```
+
+The bridge joins the agent first, takes the desk's workspace as it is, and
+reads each task with the desk's `GET /api/tasks/<id>`. Under the template's
+`"require_signatures": "humans"` the agent calls unsigned and each person
+signs at the desk. Where every call is signed, give the `Participant` the
+agent's key, `Signer.load_or_create(agent_uri, "keys")`. Where people sign,
+the bridge joins nobody in a person's name and records no decision for
+them: the review opens once a person has joined from the desk, and each
+decision is theirs, signed with their own key.
+
+## Recording a decision made elsewhere
+
+Where people decide in your own interface, `record_decision(input_event,
+response_event, decision=...)` records the decision your code made, in the
+reviewer's name:
 
 ```
 decision      CHAP envelope
@@ -115,106 +181,66 @@ override      decide.override   (proposed vs returned, as a diff)
 reject        decide.reject
 ```
 
-It writes the agent's request and the decision together: `task.create`,
-`task.complete` and `review.request` from the agent, then the `decide.*`
-call in the approver's name. The chain holds what your code passed and
-nothing more: no signature from the approver, no sign that they saw the
-output, and no time between the request and the decision. Use it where
-your own interface is where people decide; use `request_response` to have
-the decision made in CHAP.
+Workflows events carry no approve, edit or reject signal, so `decision`
+says which it was: the bridge never guesses it from the response text.
+`proposed`, `returned`, `rationale`, `tags`, `intent_preserved` and
+`approver` default to fields of the events (`event.get(...)`), and each can
+be given per call. An override is a refining edit (`intent_preserved=true`)
+by default; set it `false` for a substituting edit.
 
-## Request and wait over HTTP
-
-With a desk from `create-chap-app`, the coordinator runs in the desk
-process. The templates' `chap_client.py` reaches it: `HttpCoordinator`
-answers `dispatch` and `Participant` reads a task with `task(task_id)`,
-which the bridge takes as `client` (a coordinator client with
-`task(task_id)` of its own needs none):
-
-```python
-import json
-
-from chap_client import HttpCoordinator, Participant
-from chap_llama_index import ChapHitlBridge
-
-config = json.load(open("chap.config.json"))
-coord = HttpCoordinator(f"http://127.0.0.1:{config['port']}/chap")
-agent_uri = config["agent"]["uri"]
-bridge = ChapHitlBridge(
-    coord,
-    workspace=config["workspace"],
-    agent=agent_uri,
-    reviewer=config["humans"][0]["uri"],
-    client=Participant(coord, config["workspace"], agent_uri),
-)
-```
-
-The bridge joins the agent when it is made and joins nobody else, so the
-person joins at the desk with their own key. The agent's calls are
-unsigned, so a desk that requires signatures has to accept them from
-agents, as the signature policy `"humans"` does.
-
-## Recorded decisions
-
-Workflows events are schemaless and carry no approve/edit/reject signal,
-so `decision` is a required argument of `record_decision`: the adapter
-never guesses intent from the response text. `proposed`, `returned`,
-`rationale`, `tags`, `intent_preserved`, and `approver` default to fields
-read off the events (`event.get(...)`) and can each be overridden per call:
-
-```python
-bridge.record_decision(input_event, response_event, decision="approve")
-```
-
-`intent_preserved` defaults to `true` on an override (a refining edit);
-set it `false` on the response for a substituting edit, where the
-reviewer's version is a different decision.
-
-## Approver identity
-
-CHAP has no ambient actor: the decider is whatever `from` the envelope
-carries. `record_decision` records in the bridge's `reviewer`'s name by
-default, and the `HumanResponseEvent`'s `user_name` (or an explicit
-`approver=`) overrides it. The adapter joins whoever it records for before
-the first decision in their name, with a participant type taken from the
-URI scheme. Each decision is its own task whose review is addressed to
-that approver, so the record satisfies the Coordinator's authorisation
-rules.
+It writes the agent's `task.create` and `task.complete`, then the
+`decide.*` call in the approver's name: a person's `human:` URI, the
+response's `user_name` or else the bridge's `reviewer`. The coordinator
+holds that call and nothing more: no signature from the person, and no sign
+that they saw anything but what your code says. So each recorded decision
+carries `via: "bridge-record"`, which the log keeps and chap-analytics
+reads, and `approved_artefact_digest`, the digest of the proposed output.
+Where people sign, nothing is recorded: `record_decision` raises
+`PersonRequired`, and they decide at the desk through `request_response`.
 
 ## What you get in the audit chain
 
-The quick start yields the following, with every entry carrying
-`prev_hash`:
+The quick start yields the following, every entry carrying `prev_hash`:
 
 ```
 seq=0  workspace.create
 seq=1  participant.join  agent:writer#v1
-seq=2  participant.join  human:sam@example.org
-seq=3  task.create       agent:writer#v1
-seq=4  task.complete     agent:writer#v1
-seq=5  review.request    agent:writer#v1   to=human:sam@example.org
-seq=6  decide.override   human:sam@example.org  diff=[{op:replace, path:/amount, value:50}]
+seq=2  participant.join  human:alice@example.org
+seq=3  task.create       agent:writer#v1   kind=workflow_output  review_required=true
+seq=4  task.complete     agent:writer#v1   the output; opens the review
+seq=5  decide.override   human:alice@example.org  diff=[{op:replace, path:/amount, value:50}]
 ```
 
-With `request_response`, the agent writes `task.create` (with
-`review_required`) and `review.request`, and the person's decision follows
-from the desk, whenever they make it. The chain verifies externally or
-anchors to a SCITT transparency service with the `audit-scitt/1.0`
-profile.
+The chain verifies externally, or anchors to a SCITT transparency service
+with the `audit-scitt/1.0` profile.
 
 ## Upgrading from 0.3.4
 
-The bridge no longer joins the reviewer when it is made. It joins them
-before the first decision it records in their name, so a reviewer who
-decides at a desk joins there with their own key.
+- Lead with the desk: `request_response` opens the review and waits for
+  the person's decision, as the quick start shows. `record_decision` is the
+  recording mode above, refused where people sign.
+- `decision` on the response says how the review ended: `revise`,
+  `abstain` and other endings no longer read as `reject`. The response
+  carries the input event's fields.
+- A recorded decision opens its review on a task that requires one, with
+  `task.create` then `task.complete`, and no `review.request`; it carries
+  `via: "bridge-record"` and the output's digest. The approver must be a
+  person, a `human:` URI.
+- The bridge joins the agent when it is made. Where nobody signs, the
+  reviewer joins when the first review opens; where people sign, the
+  bridge joins no person.
+- A refusal raises `chap_coordinator.client.ChapError`, exported here as
+  `ChapError`; `ChapBridgeError` names the same class. Its message reads
+  `<method>: <message> (<code>)`.
 
 ## Example
 
-`examples/01-approve-edit-reject.py` drives one paused workflow through
-approve, a refining edit, a substituting edit, and a reject against real
-`llama-index-workflows`, and prints the resulting chain.
-`tests/test_workflow.py` runs `request_response` in a real workflow, with
-a reviewer deciding at a desk on the same event loop.
+`examples/01-approve-edit-reject.py` drives one paused workflow through a
+desk's decisions, an approval, a refining edit, a substituting edit, a
+rejection and a revision, against real `llama-index-workflows`, then
+records a decision made in the script's own interface, and prints the
+chain. `tests/test_workflow.py` runs `request_response` in real workflows,
+against an in-process desk and a desk server where people sign.
 
 ## Compatibility
 

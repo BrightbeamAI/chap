@@ -1,19 +1,16 @@
 """
-chap-llama-index: put a LlamaIndex Workflow's paused output in front of a
-person, or record a decision made elsewhere, as a CHAP decision.
+chap-llama-index: put a LlamaIndex Workflow's proposed output in front of a
+person, as a CHAP review, and answer the workflow with what they decide.
 
-A Workflow step returns an InputRequiredEvent carrying the proposed
-output and waits; a HumanResponseEvent answers it. The adapter works at
-that pause in one of two ways.
+A Workflow step pauses for human input with an InputRequiredEvent, and a
+HumanResponseEvent answers it. request_response opens a review of the
+output the input event proposes, waits for the person's decision, made at a
+CHAP desk, and returns the HumanResponseEvent that answers the pause: its
+``response`` is the output as decided, or the person's note when nothing
+was approved, and its ``decision`` says how the review ended.
 
-request_response opens a review of the proposed output, waits for the
-person's decision, made at a CHAP desk, and returns the HumanResponseEvent
-that carries it: `response` is the output as decided, or the reviewer's
-note when nothing was approved, and `decision` is approve, override or
-reject.
-
-record_decision records a reply your own code made, against the proposed
-output, in the reviewer's name:
+record_decision records a reply your own code made, in the reviewer's name,
+marked as recorded, in a workspace where nobody signs:
 
     decision      CHAP envelope
     --------      ---------------------------
@@ -21,28 +18,17 @@ output, in the reviewer's name:
     override      decide.override  (proposed vs returned, as a diff)
     reject        decide.reject
 
-Workflows events are schemaless and carry no approve/edit/reject signal,
-so the decision is passed in explicitly. The returned content, rationale,
-tags, and the approver are read off the HumanResponseEvent by convention,
-each overridable with a keyword argument.
-
-The bridge depends only on chap-coordinator. llama-index-workflows is
-imported only by request_response, to build the event it returns;
-record_decision reads events structurally via event.get(...), so the same
-code runs against the real types or a test stand-in.
+The bridge depends on chap-coordinator alone: it imports
+llama-index-workflows only to build the event request_response returns, and
+reads events through ``event.get(...)``.
 """
 
 from __future__ import annotations
 
-import asyncio
-import dataclasses
-import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
-from uuid import uuid4
 
-from chap_coordinator import Coordinator
-
+from chap_coordinator.bridge import ChapError, Decision, PersonRequired, ReviewClient, json_patch
 
 try:
     from importlib.metadata import version as _pkg_version, PackageNotFoundError
@@ -50,27 +36,16 @@ try:
 except PackageNotFoundError:  # running from a source checkout, not installed
     __version__ = "0.0.0+source"
 
+#: The name chap-llama-index 0.3.4 gave the coordinator's refusals.
+ChapBridgeError = ChapError
 
-def _make_envelope(method: str, params: dict) -> dict:
-    """Build a JSON-RPC 2.0 envelope with an id of its own. A client that
-    signs what the bridge sends then signs two identical calls as two
-    requests, and the coordinator, which takes a signed request once,
-    takes each of them."""
-    return {
-        "jsonrpc": "2.0",
-        "id":      f"chap-llama-index-{method}-{uuid4().hex}",
-        "method":  method,
-        "params":  params,
-    }
-
-
-# ---- reading Workflows events without importing them -----------------
+#: The fields request_response sets on the HumanResponseEvent it returns.
+_ANSWER = ("response", "decision", "user_name", "rationale", "tags", "chap_task_id")
 
 
 def _event_get(event: Any, key: str, default: Any = None) -> Any:
-    """Read a field off a Workflows event. Its Event is a DictLikeModel,
-    so dynamic fields come through .get(); a plain stand-in falls back to
-    attribute access."""
+    """A field of a Workflows event, a DictLikeModel whose fields come
+    through .get(); a stand-in without .get() is read by attribute."""
     getter = getattr(event, "get", None)
     if callable(getter):
         return getter(key, default)
@@ -78,243 +53,124 @@ def _event_get(event: Any, key: str, default: Any = None) -> Any:
 
 
 def _payload(event: Any) -> dict:
+    """A copy of an event's fields."""
     to_dict = getattr(event, "to_dict", None)
-    return to_dict() if callable(to_dict) else {}
+    return dict(to_dict()) if callable(to_dict) else {}
 
 
-# ---- RFC 6902 diff (proposed -> returned, as a JSON Patch) -----------
+def _proposed(event: Any) -> Any:
+    """What an InputRequiredEvent puts up for review: its ``proposed`` field,
+    or else all of its fields."""
+    return _event_get(event, "proposed") or _payload(event)
 
 
-def _escape(token: str) -> str:
-    return str(token).replace("~", "~0").replace("/", "~1")
-
-
-def _diff(before: Any, after: Any, path: str) -> list[dict]:
-    """Patch that turns `before` into `after`. Objects are walked
-    key-by-key; arrays and scalars are replaced whole. Keys are sorted so
-    the same edit always yields the same patch (it gets hashed into the
-    chain). Ported from the TypeScript coordinator's diffJsonPatch."""
-    if type(before) is not type(after) or not isinstance(before, dict):
-        return [] if before == after else [{"op": "replace", "path": path, "value": after}]
-    ops: list[dict] = []
-    for key in sorted(before.keys() | after.keys()):
-        at = f"{path}/{_escape(key)}"
-        if key not in after:
-            ops.append({"op": "remove", "path": at})
-        elif key not in before:
-            ops.append({"op": "add", "path": at, "value": after[key]})
-        else:
-            ops.extend(_diff(before[key], after[key], at))
-    return ops
-
-
-def _ended_without_approval(decision: Decision) -> str:
-    if decision.kind == "reject":
-        return "rejected by the reviewer"
-    return f"The review ended without an approval ({decision.state})."
-
-
-def _participant_type(uri: str) -> str:
-    scheme = uri.split(":", 1)[0]
-    if scheme not in ("human", "agent", "service", "group"):
-        raise ValueError(
-            "participant URI must use a known scheme "
-            f"(human/agent/service/group): {uri!r}"
-        )
-    return scheme
-
-
-# ============================================================
-#   Decisions read back from the coordinator
-# ============================================================
-
-
-# A task in these states still waits for its reviewer: under review, or
-# paused during its review.
-_UNDECIDED = ("review_requested", "paused")
-
-
-@dataclass(frozen=True)
-class Decision:
-    """A reviewer's decision on a review, as the coordinator recorded it.
-
-    `approved` is true when the task completed through an approval or an
-    override, and `output` is then the artefact as decided: the output as
-    proposed, or the reviewer's version. Any other ending, a rejection, an
-    abstention, or a review escalated or cancelled, approves nothing, and
-    `output` is None.
-    """
-
-    task_id:  str
-    state:    str
-    kind:     Optional[str] = None   # approve, override, reject or abstain
-    reviewer: Optional[str] = None
-    output:   Any = None
-    comment:  Optional[str] = None   # the reviewer's note, or an override's rationale
-    tags:     tuple = ()
-
-    @property
-    def approved(self) -> bool:
-        return self.state == "completed" and self.kind in ("approve", "override")
-
-    @property
-    def revision_requested(self) -> bool:
-        """The reviewer rejected the output and asked the agent for another."""
-        return self.kind == "reject" and self.state == "in_progress"
-
-
-def _read_task(source: Any, workspace: str, task_id: str) -> Optional[dict]:
-    """The task as GET /api/tasks/<id> shows it: its state, its output and
-    its review's decisions, or None when the task is unknown.
-
-    An in-process Coordinator is read directly. Any other source is read
-    with source.task(task_id), the call a desk client offers."""
-    if isinstance(source, Coordinator):
-        ws = source.workspaces.get(workspace)
-        task = ws.tasks.get(task_id) if ws is not None else None
-        if task is None:
-            return None
-        decisions = []
-        for decided in (task.review.decisions if task.review else []):
-            decided = dict(decided)
-            override = ws.overrides.get(decided.get("override_artefact_id") or "")
-            if override is not None:
-                decided["rationale"] = override.rationale
-            decisions.append(decided)
-        return {"state": task.state, "output": task.output,
-                "review": {"decisions": decisions}}
-    read = getattr(source, "task", None)
-    if not callable(read):
-        raise TypeError(
-            "waiting for a decision reads the task: give the bridge an "
-            "in-process Coordinator, or a client with task(task_id) as `client`"
-        )
-    return read(task_id)
-
-
-def _decision(task_id: str, view: dict) -> Decision:
-    """The decision that ended the review: the last one recorded on it."""
-    decisions = (view.get("review") or {}).get("decisions") or []
-    last = decisions[-1] if decisions else {}
-    decision = Decision(
-        task_id=task_id,
-        state=view.get("state"),
-        kind=last.get("kind"),
-        reviewer=last.get("reviewer"),
-        comment=last.get("comment") or last.get("rationale"),
-        tags=tuple(last.get("tags") or ()),
-    )
-    if decision.approved:
-        decision = dataclasses.replace(decision, output=view.get("output"))
-    return decision
-
-
-# ============================================================
-#   ChapHitlBridge
-# ============================================================
+def _note(decision: Decision) -> str:
+    """The response to a review that approved nothing."""
+    if decision.comment:
+        return decision.comment
+    if decision.outcome in ("reject", "revise"):
+        return "The reviewer rejected the output."
+    return f"The review ended without an approval ({decision.outcome})."
 
 
 @dataclass
 class ChapHitlBridge:
-    """One bridge per workspace. Holds the Coordinator, the workspace it
-    writes into, the agent whose step proposed the output, and the default
-    approver. Share it across runs; pass a per-decision approver when the
-    decision belongs to someone else.
+    """The agent's side of the reviews in one workspace. Share it across
+    runs.
 
-    The bridge joins the agent when it is made. It joins an approver only
-    when it records a decision in their name, so a person who decides at a
-    desk joins there, with their own key.
+    ``coord`` is a Coordinator in this process, or a desk's, through
+    ``chap_coordinator.client``: an HttpCoordinator, or a Participant for the
+    agent, which signs the agent's calls with its key. The bridge joins the
+    agent when it is made. A review is addressed to every person in the
+    workspace; ``reviewer`` names the person a recorded decision is made in
+    by default, who joins when the first review opens where nobody signs.
+    Where people sign, each joins from the desk with their own key, and the
+    bridge joins nobody in their name.
+
+    ``on_envelope`` sees each call's method and params before it is sent.
+    ``client`` reads a task, for a coordinator that cannot: anything whose
+    ``task(task_id)`` returns the ``GET /api/tasks/<id>`` view.
     """
 
-    coord:     Coordinator
+    coord:     Any
     workspace: str
     agent:     str
     reviewer:  str
     profiles:  tuple = ("core/1.0", "review/1.0")
     on_envelope: Optional[Callable[[str, dict], None]] = None
-    # Reads a task for wait_for_decision: anything with task(task_id)
-    # returning the GET /api/tasks/<id> view. Leave it unset with an
-    # in-process Coordinator, which is read directly, or with a
-    # coordinator client that has task(task_id) itself.
     client: Any = None
-    _joined: set = field(default_factory=set, init=False, repr=False)
+    _review: ReviewClient = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        if self.reviewer == self.agent:
-            raise ValueError(
-                "the reviewer cannot be the agent whose output is under review: "
-                f"{self.reviewer!r}"
-            )
-        _safe_dispatch(self.coord, "workspace.create", {
-            "workspace": self.workspace,
-            "profiles":  list(self.profiles),
-        })
-        self._join(self.agent)
+        self._review = ReviewClient(
+            self.coord, self.workspace, self.agent, self.reviewer, profiles=self.profiles,
+            client=self.client, on_envelope=self._seen, name="chap-llama-index")
+
+    def _seen(self, method: str, params: dict) -> None:
+        if self.on_envelope is not None:
+            self.on_envelope(method, params)
 
     # ---- request and wait -----------------------------------------
 
-    async def request_response(self, input_event: Any, *,
-                               proposed: Any = None,
-                               timeout: Optional[float] = None,
+    async def request_response(self, input_event: Any, *, proposed: Any = None,
+                               task_id: Optional[str] = None, timeout: Optional[float] = None,
                                poll_seconds: float = 2.0) -> Any:
         """Open a review of the output an InputRequiredEvent proposes, wait
-        for the reviewer's decision, and return the HumanResponseEvent that
+        for the person's decision, and return the HumanResponseEvent that
         answers the pause.
 
         The review is on a task that requires review, so only a person's
-        decision completes it. The event carries `response`, the output as
-        decided, or the reviewer's note when nothing was approved;
-        `decision`, which is approve, override or reject (any ending without
-        an approval reads as reject); `user_name`, the reviewer; and
-        `rationale`, `tags` and `chap_task_id`.
+        decision completes it. The event carries:
 
-        `proposed` defaults to the event's `proposed` field, or else its
-        payload. Raises TimeoutError after `timeout` seconds; None waits as
-        long as the reviewer takes.
+            response      the output as decided, the person's version after
+                          an edit; or their note when nothing was approved
+            decision      approve, override, revise (sent back for another),
+                          reject, abstain, or another ending of the review
+            user_name     the person who decided
+            rationale     their note
+            tags          their tags
+            chap_task_id  the CHAP task
+
+        and every other field of the input event, so a step that waits with
+        ``ctx.wait_for_event(HumanResponseEvent, requirements=...)`` on a
+        field such as ``request_id`` receives it.
+
+        ``proposed`` defaults to the input event's ``proposed`` field, or
+        else all of its fields. With ``task_id``, the ``chap_task_id`` of a
+        response whose decision was ``revise``, the output is the next one on
+        that task, and opens the review's next round. Where people sign, the
+        review opens once a person has joined from the desk.
+
+        The task is read every ``poll_seconds``, and the event loop is never
+        held up. After ``timeout`` seconds the review is withdrawn, so no
+        decision lands on it later, and TimeoutError raised; None waits as
+        long as the reviewer takes. Cancelling the awaiting task withdraws
+        the review too.
         """
         from workflows.events import HumanResponseEvent
 
-        if not self.reviewer.startswith("human:"):
-            raise ValueError(
-                "a review that waits for a person needs a 'human:' reviewer, "
-                f"got {self.reviewer!r}"
-            )
         if proposed is None:
-            proposed = _event_get(input_event, "proposed") or _payload(input_event)
-        task_id = self._submit(proposed, self.reviewer, review_required=True)
-        decision = await self.wait_for_decision(task_id, timeout=timeout,
-                                                poll_seconds=poll_seconds)
-        if decision.approved:
-            kind, response = decision.kind, decision.output
-        else:
-            kind = "reject"
-            response = decision.comment or _ended_without_approval(decision)
+            proposed = _proposed(input_event)
+        decision = await self._review.review_async(
+            proposed, kind="workflow_output", input=proposed, task_id=task_id,
+            timeout=timeout, poll_seconds=poll_seconds)
+        answer = {key: value for key, value in _payload(input_event).items() if key not in _ANSWER}
         return HumanResponseEvent(
-            response=response,
-            decision=kind,
+            **answer,
+            response=decision.output if decision.approved else _note(decision),
+            decision=decision.outcome,
             user_name=decision.reviewer,
             rationale=decision.comment,
             tags=list(decision.tags),
-            chap_task_id=task_id,
+            chap_task_id=decision.task_id,
         )
 
-    async def wait_for_decision(self, task_id: str, *,
-                                timeout: Optional[float] = None,
+    async def wait_for_decision(self, task_id: str, *, timeout: Optional[float] = None,
                                 poll_seconds: float = 2.0) -> Decision:
-        """Wait for the reviewer's decision on a review this bridge opened,
-        and return it. The task is read every `poll_seconds` until it is no
-        longer under review. Raises TimeoutError after `timeout` seconds;
-        None waits as long as the reviewer takes."""
-        started = time.monotonic()
-        while True:
-            view = _read_task(self.client or self.coord, self.workspace, task_id)
-            if view is None:
-                raise KeyError(f"Unknown task: {task_id}")
-            if view.get("state") not in _UNDECIDED:
-                return _decision(task_id, view)
-            if timeout is not None and time.monotonic() - started >= timeout:
-                raise TimeoutError(f"No decision on {task_id} after {timeout} seconds")
-            await asyncio.sleep(poll_seconds)
+        """Wait for the decision on a review this bridge opened, and return
+        it. After ``timeout`` seconds the review is withdrawn and
+        TimeoutError raised; None waits as long as the reviewer takes."""
+        return await self._review.wait_async(task_id, timeout=timeout, poll_seconds=poll_seconds)
 
     # ---- record a decision made elsewhere --------------------------
 
@@ -327,175 +183,64 @@ class ChapHitlBridge:
                         tags: Optional[list[str]] = None,
                         intent_preserved: Optional[bool] = None,
                         approver: Optional[str] = None) -> str:
-        """Record one human decision and return the task id.
+        """Record a decision your own code made, and return the task id.
 
-        `input_event` is the InputRequiredEvent that paused the step;
-        `response_event` is the HumanResponseEvent that answered it.
-        `decision` is required and authoritative -- Workflows events carry
-        no approve/edit/reject signal to infer from. `proposed`, `returned`,
-        `rationale`, `tags`, `intent_preserved`, and `approver` default to
-        fields read off the events and can be overridden per call.
+        ``input_event`` is the InputRequiredEvent that paused the step, and
+        ``response_event`` the HumanResponseEvent that answered it. Workflows
+        events carry no approve, edit or reject signal, so ``decision``
+        says which it was. ``proposed``, ``returned``, ``rationale``,
+        ``tags``, ``intent_preserved`` and ``approver`` default to fields
+        of the events: the input's ``proposed``, and the response's
+        ``response``, ``rationale``, ``tags``, ``intent_preserved`` and
+        ``user_name``. An override is recorded as the RFC 6902 patch from
+        the proposed output to the returned one, unless ``diff`` gives it;
+        one that changes nothing is the approval it is.
 
-        The decision is recorded in the approver's name, and the approver
-        joins the workspace first if the bridge has not joined them yet.
+        The decision is recorded in the approver's name, a person's
+        ``human:`` URI (the bridge's reviewer by default), bound to the
+        digest of the proposed output and marked ``via: "bridge-record"``.
+        Where people sign, PersonRequired is raised and nothing is recorded:
+        they decide at the desk, through request_response.
         """
+        if decision not in ("approve", "override", "reject"):
+            raise ValueError(f"decision must be 'approve', 'override', or 'reject': {decision!r}")
         approver = approver or _event_get(response_event, "user_name") or self.reviewer
-        self._join(approver)
-
         if proposed is None:
-            proposed = _event_get(input_event, "proposed") or _payload(input_event)
+            proposed = _proposed(input_event)
         if rationale is None:
             rationale = _event_get(response_event, "rationale")
         if tags is None:
             tags = _event_get(response_event, "tags")
-
-        task_id = self._submit(proposed, approver)
-
-        if decision == "approve":
-            self._decide("decide.approve", approver, task_id, rationale, tags)
-        elif decision == "override":
-            if returned is None:
-                returned = _event_get(response_event, "response")
+        record = dict(task_kind="workflow_output", input=proposed, reviewer=approver, tags=tags)
+        if decision == "override":
             if diff is None:
                 if returned is None:
+                    returned = _event_get(response_event, "response")
+                if returned is None:
                     raise ValueError("an override needs `returned` content (or a `diff`)")
-                diff = _diff(proposed, returned, "")
-            if not diff:
-                # The edit changed nothing; record the approve it really is.
-                self._decide("decide.approve", approver, task_id, rationale, tags)
-                return task_id
-            if intent_preserved is None:
-                intent_preserved = _event_get(response_event, "intent_preserved")
-            self._dispatch("decide.override", {
-                "workspace": self.workspace,
-                "from":      approver,
-                "task_id":   task_id,
-                "diff":      diff,
-                "rationale": rationale or "reviewer edited the output",
-                "tags":      tags or [],
-                "intent_preserved": True if intent_preserved is None else intent_preserved,
-            })
-        elif decision == "reject":
-            note = rationale or _event_get(response_event, "response")
-            self._decide("decide.reject", approver, task_id, note, tags)
-        else:
-            raise ValueError(
-                f"decision must be 'approve', 'override', or 'reject': {decision!r}"
-            )
-        return task_id
+                diff = json_patch(proposed, returned)
+            if diff:
+                if intent_preserved is None:
+                    intent_preserved = _event_get(response_event, "intent_preserved")
+                return self._review.record(
+                    proposed, "override", comment=rationale or "reviewer edited the output", diff=diff,
+                    intent_preserved=True if intent_preserved is None else intent_preserved, **record).task_id
+            decision = "approve"
+        if decision == "approve":
+            return self._review.record(proposed, "approve", comment=rationale, **record).task_id
+        note = rationale or _event_get(response_event, "response")
+        return self._review.record(proposed, "reject", comment=note if isinstance(note, str) else None,
+                                   **record).task_id
 
     def audit(self) -> list[dict]:
-        env = self._dispatch("audit.read", {"workspace": self.workspace})
-        return env["result"]["entries"]
-
-    # ---- internal -------------------------------------------------
-
-    def _submit(self, artefact: Any, approver: str,
-                review_required: bool = False) -> str:
-        """Open the task and send the proposed output for review, the
-        agent's half of the handshake. A task that requires review waits
-        under review until a person decides it; otherwise the output is
-        first recorded as the task's output."""
-        params: dict = {
-            "workspace": self.workspace,
-            "from":      self.agent,
-            "assignee":  self.agent,
-            "kind":      "workflow_output",
-            "input":     artefact,
-        }
-        if review_required:
-            params["review_required"] = True
-        env = self._dispatch("task.create", params)
-        task_id = env["result"]["task_id"]
-        if not review_required:
-            self._dispatch("task.complete", {
-                "workspace": self.workspace,
-                "from":      self.agent,
-                "task_id":   task_id,
-                "output":    artefact,
-            })
-        self._dispatch("review.request", {
-            "workspace": self.workspace,
-            "from":      self.agent,
-            "task_id":   task_id,
-            "artefact":  artefact,
-            "to":        approver,
-        })
-        return task_id
-
-    def _decide(self, method: str, approver: str, task_id: str,
-                comment: Optional[str], tags: Optional[list[str]]) -> None:
-        # decide.approve / decide.reject record the reviewer's note as
-        # `comment` (decide.override is the one that takes `rationale`).
-        params: dict = {
-            "workspace": self.workspace,
-            "from":      approver,
-            "task_id":   task_id,
-        }
-        if comment:
-            params["comment"] = comment
-        if tags:
-            params["tags"] = tags
-        self._dispatch(method, params)
-
-    def _join(self, uri: str) -> None:
-        if uri in self._joined:
-            return
-        _safe_dispatch(self.coord, "participant.join", {
-            "workspace": self.workspace,
-            "from":      uri,
-            "type":      _participant_type(uri),
-        })
-        self._joined.add(uri)
-
-    def _dispatch(self, method: str, params: dict) -> dict:
-        if self.on_envelope is not None:
-            self.on_envelope(method, params)
-        out = self.coord.dispatch(_make_envelope(method, params))
-        if out.get("error"):
-            err = out["error"]
-            raise ChapBridgeError(err.get("code", 0), err.get("message", ""))
-        return out
-
-
-# ============================================================
-#   Errors and helpers
-# ============================================================
-
-
-class ChapBridgeError(RuntimeError):
-    """Raised when the Coordinator rejects an envelope."""
-
-    def __init__(self, code: int, message: str) -> None:
-        super().__init__(f"CHAP error {code}: {message}")
-        self.code = code
-        self.message = message
-
-
-def _safe_dispatch(coord: Coordinator, method: str, params: dict) -> None:
-    """Dispatch, tolerating the errors that come from re-applying an
-    idempotent setup step (re-creating a workspace, re-joining a member).
-    Decide by checking the resulting state, not by matching the message;
-    anything else propagates."""
-    out = coord.dispatch(_make_envelope(method, params))
-    if not out.get("error"):
-        return
-
-    if method == "workspace.create":
-        ws_id = params.get("workspace")
-        if ws_id and ws_id in coord.workspaces:
-            return
-    elif method == "participant.join":
-        ws = coord.workspaces.get(params.get("workspace"))
-        if ws is not None and params.get("from") in ws.members:
-            return
-
-    raise ChapBridgeError(out["error"].get("code", 0),
-                          out["error"].get("message", ""))
+        """The workspace's audit log."""
+        return self._review.audit()
 
 
 __all__ = [
-    "ChapHitlBridge",
     "ChapBridgeError",
+    "ChapError",
+    "ChapHitlBridge",
     "Decision",
+    "PersonRequired",
 ]
