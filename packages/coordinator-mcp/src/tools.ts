@@ -76,7 +76,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
 
   "chap.task.update":
     "Move a task to a new state. Only the transitions in the specification's lifecycle table are accepted, " +
-    "and a task that requires review cannot be completed here.",
+    "and a task that requires review cannot be completed here. A task whose review no decision has closed, or " +
+    "a successor that carries one on, is not declined (-32602).",
 
   "chap.task.complete":
     "Submit a task's output. A task that requires review does not complete: the output is held as the " +
@@ -229,7 +230,8 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
     "replacement. The successor requires review when the original did, whatever its own review_required " +
     "says, and whoever made the original's work counts as an author of the successor's review. A paused " +
     "assignee is refused with -32063, and from the moment a review the original requires opens until a " +
-    "reviewer rejects the work, the authors of the work cannot supersede it (-32011).",
+    "reviewer rejects the work, the authors of the work cannot supersede it, nor a successor that carries its " +
+    "review (-32011).",
 
   "chap.control.set_mode_ceiling":
     "Set the highest operating mode tasks in this workspace may request. A task above the ceiling is refused.",

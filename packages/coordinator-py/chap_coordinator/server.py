@@ -505,10 +505,10 @@ def decision_log(ws: Any) -> dict[str, list[dict]]:
             submissions[p["task_id"]] = {"seq": entry.seq, "arrived": entry.arrived, "envelope": call}
             closed.discard(p["task_id"])
             continue
+        if method in _CLOSES_ROUND:
+            closed.add(p["task_id"])
         if not method.startswith("decide."):
             continue
-        if method in ("decide.reject", "decide.override"):
-            closed.add(p["task_id"])
         by_task.setdefault(p["task_id"], []).append({
             "seq": entry.seq, "ts": entry.arrived, "reviewer": p.get("from"),
             "kind": method[len("decide."):], "comment": p.get("comment"),
@@ -606,9 +606,9 @@ def task_evidence(coord: Coordinator, workspace: str, task_id: str) -> Optional[
             continue
         row = {"seq": entry.seq, "arrived": entry.arrived, "prev_hash": entry.prev_hash, "envelope": call}
         method = str(call.get("method", ""))
+        closed = closed or method in _CLOSES_ROUND
         if method.startswith("decide."):
             decisions.append(row)
-            closed = closed or method in ("decide.reject", "decide.override")
         elif method in ("task.complete", "review.request"):
             # A review.request that adds reviewers opens no round: the code
             # gate's note names the submission that opened the round its
@@ -704,11 +704,16 @@ def _same_json(a: Any, b: Any) -> bool:
         return False
 
 
+#: The calls that close a review round, after which a review.request opens
+#: another.
+_CLOSES_ROUND = ("decide.reject", "decide.override", "abstain.declare")
+
+
 def _amends_round(call: dict, before: Optional[dict], closed: bool) -> bool:
     """Whether a review.request adds reviewers to the round ``before``
-    opened: it carries the artefact under review, and no reject or override
-    has closed that round since. Such a request opens no round, and is no
-    submission."""
+    opened: it carries the artefact under review, and no reject, override or
+    abstention has closed that round since. Such a request opens no round,
+    and is no submission."""
     if call.get("method") != "review.request" or not isinstance(before, dict) or closed:
         return False
     was = before.get("params") or {}

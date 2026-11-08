@@ -154,7 +154,9 @@ subject the issuer gave you, to add to your entry in `humans`:
 
 Once a provider is set, the read API answers a person signed in at the
 desk, or a member whose key signs the read, and refuses anyone else with
-401. A person's join with no token, or with a token that fails a check, is
+401. A store made before the provider was set asks nobody for a token, so
+the server does not start on it: move `data/` aside, and the server starts
+a new store that asks for one. A person's join with no token, or with a token that fails a check, is
 refused with `-32403`; one whose token is for someone other than the join
 names, with `-32404`. A key rotation at the issuer costs one refused join:
 the server fetches the keys again when a token names one it does not have.

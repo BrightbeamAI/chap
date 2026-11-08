@@ -265,8 +265,10 @@ with. Calls 0.3.4 accepted that 0.3.5 refuses, and what to do instead:
   Python `a2a` extra installs `a2a-sdk[http-server]`.
 - **Where people sign in.** A Node desk server configured to sign people
   in at an identity provider no longer starts under `"require_signatures":
-  "humans"` or off, or on a store created under either: set `true` and
-  start a new store, which `create-chap-app upgrade --adopt-settings` does.
+  "humans"` or off, or on a store created under either or before it signed
+  people in: set `true`, and start a new store by moving the old one aside;
+  `create-chap-app upgrade --adopt-settings` does both where it changes the
+  setting.
   A read of its API from anyone but a signed-in person or a member whose
   key signs it (`signedRead`).
 - **Node.js.** Node 20.

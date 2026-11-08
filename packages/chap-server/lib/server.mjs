@@ -336,8 +336,13 @@ export async function bootstrap(coord, config, { enrol = [], log = console.log }
 function settleSignatures(ws, config, log) {
   const required = !!config.require_signatures || hasProfile(ws.profiles, "security-signed");
   const policy = required ? (ws.signature_policy === "humans" ? "humans" : "all") : null;
-  // A store made under a weaker policy keeps it, so the rule loadConfig
-  // holds to, every call signed where people sign in, is held here too.
+  // A store keeps the profiles and the policy it was created with. One made
+  // before people signed in asks nobody for a token, and one made under a
+  // weaker policy lets the agent call unsigned, so neither starts where
+  // people sign in.
+  if (config.oidc && !hasProfile(ws.profiles, "identity-oidc")) {
+    throw new Error(`${ws.id} in ${config.store} was created before chap.config.json signed people in at ${config.oidc.issuer}, so it asks nobody for a token: start a new store, by moving the old one aside`);
+  }
   if (config.oidc && policy !== "all") {
     throw new Error(`${ws.id} in ${config.store} was created ${policy === "humans" ? 'under "require_signatures": "humans", under which the agent calls unsigned' : "with signatures off"}, and chap.config.json signs people in at ${config.oidc.issuer}: start a new store, by moving the old one aside, so every call is signed`);
   }
@@ -414,10 +419,14 @@ export function taskView(coord, workspace, taskId) {
   return viewOf(ws, task, decisionLog(ws));
 }
 
+/** The calls that close a review round, after which a review.request opens another. */
+const CLOSES_ROUND = new Set(["decide.reject", "decide.override", "abstain.declare"]);
+
 /**
  * Whether a review.request adds reviewers to the round `before` opened: it
- * carries the artefact under review, and no reject or override has closed
- * that round since. Such a request opens no round, and is no submission.
+ * carries the artefact under review, and no reject, override or abstention
+ * has closed that round since. Such a request opens no round, and is no
+ * submission.
  */
 function amendsRound(call, before, closed) {
   return call.method === "review.request" && !!before && !closed
@@ -448,8 +457,8 @@ function decisionLog(ws) {
       closed.delete(p.task_id);
       continue;
     }
+    if (CLOSES_ROUND.has(call.method)) closed.add(p.task_id);
     if (!call.method.startsWith("decide.")) continue;
-    if (call.method === "decide.reject" || call.method === "decide.override") closed.add(p.task_id);
     const row = {
       seq: entry.seq, ts: entry.arrived, reviewer: p.from, kind: call.method.slice("decide.".length),
       comment: p.comment ?? null, rationale: p.rationale ?? null, tags: Array.isArray(p.tags) ? p.tags : [],
@@ -548,9 +557,9 @@ export function taskEvidence(coord, workspace, taskId) {
     const call = entry.envelope;
     if (!call || typeof call.method !== "string" || call.params?.task_id !== taskId) continue;
     const row = { seq: entry.seq, arrived: entry.arrived, prev_hash: entry.prev_hash, envelope: call };
+    if (CLOSES_ROUND.has(call.method)) closed = true;
     if (call.method.startsWith("decide.")) {
       decisions.push(row);
-      if (call.method === "decide.reject" || call.method === "decide.override") closed = true;
     } else if (call.method === "task.complete" || call.method === "review.request") {
       // A review.request that adds reviewers opens no round: the code gate's
       // note names the submission that opened the round its approvals name.

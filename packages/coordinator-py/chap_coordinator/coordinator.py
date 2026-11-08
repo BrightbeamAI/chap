@@ -32,7 +32,7 @@ import sys
 import threading
 import traceback
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from .audit import (
     entry_call, entry_record, is_signed, link_hash, refusal_is_recorded, signed_digest,
@@ -689,19 +689,24 @@ def _stored_authors(assignee: str, history: list, prior: Any = None) -> list[str
 _ENDED = ("completed", "declined", "cancelled", "superseded", "escalated")
 
 
-def _review_holds(ws: Workspace, task: Task, depth: int = 0) -> list[str]:
+def _review_holds(ws: Workspace, task: Task) -> list[str]:
     """The authors a review the task requires holds, whatever state the task
-    is in: those of its own review, until a reviewer rejects the round under
-    review; or, for a task with no review yet, those of the task it
-    replaces, since an escalation or a supersede carries that review on."""
-    if depth > 64 or not _review_required(ws, task):
-        return []
-    if task.review is not None:
-        if any(d.get("kind") == "reject" for d in task.review.decisions):
+    is in: those of its own review, until a reviewer rejects or overrides
+    the round under review, or approves it as its rule asks; or, for a task
+    with no review yet, those of the task it replaces, since an escalation
+    or a supersede carries that review on, however long the chain."""
+    seen: set[str] = set()
+    t: Optional[Task] = task
+    while t is not None and t.id not in seen:
+        seen.add(t.id)
+        if not _review_required(ws, t):
             return []
-        return list(task.review.authors)
-    replaced = ws.tasks.get(task.supersedes) if isinstance(task.supersedes, str) else None
-    return _review_holds(ws, replaced, depth + 1) if replaced is not None else []
+        if t.review is not None:
+            decided = (any(d.get("kind") in ("reject", "override") for d in t.review.decisions)
+                       or _review_satisfied(t.review))
+            return [] if decided else list(t.review.authors)
+        t = ws.tasks.get(t.supersedes) if isinstance(t.supersedes, str) else None
+    return []
 
 
 def _open_required_review_authors(ws: Workspace, task: Task) -> list[str]:
@@ -2538,12 +2543,16 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_AUTHORISED,
                 "The authors of the work under review cannot end its review without a decision")}
-        if new_state == "declined" and (
-                not any(d.get("kind") == "reject" for d in task.review.decisions)
-                if task.review is not None else bool(_open_required_review_authors(ws, task))):
+        if (new_state == "declined" and task.review is not None
+                and not any(d.get("kind") == "reject" for d in task.review.decisions)):
             return {"error": rpc_error(
                 E.PARAMS,
                 "This task holds a review no decision has closed; a reviewer's decision ends it")}
+        if new_state == "declined" and task.review is None and _open_required_review_authors(ws, task):
+            return {"error": rpc_error(
+                E.PARAMS,
+                "This task carries on a review no decision has closed; completing it opens the "
+                "review a reviewer decides")}
         task.state = new_state
         task.updated_at = self.now_iso()
         task.history.append(TaskHistoryEntry(

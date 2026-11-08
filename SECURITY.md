@@ -84,8 +84,9 @@ boundary, since such a program reads `data/` and can change
 `chap.config.json`: pin the reviewers' keys, as the code gate's trust
 policy does, or run the agent as another user. Where people sign in at an
 identity provider, the Node server starts only where every call is signed,
-the agent's among them, and its read API answers a person signed in at the
-desk, or a member whose key signs the read.
+the agent's among them, on a store created to sign people in, and its read
+API answers a person signed in at the desk, or a member whose key signs the
+read.
 
 Each protection in the coordinator is off until it is configured:
 

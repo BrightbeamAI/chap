@@ -974,3 +974,59 @@ def test_the_chain_the_desk_reports_is_the_one_the_store_keeps(tmp_path, monkeyp
     config = load_config(write_config(tmp_path / "chain", chain=True, store="chap.db"))
     coord = make_coordinator(config)
     assert public_config(config, coord)["chain_enabled"] is False, "a store created with the chain off keeps it off"
+
+
+def test_a_review_request_that_adds_reviewers_opens_no_round_and_one_after_a_reject_opens_another():
+    # A decision names the submission that opened its round, and the code
+    # gate's note carries it: the servers, the desk and the note agree on it.
+    # Mirrors packages/chap-server/tests/rounds.test.mjs.
+    from chap_coordinator import Coordinator, CoordinatorOptions
+    from chap_coordinator.server import task_evidence, task_view
+    coord = Coordinator(CoordinatorOptions(default_profiles=["core/1.0", "review/1.0"], deterministic_ids=True))
+    n = [0]
+
+    def send(method, frm="agent:b", **params):
+        n[0] += 1
+        r = coord.dispatch({"jsonrpc": "2.0", "id": f"c{n[0]}", "method": method,
+                            "params": {"workspace": "w", "from": frm, **params}})
+        assert "error" not in r, r
+        return r["result"]
+
+    send("workspace.create")
+    for uri, kind in (("human:a", "human"), ("human:c", "human"), ("agent:b", "agent")):
+        send("participant.join", uri, type=kind)
+    tid = send("task.create", kind="k", input={}, assignee="agent:b")["task_id"]
+    draft = {"body": "v1"}
+    send("task.complete", task_id=tid, output=draft)
+
+    def opened():
+        return task_view(coord, "w", tid)["submission"]["envelope"]["method"]
+
+    def noted():
+        return [s["envelope"]["method"] for s in task_evidence(coord, "w", tid)["submissions"]]
+
+    send("review.request", task_id=tid, artefact=draft, to=["human:a"])
+    send("review.request", task_id=tid, artefact=draft, to=["human:c"])
+    assert opened() == "task.complete"
+    assert noted() == ["task.complete"]
+    send("decide.reject", "human:a", task_id=tid)
+    send("review.request", task_id=tid, artefact=draft, to=["human:c"])
+    assert opened() == "review.request"
+    assert noted() == ["task.complete", "review.request"]
+
+
+def test_make_server_prints_the_code_and_a_code_of_fewer_than_8_letters_is_not_used(tmp_path, monkeypatch, capsys):
+    from chap_coordinator.server import enrolment_code
+    for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CHAP_ENROLMENT_CODE", ENROL)
+    config = load_config(write_config(tmp_path / "made", require_signatures="humans", store=":memory:", port=0))
+    server = make_server(config, make_coordinator(config))
+    try:
+        assert f"  enrol    {ENROL}: the code {HUMAN} joins with the first time" in capsys.readouterr().out
+    finally:
+        server.server_close()
+    # A configuration built by hand skips load_config's check; the code is
+    # made afresh where the one set is short.
+    monkeypatch.setenv("CHAP_ENROLMENT_CODE", "ABC-1234")
+    assert enrolment_code({"require_signatures": True, "humans": [{"uri": HUMAN}]}) != "ABC-1234"

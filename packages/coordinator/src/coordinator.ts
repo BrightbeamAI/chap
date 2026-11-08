@@ -563,15 +563,22 @@ const ENDED: ReadonlyArray<TaskState> = ["completed", "declined", "cancelled", "
 
 /**
  * The authors a review the task requires holds, whatever state the task is
- * in: those of its own review, until a reviewer rejects the round under
- * review; or, for a task with no review yet, those of the task it replaces,
- * since an escalation or a supersede carries that review on.
+ * in: those of its own review, until a reviewer rejects or overrides the
+ * round under review, or approves it as its rule asks; or, for a task with
+ * no review yet, those of the task it replaces, since an escalation or a
+ * supersede carries that review on, however long the chain.
  */
-function reviewHolds(ws: Workspace, task: Task, depth = 0): ParticipantUri[] {
-  if (depth > 64 || !reviewRequired(ws, task)) return [];
-  if (task.review) return task.review.decisions.some((d) => d.kind === "reject") ? [] : task.review.authors;
-  const replaced = typeof task.supersedes === "string" ? ws.tasks.get(task.supersedes) : undefined;
-  return replaced ? reviewHolds(ws, replaced, depth + 1) : [];
+function reviewHolds(ws: Workspace, task: Task): ParticipantUri[] {
+  const seen = new Set<string>();
+  for (let t: Task | undefined = task; t && !seen.has(t.id); t = typeof t.supersedes === "string" ? ws.tasks.get(t.supersedes) : undefined) {
+    seen.add(t.id);
+    if (!reviewRequired(ws, t)) return [];
+    if (t.review) {
+      const decided = t.review.decisions.some((d) => d.kind === "reject" || d.kind === "override") || reviewSatisfied(t.review);
+      return decided ? [] : t.review.authors;
+    }
+  }
+  return [];
 }
 
 /**
@@ -2633,10 +2640,13 @@ export class Coordinator {
       return { error: rpcError(E.NOT_AUTHORISED,
         "The authors of the work under review cannot end its review without a decision") };
     }
-    if (newState === "declined" && (task.review ? !task.review.decisions.some((d) => d.kind === "reject")
-                                                : openRequiredReviewAuthors(ws, task).length > 0)) {
+    if (newState === "declined" && task.review && !task.review.decisions.some((d) => d.kind === "reject")) {
       return { error: rpcError(E.PARAMS,
         "This task holds a review no decision has closed; a reviewer's decision ends it") };
+    }
+    if (newState === "declined" && !task.review && openRequiredReviewAuthors(ws, task).length > 0) {
+      return { error: rpcError(E.PARAMS,
+        "This task carries on a review no decision has closed; completing it opens the review a reviewer decides") };
     }
     task.state = newState;
     task.updated_at = this.now();

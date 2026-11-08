@@ -33,7 +33,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "chap.task.create":
         "Create a task: a unit of work assigned to one participant. Set review_required to make completion depend on a reviewer decision rather than on the assignee. Returns a task_id that the rest of the lifecycle takes. Supplying idempotency_key is what makes a retry safe: a repeat carrying a key already seen returns the original task, while a repeat without one creates a second task. Assigning to a paused member is refused.",
     "chap.task.update":
-        "Move a task to a new state. Only the transitions in the specification's lifecycle table are accepted, and a task that requires review cannot be completed here.",
+        "Move a task to a new state. Only the transitions in the specification's lifecycle table are accepted, and a task that requires review cannot be completed here. A task whose review no decision has closed, or a successor that carries one on, is not declined (-32602).",
     "chap.task.complete":
         "Submit a task's output. A task that requires review does not complete: the output is held as the artefact under review, the task moves to review_requested, and a reviewer decision completes it. Any other task completes immediately.",
     "chap.audit.read":
@@ -81,7 +81,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "chap.control.rollback":
         "Restore workspace state from a snapshot. The mode ceiling and member roles are restored; the rollback is appended to the audit log rather than rewriting it.",
     "chap.control.supersede":
-        "Replace a task with a successor in one call. The original moves to superseded and stays linked to its replacement. The successor requires review when the original did, whatever its own review_required says, and whoever made the original's work counts as an author of the successor's review. A paused assignee is refused with -32063, and from the moment a review the original requires opens until a reviewer rejects the work, the authors of the work cannot supersede it (-32011).",
+        "Replace a task with a successor in one call. The original moves to superseded and stays linked to its replacement. The successor requires review when the original did, whatever its own review_required says, and whoever made the original's work counts as an author of the successor's review. A paused assignee is refused with -32063, and from the moment a review the original requires opens until a reviewer rejects the work, the authors of the work cannot supersede it, nor a successor that carries its review (-32011).",
     "chap.control.set_mode_ceiling":
         "Set the highest operating mode tasks in this workspace may request. A task above the ceiling is refused.",
     "chap.task.route":

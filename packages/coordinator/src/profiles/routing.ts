@@ -116,8 +116,8 @@ export function registerRouting(coord: Coordinator): void {
       return { error: rpcError(E.CONTROL_WORKSPACE_PAUSED, `Assignee ${selected} is paused`) };
     }
     // The member the task leaves stays among the authors of its work where it
-    // routes the task on itself or has acted on it (review/1.0 §3.1), so it
-    // cannot route its work on and then review it.
+    // routes the task on itself (review/1.0 §3.1), so it cannot route its
+    // work on and then review it.
     const leaving = heldBy(task, p.from);
     if (selected !== task.assignee && leaving.length) task.prior_authors = unionOf(task.prior_authors ?? [], leaving);
     task.assignee = selected;

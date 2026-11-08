@@ -130,8 +130,24 @@ def test_an_author_who_escalates_a_required_review_cannot_end_the_successor_and_
     assert send("control.cancel", task_id=successor)["error"] == {"code": E.NOT_AUTHORISED, "message": ENDS}
     assert send("task.update", task_id=successor, state="declined")["error"] == {
         "code": E.PARAMS,
-        "message": "This task holds a review no decision has closed; a reviewer's decision ends it"}
+        "message": "This task carries on a review no decision has closed; completing it opens the "
+                   "review a reviewer decides"}
     _ok(send("control.cancel", actor="agent:d", task_id=successor))
+    assert _task(c, successor).state == "cancelled"
+
+
+def test_a_chain_of_escalations_however_long_holds_the_authors_and_a_decided_review_holds_nobody():
+    c, send = _ready()
+    tid = _under_review(send)
+    for _ in range(70):
+        tid = _ok(send("escalate.raise", original_task_id=tid,
+                       new_task={"kind": "k", "assignee": "agent:b"}))["new_task_id"]
+    assert send("control.cancel", task_id=tid)["error"] == {"code": E.NOT_AUTHORISED, "message": ENDS}
+    approved = _under_review(send)
+    _ok(send("decide.approve", actor="human:a", task_id=approved))
+    successor = _ok(send("control.supersede", actor="human:a", task_id=approved,
+                         successor_task={"kind": "k", "assignee": "agent:b"}))["new_task_id"]
+    _ok(send("control.cancel", task_id=successor))
     assert _task(c, successor).state == "cancelled"
 
 

@@ -155,9 +155,9 @@ def register_routing(coord: "Coordinator") -> None:
                                        f"Assignee {selected} is paused")}
 
         # Update assignee per spec S3. The member the task leaves stays among
-        # the authors of its work where it routes the task on itself or has
-        # acted on it (review/1.0 S3.1), so it cannot route its work on and
-        # then review it.
+        # the authors of its work where it routes the task on itself
+        # (review/1.0 S3.1), so it cannot route its work on and then review
+        # it.
         leaving = _held_by(task, p.get("from"))
         if selected != task.assignee and leaving:
             task.prior_authors = _union_of(task.prior_authors or [], leaving)

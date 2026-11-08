@@ -126,7 +126,13 @@ test("the configuration names the issuer and the client id, and refuses an issue
   const later = JSON.parse(await readFile(configPath, "utf8"));
   await writeFile(configPath, JSON.stringify({ ...later, require_signatures: true, oidc: { issuer: issuer.issuer, client_id: DEV_AUDIENCE } }));
   await assert.rejects(createChapServer({ configPath, log: () => {} }),
-    /was created under "require_signatures": "humans", under which the agent calls unsigned, and chap\.config\.json signs people in at .*: start a new store/);
+    /was created before chap\.config\.json signed people in at .*, so it asks nobody for a token: start a new store/);
+  // Nor does one made with every call signed, before anyone signed in.
+  const allSigned = await project({ require_signatures: true, store: "./data/chap.db" });
+  await (await createChapServer({ configPath: allSigned.configPath, log: () => {} })).close();
+  const before = JSON.parse(await readFile(allSigned.configPath, "utf8"));
+  await writeFile(allSigned.configPath, JSON.stringify({ ...before, oidc: { issuer: issuer.issuer, client_id: DEV_AUDIENCE } }));
+  await assert.rejects(createChapServer({ configPath: allSigned.configPath, log: () => {} }), /so it asks nobody for a token: start a new store/);
   assert.ok(dir);
 });
 

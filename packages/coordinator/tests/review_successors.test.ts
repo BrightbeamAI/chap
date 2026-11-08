@@ -116,8 +116,20 @@ test("an author who escalates a required review cannot end the successor; its ow
   const successor = ok(send("escalate.raise", { original_task_id: id, new_task: { kind: "k", assignee: "agent:d" } })).new_task_id;
   assert.deepEqual(send("control.cancel", { task_id: successor }).error, { code: E.NOT_AUTHORISED, message: ENDS });
   assert.deepEqual(send("task.update", { task_id: successor, state: "declined" }).error,
-    { code: E.PARAMS, message: "This task holds a review no decision has closed; a reviewer's decision ends it" });
+    { code: E.PARAMS, message: "This task carries on a review no decision has closed; completing it opens the review a reviewer decides" });
   ok(send("control.cancel", { task_id: successor }, "agent:d"));
+  assert.equal(task(c, successor).state, "cancelled");
+});
+
+test("a chain of escalations, however long, holds the authors; a review already decided holds nobody", () => {
+  const { c, send } = ready();
+  let id = underReview(send);
+  for (let i = 0; i < 70; i++) id = ok(send("escalate.raise", { original_task_id: id, new_task: { kind: "k", assignee: "agent:b" } })).new_task_id;
+  assert.deepEqual(send("control.cancel", { task_id: id }).error, { code: E.NOT_AUTHORISED, message: ENDS });
+  const approved = underReview(send);
+  ok(send("decide.approve", { task_id: approved }, "human:a"));
+  const successor = ok(send("control.supersede", { task_id: approved, successor_task: { kind: "k", assignee: "agent:b" } }, "human:a")).new_task_id;
+  ok(send("control.cancel", { task_id: successor }));
   assert.equal(task(c, successor).state, "cancelled");
 });
 

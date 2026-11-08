@@ -131,10 +131,12 @@ the task's latest `task.complete` that completed it, where there is one; a
 reviewer's decision that completed the task is not a completion of the work,
 and where the task held a review before, that review's authors stay
 authors. A review recorded before authors were kept takes them from the
-task's history in the same way: the assignee, the sender of the latest
-`task.complete` that completed the task or opened its review, and the
-sender of the `review.request` that opened it, which supplied the artefact
-under review.
+task's history: the assignee, the sender of the latest `task.complete`
+that completed the task or opened its review, and the sender of the
+`review.request` that opened it, which supplied the artefact under review.
+A live `review.request`, which opens only a review the task does not
+require, leaves its sender out, so a restored review can hold one more
+author than the live one did.
 
 The authors of the work go with it. A new round's authors are the earlier
 round's together with the new artefact's, whoever resubmits it. A task
