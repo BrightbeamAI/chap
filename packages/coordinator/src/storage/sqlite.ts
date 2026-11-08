@@ -151,9 +151,9 @@ function openDatabase(path: string, driver: SqliteStoreOptions["driver"]): Sqlit
     try {
       // Resolved at construction so the dependency stays optional: importing
       // this module costs nothing if you never build a SqliteStore. An ES
-      // module has no bare require(), so one is made from import.meta.url,
-      // and the CommonJS build, which has no import.meta.url, makes it from
-      // __filename.
+      // module has no require function of its own, so one is made from
+      // import.meta.url, and the CommonJS build, which has no
+      // import.meta.url, makes it from __filename.
       return createRequire(typeof __filename === "string" ? __filename : import.meta.url)(name) as T;
     } catch (err) {
       failures.push(`${name}: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);

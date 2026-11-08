@@ -278,6 +278,8 @@ def test_request_and_wait_against_a_desk_where_people_sign(tmp_path, monkeypatch
     pytest.importorskip("cryptography")
     for name in ("PORT", "CHAP_HOST", "CHAP_DB_PATH", "CHAP_REQUIRE_SIGNATURES", "CHAP_CHAIN", "CHAP_ALLOWED_HOSTS"):
         monkeypatch.delenv(name, raising=False)
+    # A person's first join takes the code the desk server prints at start.
+    monkeypatch.setenv("CHAP_ENROLMENT_CODE", "TESTS-ENROL")
     path = tmp_path / "chap.config.json"
     path.write_text(json.dumps({
         "workspace": WS, "profiles": ["core/1.0", "review/1.0"], "store": ":memory:", "port": 0,
@@ -290,7 +292,8 @@ def test_request_and_wait_against_a_desk_where_people_sign(tmp_path, monkeypatch
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         http = HttpCoordinator(f"http://127.0.0.1:{server.server_port}/chap")
-        alice = Participant(http, WS, REVIEWER, Signer.load_or_create(REVIEWER, tmp_path / "keys"))
+        alice = Participant(http, WS, REVIEWER, Signer.load_or_create(REVIEWER, tmp_path / "keys"),
+                            enrolment="TESTS-ENROL")
         alice.join("human", "reviewer")
         bridge = ChapConfirmationBridge(Participant(http, WS, "agent:assistant#v1"), workspace=WS,
                                         agent="agent:assistant#v1", reviewer=REVIEWER)

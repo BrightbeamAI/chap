@@ -113,8 +113,8 @@ test("node:sqlite", { skip: !nodeSqlite }, async (t) => {
       const store = new SqliteStore(path, { driver: "node:sqlite" });
       const c = new Coordinator({ ...OPTIONS, store });
       c.dispatch({ jsonrpc: "2.0", id: "c", method: "workspace.create", params: { workspace: "w" } });
-      const holder = spawn(process.execPath, ["-e", `
-        const { DatabaseSync } = require("node:sqlite");
+      const holder = spawn(process.execPath, ["--input-type=module", "-e", `
+        import { DatabaseSync } from "node:sqlite";
         const db = new DatabaseSync(${JSON.stringify(path)});
         db.exec("BEGIN IMMEDIATE");
         process.stdout.write("held\\n");
