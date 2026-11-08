@@ -107,11 +107,10 @@ selected assignee. It is kept in the workspace's state; the audit log
 holds the `task.route` request only (§2).
 
 After `task.route` succeeds, the Coordinator MUST set the task's
-`assignee` to `selected`, and, where that moves the task from a member that
-held the work, the caller itself or a member with a call of its own in the
-task's history, add that member to the task's `prior_authors`, so it stays
-among the authors of the work ([`review.md`](./review.md) §3.1). It changes
-nothing else, in every mode.
+`assignee` to `selected`, and, where the caller moves the task from itself,
+add the caller to the task's `prior_authors`, so it stays among the authors
+of the work ([`review.md`](./review.md) §3.1). It changes nothing else, in
+every mode.
 
 A participant paused under `control/1.0` is assigned no new tasks
 ([`control.md`](./control.md) §2). The default policy, which takes the

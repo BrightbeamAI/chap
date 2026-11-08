@@ -487,6 +487,7 @@ def decision_log(ws: Any) -> dict[str, list[dict]]:
     One scan of the log per request."""
     by_task: dict[str, list[dict]] = {}
     submissions: dict[str, dict] = {}
+    closed: set[str] = set()
     for entry in ws.audit:
         call = getattr(entry, "envelope", None)
         if not isinstance(call, dict):
@@ -498,17 +499,16 @@ def decision_log(ws: Any) -> dict[str, list[dict]]:
         if method in ("task.complete", "review.request"):
             # The latest submission opens the current review round. A reviewer's
             # decision names it, so an approval cannot be counted in another round.
-            # A review.request with the artefact under review adds reviewers to
-            # the open round, and opens none.
-            before = ((submissions.get(p["task_id"]) or {}).get("envelope") or {}).get("params")
-            if method == "review.request" and before and _same_json(
-                    p.get("artefact"),
-                    before["artefact"] if before.get("artefact") is not None else before.get("output")):
+            if _amends_round(call, (submissions.get(p["task_id"]) or {}).get("envelope"),
+                             p["task_id"] in closed):
                 continue
             submissions[p["task_id"]] = {"seq": entry.seq, "arrived": entry.arrived, "envelope": call}
+            closed.discard(p["task_id"])
             continue
         if not method.startswith("decide."):
             continue
+        if method in ("decide.reject", "decide.override"):
+            closed.add(p["task_id"])
         by_task.setdefault(p["task_id"], []).append({
             "seq": entry.seq, "ts": entry.arrived, "reviewer": p.get("from"),
             "kind": method[len("decide."):], "comment": p.get("comment"),
@@ -599,6 +599,7 @@ def task_evidence(coord: Coordinator, workspace: str, task_id: str) -> Optional[
         return None
     decisions: list[dict] = []
     submissions: list[dict] = []
+    closed = False
     for entry in ws.audit:
         call = getattr(entry, "envelope", None)
         if not isinstance(call, dict) or (call.get("params") or {}).get("task_id") != task_id:
@@ -607,8 +608,15 @@ def task_evidence(coord: Coordinator, workspace: str, task_id: str) -> Optional[
         method = str(call.get("method", ""))
         if method.startswith("decide."):
             decisions.append(row)
+            closed = closed or method in ("decide.reject", "decide.override")
         elif method in ("task.complete", "review.request"):
+            # A review.request that adds reviewers opens no round: the code
+            # gate's note names the submission that opened the round its
+            # approvals name.
+            if _amends_round(call, submissions[-1]["envelope"] if submissions else None, closed):
+                continue
             submissions.append(row)
+            closed = False
 
     def jwks(member) -> list:
         out = []
@@ -673,20 +681,39 @@ def enrolment_code(config: dict) -> Optional[str]:
         if (config.get("require_signatures") and config.get("enrolment") is not False
                 and config.get("humans")):
             code = (os.environ.get("CHAP_ENROLMENT_CODE") or "").strip() or None
-            if code is None or not _code_letters(code):
+            if code is None or len(_code_letters(code)) < 8:
                 letters = "".join(_CODE_LETTERS[b % 32] for b in secrets.token_bytes(10))
                 code = f"{letters[:5]}-{letters[5:]}"
         config["_enrolment_code"] = code
     return config["_enrolment_code"]
 
 
+#: A value a call leaves out, apart from one it gives as null.
+_ABSENT = object()
+
+
 def _same_json(a: Any, b: Any) -> bool:
     """Whether two JSON values are the same, as the Node server compares
-    them: 1 and 1.0 alike, true and 1 apart."""
+    them: 1 and 1.0 alike, true and 1 apart, a value left out apart from
+    null."""
+    if a is _ABSENT or b is _ABSENT:
+        return a is b
     try:
         return canonicalize(a) == canonicalize(b)
     except (TypeError, ValueError):
         return False
+
+
+def _amends_round(call: dict, before: Optional[dict], closed: bool) -> bool:
+    """Whether a review.request adds reviewers to the round ``before``
+    opened: it carries the artefact under review, and no reject or override
+    has closed that round since. Such a request opens no round, and is no
+    submission."""
+    if call.get("method") != "review.request" or not isinstance(before, dict) or closed:
+        return False
+    was = before.get("params") or {}
+    under_review = was["artefact"] if was.get("artefact") is not None else was.get("output", _ABSENT)
+    return _same_json((call.get("params") or {}).get("artefact", _ABSENT), under_review)
 
 
 def announce_enrolment(config: dict, coord: Coordinator, base: Optional[str] = None) -> None:
@@ -1309,16 +1336,21 @@ class _Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_HEAD = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = _serve
 
 
-def make_server(config: dict, coord: Coordinator) -> ChapServer:
+def make_server(config: dict, coord: Coordinator, announce: bool = True) -> ChapServer:
     """Bind the standard library server on the configured host and port.
     Port 0 picks a port free on both loopback addresses; read it from
-    ``server.server_port``, and the desk's address from ``server.desk_url``."""
+    ``server.server_port``, and the desk's address from ``server.desk_url``.
+    It prints the enrolment code with that address unless ``announce`` is
+    false, as :func:`serve` asks, which prints it among its own lines."""
     desk = ChapDesk(config, coord, announce=False)
     address = (config["host"], int(config["port"]))
     attempts = 5
     while True:
         try:
-            return ChapServer(address, desk)
+            server = ChapServer(address, desk)
+            if announce:
+                announce_enrolment(config, coord, server.desk_url.rstrip("/"))
+            return server
         except OSError as err:
             # A port picked free on one loopback address can be held on the
             # other by another program; another port is picked.
@@ -1337,7 +1369,7 @@ def serve(config: dict) -> int:
         print(f"The store at {config['store']} could not be opened: {err}", file=sys.stderr)
         return 1
     try:
-        server = make_server(config, coord)
+        server = make_server(config, coord, announce=False)
     except OSError as err:
         _close(coord)
         if err.errno != errno.EADDRINUSE:

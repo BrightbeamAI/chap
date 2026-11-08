@@ -336,6 +336,11 @@ export async function bootstrap(coord, config, { enrol = [], log = console.log }
 function settleSignatures(ws, config, log) {
   const required = !!config.require_signatures || hasProfile(ws.profiles, "security-signed");
   const policy = required ? (ws.signature_policy === "humans" ? "humans" : "all") : null;
+  // A store made under a weaker policy keeps it, so the rule loadConfig
+  // holds to, every call signed where people sign in, is held here too.
+  if (config.oidc && policy !== "all") {
+    throw new Error(`${ws.id} in ${config.store} was created ${policy === "humans" ? 'under "require_signatures": "humans", under which the agent calls unsigned' : "with signatures off"}, and chap.config.json signs people in at ${config.oidc.issuer}: start a new store, by moving the old one aside, so every call is signed`);
+  }
   if (required === !!config.require_signatures && policy === config.signature_policy) return;
   log(`${ws.id} was created under other settings, and runs with ${SIGNING[policy]}. require_signatures in chap.config.json applies to a new store.`);
   config.require_signatures = required;
@@ -410,6 +415,16 @@ export function taskView(coord, workspace, taskId) {
 }
 
 /**
+ * Whether a review.request adds reviewers to the round `before` opened: it
+ * carries the artefact under review, and no reject or override has closed
+ * that round since. Such a request opens no round, and is no submission.
+ */
+function amendsRound(call, before, closed) {
+  return call.method === "review.request" && !!before && !closed
+    && deepEqual(call.params?.artefact, before.params?.artefact ?? before.params?.output);
+}
+
+/**
  * Every accepted decide.* call on the chain, by task, in order. A review
  * opened again with review.request starts with no decisions, so the task's
  * own review holds the current round only; this holds every round, with
@@ -419,6 +434,7 @@ export function taskView(coord, workspace, taskId) {
 function decisionLog(ws) {
   const byTask = new Map();
   const submissions = new Map();
+  const closed = new Set();
   for (const entry of ws.audit) {
     const call = entry.envelope;
     if (!call || typeof call.method !== "string") continue;
@@ -427,14 +443,13 @@ function decisionLog(ws) {
     if (call.method === "task.complete" || call.method === "review.request") {
       // The latest submission opens the current review round. A reviewer's
       // decision names it, so an approval cannot be counted in another round.
-      // A review.request with the artefact under review adds reviewers to the
-      // open round, and opens none.
-      const before = submissions.get(p.task_id)?.envelope?.params;
-      if (call.method === "review.request" && before && deepEqual(p.artefact, before.artefact ?? before.output)) continue;
+      if (amendsRound(call, submissions.get(p.task_id)?.envelope, closed.has(p.task_id))) continue;
       submissions.set(p.task_id, { seq: entry.seq, arrived: entry.arrived, envelope: call });
+      closed.delete(p.task_id);
       continue;
     }
     if (!call.method.startsWith("decide.")) continue;
+    if (call.method === "decide.reject" || call.method === "decide.override") closed.add(p.task_id);
     const row = {
       seq: entry.seq, ts: entry.arrived, reviewer: p.from, kind: call.method.slice("decide.".length),
       comment: p.comment ?? null, rationale: p.rationale ?? null, tags: Array.isArray(p.tags) ? p.tags : [],
@@ -528,12 +543,21 @@ export function taskEvidence(coord, workspace, taskId) {
   if (!task) return null;
   const decisions = [];
   const submissions = [];
+  let closed = false;
   for (const entry of ws.audit) {
     const call = entry.envelope;
     if (!call || typeof call.method !== "string" || call.params?.task_id !== taskId) continue;
     const row = { seq: entry.seq, arrived: entry.arrived, prev_hash: entry.prev_hash, envelope: call };
-    if (call.method.startsWith("decide.")) decisions.push(row);
-    else if (call.method === "task.complete" || call.method === "review.request") submissions.push(row);
+    if (call.method.startsWith("decide.")) {
+      decisions.push(row);
+      if (call.method === "decide.reject" || call.method === "decide.override") closed = true;
+    } else if (call.method === "task.complete" || call.method === "review.request") {
+      // A review.request that adds reviewers opens no round: the code gate's
+      // note names the submission that opened the round its approvals name.
+      if (amendsRound(call, submissions.at(-1)?.envelope, closed)) continue;
+      submissions.push(row);
+      closed = false;
+    }
   }
   const keys = {};
   for (const uri of [...decisions.map((d) => d.envelope.params?.from), task.assignee]) {
@@ -638,7 +662,7 @@ export function enrolmentCode(config) {
   let code = null;
   if (config.require_signatures && !config.oidc && config.enrolment !== false && (config.humans ?? []).length > 0) {
     const set = process.env.CHAP_ENROLMENT_CODE?.trim();
-    if (set && codeLetters(set)) code = set;
+    if (set && codeLetters(set).length >= 8) code = set;
     else {
       const letters = [...randomBytes(10)].map((b) => CODE_LETTERS[b % 32]).join("");
       code = `${letters.slice(0, 5)}-${letters.slice(5)}`;

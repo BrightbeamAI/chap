@@ -186,7 +186,12 @@ async function plan({ root, scratch, config, configText, pkg, name, from, recogn
   const ourStamped = JSON.parse(stampedConfig);
   const settings = [];
   const deployment = [];
-  for (const [key, value] of Object.entries(theirConfig)) {
+  // A desk server that signs people in at a provider starts only where
+  // every call is signed, so for such a project the template's setting is
+  // that.
+  const signsIn = ourStamped.oidc != null;
+  for (const [key, given] of Object.entries(theirConfig)) {
+    const value = key === "require_signatures" && signsIn ? true : given;
     if (OWN_ENTRIES.has(key) || NEEDED_ENTRIES.has(key) || JSON.stringify(ourStamped[key]) === JSON.stringify(value)) continue;
     if (DEPLOYMENT_ENTRIES.has(key)) {
       const same = key === "store" && storePath(root, ourStamped.store) === storePath(root, value);
@@ -197,6 +202,7 @@ async function plan({ root, scratch, config, configText, pkg, name, from, recogn
   }
   const added = [...NEEDED_ENTRIES].filter((key) => theirConfig[key] !== undefined && ourStamped[key] === undefined);
   const adopted = adopt ? settings : [];
+  const unsigned = signsIn && !adopted.some((s) => s.key === "require_signatures") && ourStamped.require_signatures !== true;
   let nextConfig = stampedConfig;
   if (added.length || adopted.length) {
     const next = { ...ourStamped };
@@ -302,7 +308,7 @@ async function plan({ root, scratch, config, configText, pkg, name, from, recogn
     && !(await readFile(join(root, ".gitignore"), "utf8")).split("\n").some((l) => /^\/?keys\/?\**$/.test(l.trim()));
 
   return {
-    root, fresh, scratch, name, from, recognised, stamp, files, packages, scripts, settings, deployment, added, adopted, storeMove, ignoreKeys, language: manifest.language,
+    root, fresh, scratch, name, from, recognised, stamp, files, packages, scripts, settings, deployment, added, adopted, storeMove, ignoreKeys, unsigned, language: manifest.language,
     devRequirements: written.includes("requirements-dev.txt"),
     nextPkg: nextPkg && JSON.stringify(nextPkg) !== JSON.stringify(pkg) ? nextPkg : null,
     nextRequirements,
@@ -380,6 +386,9 @@ export function describe(plan, { dryRun = false } = {}) {
     if (plan.storeMove) lines.push(`The store ${would("was moved", "to be moved")} aside to ${plan.storeMove.to}, since its workspace keeps the settings it was created with. The server starts a new store where the old one was, and chap-analytics reads the new one; the old one keeps its log, for chap-analytics or audit.read to read by its path. Where CHAP_DB_PATH names the store, move it aside yourself.`);
   }
   if (plan.ignoreKeys) lines.push("", `.gitignore: keys/ ${would("added", "to be added")}, so the agent's private key stays out of the repository.`);
+  if (plan.unsigned) {
+    lines.push("", "chap.config.json signs people in at an identity provider, and a desk server there starts only with \"require_signatures\": true from 0.3.5, since it is reached from other machines. Run upgrade again with --adopt-settings, which sets it and moves the store aside.");
+  }
   if (plan.deployment.length) {
     lines.push("", "chap.config.json keeps where and for whom the project runs, which --adopt-settings never changes. The template's differ in:",
       ...plan.deployment.map((s) => `  ${s.key}: ${JSON.stringify(s.template)} (yours: ${s.yours === undefined ? "not set" : JSON.stringify(s.yours)})`));

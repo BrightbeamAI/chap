@@ -33,7 +33,7 @@ def _ready(rule=None):
 
     send("workspace.create", profiles=PROFILES, **({"review_rule": rule} if rule else {}))
     for uri, kind in (("human:a", "human"), ("human:c", "human"), ("human:h", "human"),
-                      ("agent:b", "agent")):
+                      ("agent:b", "agent"), ("agent:d", "agent")):
         send("participant.join", actor=uri, type=kind)
     return c, send
 
@@ -104,6 +104,35 @@ def test_a_person_a_task_passes_through_who_never_acts_on_it_stays_among_its_rev
     assert _task(c, third).prior_authors == ["agent:b"]
     _ok(send("task.complete", task_id=third, output={"body": "v1"}))
     assert _task(c, third).review.requested_to == ["human:a", "human:c", "human:h"]
+
+
+def test_the_person_who_created_a_task_or_rejected_a_round_stays_a_reviewer_when_it_passes_through_them():
+    c, send = _ready()
+    tid = _ok(send("task.create", actor="human:a", kind="k", input={}, assignee="agent:b",
+                   review_required=True))["task_id"]
+    _ok(send("task.route", task_id=tid, candidates=["human:a"]))
+    _ok(send("task.route", task_id=tid, candidates=["agent:b"]))
+    _ok(send("task.complete", task_id=tid, output={"body": "v1"}))
+    assert _task(c, tid).review.requested_to == ["human:a", "human:c", "human:h"]
+    _ok(send("decide.reject", actor="human:c", task_id=tid, request_revision=True))
+    _ok(send("task.route", task_id=tid, candidates=["human:c"]))
+    _ok(send("task.route", task_id=tid, candidates=["agent:b"]))
+    _ok(send("task.complete", task_id=tid, output={"body": "v2"}))
+    assert "human:c" in _task(c, tid).review.requested_to
+    assert _ok(send("decide.approve", actor="human:c", task_id=tid))["state"] == "completed"
+
+
+def test_an_author_who_escalates_a_required_review_cannot_end_the_successor_and_its_assignee_can():
+    c, send = _ready()
+    tid = _under_review(send)
+    successor = _ok(send("escalate.raise", original_task_id=tid,
+                         new_task={"kind": "k", "assignee": "agent:d"}))["new_task_id"]
+    assert send("control.cancel", task_id=successor)["error"] == {"code": E.NOT_AUTHORISED, "message": ENDS}
+    assert send("task.update", task_id=successor, state="declined")["error"] == {
+        "code": E.PARAMS,
+        "message": "This task holds a review no decision has closed; a reviewer's decision ends it"}
+    _ok(send("control.cancel", actor="agent:d", task_id=successor))
+    assert _task(c, successor).state == "cancelled"
 
 
 def test_a_route_of_a_completed_task_or_a_note_an_update_carries_does_not_hide_who_completed_it():

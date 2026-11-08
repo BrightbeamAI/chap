@@ -504,12 +504,11 @@ export function authorsOf(task: Task, completer: unknown): ParticipantUri[] {
 
 /**
  * The state a task was in before the history entry at `i`, passing over
- * abstentions and pauses, which leave the work where it was.
+ * pauses, which leave the work where it was.
  */
 function stateBefore(history: Task["history"], i: number): TaskState | undefined {
   for (let j = i - 1; j >= 0; j--) {
-    const s = history[j].state;
-    if (s !== "abstained" && s !== "paused") return s;
+    if (history[j].state !== "paused") return history[j].state;
   }
   return undefined;
 }
@@ -563,30 +562,40 @@ function storedAuthors(task: Task): ParticipantUri[] {
 const ENDED: ReadonlyArray<TaskState> = ["completed", "declined", "cancelled", "superseded", "escalated"];
 
 /**
+ * The authors a review the task requires holds, whatever state the task is
+ * in: those of its own review, until a reviewer rejects the round under
+ * review; or, for a task with no review yet, those of the task it replaces,
+ * since an escalation or a supersede carries that review on.
+ */
+function reviewHolds(ws: Workspace, task: Task, depth = 0): ParticipantUri[] {
+  if (depth > 64 || !reviewRequired(ws, task)) return [];
+  if (task.review) return task.review.decisions.some((d) => d.kind === "reject") ? [] : task.review.authors;
+  const replaced = typeof task.supersedes === "string" ? ws.tasks.get(task.supersedes) : undefined;
+  return replaced ? reviewHolds(ws, replaced, depth + 1) : [];
+}
+
+/**
  * The authors a review the task requires holds to it: from the moment the
  * review opens until the task is over, unless a reviewer has rejected the
- * round under review. They may take the work back to revise it, and hand
- * it on with escalate.raise, which carries the review; they do not end the
- * task around a decision, under review or after taking the work back. Once
- * a reviewer rejects the work, its authors may give the task up. Empty
- * where the task holds no such review.
+ * round under review, and through a successor an escalation or a supersede
+ * makes. They may take the work back to revise it, and hand it on with
+ * escalate.raise; they do not end the task, or its successor, around a
+ * decision. Once a reviewer rejects the work, its authors may give the task
+ * up. Empty where the task holds no such review.
  */
 export function openRequiredReviewAuthors(ws: Workspace, task: Task): ParticipantUri[] {
-  if (!task.review || !reviewRequired(ws, task)) return [];
-  if (ENDED.includes(task.state) || task.review.decisions.some((d) => d.kind === "reject")) return [];
-  return task.review.authors;
+  return ENDED.includes(task.state) ? [] : reviewHolds(ws, task);
 }
 
 /**
  * The task's assignee, as an author of its work, where it moves the task on
- * itself or has acted on it; otherwise nobody. A member another member
- * routed or escalated the task to, and who never acted on it, made none of
- * the work, so nobody can leave a person out of a review's reviewers by
- * passing the task through them.
+ * itself; otherwise nobody. Whoever completed the work is an author by its
+ * completion. A member another member routed or escalated the task to made
+ * none of the work it was handed, so nobody can leave a person out of a
+ * review's reviewers by passing the task through them.
  */
 export function heldBy(task: Task, mover: unknown): ParticipantUri[] {
-  const assignee = task.assignee;
-  return mover === assignee || task.history.some((h) => h.from === assignee) ? [assignee] : [];
+  return mover === task.assignee ? [task.assignee] : [];
 }
 
 /**
@@ -2624,7 +2633,8 @@ export class Coordinator {
       return { error: rpcError(E.NOT_AUTHORISED,
         "The authors of the work under review cannot end its review without a decision") };
     }
-    if (newState === "declined" && task.review && !task.review.decisions.some((d) => d.kind === "reject")) {
+    if (newState === "declined" && (task.review ? !task.review.decisions.some((d) => d.kind === "reject")
+                                                : openRequiredReviewAuthors(ws, task).length > 0)) {
       return { error: rpcError(E.PARAMS,
         "This task holds a review no decision has closed; a reviewer's decision ends it") };
     }

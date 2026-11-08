@@ -216,9 +216,9 @@ reviewer did not expect is one to refuse.
 With `oidc` set, a person joins the workspace only with an ID token from
 its issuer, for someone `chap.config.json` names, and the desk signs them
 in to get one. The server is then reached from other machines, so it
-starts only with `"require_signatures": true`: under `"humans"` the
-agent's calls are unsigned, and whoever reaches `/chap` or `/mcp` could act
-as the agent. The desk sends the browser to the issuer with the
+starts only with `"require_signatures": true`, on a store created that way:
+under `"humans"` the agent's calls are unsigned, and whoever reaches
+`/chap` or `/mcp` could act as the agent. The desk sends the browser to the issuer with the
 authorisation code flow and PKCE (S256), its `nonce` the RFC 7638
 thumbprint of the key it signs with. The issuer sends it back with a code,
 which the desk posts to `POST /api/oidc/token`; the server redeems it at

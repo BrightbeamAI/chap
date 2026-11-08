@@ -25,7 +25,7 @@ function ready(rule?: string) {
   const send = (method: string, params: Record<string, unknown> = {}, actor = "agent:b") =>
     c.dispatch({ jsonrpc: "2.0", id: `c${++n}`, method, params: { workspace: "w", from: actor, ...params } }) as any;
   send("workspace.create", { profiles: PROFILES, ...(rule ? { review_rule: rule } : {}) });
-  for (const [uri, type] of [["human:a", "human"], ["human:c", "human"], ["human:h", "human"], ["agent:b", "agent"]])
+  for (const [uri, type] of [["human:a", "human"], ["human:c", "human"], ["human:h", "human"], ["agent:b", "agent"], ["agent:d", "agent"]])
     send("participant.join", { type }, uri);
   return { c, send };
 }
@@ -93,6 +93,32 @@ test("a person a task passes through, who never acts on it, stays among its revi
   assert.deepEqual(task(c, third).prior_authors, ["agent:b"]);
   ok(send("task.complete", { task_id: third, output: { body: "v1" } }));
   assert.deepEqual(task(c, third).review!.requested_to, ["human:a", "human:c", "human:h"]);
+});
+
+test("the person who created a task, or rejected a round of it, stays a reviewer when the task passes through them", () => {
+  const { c, send } = ready();
+  const id = ok(send("task.create", { kind: "k", input: {}, assignee: "agent:b", review_required: true }, "human:a")).task_id;
+  ok(send("task.route", { task_id: id, candidates: ["human:a"] }));
+  ok(send("task.route", { task_id: id, candidates: ["agent:b"] }));
+  ok(send("task.complete", { task_id: id, output: { body: "v1" } }));
+  assert.deepEqual(task(c, id).review!.requested_to, ["human:a", "human:c", "human:h"]);
+  ok(send("decide.reject", { task_id: id, request_revision: true }, "human:c"));
+  ok(send("task.route", { task_id: id, candidates: ["human:c"] }));
+  ok(send("task.route", { task_id: id, candidates: ["agent:b"] }));
+  ok(send("task.complete", { task_id: id, output: { body: "v2" } }));
+  assert.ok(task(c, id).review!.requested_to.includes("human:c"));
+  assert.equal(ok(send("decide.approve", { task_id: id }, "human:c")).state, "completed");
+});
+
+test("an author who escalates a required review cannot end the successor; its own assignee can", () => {
+  const { c, send } = ready();
+  const id = underReview(send);
+  const successor = ok(send("escalate.raise", { original_task_id: id, new_task: { kind: "k", assignee: "agent:d" } })).new_task_id;
+  assert.deepEqual(send("control.cancel", { task_id: successor }).error, { code: E.NOT_AUTHORISED, message: ENDS });
+  assert.deepEqual(send("task.update", { task_id: successor, state: "declined" }).error,
+    { code: E.PARAMS, message: "This task holds a review no decision has closed; a reviewer's decision ends it" });
+  ok(send("control.cancel", { task_id: successor }, "agent:d"));
+  assert.equal(task(c, successor).state, "cancelled");
 });
 
 test("a route of a completed task, or a note an update carries, does not hide who completed the work", () => {

@@ -75,7 +75,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "chap.control.resume":
         "Resume work paused at the same scope: a task returns to the state it held at the pause, a participant can be assigned tasks again, a workspace returns to active.",
     "chap.control.cancel":
-        "Cancel a task. Cancelled is terminal, and a task that has already settled cannot be cancelled. From the moment a review the task requires opens until a reviewer rejects the work, the authors of the work cannot cancel it, even once they take the work back (-32011).",
+        "Cancel a task. Cancelled is terminal, and a task that has already settled cannot be cancelled. From the moment a review the task requires opens until a reviewer rejects the work, the authors of the work cannot cancel it, even once they take the work back, nor a successor that carries its review (-32011).",
     "chap.control.snapshot":
         "Capture the workspace state as an artefact before a change you may want to undo. Returns a snapshot artefact id, which is the only thing chap.control.rollback accepts as a target; the label is for a human reading the log and cannot be used to select it. Taking a snapshot changes nothing. Note that a rollback restores only the mode ceiling and member roles, so a snapshot is a narrow safety net rather than a general undo.",
     "chap.control.rollback":

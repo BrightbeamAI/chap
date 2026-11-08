@@ -220,8 +220,9 @@ task requires opens until the task ends, unless a reviewer has rejected
 the round under review, `control.cancel` and `control.supersede` from one
 of the review's authors MUST be refused with `-32011`, as a `task.update`
 taking the paused task to `cancelled` is, whether the task is under review,
-paused, or taken back by its authors: the authors of the work may not end
-its required review with no decision
+paused, or taken back by its authors, and so they are on a successor an
+escalation or a supersede makes, until it holds a review of its own: the
+authors of the work may not end its required review with no decision
 ([review profile §3.1](./review.md#31-reviewrequest)).
 
 ---

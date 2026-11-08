@@ -107,7 +107,7 @@ any workspace's log.
 |---|---|---|
 | A call made in another member's name | Signature verification against the member's registered keys. An MCP server built with `participant` makes every call as that member **(0.3.4)**. | Needs `requireSignatures`, and control over who joins under which name (section 4) |
 | A captured call sent again | A signed copy of an accepted call is refused with `-32075` **(0.3.5)**, and a signed copy of a recorded refusal is answered with that refusal **(0.3.0)**. A repeated `task.create` idempotency key returns the first task. Each entry carries the `seq` and `arrived` the coordinator assigns. | An unsigned copy of an accepted call is evaluated again ([Envelope id replay](#envelope-id-replay)) |
-| A review settled by whoever made the work | The authors of the work, the members who held it before among them, cannot decide its review; a review a task requires is decided by people, opens only when the work is completed, and is not ended by its authors until a reviewer rejects the work; a workspace's `review_rule` sets how many approvals it needs **(0.3.5)** | Needs signatures, so that `from` names its caller |
+| A review settled by whoever made the work | The authors of the work, the members who handed it on among them, cannot decide its review; a review a task requires is decided by people, opens only when the work is completed, and is not ended by its authors until a reviewer rejects the work; a workspace's `review_rule` sets how many approvals it needs **(0.3.5)** | Needs signatures, so that `from` names its caller |
 | A join under another's name or role | A join with keys the member does not hold is refused; the `admin` role is granted by an admin; under `join_policy: "invite"` only invited participants join; with a token verifier a person joins with a token that names them and binds their key; a desk server asks for its enrolment code at a person's first join **(0.3.5)** | Under the open join policy without a verifier or a desk server, a first join can claim any name nobody holds yet (section 4) |
 | An entry altered after it was written | The hash chain, checked by `audit.verify_chain` | Needs the chain switched on, and a head kept where the writer cannot change it |
 | Entries removed and the chain re-linked | Nothing inside the log. A SCITT receipt, or an earlier head held elsewhere, shows it. | Needs `audit-scitt/1.0` with a submitter, or another anchor |
@@ -516,14 +516,15 @@ either. A review decision also needs the caller to be a reviewer the review
 was addressed to, and a review addressed to a `workspace:` or `group:` scope
 accepts any member. From 0.3.5 the authors of the work cannot decide its
 review: its assignee, the member that completed it, and the members who
-held the task before it was routed, handed, escalated or superseded, by
-moving it on themselves or acting on it. A review a task requires is
+moved the task on themselves by routing, handing, escalating or superseding
+it. A review a task requires is
 decided by people only. On such a task the review opens on
 `task.complete` from the assignee, under the workspace's `review_rule`, and
 `review.request` only adds reviewers to it once it is open (`-32011`
 before). From then until a reviewer rejects the round, its authors cannot
 cancel or supersede the task, or cancel it after a pause, even once they
-take the work back; another member can.
+take the work back, nor end a successor an escalation or a supersede makes
+before it holds a review of its own; another member can.
 
 **Privileged methods and step-up.** The coordinators treat these methods as
 privileged: `control.pause`, `control.resume`, `control.cancel`,

@@ -271,9 +271,15 @@ def test_a_review_restored_without_authors_takes_them_from_the_tasks_history():
     supplied = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
     _ok(send("task.complete", task_id=supplied, output=DRAFT))
     _ok(send("review.request", actor="agent:d", task_id=supplied, artefact=DRAFT, to=["human:a"]))
+    # A review a reviewer abstained from, opened again by another member.
+    reopened = _ok(send("task.create", kind="k", input={}, assignee="agent:b"))["task_id"]
+    _ok(send("task.complete", task_id=reopened, output=DRAFT))
+    _ok(send("review.request", task_id=reopened, artefact=DRAFT, to=["human:a"]))
+    _ok(send("abstain.declare", actor="human:a", task_id=reopened, reason="not mine"))
+    _ok(send("review.request", actor="human:c", task_id=reopened, artefact=DRAFT, to=["human:a"]))
     # Rewrite the stored tasks as a release before authors wrote them.
     held = store._held["w"]["objects"]["tasks"]
-    for tid in (explicit, implicit, fresh, approved, supplied):
+    for tid in (explicit, implicit, fresh, approved, supplied, reopened):
         stored = json.loads(held[tid])
         del stored["review"]["authors"]
         held[tid] = json.dumps(stored)
@@ -284,6 +290,7 @@ def test_a_review_restored_without_authors_takes_them_from_the_tasks_history():
     assert tasks[fresh].review.authors == ["agent:b"]
     assert tasks[approved].review.authors == ["agent:b", "agent:d"]
     assert tasks[supplied].review.authors == ["agent:b", "agent:d"]
+    assert tasks[reopened].review.authors == ["agent:b", "human:c"]
     r = again.dispatch({"jsonrpc": "2.0", "id": "x", "method": "decide.approve",
                         "params": {"workspace": "w", "from": "agent:d", "task_id": explicit}})
     assert r["error"]["code"] == E.NOT_AUTHORISED

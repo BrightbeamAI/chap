@@ -625,9 +625,9 @@ def _authors_of(task: Task, completer: Any) -> list[str]:
 
 def _state_before(history: list, i: int) -> str | None:
     """The state a task was in before the history entry at ``i``, passing
-    over abstentions and pauses, which leave the work where it was."""
+    over pauses, which leave the work where it was."""
     for j in range(i - 1, -1, -1):
-        if history[j].state not in ("abstained", "paused"):
+        if history[j].state != "paused":
             return history[j].state
     return None
 
@@ -689,31 +689,39 @@ def _stored_authors(assignee: str, history: list, prior: Any = None) -> list[str
 _ENDED = ("completed", "declined", "cancelled", "superseded", "escalated")
 
 
+def _review_holds(ws: Workspace, task: Task, depth: int = 0) -> list[str]:
+    """The authors a review the task requires holds, whatever state the task
+    is in: those of its own review, until a reviewer rejects the round under
+    review; or, for a task with no review yet, those of the task it
+    replaces, since an escalation or a supersede carries that review on."""
+    if depth > 64 or not _review_required(ws, task):
+        return []
+    if task.review is not None:
+        if any(d.get("kind") == "reject" for d in task.review.decisions):
+            return []
+        return list(task.review.authors)
+    replaced = ws.tasks.get(task.supersedes) if isinstance(task.supersedes, str) else None
+    return _review_holds(ws, replaced, depth + 1) if replaced is not None else []
+
+
 def _open_required_review_authors(ws: Workspace, task: Task) -> list[str]:
     """The authors a review the task requires holds to it: from the moment
     the review opens until the task is over, unless a reviewer has rejected
-    the round under review. They may take the work back to revise it, and
-    hand it on with escalate.raise, which carries the review; they do not
-    end the task around a decision, under review or after taking the work
-    back. Once a reviewer rejects the work, its authors may give the task
-    up. Empty where the task holds no such review."""
-    if task.review is None or not _review_required(ws, task):
-        return []
-    if task.state in _ENDED or any(d.get("kind") == "reject" for d in task.review.decisions):
-        return []
-    return list(task.review.authors)
+    the round under review, and through a successor an escalation or a
+    supersede makes. They may take the work back to revise it, and hand it
+    on with escalate.raise; they do not end the task, or its successor,
+    around a decision. Once a reviewer rejects the work, its authors may
+    give the task up. Empty where the task holds no such review."""
+    return [] if task.state in _ENDED else _review_holds(ws, task)
 
 
 def _held_by(task: Task, mover: Any) -> list[str]:
     """The task's assignee, as an author of its work, where it moves the
-    task on itself or has acted on it; otherwise nobody. A member another
-    member routed or escalated the task to, and who never acted on it, made
-    none of the work, so nobody can leave a person out of a review's
-    reviewers by passing the task through them."""
-    assignee = task.assignee
-    if mover == assignee or any(h.from_ == assignee for h in task.history):
-        return [assignee]
-    return []
+    task on itself; otherwise nobody. Whoever completed the work is an
+    author by its completion. A member another member routed or escalated
+    the task to made none of the work it was handed, so nobody can leave a
+    person out of a review's reviewers by passing the task through them."""
+    return [task.assignee] if mover == task.assignee else []
 
 
 def _successor_authors(old: Task, mover: Any) -> list[str]:
@@ -2530,8 +2538,9 @@ class Coordinator:
             return {"error": rpc_error(
                 E.NOT_AUTHORISED,
                 "The authors of the work under review cannot end its review without a decision")}
-        if (new_state == "declined" and task.review is not None
-                and not any(d.get("kind") == "reject" for d in task.review.decisions)):
+        if new_state == "declined" and (
+                not any(d.get("kind") == "reject" for d in task.review.decisions)
+                if task.review is not None else bool(_open_required_review_authors(ws, task))):
             return {"error": rpc_error(
                 E.PARAMS,
                 "This task holds a review no decision has closed; a reviewer's decision ends it")}

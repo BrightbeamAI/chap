@@ -230,9 +230,12 @@ test("--adopt-settings never takes where and for whom a project runs, and finds 
   await writeFile(path, JSON.stringify(mine, null, 2));
   await mkdir(join(dir, "data"), { recursive: true });
   await writeFile(join(dir, "data", "chap.db"), "the default store");
+  const kept = await upgrade([dir, "--dry-run"]);
+  assert.match(kept.text, /signs people in at an identity provider, and a desk server there starts only with "require_signatures": true/);
   const { text } = await upgrade([dir, "--adopt-settings"]);
   const config = JSON.parse(await readFile(path, "utf8"));
   assert.deepEqual([config.port, config.oidc, config.allowed_hosts, config.store], [9443, mine.oidc, ["chap.example.org"], undefined]);
+  assert.equal(config.require_signatures, true, "where people sign in, every call is signed");
   assert.match(text, /keeps where and for whom the project runs, which --adopt-settings never changes\. The template's differ in:\n {2}port: 8788 \(yours: 9443\)\n/);
   assert.equal(await readFile(join(dir, "data", `chap.db.before-${VERSION}`), "utf8"), "the default store", "the store the server opens by default is moved aside");
 });

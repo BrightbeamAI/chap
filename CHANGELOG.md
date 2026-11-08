@@ -54,20 +54,21 @@ one and what to send in its place.
   rounds' authors, a task `escalate.raise` or `control.supersede` makes
   carries the authors of the task it replaces as `prior_authors`, and a
   task `task.route` or `handoff.accept` moves keeps there the member it
-  leaves, where that member held the work: it moved the task on itself, or
-  acted on it. A member a task passed through without acting on it stays a
-  reviewer, so nobody can leave a person out of a review by routing the
-  work through them. A reviewer's decision that completed a task, or a
-  route of a completed task, is not taken for a completion of the work.
+  leaves, where that member moved it on itself. A member another member
+  passed the task to stays a reviewer, so nobody can leave a person out of
+  a review by routing the work through them. A reviewer's decision that
+  completed a task, or a route of a completed task, is not taken for a
+  completion of the work.
 - **Its authors do not end a review.** Only an author takes the work back
   to revise it; a task under review is not declined before a reviewer
   rejects it; `escalate.raise` hands the review on with the work; and from
   the moment a required review opens until a reviewer rejects the round,
   its authors cannot end the task with `control.cancel`,
   `control.supersede`, or a pause and then `task.update` to cancelled,
-  under review or after taking the work back. A task that has held a
-  review completes only through a decision: completing it again opens a
-  new round.
+  under review or after taking the work back, nor end a successor an
+  escalation or a supersede makes, which nobody declines either. A task
+  that has held a review completes only through a decision: completing it
+  again opens a new round.
 - **A workspace sets its review rule.** `workspace.create` takes
   `review_rule` (`any_one_approves`, `all_approve` or `quorum:<n>`), so a
   deployment can ask for more than one approval and no author can ask
@@ -133,8 +134,8 @@ one and what to send in its place.
   Content-Security-Policy and refuses framing, runs analytics in a
   sandbox, keeps a reviewer's key where no script can read it, and marks
   invisible characters and characters outside ASCII in names and changed
-  lines. A server error answers with no exception text, and a request
-  target that is no URL path answers 400.
+  lines. A server error answers with no exception text, and the Node desk
+  server answers a request target that is no URL path with 400.
 - **The code gate's hooks.** The hooks read the gate's address and the
   signature rule from `chap.config.json` alone, fail closed, and chain to
   the repository's own hooks. A gate joins the trust policy's reviewers
@@ -231,9 +232,10 @@ with. Calls 0.3.4 accepted that 0.3.5 refuses, and what to do instead:
   before a reviewer rejects the work, or to `completed` on a task that
   holds a review; and, from an author of a required review until a
   reviewer rejects the round, `control.cancel`, `control.supersede`, and
-  `task.update` from paused to cancelled, the work taken back or not. A
-  task that has held a review and is completed again opens a new round; it
-  no longer completes.
+  `task.update` from paused to cancelled, the work taken back or not, on
+  the task or on a successor that carries its review; and `task.update` to
+  `declined` of such a successor, from anyone. A task that has held a
+  review and is completed again opens a new round; it no longer completes.
 - **Roles and profiles.** `role: "admin"` at join from anyone other than
   the first member or an invited admin: invite admins with
   `workspace.invite`. `workspace.set_profiles` that drops
@@ -261,9 +263,12 @@ with. Calls 0.3.4 accepted that 0.3.5 refuses, and what to do instead:
   through MCP needs the desk, or another signing path, for them.
   `@brightbeamai/chap-coordinator-a2a` needs `@a2a-js/sdk` 1.3, and the
   Python `a2a` extra installs `a2a-sdk[http-server]`.
-- **Reads.** Where people sign in at an identity provider, a read of the
-  Node desk server's API from anyone but a signed-in person or a member
-  whose key signs it (`signedRead`).
+- **Where people sign in.** A Node desk server configured to sign people
+  in at an identity provider no longer starts under `"require_signatures":
+  "humans"` or off, or on a store created under either: set `true` and
+  start a new store, which `create-chap-app upgrade --adopt-settings` does.
+  A read of its API from anyone but a signed-in person or a member whose
+  key signs it (`signedRead`).
 - **Node.js.** Node 20.
 
 ## 0.3.4: review rounds, patch size and the MCP gate

@@ -118,6 +118,16 @@ test("the configuration names the issuer and the client id, and refuses an issue
     await assert.rejects(loadConfig((await project({ require_signatures, oidc: { issuer: "https://idp.example.org", client_id: "desk" } })).configPath),
       /signs people in at https:\/\/idp\.example\.org with "require_signatures" .*: set "require_signatures": true/, String(require_signatures));
   }
+  // A store keeps the policy it was created with, so one made under
+  // "humans" does not start where people sign in.
+  const { dir, configPath } = await project({ require_signatures: "humans", store: "./data/chap.db" });
+  await (await createChapServer({ configPath, log: () => {} })).close();
+  const { writeFile, readFile } = await import("node:fs/promises");
+  const later = JSON.parse(await readFile(configPath, "utf8"));
+  await writeFile(configPath, JSON.stringify({ ...later, require_signatures: true, oidc: { issuer: issuer.issuer, client_id: DEV_AUDIENCE } }));
+  await assert.rejects(createChapServer({ configPath, log: () => {} }),
+    /was created under "require_signatures": "humans", under which the agent calls unsigned, and chap\.config\.json signs people in at .*: start a new store/);
+  assert.ok(dir);
 });
 
 test("the server redeems a sign-in's code for the desk, holds the token to the nonce, and says who signed in when a token will not do", async () => {

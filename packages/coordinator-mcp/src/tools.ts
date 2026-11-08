@@ -211,7 +211,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   "chap.control.cancel":
     "Cancel a task. Cancelled is terminal, and a task that has already settled cannot be cancelled. From the " +
     "moment a review the task requires opens until a reviewer rejects the work, the authors of the work cannot " +
-    "cancel it, even once they take the work back (-32011).",
+    "cancel it, even once they take the work back, nor a successor that carries its review (-32011).",
 
   "chap.control.snapshot":
     "Capture the workspace state as an artefact before a change you may want to undo. Returns a snapshot " +
