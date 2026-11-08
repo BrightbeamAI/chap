@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -80,7 +80,9 @@ test("with husky, npm install keeps the gate's hooks, and husky's hook runs afte
   // npm install runs prepare: husky points core.hooksPath at .husky/_, then the gate's install.
   await huskyPrepare(dir);
   await run(process.execPath, [GATE_BIN, "install-hooks", "--gate", "chap", "--if-repo"], { cwd: dir });
-  assert.equal((await run("git", ["config", "--get", "chap.chainTo"], { cwd: dir })).stdout.trim(), join(dir, ".husky", "_"));
+  // The hook chains to husky's by its real path: on macOS the temporary
+  // directory is reached through a link, /var to /private/var.
+  assert.equal((await run("git", ["config", "--get", "chap.chainTo"], { cwd: dir })).stdout.trim(), join(await realpath(dir), ".husky", "_"));
 
   await run("git", ["add", "server.mjs"], { cwd: dir });
   const commit = (env) => run("git", ["commit", "-qm", "a change"], { cwd: dir, env: { ...process.env, CHAP_AUTOSTART: "0", ...env } });

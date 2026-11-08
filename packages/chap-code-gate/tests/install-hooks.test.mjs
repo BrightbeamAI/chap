@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -142,5 +142,7 @@ test("a gate named by a relative path is written into the hooks by its full path
   await run(process.execPath, [bin, "install-hooks", "--gate", "chap"], { cwd: repo });
   const hooksPath = (await git(repo, ["config", "--get", "core.hooksPath"])).trim();
   const script = await readFile(join(hooksPath, "pre-commit"), "utf8");
-  assert.ok(script.includes(`--gate '${join(repo, "chap")}'`), script);
+  // The hook names the gate by its real path: on macOS the temporary
+  // directory is reached through a link, /var to /private/var.
+  assert.ok(script.includes(`--gate '${join(await realpath(repo), "chap")}'`), script);
 });
