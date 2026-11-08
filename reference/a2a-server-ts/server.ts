@@ -177,4 +177,6 @@ if (!loopback) {
     "the network. Use only on a trusted network.\n",
   );
 }
-app.listen(port, host);
+// Listening is said once the port answers, so a client that waits for the
+// line can connect.
+app.listen(port, host, () => process.stderr.write(`Listening on ${baseUrl}\n`));

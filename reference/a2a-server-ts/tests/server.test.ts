@@ -34,7 +34,7 @@ async function skillsServed(args: string[]): Promise<Set<string>> {
   try {
     let stderr = "";
     child.stderr!.on("data", (chunk) => { stderr += chunk; });
-    for (let i = 0; i < 100 && !stderr.includes("Agent Card"); i++) await new Promise((r) => setTimeout(r, 100));
+    for (let i = 0; i < 100 && !stderr.includes("Listening on"); i++) await new Promise((r) => setTimeout(r, 100));
     const card = await (await fetch(`http://127.0.0.1:${port}/.well-known/agent-card.json`, { headers: { "A2A-Version": "1.0" } })).json();
     return new Set(card.skills.map((skill: { id: string }) => skill.id));
   } finally {

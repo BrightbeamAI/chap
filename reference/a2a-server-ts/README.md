@@ -44,6 +44,7 @@ CHAP A2A reference server starting on http://localhost:9090/, acting as agent:or
 Agent Card: http://localhost:9090/.well-known/agent-card.json
 Profiles enabled: core/1.0, review/1.0, whisper/1.0, deliberation/1.0, handoff/1.0, control/1.0, routing/1.0, modes/1.0, audit-scitt/1.0.
 State is in memory only: the workspaces are lost when this process exits.
+Listening on http://localhost:9090/
 ```
 
 ## What it checks

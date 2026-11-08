@@ -56,6 +56,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
+      - name: Install the workspace's packages
+        run: npm install --no-audit --no-fund
       - name: Test the generator
         working-directory: packages/create-chap-app
         run: npm test
