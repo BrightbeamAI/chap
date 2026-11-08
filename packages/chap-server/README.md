@@ -138,8 +138,8 @@ need no code. The server makes a new code at each start, or takes
 `CHAP_ENROLMENT_CODE`, of 8 letters or digits at least, and keeps it
 beside the store in `enrolment-code`, readable by its own user alone. A
 server started with `CHAP_ENROLMENT_QUIET=1`, as the code gate's commands
-start one, prints where the code is kept in place of the code, so the code
-stays out of a log an agent reads; `chapHandler` prints it too, for a
+start one, prints where the code is kept and leaves the code itself out of
+the log an agent reads; `chapHandler` prints it too, for a
 desk mounted in a server of your own. Without the code, a program that
 started first could join under a person's name with a key of its own and
 approve its own work. Against a program running as the person's own user,
