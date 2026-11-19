@@ -509,7 +509,8 @@ under an admin's invitation that names it, and is otherwise refused with
 `-32011`. Only a `human` or a `service` holds it. Where a token or
 credential verifier is configured, an invitation names no keys for a
 person, a member or not: their keys arrive with the token or presentation
-they join with (`-32602`) **(0.3.5)**. `control.*` needs
+they join with (`-32602`) **(0.3.5)**, and a person's join does not take up
+keys an invitation pinned before the verifier was configured (`-32602`). `control.*` needs
 membership only, and `control.rollback` can restore members' roles from a
 snapshot. No method-role policy is enforced (SPECIFICATION.md §6.4), and the
 `required_scope` that each method declares in the catalogue is not enforced

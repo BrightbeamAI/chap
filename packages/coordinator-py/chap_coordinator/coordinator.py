@@ -2226,6 +2226,18 @@ class Coordinator:
                 credential_bound = True
                 member.keys.extend(KeyRecord(jwk=j, kid=j["kid"], valid_from=now) for j in bound)
 
+        # Where a verifier is configured, a person's keys arrive with the token
+        # or presentation they join with, and workspace.invite pins none. An
+        # invitation that pinned keys before a verifier was configured is not
+        # taken up: its keys are ones an admin chose, and the admin could
+        # sign as the person.
+        if (existing is None and invitation is not None and invitation.jwks
+                and (kind == "human" or invitation.oidc_sub is not None)
+                and (self.options.verify_oidc_token is not None or self.options.verify_vc is not None)):
+            return {"error": rpc_error(
+                E.PARAMS, f"{uri}'s invitation pins keys, and a person's keys arrive with the token they "
+                "join with: an admin invites them again without keys")}
+
         # A person a credential verifies signs with a key the credential
         # binds, or one an invitation pins: keys the join asserts on its own
         # are not the person's on anyone's word.

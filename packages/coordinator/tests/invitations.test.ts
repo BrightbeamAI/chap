@@ -215,6 +215,23 @@ test("where a verifier is configured, an invitation pins no keys for a person, a
     { uri: "human:q", type: "human", jwks: { keys: [keyOf("human:a#2")] } }).error.code, -32602);
 });
 
+test("an invitation that pinned a person's keys before a verifier was configured is not taken up", () => {
+  const store = new MemoryStore();
+  const first = ready({ store });
+  first.call("workspace.create", "human:a");
+  first.call("participant.join", "human:a", { type: "human", role: "admin" });
+  assert.equal(first.call("workspace.invite", "human:a",
+    { uri: "human:q", type: "human", jwks: { keys: [keyOf("human:a#2")] } }).error, undefined);
+  const token = `tok:${JSON.stringify({ sub: "sub-q", chap_participant_uri: "human:q" })}`;
+  const second = new Coordinator({ store, deterministicIds: true,
+    verifyOidcToken: (t: string) => (t.startsWith("tok:") ? JSON.parse(t.slice(4)) : null) });
+  const r: any = second.dispatch({ jsonrpc: "2.0", id: "j", method: "participant.join",
+    params: { workspace: "w", from: "human:q", type: "human", oidc_token: token } } as Envelope);
+  assert.deepEqual(r.error, { code: -32602,
+    message: "human:q's invitation pins keys, and a person's keys arrive with the token they join with: an admin invites them again without keys" });
+  assert.equal(second.workspaces.get("w")!.members.has("human:q"), false);
+});
+
 test("an invitation and the join policy are kept by the store, and an invitation used up leaves it", () => {
   const store = new MemoryStore();
   const first = ready({ store, joinPolicy: "invite" });

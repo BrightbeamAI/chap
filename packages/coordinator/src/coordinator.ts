@@ -2338,6 +2338,17 @@ export class Coordinator {
       }
     }
 
+    // Where a verifier is configured, a person's keys arrive with the token or
+    // presentation they join with, and workspace.invite pins none. An
+    // invitation that pinned keys before a verifier was configured is not
+    // taken up: its keys are ones an admin chose, and the admin could sign as
+    // the person.
+    if (!existing && invitation?.jwks && (type === "human" || invitation.oidc_sub !== undefined)
+        && (this.options.verifyOidcToken !== undefined || this.options.verifyVc !== undefined)) {
+      return { error: rpcError(E.PARAMS,
+        `${uri}'s invitation pins keys, and a person's keys arrive with the token they join with: an admin invites them again without keys`) };
+    }
+
     // A person a credential verifies signs with a key the credential binds,
     // or one an invitation pins: keys the join asserts on its own are not
     // the person's on anyone's word.

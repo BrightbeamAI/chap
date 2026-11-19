@@ -247,6 +247,26 @@ def test_where_a_verifier_is_configured_an_invitation_pins_no_keys_for_a_person_
                    jwks={"keys": [key_of("human:a#2")]})["error"]["code"] == -32602
 
 
+def test_an_invitation_that_pinned_a_persons_keys_before_a_verifier_was_configured_is_not_taken_up():
+    store = MemoryStore()
+    first = _Ready(store=store)
+    first.call("workspace.create", "human:a")
+    first.call("participant.join", "human:a", type="human", role="admin")
+    assert "error" not in first.call("workspace.invite", "human:a", uri="human:q", type="human",
+                                     jwks={"keys": [key_of("human:a#2")]})
+    token = "tok:" + json.dumps({"sub": "sub-q", "chap_participant_uri": "human:q"})
+    second = Coordinator(CoordinatorOptions(
+        store=store, deterministic_ids=True,
+        verify_oidc_token=lambda t: json.loads(t[4:]) if t.startswith("tok:") else None))
+    r = second.dispatch({"jsonrpc": "2.0", "id": "j", "method": "participant.join",
+                         "params": {"workspace": "w", "from": "human:q", "type": "human", "oidc_token": token}})
+    assert r["error"] == {
+        "code": -32602,
+        "message": "human:q's invitation pins keys, and a person's keys arrive with the token they join "
+                   "with: an admin invites them again without keys"}
+    assert "human:q" not in second.workspaces["w"].members
+
+
 def test_an_invitation_and_the_join_policy_are_kept_by_the_store():
     store = MemoryStore()
     first = _Ready(store=store, join_policy="invite")

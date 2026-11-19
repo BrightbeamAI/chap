@@ -802,7 +802,14 @@ verifier on the Coordinator; otherwise the call is refused with `-32602`.
   them, compared by `kid` and RFC 7638 thumbprint, or the join is refused
   with `-32011` and `data.kids` naming the others; the member holds the
   pinned keys. Where it names `oidc_sub`, the join MUST carry an
-  `oidc_token` (`-32403`) whose verified `sub` it is (`-32404`).
+  `oidc_token` (`-32403`) whose verified `sub` it is (`-32404`). Where a
+  token or credential verifier is configured, an invitation for a
+  participant of type `human`, or one naming `oidc_sub`, MUST NOT pin keys
+  (`-32602`): their keys arrive with the token or presentation they join
+  with. A join under such an invitation recorded before the verifier was
+  configured MUST be refused with `-32602`, and an admin invites the
+  participant again without keys. Taken up, the pinned keys would be ones
+  the admin chose, and the admin could sign as the person.
 - **A member that holds no key in force**, none of its keys unrevoked and
   unexpired. The call registers the keys `jwks` names and answers
   `{"invited": true, "uri": "<uri>", "registered": ["<kid>", …]}`. This is
