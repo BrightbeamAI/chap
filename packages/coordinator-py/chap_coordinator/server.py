@@ -639,6 +639,25 @@ def task_evidence(coord: Coordinator, workspace: str, task_id: str) -> Optional[
             "chain_enabled": bool(getattr(ws, "chain_enabled", False))}
 
 
+def foreign_workspace(envelope: Any, config: dict) -> dict | None:
+    """The refusal of a call for a workspace other than the one
+    chap.config.json names.
+
+    A desk server serves one workspace, so such a call is answered here,
+    before the coordinator sees it: a caller that reaches /chap cannot
+    create another workspace on the server, nor join one under a name of its
+    choosing. None for every other call.
+    """
+    if not isinstance(envelope, dict):
+        return None
+    params = envelope.get("params")
+    if not isinstance(params, dict) or "workspace" not in params or params["workspace"] == config.get("workspace"):
+        return None
+    return {"jsonrpc": "2.0", "id": envelope.get("id"), "error": {"code": -32602, "message":
+            f"This server serves the workspace {config.get('workspace')}, and the call names "
+            f"{json.dumps(params['workspace'], ensure_ascii=False)}"}}
+
+
 def unnamed_join(envelope: Any, config: dict) -> dict | None:
     """The refusal of a join under a name chap.config.json does not give.
 
@@ -1060,6 +1079,9 @@ class ChapDesk:
                 envelope = json.loads(body)
             except ValueError:
                 return _json(400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+            elsewhere = foreign_workspace(envelope, config)
+            if elsewhere is not None:
+                return _json(200, elsewhere)
             stranger = unnamed_join(envelope, config)
             if stranger is not None:
                 return _json(200, stranger)

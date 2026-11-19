@@ -636,6 +636,20 @@ function reply(res, status, body, type = "application/json", policy = SECURITY_H
 }
 
 /**
+ * A call for a workspace other than the one chap.config.json names. A desk
+ * server serves one workspace, so such a call is answered here, before the
+ * coordinator sees it: a caller that reaches /chap cannot create another
+ * workspace on the server, nor join one under a name of its choosing. Null
+ * for every other call.
+ */
+function foreignWorkspace(envelope, config) {
+  const p = envelope?.params;
+  if (!p || typeof p !== "object" || Array.isArray(p) || !("workspace" in p) || p.workspace === config.workspace) return null;
+  return { jsonrpc: "2.0", id: envelope.id ?? null, error: { code: -32602,
+    message: `This server serves the workspace ${config.workspace}, and the call names ${JSON.stringify(p.workspace)}` } };
+}
+
+/**
  * A join under a name chap.config.json does not give. The server admits the
  * people, the agent and the trust policy's members it is configured with; a
  * participant.join for any other URI is refused before the coordinator sees
@@ -1007,6 +1021,8 @@ export async function makeHandler(config, coord, { basePath = "" } = {}) {
           if (e instanceof BodyTooLarge) throw e;
           return reply(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
         }
+        const elsewhere = foreignWorkspace(envelope, config);
+        if (elsewhere) return reply(res, 200, elsewhere);
         const stranger = unnamedJoin(envelope, config);
         if (stranger) return reply(res, 200, stranger);
         const unenrolledFirst = unenrolledJoin(envelope, config, coord, req);

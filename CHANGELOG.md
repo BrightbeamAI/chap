@@ -30,12 +30,18 @@ Several 0.2 patch releases changed behaviour. Their entries say so.
   invitation pinned before the verifier was configured; it is refused
   with `-32602`, and an admin invites the person again without keys.
   0.3.5 already refused such an invitation when it was made.
+- **A desk server serves its own workspace.** A call to `/chap` naming a
+  workspace other than the one `chap.config.json` names is refused with
+  `-32602` before the coordinator sees it, so a caller cannot create a
+  workspace of its own on the server and join it under any name.
 
 ### Upgrading
 
 - **Joins.** A person's first join under an invitation that pins keys,
   where a token or credential verifier is configured: invite them again
   without keys.
+- **Desk servers.** A call to a desk server's `/chap` for another
+  workspace: run a server for each workspace.
 
 ## 0.3.5: who decides, who joins, and CHAP you can run
 

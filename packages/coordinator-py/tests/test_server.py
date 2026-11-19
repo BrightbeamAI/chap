@@ -893,6 +893,11 @@ def test_the_server_admits_only_the_members_the_configuration_names(desk_of):
     assert refused["error"]["code"] == -32011
     assert "not a member chap.config.json names" in refused["error"]["message"]
     assert call(port, "participant.join", **{"from": HUMAN, "type": "human", "role": "reviewer"})["result"]["joined"] is True
+    # Nor can a caller make a workspace of its own on the server, and join that.
+    for method in ("workspace.create", "participant.join"):
+        elsewhere = call(port, method, **{"workspace": "wsp_mine", "from": "human:sock@local", "type": "human"})
+        assert elsewhere["error"] == {"code": -32602, "message":
+                                      'This server serves the workspace wsp_test, and the call names "wsp_mine"'}, method
 
 
 def test_the_read_api_shows_what_another_process_wrote_to_the_store(tmp_path, monkeypatch):

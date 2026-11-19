@@ -74,7 +74,8 @@ and A2A adapters leave authentication to the transport, and the servers under
 The desk servers, `@brightbeamai/chap-server` and `chap_coordinator.server`,
 supply part of this for the projects `create-chap-app` generates
 **(0.3.5)**. They check `Host` and `Origin`, take JSON only, and admit to
-their workspace only the members `chap.config.json` names. Where signatures
+their workspace only the members `chap.config.json` names; a call for any
+other workspace is refused. Where signatures
 are required and nobody signs in at an identity provider, a person's first
 join needs the enrolment code the server prints at start, so a program that
 cannot read the server's console or the project's `data/` cannot take a

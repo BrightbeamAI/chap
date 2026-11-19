@@ -104,6 +104,13 @@ test("the server admits only the members chap.config.json names, so a process ca
     await assert.rejects(sock.call("participant.join", { type: "human", role: "reviewer", jwks: { keys: [signer.publicJwk] } }),
       (e) => e.code === -32011 && /not a member chap\.config\.json names/.test(e.message));
     assert.equal(chap.coord.getWorkspace("wsp_test").members.has("human:sock@local"), false);
+    // Nor can it make a workspace of its own on the server, and join that.
+    for (const method of ["workspace.create", "participant.join"]) {
+      const elsewhere = makeClient({ url: `${base}/chap`, workspace: "wsp_mine", from: "human:sock@local", signer });
+      await assert.rejects(elsewhere.call(method, { type: "human" }),
+        (e) => e.code === -32602 && e.message.includes('This server serves the workspace wsp_test, and the call names "wsp_mine"'), method);
+    }
+    assert.equal(chap.coord.getWorkspace("wsp_mine"), undefined);
   } finally {
     await chap.close();
   }
